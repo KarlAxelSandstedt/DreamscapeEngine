@@ -85,29 +85,94 @@ void                    ds_SimConfigGenerateSeed(struct ds_SimConfig *config);
 /* Return the required size when serializing the config. */
 u64                     ds_SimConfigSerializeSize(const struct ds_SimConfig *config);
 /* Serialize the config. WARNING: Assumes config fits in the stream. */
-void                    ds_SimConfigSerialize(struct ss *ss, const struct ds_SimConfig *config);
+void                    ds_SimConfigSerialize(struct SS *ss, const struct ds_SimConfig *config);
 /* Returns 1 on success. On failure return 0 (bad stream or bad config) and reset the stream position. */
-u32                     ds_SimConfigTryDeserialize(struct ss *ss, struct ds_SimConfig *config);
+u32                     ds_SimConfigTryDeserialize(struct SS *ss, struct ds_SimConfig *config);
 
 
 /*
 ds_SimCmd
 =========
-TODO
+TODO (we document later)
 */
+enum ds_SimCmdType
+{
+    SIM_CMD_CONFIG_LOAD,    /* Payload: serialized ds_SimConfig */
+    SIM_CMD_COUNT
+};
+
 struct ds_SimCmd
 {
-    //TODO
-    u32 tmp;
+    enum ds_SimCmdType  type;
+    union
+    {
+        struct ds_LoadConfigCmd
+        {
+            struct ds_SimConfig config;
+        } load_config;
+    };
 };
 DEFINE_CPOOL_STRUCT(ds_SimCmd);
+
+struct ds_Sim;
+/*
+ * Verify cmd against sim's state (ds_SimCmdDataVerify) and execute it. Returns 1 on success and 0 if cmd is rejected
+ * (logged): sim is untouched.
+ */
+u32     ds_SimCmdTryExecute(struct ds_Sim *sim, const struct ds_SimCmd *cmd);
+
+
+/*
+ds_SimId
+========
+Unique simulation identifier used by external sources to identify destination simulation.
+*/
+DS_DEFINE_ID(ds_SimId, DS_ID_GENERATION_SHIFT, DS_ID_GENERATION_MAX)
+#define DS_SIM_ID_TEMPORARY     ds_SimIdInit(0, 0)
+
+/*
+ds_SimCmdPayload
+================
+External set of serialized ds_SimCmd with a destination simulation
+*/
+
+struct ds_SimCmdPayload
+{
+    //TODO not finalized, but captures the essence
+    ds_SimId    dst;
+    u32         cmd_count;
+    struct SS   stream;     /* the commands bit-packed in order: bit_index bits used, bit_count the capacity */
+};
+DEFINE_CPOOL_STRUCT(ds_SimCmdPayload);
+
+/* Return without allocating an empty payload for dst */
+struct ds_SimCmdPayload ds_SimCmdPayloadEmpty(const ds_SimId dst);
+/* Return an empty payload for dst with a size byte buffer in mem or on the heap (mem == NULL). */
+struct ds_SimCmdPayload ds_SimCmdPayloadAlloc(struct arena *mem, const ds_SimId dst, const u64 size);
+/* Free a heap payload's buffer (arena memory stays with the arena); the payload becomes empty. */
+void                    ds_SimCmdPayloadDealloc(struct ds_SimCmdPayload *payload);
+/* Return a payload for dst holding the pool's commands serialized in order, sized exactly, in mem or on the heap (mem == NULL); empty if there is no room (logged). */
+struct ds_SimCmdPayload ds_SimCmdPayloadPushAll(struct arena *mem, const ds_SimId dst, const ds_CPool(ds_SimCmd) *pool);
+/* Return the required size when serializing the payload. */
+u64                     ds_SimCmdPayloadSerializeSize(const struct ds_SimCmdPayload *payload);
+/* Serialize the payload. WARNING: Assumes payload fits in the stream. */
+void                    ds_SimCmdPayloadSerialize(struct SS *ss, const struct ds_SimCmdPayload *payload);
+/*
+ * Read the stream's payload as a view of the stream's buffer (no copy; valid while the buffer is). Returns 1 on
+ * success and 0 on failure (bad stream): the stream position is as before and the payload is empty.
+ */
+u32                     ds_SimCmdPayloadTryDeserializeAndAlias(struct SS *ss, struct ds_SimCmdPayload *payload);
+/* Append src's commands to payload (a null dst takes src's). Returns 1 on success and 0 on another dst or no room: payload as before. */
+u32                     ds_SimCmdPayloadAppend(struct ds_SimCmdPayload *payload, const struct ds_SimCmdPayload *src);
+
+
 
 
 /*
 ds_Sim
 ======
 For full design see design doc. The crucial point here is that every state-change imposed
-on the simulation by an external source, goes through the simulations external command
+on the simulation by an external source, goes through the simulations exterkjnal command
 buffer, enforcing a deterministic and replayable simulation.
 */
 
@@ -129,6 +194,7 @@ struct ds_Sim
 
 
     ds_CPool(ds_SimCmd)     external_cmd_buf;   /* external command batch, not yet stamped  */
+    ds_CPool(ds_SimCmdPayload) cmd_payload_buf;  /* arrived payloads, not yet stamped        */
 
     struct ds_Dynamics      dynamics;
     //struct ds_Game          game;             /* TODO: ds_Game undefined */

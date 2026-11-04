@@ -134,17 +134,17 @@ do                                                                              
 #define LLSerialize(_ss_, _ll_)                                                                         \
 do                                                                                                      \
 {                                                                                                       \
-    ss_WriteU32Le((_ss_), (_ll_).count);                                                                \
-    ss_WriteU32Le((_ss_), (u32) (_ll_).first);                                                          \
-    ss_WriteU32Le((_ss_), (u32) (_ll_).last);                                                           \
+    SSWriteU32Le((_ss_), (_ll_).count);                                                                \
+    SSWriteU32Le((_ss_), (u32) (_ll_).first);                                                          \
+    SSWriteU32Le((_ss_), (u32) (_ll_).last);                                                           \
 } while (0)
 
 #define LLTryDeserialize(_ss_, _ll_)                                                                    \
-    ((ss_BytesLeft(_ss_) < LLSerializeSize(_ll_))                                                       \
+    ((SSBytesLeft(_ss_) < LLSerializeSize(_ll_))                                                       \
         ? ((_ll_).count = 0, (_ll_).first = LL_SENTINEL, (_ll_).last = LL_SENTINEL, 0u)                 \
-        : ((_ll_).count = ss_ReadU32Le(_ss_),                                                           \
-           (_ll_).first = (i32) ss_ReadU32Le(_ss_),                                                     \
-           (_ll_).last = (i32) ss_ReadU32Le(_ss_), 1u))
+        : ((_ll_).count = SSReadU32Le(_ss_),                                                           \
+           (_ll_).first = (i32) SSReadU32Le(_ss_),                                                     \
+           (_ll_).last = (i32) SSReadU32Le(_ss_), 1u))
 
 /*
 DLL
@@ -277,17 +277,17 @@ do                                                                              
 #define DLLSerialize(_ss_, _dll_)                                                                       \
 do                                                                                                      \
 {                                                                                                       \
-    ss_WriteU32Le((_ss_), (_dll_).count);                                                               \
-    ss_WriteU32Le((_ss_), (u32) (_dll_).first);                                                         \
-    ss_WriteU32Le((_ss_), (u32) (_dll_).last);                                                          \
+    SSWriteU32Le((_ss_), (_dll_).count);                                                               \
+    SSWriteU32Le((_ss_), (u32) (_dll_).first);                                                         \
+    SSWriteU32Le((_ss_), (u32) (_dll_).last);                                                          \
 } while (0)
 
 #define DLLTryDeserialize(_ss_, _dll_)                                                                  \
-    ((ss_BytesLeft(_ss_) < DLLSerializeSize(_dll_))                                                     \
+    ((SSBytesLeft(_ss_) < DLLSerializeSize(_dll_))                                                     \
         ? ((_dll_).count = 0, (_dll_).first = DLL_SENTINEL, (_dll_).last = DLL_SENTINEL, 0u)            \
-        : ((_dll_).count = ss_ReadU32Le(_ss_),                                                          \
-           (_dll_).first = (i32) ss_ReadU32Le(_ss_),                                                    \
-           (_dll_).last = (i32) ss_ReadU32Le(_ss_), 1u))
+        : ((_dll_).count = SSReadU32Le(_ss_),                                                          \
+           (_dll_).first = (i32) SSReadU32Le(_ss_),                                                    \
+           (_dll_).last = (i32) SSReadU32Le(_ss_), 1u))
 
 #ifdef __cplusplus
 } 

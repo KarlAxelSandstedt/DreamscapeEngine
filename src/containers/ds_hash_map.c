@@ -111,33 +111,33 @@ u64 ds_HashMapSerializeSize(const struct ds_HashMap *map)
 	return 2*sizeof(u32) + ((u64) map->hash_len + map->index_len) * sizeof(u32);
 }
 
-void ds_HashMapSerialize(struct ss *ss, const struct ds_HashMap *map)
+void ds_HashMapSerialize(struct SS *ss, const struct ds_HashMap *map)
 {
 	ds_Assert(ss->bit_index % 8 == 0);
-	ds_Assert(ds_HashMapSerializeSize(map) <= ss_BytesLeft(ss));
+	ds_Assert(ds_HashMapSerializeSize(map) <= SSBytesLeft(ss));
 
-	ss_WriteU32Le(ss, map->hash_len);
-	ss_WriteU32Le(ss, map->index_len);
-	ss_WriteU32LeN(ss, map->hash, map->hash_len);
-	ss_WriteU32LeN(ss, map->index, map->index_len);
+	SSWriteU32Le(ss, map->hash_len);
+	SSWriteU32Le(ss, map->index_len);
+	SSWriteU32LeN(ss, map->hash, map->hash_len);
+	SSWriteU32LeN(ss, map->index, map->index_len);
 }
 
-u32 ds_HashMapTryDeserialize(struct arena *mem, struct ss *ss, struct ds_HashMap *map, const u32 growable)
+u32 ds_HashMapTryDeserialize(struct arena *mem, struct SS *ss, struct ds_HashMap *map, const u32 growable)
 {
 	ds_Assert(ss->bit_index % 8 == 0);
 
 	*map = (struct ds_HashMap) { .growable = growable };
-	if (ss_BytesLeft(ss) < 2*sizeof(u32))
+	if (SSBytesLeft(ss) < 2*sizeof(u32))
 	{
 		return 0;
 	}
 
 	const u64 bit_index = ss->bit_index;
-	const u32 hash_len = ss_ReadU32Le(ss);
-	const u32 index_len = ss_ReadU32Le(ss);
+	const u32 hash_len = SSReadU32Le(ss);
+	const u32 index_len = SSReadU32Le(ss);
 	/* hash_len is a mask base, so it must be an exact power of two; u64 sum: corrupt lengths must not overflow */
 	if (!hash_len || !PowerOfTwoCheck(hash_len) || hash_len > index_len || (index_len >> 31)
-		|| (u64) hash_len + index_len > ss_BytesLeft(ss) / sizeof(u32))
+		|| (u64) hash_len + index_len > SSBytesLeft(ss) / sizeof(u32))
 	{
 		ss->bit_index = bit_index;
 		return 0;
@@ -150,8 +150,8 @@ u32 ds_HashMapTryDeserialize(struct arena *mem, struct ss *ss, struct ds_HashMap
 		return 0;
 	}
 
-	ss_ReadU32LeN(ss, map->hash, hash_len);
-	ss_ReadU32LeN(ss, map->index, index_len);
+	SSReadU32LeN(ss, map->hash, hash_len);
+	SSReadU32LeN(ss, map->index, index_len);
 	return 1;
 }
 
@@ -268,28 +268,28 @@ void ds_THashMapFlushInternal(struct ds_THashState *state)
 	}
 }
 
-void ds_THashMapSerializeInternal(struct ss *ss, const struct ds_THashState *state)
+void ds_THashMapSerializeInternal(struct SS *ss, const struct ds_THashState *state)
 {
 	ds_Assert(ss->bit_index % 8 == 0);
-	ds_Assert(sizeof(u32) + (u64) state->hash_len*sizeof(u64) <= ss_BytesLeft(ss));
+	ds_Assert(sizeof(u32) + (u64) state->hash_len*sizeof(u64) <= SSBytesLeft(ss));
 
-	ss_WriteU32Le(ss, state->hash_len);
-	ss_WriteU64LeN(ss, state->a_bucket, state->hash_len);
+	SSWriteU32Le(ss, state->hash_len);
+	SSWriteU64LeN(ss, state->a_bucket, state->hash_len);
 }
 
-u32 ds_THashMapTryDeserializeInternal(struct arena *mem, struct ss *ss, struct ds_THashState *state)
+u32 ds_THashMapTryDeserializeInternal(struct arena *mem, struct SS *ss, struct ds_THashState *state)
 {
 	ds_Assert(ss->bit_index % 8 == 0);
 
 	*state = (struct ds_THashState) { 0 };
-	if (ss_BytesLeft(ss) < sizeof(u32))
+	if (SSBytesLeft(ss) < sizeof(u32))
 	{
 		return 0;
 	}
 
 	const u64 bit_index = ss->bit_index;
-	const u32 hash_len = ss_ReadU32Le(ss);
-	if (!PowerOfTwoCheck(hash_len) || (hash_len >> 31) || hash_len > ss_BytesLeft(ss) / sizeof(u64))
+	const u32 hash_len = SSReadU32Le(ss);
+	if (!PowerOfTwoCheck(hash_len) || (hash_len >> 31) || hash_len > SSBytesLeft(ss) / sizeof(u64))
 	{
 		ss->bit_index = bit_index;
 		return 0;
@@ -304,7 +304,7 @@ u32 ds_THashMapTryDeserializeInternal(struct arena *mem, struct ss *ss, struct d
 		return 0;
 	}
 
-	ss_ReadU64LeN(ss, bucket, hash_len);
+	SSReadU64LeN(ss, bucket, hash_len);
 	state->a_bucket = bucket;
 	state->hash_len = hash_len;
 	state->hash_mask = hash_len - 1;

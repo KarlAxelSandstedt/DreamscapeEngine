@@ -572,7 +572,7 @@ static u32 SnapshotTestCheck(struct arena *mem, struct ds_Dynamics *original, st
     const u32 sleeping = SnapshotTestSleepingSetCount(original);
 
     const u64 size = ds_DynamicsSerializeSize(original);
-    struct ss snap = ss_Alloc(mem, size);
+    struct SS snap = SSAlloc(mem, size);
     ds_DynamicsSerialize(&snap, original);
     if (snap.bit_index != 8*size)
     {
@@ -593,7 +593,7 @@ static u32 SnapshotTestCheck(struct arena *mem, struct ds_Dynamics *original, st
             continue;
         }
 
-        struct ss view = snap;
+        struct SS view = snap;
         view.bit_index = 0;
         view.bit_count = 8*cut;
         const u64 mem_left = mem->mem_left;
@@ -4128,7 +4128,7 @@ struct dynamics_PerfSnapshot
     struct arena            mem;
     struct c_ShapeDB        cshape_db;
     ds_SDB(ds_BodyPrefab)   prefab_db;
-    struct ss               ss;
+    struct SS               ss;
     u32                     built;
 };
 
@@ -4208,7 +4208,7 @@ static void DynamicsPerfSnapshotBuild(const enum dynamics_PerfScene scene)
     }
 
     const u64 size = ds_DynamicsSerializeSize(&pipeline);
-    snap->ss = ss_Alloc(&snap->mem, size);
+    snap->ss = SSAlloc(&snap->mem, size);
     ds_DynamicsSerialize(&snap->ss, &pipeline);
     ds_Assert(snap->ss.bit_index == 8*size);
     snap->ss.bit_count = snap->ss.bit_index;
@@ -4279,7 +4279,7 @@ static void *DynamicsPerfSolveInit(const enum dynamics_PerfScene scene, const en
     in->group = group;
     in->variant = variant;
 
-    struct ss view = snap->ss;
+    struct SS view = snap->ss;
     view.bit_index = 0;
     const u32 restored = ds_DynamicsTryDeserialize(&in->mem, &view, &in->pipeline, &snap->cshape_db);
     ds_Assert(restored);
@@ -4304,7 +4304,7 @@ static void *DynamicsPerfSolveInit(const enum dynamics_PerfScene scene, const en
     {
         ds_ContactConstraintInitRange(pipeline, ci, 0, pipeline->cgraph.color[ci].contact_pool.count);
     }
-    if (pipeline.config.solver.warmup_solver)
+    if (pipeline->config.solver.warmup_solver)
     {
         for (u32 ci = 0; ci < CG_COLOR_COUNT; ++ci)
         {
@@ -4313,7 +4313,7 @@ static void *DynamicsPerfSolveInit(const enum dynamics_PerfScene scene, const en
     }
     if (stage == DYNAMICS_PERF_STAGE_POSITION)
     {
-        for (u32 i = 0; i < pipeline.config.solver.pgs_iteration_count; ++i)
+        for (u32 i = 0; i < pipeline->config.solver.pgs_iteration_count; ++i)
         {
             for (u32 ci = 0; ci < CG_COLOR_COUNT; ++ci)
             {

@@ -107,29 +107,29 @@ u64 ds_BitSetSerializeSize(const struct ds_BitSet *set)
 	return sizeof(u64) + set->block_count*sizeof(u64);
 }
 
-void ds_BitSetSerialize(struct ss *ss, const struct ds_BitSet *set)
+void ds_BitSetSerialize(struct SS *ss, const struct ds_BitSet *set)
 {
 	ds_Assert(ss->bit_index % 8 == 0);
-	ds_Assert(ds_BitSetSerializeSize(set) <= ss_BytesLeft(ss));
+	ds_Assert(ds_BitSetSerializeSize(set) <= SSBytesLeft(ss));
 
-	ss_WriteU64Le(ss, set->block_count);
-	ss_WriteU64LeN(ss, set->bits, set->block_count);
+	SSWriteU64Le(ss, set->block_count);
+	SSWriteU64LeN(ss, set->bits, set->block_count);
 }
 
-u32 ds_BitSetTryDeserialize(struct arena *mem, struct ss *ss, struct ds_BitSet *set, const u32 growable)
+u32 ds_BitSetTryDeserialize(struct arena *mem, struct SS *ss, struct ds_BitSet *set, const u32 growable)
 {
 	ds_Assert(ss->bit_index % 8 == 0);
 
 	*set = (struct ds_BitSet) { 0 };
-	if (ss_BytesLeft(ss) < sizeof(u64))
+	if (SSBytesLeft(ss) < sizeof(u64))
 	{
 		return 0;
 	}
 
 	const u64 bit_index = ss->bit_index;
-	const u64 block_count = ss_ReadU64Le(ss);
+	const u64 block_count = SSReadU64Le(ss);
 	/* division instead of block_count*sizeof(u64): a corrupt block_count must not overflow the check */
-	if (block_count > ss_BytesLeft(ss) / sizeof(u64))
+	if (block_count > SSBytesLeft(ss) / sizeof(u64))
 	{
 		ss->bit_index = bit_index;
 		return 0;
@@ -142,7 +142,7 @@ u32 ds_BitSetTryDeserialize(struct arena *mem, struct ss *ss, struct ds_BitSet *
 		return 0;
 	}
 
-	ss_ReadU64LeN(ss, set->bits, block_count);
+	SSReadU64LeN(ss, set->bits, block_count);
 
 	return 1;
 }

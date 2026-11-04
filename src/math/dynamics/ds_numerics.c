@@ -85,46 +85,46 @@ u64 ds_NumericsConfigSerializeSize(const struct ds_NumericsConfig *config)
     return DS_NUMERICS_CONFIG_SIZE;
 }
 
-void ds_NumericsConfigSerialize(struct ss *ss, const struct ds_NumericsConfig *config)
+void ds_NumericsConfigSerialize(struct SS *ss, const struct ds_NumericsConfig *config)
 {
     ds_Assert(ss->bit_index % 8 == 0);
-    ds_Assert(ds_NumericsConfigSerializeSize(config) <= ss_BytesLeft(ss));
+    ds_Assert(ds_NumericsConfigSerializeSize(config) <= SSBytesLeft(ss));
 
-    ss_WriteU32Le(ss, DS_NUMERICS_CONFIG_VERSION);
-    ss_WriteF32Le(ss, config->dbvh_reinsert_threshold);
-    ss_WriteU32Le(ss, config->cache_count_max);
-    ss_WriteF32Le(ss, config->capsule_parallel_max_degrees);
-    ss_WriteF32Le(ss, config->face_parallel_max_degrees);
-    ss_WriteF32Le(ss, config->edge_parallel_max_degrees);
-    ss_WriteF32Le(ss, config->sat_face_bias);
-    ss_WriteF32Le(ss, config->sat_cache_tolerance);
-    ss_WriteU32Le(ss, config->gjk_max_iterations);
+    SSWriteU32Le(ss, DS_NUMERICS_CONFIG_VERSION);
+    SSWriteF32Le(ss, config->dbvh_reinsert_threshold);
+    SSWriteU32Le(ss, config->cache_count_max);
+    SSWriteF32Le(ss, config->capsule_parallel_max_degrees);
+    SSWriteF32Le(ss, config->face_parallel_max_degrees);
+    SSWriteF32Le(ss, config->edge_parallel_max_degrees);
+    SSWriteF32Le(ss, config->sat_face_bias);
+    SSWriteF32Le(ss, config->sat_cache_tolerance);
+    SSWriteU32Le(ss, config->gjk_max_iterations);
 }
 
-u32 ds_NumericsConfigTryDeserialize(struct ss *ss, struct ds_NumericsConfig *config)
+u32 ds_NumericsConfigTryDeserialize(struct SS *ss, struct ds_NumericsConfig *config)
 {
     const u64 bit_index = ss->bit_index;
     u32 success = 0;
 
-    if (ss->bit_index % 8 != 0 || ss_BytesLeft(ss) < DS_NUMERICS_CONFIG_SIZE)
+    if (ss->bit_index % 8 != 0 || SSBytesLeft(ss) < DS_NUMERICS_CONFIG_SIZE)
     {
         goto end;
     }
 
-    if (ss_ReadU32Le(ss) != DS_NUMERICS_CONFIG_VERSION)
+    if (SSReadU32Le(ss) != DS_NUMERICS_CONFIG_VERSION)
     {
         goto end;
     }
 
     *config = (struct ds_NumericsConfig) { 0 };
-    config->dbvh_reinsert_threshold = ss_ReadF32Le(ss);
-    config->cache_count_max = ss_ReadU32Le(ss);
-    config->capsule_parallel_max_degrees = ss_ReadF32Le(ss);
-    config->face_parallel_max_degrees = ss_ReadF32Le(ss);
-    config->edge_parallel_max_degrees = ss_ReadF32Le(ss);
-    config->sat_face_bias = ss_ReadF32Le(ss);
-    config->sat_cache_tolerance = ss_ReadF32Le(ss);
-    config->gjk_max_iterations = ss_ReadU32Le(ss);
+    config->dbvh_reinsert_threshold = SSReadF32Le(ss);
+    config->cache_count_max = SSReadU32Le(ss);
+    config->capsule_parallel_max_degrees = SSReadF32Le(ss);
+    config->face_parallel_max_degrees = SSReadF32Le(ss);
+    config->edge_parallel_max_degrees = SSReadF32Le(ss);
+    config->sat_face_bias = SSReadF32Le(ss);
+    config->sat_cache_tolerance = SSReadF32Le(ss);
+    config->gjk_max_iterations = SSReadU32Le(ss);
     *config = ds_NumericsConfigDerive(config);
     success = 1;
 

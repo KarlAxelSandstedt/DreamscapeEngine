@@ -358,9 +358,9 @@ u64 ds_CGraphColorSerializeSize(const struct ds_Dynamics *pipeline, const u32 co
 	return size;
 }
 
-void ds_CGraphColorSerialize(struct ss *ss, const struct ds_Dynamics *pipeline, const u32 color_index)
+void ds_CGraphColorSerialize(struct SS *ss, const struct ds_Dynamics *pipeline, const u32 color_index)
 {
-	ds_Assert(ds_CGraphColorSerializeSize(pipeline, color_index) <= ss_BytesLeft(ss));
+	ds_Assert(ds_CGraphColorSerializeSize(pipeline, color_index) <= SSBytesLeft(ss));
 
 	const struct ds_CGraphColor *color = pipeline->cgraph.color + color_index;
 	ds_CPoolSerialize(ss, color->joint_sim_pool);
@@ -378,7 +378,7 @@ void ds_CGraphColorSerialize(struct ss *ss, const struct ds_Dynamics *pipeline, 
 	}
 }
 
-u32 ds_CGraphColorTryDeserialize(struct ss *ss, struct ds_Dynamics *pipeline, const u32 color_index)
+u32 ds_CGraphColorTryDeserialize(struct SS *ss, struct ds_Dynamics *pipeline, const u32 color_index)
 {
 	struct ds_CGraphColor *color = pipeline->cgraph.color + color_index;
 	memset(color, 0, sizeof(*color));
@@ -430,7 +430,7 @@ u64 ds_CGraphSerializeSize(const struct ds_Dynamics *pipeline)
 	return size;
 }
 
-void ds_CGraphSerialize(struct ss *ss, const struct ds_Dynamics *pipeline)
+void ds_CGraphSerialize(struct SS *ss, const struct ds_Dynamics *pipeline)
 {
 	for (u32 i = 0; i < CG_COLOR_COUNT; ++i)
 	{
@@ -438,7 +438,7 @@ void ds_CGraphSerialize(struct ss *ss, const struct ds_Dynamics *pipeline)
 	}
 }
 
-u32 ds_CGraphTryDeserialize(struct ss *ss, struct ds_Dynamics *pipeline)
+u32 ds_CGraphTryDeserialize(struct SS *ss, struct ds_Dynamics *pipeline)
 {
 	const u64 bit_index = ss->bit_index;
 	memset(&pipeline->cgraph, 0, sizeof(pipeline->cgraph));

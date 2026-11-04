@@ -86,9 +86,9 @@ void 		        BVHFree(struct BVH *tree);
 /* Return the required size when serializing the bvh. */
 u64                 BVHSerializeSize(const struct BVH *bvh);
 /* Serialize the bvh. WARNING: Assumes bvh fits in the stream. */
-void                BVHSerialize(struct ss *ss, const struct BVH *bvh);
+void                BVHSerialize(struct SS *ss, const struct BVH *bvh);
 /* Returns 1 on success and 0 on failure. Part of the bvh is always heap allocated: free it with BVHFree. */
-u32                 BVHTryDeserialize(struct arena *mem, struct ss *ss, struct BVH *bvh, const u32 growable);
+u32                 BVHTryDeserialize(struct arena *mem, struct SS *ss, struct BVH *bvh, const u32 growable);
 /* Derive all internal bounding boxes from the leaves' bounding boxes */
 void                BVHPropagateBoundingBoxesFromLeaves(struct BVH *bvh);
 /* validate (ds_Assert) internal coherence of bvh */

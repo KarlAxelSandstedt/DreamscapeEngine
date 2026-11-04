@@ -59,30 +59,30 @@ u64 BVHSerializeSize(const struct BVH *bvh)
 		+ ds_PoolSerializeSize(bvh->pool);
 }
 
-void BVHSerialize(struct ss *ss, const struct BVH *bvh)
+void BVHSerialize(struct SS *ss, const struct BVH *bvh)
 {
-	ds_Assert(BVHSerializeSize(bvh) <= ss_BytesLeft(ss));
+	ds_Assert(BVHSerializeSize(bvh) <= SSBytesLeft(ss));
 
-	ss_WriteU32Le(ss, bvh->bt.root);
-	ss_WriteU32Le(ss, bvh->bt.count);
+	SSWriteU32Le(ss, bvh->bt.root);
+	SSWriteU32Le(ss, bvh->bt.count);
 	ds_BitSetSerialize(ss, &bvh->leaf_set);
 	ds_BitSetSerialize(ss, &bvh->internal_set);
 	ds_PoolSerialize(ss, bvh->pool);
 }
 
-u32 BVHTryDeserialize(struct arena *mem, struct ss *ss, struct BVH *bvh, const u32 growable)
+u32 BVHTryDeserialize(struct arena *mem, struct SS *ss, struct BVH *bvh, const u32 growable)
 {
 	const u64 bit_index = ss->bit_index;
 	const u64 mem_left = (mem) ? mem->mem_left : 0;
 	*bvh = (struct BVH) { .heap_allocated = !mem };
 	BTFlush(bvh->bt);
-	if (ss_BytesLeft(ss) < 2*sizeof(u32))
+	if (SSBytesLeft(ss) < 2*sizeof(u32))
 	{
 		return 0;
 	}
 
-	bvh->bt.root = ss_ReadU32Le(ss);
-	bvh->bt.count = ss_ReadU32Le(ss);
+	bvh->bt.root = SSReadU32Le(ss);
+	bvh->bt.count = SSReadU32Le(ss);
 	if (!ds_BitSetTryDeserialize(mem, ss, &bvh->leaf_set, growable)
 		|| !ds_BitSetTryDeserialize(mem, ss, &bvh->internal_set, growable)
 		|| !ds_PoolTryDeserialize(mem, ss, bvh->pool, growable))

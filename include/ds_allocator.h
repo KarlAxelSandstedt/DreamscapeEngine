@@ -437,11 +437,11 @@ do                                                                              
 #define ds_CPoolTop( pool ) ((pool).buf[(i32) (pool).count - 1])
 #define ds_CPoolTopAddress( pool ) ((pool).buf + (i32) (pool).count - 1)
 
-struct ss;
+struct SS;
 /* Internal: see ds_CPoolSerialize. */
-void ds_CPoolSerializeInternal(struct ss *ss, const void *buf, const u32 length, const u32 count, const u64 slot_size);
+void ds_CPoolSerializeInternal(struct SS *ss, const void *buf, const u32 length, const u32 count, const u64 slot_size);
 /* Internal: see ds_CPoolTryDeserialize. */
-u32  ds_CPoolTryDeserializeInternal(struct arena *mem, struct ss *ss, void **buf, u32 *length, u32 *count, u32 *growable, u32 *heap_allocated, const u64 slot_size, const u32 alloc_growable);
+u32  ds_CPoolTryDeserializeInternal(struct arena *mem, struct SS *ss, void **buf, u32 *length, u32 *count, u32 *growable, u32 *heap_allocated, const u64 slot_size, const u32 alloc_growable);
 
 #define ds_CPoolSerializeSize( pool ) (2*sizeof(u32) + (u64) (pool).count*sizeof((pool).buf[0]))
 #define ds_CPoolSerialize( ss, pool ) ds_CPoolSerializeInternal((ss), (pool).buf, (pool).length, (pool).count, sizeof((pool).buf[0]))
@@ -555,9 +555,9 @@ u32  ds_PoolAllocInternal(struct arena *mem, u32 *heap_allocated, void **buf, u3
 /* Internal: grow a full growable pool (the cold path of ds_PoolAdd). */
 void ds_PoolGrowInternal(void **buf, u32 *length, const u64 slot_size);
 /* Internal: see ds_PoolSerialize. */
-void ds_PoolSerializeInternal(struct ss *ss, const void *buf, const u32 length, const u32 count, const u32 count_max, const u32 next_free, const u64 slot_size, const u64 pool_slot_offset);
+void ds_PoolSerializeInternal(struct SS *ss, const void *buf, const u32 length, const u32 count, const u32 count_max, const u32 next_free, const u64 slot_size, const u64 pool_slot_offset);
 /* Internal: see ds_PoolTryDeserialize. */
-u32  ds_PoolTryDeserializeInternal(struct arena *mem, struct ss *ss, u32 *heap_allocated, void **buf, u32 *length, u32 *count, u32 *count_max, u32 *next_free, u32 *growable, const u64 slot_size, const u64 pool_slot_offset, const u32 alloc_growable);
+u32  ds_PoolTryDeserializeInternal(struct arena *mem, struct SS *ss, u32 *heap_allocated, void **buf, u32 *length, u32 *count, u32 *count_max, u32 *next_free, u32 *growable, const u64 slot_size, const u64 pool_slot_offset, const u32 alloc_growable);
 
 /* Internal: see ds_PoolAdd, ds_PoolRemove, and the debug checks of ds_PoolIndex (empty in release builds). */
 static ds_ForceInline struct slot ds_PoolAddInternal(void **buf, u32 *length, u32 *count, u32 *count_max, u32 *next_free, const u32 growable, const u64 slot_size, const u64 pool_slot_offset);

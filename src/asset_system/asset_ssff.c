@@ -213,7 +213,7 @@ void SsffBuild(struct arena *mem, const u32 ssff_id)
 			struct ssffSprite *spr = (struct ssffSprite *) (((u8 *) header) + c[i].sprite_offset);
 			spr[s].pixel_offset = (u32) ((u64) sprite_pixel - (u64) header);
 
-			struct ss stream = ss_Buffered(sprite_pixel, c[i].bit_depth*width*height / 8 + 1);	/* the block's bytes */
+			struct SS stream = SSBuffered(sprite_pixel, c[i].bit_depth*width*height / 8 + 1);	/* the block's bytes */
 			
 			for (u32 y = sprite[i][s].y0; y <= sprite[i][s].y1; ++y)
 			{
@@ -234,7 +234,7 @@ void SsffBuild(struct arena *mem, const u32 ssff_id)
 						}
 					}
 					ds_Assert(ci != U32_MAX);	/* the table was built from these pixels */
-					ss_WriteU32Partial(&stream, ci, c[i].bit_depth);
+					SSWriteU32Partial(&stream, ci, c[i].bit_depth);
 				}
 			}
 
@@ -386,12 +386,12 @@ struct ssffTextureReturn SsffTexture(struct arena *mem, const struct ssff_header
 			const u32 sprite_width = sprite[j].x1 - sprite[j].x0 + 1;
 			const u32 sprite_height = sprite[j].y1 - sprite[j].y0 + 1;
 			void *sprite_pixel = (((u8 *) ssff) + sprite[j].pixel_offset);
-			struct ss stream = ss_Buffered(sprite_pixel, c->bit_depth*sprite_width*sprite_height / 8 + 1);	/* the block's bytes */
+			struct SS stream = SSBuffered(sprite_pixel, c->bit_depth*sprite_width*sprite_height / 8 + 1);	/* the block's bytes */
 			for (u32 y = 0; y < sprite_height; ++y)
 			{
 				for (u32 x = 0; x < sprite_width; ++x)
 				{
-					const u32 ci = ss_ReadU32Partial(&stream, c->bit_depth);
+					const u32 ci = SSReadU32Partial(&stream, c->bit_depth);
 					const u32 color = (ci < c->color_count) ? color_table[ci] : 0;	/* corrupt index: transparent */
 					pixel[4*((y_offset + y)*width + (x_offset + x)) + 0] = (u8) (color >> 24);
 					pixel[4*((y_offset + y)*width + (x_offset + x)) + 1] = (u8) (color >> 16);

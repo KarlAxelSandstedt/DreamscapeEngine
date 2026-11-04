@@ -202,11 +202,11 @@ struct test_Output DBVHSerializeTest(struct test_Environment *env)
 
     const u64 size = BVHSerializeSize(&bvh);
     u8 *buf = ArenaPush(env->mem_1, size);
-    struct ss out = ss_Buffered(buf, size);
+    struct SS out = SSBuffered(buf, size);
     BVHSerialize(&out, &bvh);
     TEST_NOT_ZERO(out.bit_index == 8*size);
 
-    struct ss in = ss_Buffered(buf, size);
+    struct SS in = SSBuffered(buf, size);
     struct BVH copy;
     TEST_NOT_ZERO(BVHTryDeserialize(NULL, &in, &copy, GROWABLE));
     TEST_NOT_ZERO(in.bit_index == 8*size);
@@ -240,7 +240,7 @@ struct test_Output DBVHSerializeTest(struct test_Environment *env)
     BVHValidate(&copy);
 
     /* a truncated stream fails and leaves nothing behind */
-    struct ss truncated = ss_Buffered(buf, size / 2);
+    struct SS truncated = SSBuffered(buf, size / 2);
     struct BVH none;
     TEST_NOT_ZERO(!BVHTryDeserialize(NULL, &truncated, &none, GROWABLE));
     TEST_NOT_ZERO(none.bt.root == BT_INDEX_NULL && truncated.bit_index == 0);

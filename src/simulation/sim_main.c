@@ -148,53 +148,53 @@ u64 ds_SimConfigSerializeSize(const struct ds_SimConfig *config)
     return DS_SIM_CONFIG_FIXED_SIZE + ds_DynamicsConfigSerializeSize(&config->dynamics);
 }
 
-void ds_SimConfigSerialize(struct ss *ss, const struct ds_SimConfig *config)
+void ds_SimConfigSerialize(struct SS *ss, const struct ds_SimConfig *config)
 {
     ds_Assert(ss->bit_index % 8 == 0);
-    ds_Assert(ds_SimConfigSerializeSize(config) <= ss_BytesLeft(ss));
+    ds_Assert(ds_SimConfigSerializeSize(config) <= SSBytesLeft(ss));
 
-    ss_WriteU32Le(ss, DS_SIM_CONFIG_VERSION);
+    SSWriteU32Le(ss, DS_SIM_CONFIG_VERSION);
     for (u32 i = 0; i < 4; ++i)
     {
-        ss_WriteU64Le(ss, config->seed[i]);
+        SSWriteU64Le(ss, config->seed[i]);
     }
 
     for (u32 i = 0; i < SIM_SYSTEM_COUNT; ++i)
     {
-        ss_WriteU64Le(ss, config->us_system_tick[i]);
+        SSWriteU64Le(ss, config->us_system_tick[i]);
     }
 
-    ss_WriteF64Le(ss, config->speed);
+    SSWriteF64Le(ss, config->speed);
 
     ds_DynamicsConfigSerialize(ss, &config->dynamics);
 }
 
-u32 ds_SimConfigTryDeserialize(struct ss *ss, struct ds_SimConfig *config)
+u32 ds_SimConfigTryDeserialize(struct SS *ss, struct ds_SimConfig *config)
 {
     const u64 bit_index = ss->bit_index;
     u32 success = 0;
 
-    if (ss->bit_index % 8 != 0 || ss_BytesLeft(ss) < DS_SIM_CONFIG_FIXED_SIZE)
+    if (ss->bit_index % 8 != 0 || SSBytesLeft(ss) < DS_SIM_CONFIG_FIXED_SIZE)
     {
         goto end;
     }
 
-    if (ss_ReadU32Le(ss) != DS_SIM_CONFIG_VERSION)
+    if (SSReadU32Le(ss) != DS_SIM_CONFIG_VERSION)
     {
         goto end;
     }
 
     for (u32 i = 0; i < 4; ++i)
     {
-        config->seed[i] = ss_ReadU64Le(ss);
+        config->seed[i] = SSReadU64Le(ss);
     }
 
     for (u32 i = 0; i < SIM_SYSTEM_COUNT; ++i)
     {
-        config->us_system_tick[i] = ss_ReadU64Le(ss);
+        config->us_system_tick[i] = SSReadU64Le(ss);
     }
 
-    config->speed = ss_ReadF64Le(ss);
+    config->speed = SSReadF64Le(ss);
 
     success = ds_DynamicsConfigTryDeserialize(ss, &config->dynamics) && ds_SimConfigCheck(config);
 
@@ -240,6 +240,7 @@ void ds_SimAlloc(struct arena *mem, struct ds_Sim *sim, const struct ds_SimConfi
     }
 
     ds_CPoolAlloc(NULL, sim->external_cmd_buf, 64, GROWABLE);
+    ds_CPoolAlloc(NULL, sim->cmd_payload_buf, 16, GROWABLE);
 
     sim->dynamics = ds_DynamicsAllocConfig(mem, &config->dynamics, 1000 * config->us_system_tick[SIM_SYSTEM_DYNAMICS], cshape_db, prefab_db, worker_count, worker_frame_size);
     //TODO record mode: open the record and write the config as its head
@@ -252,12 +253,14 @@ void ds_SimDealloc(struct ds_Sim *sim)
 {
     ds_DynamicsFree(&sim->dynamics);
     ds_CPoolDealloc(sim->external_cmd_buf);
+    ds_CPoolDealloc(sim->cmd_payload_buf);
     //TODO record mode: close the record
 }
 
 void ds_SimFlush(struct ds_Sim *sim)
 {
     ds_CPoolFlush(sim->external_cmd_buf);
+    ds_CPoolFlush(sim->cmd_payload_buf);
     ds_DynamicsFlush(&sim->dynamics);
     ds_SimScheduleInit(sim);
     //TODO push the seed command again; record mode: restart the record

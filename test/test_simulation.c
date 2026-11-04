@@ -78,7 +78,7 @@ static struct test_Output SimConfigSerializeTest(struct test_Environment *env)
     for (u32 c = 0; c < 3; ++c)
     {
         const u64 size = ds_SimConfigSerializeSize(&valid[c]);
-        struct ss ss = ss_Alloc(env->mem_1, size + 16);
+        struct SS ss = SSAlloc(env->mem_1, size + 16);
         TEST_NOT_EQUAL(NULL, ss.buf);
 
         ds_SimConfigSerialize(&ss, &valid[c]);
@@ -91,7 +91,7 @@ static struct test_Output SimConfigSerializeTest(struct test_Environment *env)
         TEST_EQUAL(1, SimConfigTestEqual(&valid[c], &read));
 
         /* truncated: one byte short */
-        struct ss truncated = ss_Buffered(ss.buf, size - 1);
+        struct SS truncated = SSBuffered(ss.buf, size - 1);
         read = changed;
         TEST_EQUAL(0, ds_SimConfigTryDeserialize(&truncated, &read));
         TEST_EQUAL(0, truncated.bit_index);
@@ -104,7 +104,7 @@ static struct test_Output SimConfigSerializeTest(struct test_Environment *env)
 
         /* wrong version: the first word */
         ss.bit_index = 0;
-        ss_WriteU32Le(&ss, 0xffffffffu);
+        SSWriteU32Le(&ss, 0xffffffffu);
         ss.bit_index = 0;
         TEST_EQUAL(0, ds_SimConfigTryDeserialize(&ss, &read));
         TEST_EQUAL(0, ss.bit_index);
@@ -128,7 +128,7 @@ static struct test_Output SimConfigSerializeTest(struct test_Environment *env)
     for (u32 i = 0; i < 8; ++i)
     {
         const u64 size = ds_SimConfigSerializeSize(&invalid[i]);
-        struct ss ss = ss_Alloc(env->mem_1, size);
+        struct SS ss = SSAlloc(env->mem_1, size);
         TEST_NOT_EQUAL(NULL, ss.buf);
         ds_SimConfigSerialize(&ss, &invalid[i]);
         ss.bit_index = 0;
@@ -146,7 +146,7 @@ static struct test_Output SimConfigSerializeTest(struct test_Environment *env)
     edge.speed = 0.0;
     {
         const u64 size = ds_SimConfigSerializeSize(&edge);
-        struct ss ss = ss_Alloc(env->mem_1, size);
+        struct SS ss = SSAlloc(env->mem_1, size);
         ds_SimConfigSerialize(&ss, &edge);
         ss.bit_index = 0;
         struct ds_SimConfig read = { 0 };
@@ -157,7 +157,7 @@ static struct test_Output SimConfigSerializeTest(struct test_Environment *env)
     edge.speed = DS_SIM_SPEED_MAX;
     {
         const u64 size = ds_SimConfigSerializeSize(&edge);
-        struct ss ss = ss_Alloc(env->mem_1, size);
+        struct SS ss = SSAlloc(env->mem_1, size);
         ds_SimConfigSerialize(&ss, &edge);
         ss.bit_index = 0;
         struct ds_SimConfig read = { 0 };
@@ -172,8 +172,8 @@ static struct test_Output SimConfigSerializeTest(struct test_Environment *env)
 static u32 DynamicsConfigTestEqual(struct arena *mem, const struct ds_DynamicsConfig *a, const struct ds_DynamicsConfig *b)
 {
     const u64 size = ds_DynamicsConfigSerializeSize(a);
-    struct ss sa = ss_Alloc(mem, size);
-    struct ss sb = ss_Alloc(mem, size);
+    struct SS sa = SSAlloc(mem, size);
+    struct SS sb = SSAlloc(mem, size);
     ds_DynamicsConfigSerialize(&sa, a);
     ds_DynamicsConfigSerialize(&sb, b);
 
@@ -222,7 +222,7 @@ static struct test_Output DynamicsConfigSerializeTest(struct test_Environment *e
     for (u32 c = 0; c < 2; ++c)
     {
         const u64 size = ds_DynamicsConfigSerializeSize(&valid[c]);
-        struct ss ss = ss_Alloc(env->mem_1, size + 16);
+        struct SS ss = SSAlloc(env->mem_1, size + 16);
         TEST_NOT_EQUAL(NULL, ss.buf);
 
         ds_DynamicsConfigSerialize(&ss, &valid[c]);
@@ -234,7 +234,7 @@ static struct test_Output DynamicsConfigSerializeTest(struct test_Environment *e
         TEST_EQUAL(8*size, ss.bit_index);
         TEST_EQUAL(1, DynamicsConfigTestEqual(env->mem_1, &valid[c], &read));
 
-        struct ss truncated = ss_Buffered(ss.buf, size - 1);
+        struct SS truncated = SSBuffered(ss.buf, size - 1);
         read = changed;
         TEST_EQUAL(0, ds_DynamicsConfigTryDeserialize(&truncated, &read));
         TEST_EQUAL(0, truncated.bit_index);
@@ -254,14 +254,14 @@ static struct test_Output DynamicsConfigSerializeTest(struct test_Environment *e
         for (u32 v = 0; v < 3; ++v)
         {
             ss.bit_index = 8*version_offset[v];
-            const u32 version = ss_ReadU32Le(&ss);
+            const u32 version = SSReadU32Le(&ss);
             ss.bit_index = 8*version_offset[v];
-            ss_WriteU32Le(&ss, 0xffffffffu);
+            SSWriteU32Le(&ss, 0xffffffffu);
             ss.bit_index = 0;
             TEST_EQUAL(0, ds_DynamicsConfigTryDeserialize(&ss, &read));
             TEST_EQUAL(0, ss.bit_index);
             ss.bit_index = 8*version_offset[v];
-            ss_WriteU32Le(&ss, version);
+            SSWriteU32Le(&ss, version);
         }
     }
 
@@ -277,7 +277,7 @@ static struct test_Output DynamicsConfigSerializeTest(struct test_Environment *e
 
     const struct ds_DynamicsConfig derived = ds_DynamicsConfigDerive(&out);
     const u64 size = ds_DynamicsConfigSerializeSize(&out);
-    struct ss ss = ss_Alloc(env->mem_1, size);
+    struct SS ss = SSAlloc(env->mem_1, size);
     TEST_NOT_EQUAL(NULL, ss.buf);
     ds_DynamicsConfigSerialize(&ss, &out);
     ss.bit_index = 0;
@@ -304,7 +304,7 @@ static struct test_Output DynamicsConfigSerializeTest(struct test_Environment *e
     draw.point_size = -1.0f;
     draw.color_awake.z = inf;
     const u64 draw_size = ds_DynamicsDrawConfigSerializeSize(&draw);
-    struct ss dss = ss_Alloc(env->mem_1, draw_size);
+    struct SS dss = SSAlloc(env->mem_1, draw_size);
     TEST_NOT_EQUAL(NULL, dss.buf);
     ds_DynamicsDrawConfigSerialize(&dss, &draw);
     TEST_EQUAL(8*draw_size, dss.bit_index);
@@ -320,7 +320,7 @@ static struct test_Output DynamicsConfigSerializeTest(struct test_Environment *e
     TEST_TRUE(draw_read.point_size == 0.0f);
     TEST_TRUE(draw_read.color_awake.z == 1.0f);
     dss.bit_index = 0;
-    ss_WriteU32Le(&dss, 0xffffffffu);
+    SSWriteU32Le(&dss, 0xffffffffu);
     dss.bit_index = 0;
     TEST_EQUAL(0, ds_DynamicsDrawConfigTryDeserialize(&dss, &draw_read));
     TEST_EQUAL(0, dss.bit_index);
@@ -410,10 +410,123 @@ static struct test_Output SimTickTest(struct test_Environment *env)
 	return output;
 }
 
+/*
+ * Payloads round trip on hand-written 13-bit pseudo commands (the command serializers are not in yet): the serialized
+ * form is dst, cmd_count, the command bits and the bytes holding them. TryDeserializeAndAlias views the stream's bytes and
+ * fails on a short stream and nonzero bits past the last command, leaving the stream as before and the payload
+ * empty; Append copies a view bit-exact (mid-byte included) into a payload with room, on the heap or an arena, and
+ * refuses another dst or a payload without room.
+ */
+static struct test_Output SimCmdPayloadSerializeTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    const u64 cmd_bits = 13;
+    const u32 cmd_count = 3;
+    const u64 bits = cmd_count * cmd_bits;     /* 39: ends mid-byte */
+    const u64 bytes = (bits + 7) / 8;
+
+    struct ds_SimCmdPayload payload = ds_SimCmdPayloadAlloc(NULL, ds_SimIdInit(3, 2), 64);
+    for (u32 i = 0; i < cmd_count; ++i)
+    {
+        SSWriteU64Partial(&payload.stream, i + 1, cmd_bits);
+    }
+    payload.cmd_count = cmd_count;
+
+    const u64 size = ds_SimCmdPayloadSerializeSize(&payload);
+    TEST_EQUAL(16 + bytes, size);
+    struct SS ss = SSAlloc(NULL, size);
+    ds_SimCmdPayloadSerialize(&ss, &payload);
+    TEST_EQUAL(8*size, ss.bit_index);
+    TEST_EQUAL(0, ss.buf[size - 1] >> (bits & 7));     /* the unused bits of the last byte are zero */
+
+    /* a view: whatever the payload held is replaced, the bits read back in place */
+    ss.bit_index = 0;
+    struct ds_SimCmdPayload view = ds_SimCmdPayloadEmpty(ds_SimIdInit(4, 2));
+    TEST_EQUAL(1, ds_SimCmdPayloadTryDeserializeAndAlias(&ss, &view));
+    TEST_EQUAL(8*size, ss.bit_index);
+    TEST_TRUE(ds_SimIdEqual(payload.dst, view.dst) && view.stream.buf == ss.buf + 16 && !view.stream.heap_allocated);
+    TEST_EQUAL(cmd_count, view.cmd_count);
+    TEST_TRUE(view.stream.bit_index == bits && view.stream.bit_count == bits);
+    struct SS back = SSBuffered(view.stream.buf, bytes);
+    for (u32 i = 0; i < cmd_count; ++i)
+    {
+        TEST_EQUAL(i + 1, SSReadU64Partial(&back, cmd_bits));
+    }
+
+    /* short streams: the header cut, the bytes cut; nonzero bits past the last command */
+    struct ds_SimCmdPayload bad = ds_SimCmdPayloadEmpty(payload.dst);
+    struct SS truncated = SSBuffered(ss.buf, 15);
+    TEST_EQUAL(0, ds_SimCmdPayloadTryDeserializeAndAlias(&truncated, &bad));
+    TEST_EQUAL(0, truncated.bit_index);
+    truncated = SSBuffered(ss.buf, size - 1);
+    TEST_EQUAL(0, ds_SimCmdPayloadTryDeserializeAndAlias(&truncated, &bad));
+    TEST_EQUAL(0, truncated.bit_index);
+    ss.buf[size - 1] |= 0x80;
+    ss.bit_index = 0;
+    TEST_EQUAL(0, ds_SimCmdPayloadTryDeserializeAndAlias(&ss, &bad));
+    TEST_TRUE(ss.bit_index == 0 && bad.stream.buf == NULL && bad.cmd_count == 0);
+    ss.buf[size - 1] &= 0x7f;
+
+    /* the view appended twice into a heap payload sized for both: six commands, the second three mid-byte */
+    struct ds_SimCmdPayload fused = ds_SimCmdPayloadAlloc(NULL, payload.dst, 2*bytes);
+    TEST_EQUAL(1, ds_SimCmdPayloadAppend(&fused, &view));
+    TEST_EQUAL(1, ds_SimCmdPayloadAppend(&fused, &view));
+    TEST_EQUAL(2*cmd_count, fused.cmd_count);
+    TEST_EQUAL(2*bits, fused.stream.bit_index);
+    back = SSBuffered(fused.stream.buf, (2*bits + 7) / 8);
+    for (u32 i = 0; i < 2*cmd_count; ++i)
+    {
+        TEST_EQUAL(i % cmd_count + 1, SSReadU64Partial(&back, cmd_bits));
+    }
+    TEST_EQUAL(0, ds_SimCmdPayloadAppend(&fused, &view));      /* no room */
+    struct ds_SimCmdPayload other = view;
+    other.dst = ds_SimIdInit(4, 2);
+    struct ds_SimCmdPayload roomy = ds_SimCmdPayloadAlloc(NULL, payload.dst, 2*bytes);
+    TEST_EQUAL(0, ds_SimCmdPayloadAppend(&roomy, &other));     /* another dst */
+    TEST_TRUE(roomy.stream.bit_index == 0 && roomy.cmd_count == 0);
+    struct ds_SimCmdPayload adopt = ds_SimCmdPayloadAlloc(NULL, ds_SimIdNull(), bytes);
+    TEST_EQUAL(1, ds_SimCmdPayloadAppend(&adopt, &other));
+    TEST_TRUE(ds_SimIdEqual(other.dst, adopt.dst));
+    ds_SimCmdPayloadDealloc(&adopt);
+    ds_SimCmdPayloadDealloc(&roomy);
+    ds_SimCmdPayloadDealloc(&fused);
+    TEST_TRUE(fused.stream.buf == NULL && fused.cmd_count == 0);
+
+    /* on an arena sized for both; on one with room for one payload the second append and a fresh payload are refused */
+    struct arena arena = ArenaAlloc(NULL, 4*size);
+    fused = ds_SimCmdPayloadAlloc(&arena, payload.dst, 2*bytes);
+    TEST_EQUAL(1, ds_SimCmdPayloadAppend(&fused, &view));
+    TEST_EQUAL(1, ds_SimCmdPayloadAppend(&fused, &view));
+    TEST_EQUAL(2*bits, fused.stream.bit_index);
+    back = SSBuffered(fused.stream.buf, (2*bits + 7) / 8);
+    for (u32 i = 0; i < 2*cmd_count; ++i)
+    {
+        TEST_EQUAL(i % cmd_count + 1, SSReadU64Partial(&back, cmd_bits));
+    }
+    ArenaFree(&arena);
+
+    struct arena tight = ArenaAlloc(NULL, bytes);
+    struct ds_SimCmdPayload one = ds_SimCmdPayloadAlloc(&tight, payload.dst, bytes);
+    TEST_TRUE(tight.mem_left == 0 && one.stream.buf != NULL);
+    TEST_EQUAL(1, ds_SimCmdPayloadAppend(&one, &view));
+    TEST_EQUAL(0, ds_SimCmdPayloadAppend(&one, &view));
+    TEST_TRUE(one.stream.bit_index == bits && one.cmd_count == cmd_count);
+    struct ds_SimCmdPayload none = ds_SimCmdPayloadAlloc(&tight, payload.dst, bytes);
+    TEST_TRUE(none.stream.buf == NULL);
+    TEST_EQUAL(0, ds_SimCmdPayloadAppend(&none, &view));
+    ArenaFree(&tight);
+
+    SSDealloc(&ss);
+    ds_SimCmdPayloadDealloc(&payload);
+	return output;
+}
+
 static struct test_Output (*simulation_tests[])(struct test_Environment *) =
 {
     SimConfigSerializeTest,
     DynamicsConfigSerializeTest,
+    SimCmdPayloadSerializeTest,
     SimTickTest,
 };
 

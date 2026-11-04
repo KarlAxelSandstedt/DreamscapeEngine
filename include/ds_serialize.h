@@ -20,13 +20,13 @@
 /*
 ds_serialize.h
 ==============
-Serial streams (struct ss): a buffer read or written front to back, one value at a time, at a bit position
+Serial streams (struct SS): a buffer read or written front to back, one value at a time, at a bit position
 (bit_index) that each call advances.
 
 Two kinds of access:
-    Bytes       ss_Read/Write{8,16,32,64}{Le,Be}[N]: whole values at a byte boundary (asserted), in the
+    Bytes       SSRead/Write{8,16,32,64}{Le,Be}[N]: whole values at a byte boundary (asserted), in the
                 stream's byte order Le or Be, independent of the machine's. N forms move an array.
-    Partial     ss_Read/Write{U,I}{8,16,32,64}Partial: a value of bit_count (1-64) bits at any bit position.
+    Partial     SSRead/Write{U,I}{8,16,32,64}Partial: a value of bit_count (1-64) bits at any bit position.
 Both kinds may be mixed in one stream; a byte access after partial ones needs bit_index % 8 == 0.
 
 Bit order: 
@@ -63,9 +63,17 @@ extern "C" {
 
 /*************************** stream ***************************/
 
-struct ss
+/* A constant view of bit_count bits of a stream's buf from bit_offset (not owned); SSSubstreamFromView streams it. */
+struct SSView
 {
-	u32                 heap_allocated;	/* buf is a ds_Alloc block (ss_Alloc without arena) */
+	u8 *		buf;
+	u64 		bit_offset;
+	u64 		bit_count;
+};
+
+struct SS
+{
+	u32                 heap_allocated;	/* buf is a ds_Alloc block (SSAlloc without arena) */
 	u64 		        bit_index;	/* next bit to read or write, counted from buf[0] bit 7 */
 	u64 		        bit_count;	/* stream size in bits: 8 * bufsize */
 	u8 *		        buf;
@@ -77,15 +85,20 @@ struct ss
  * cache line aligned). The buffer is uninitialized and bit_index = 0. On failure (also bufsize = 0 on an
  * arena), we return stream = { 0 }
  */
-static ds_ForceInline struct ss   ss_Alloc(struct arena *mem, const u64 bufsize);
+static ds_ForceInline struct SS   SSAlloc(struct arena *mem, const u64 bufsize);
 /* Initiates a stream that aliases the buf of bufsize bytes (in bytes, not bits); bit_index = 0, buf not owned */
-static ds_ForceInline struct ss   ss_Buffered(void *buf, const u64 bufsize);
+static ds_ForceInline struct SS   SSBuffered(void *buf, const u64 bufsize);
 /* free stream resources (the ds_Alloc buffer of a heap stream); no-op for arena and buffered streams; buf dangles */
-static ds_ForceInline void 	    ss_Free(struct ss *ss);
+static ds_ForceInline void 	    SSDealloc(struct SS *ss);
 /* return number of whole bytes left: (bit_count - bit_index) / 8, rounded down */
-static ds_ForceInline u64		    ss_BytesLeft(const struct ss *ss);
+static ds_ForceInline u64		    SSBytesLeft(const struct SS *ss);
 /* return number of bits left */
-static ds_ForceInline u64			ss_BitsLeft(const struct ss *ss);
+static ds_ForceInline u64			SSBitsLeft(const struct SS *ss);
+/* Initiates view over bit_count bits of ss's buf from bit_offset. Returns 0 if the range leaves ss (view = { 0 }). */
+static ds_ForceInline u32         SSTryView(struct SSView *view, const struct SS *ss, const u64 bit_offset, const u64 bit_count);
+/* Return the viewed stream: same buf, bit_index at bit_offset, bit_count at the view's end (SSBitsLeft == bit_count). */
+static ds_ForceInline struct SS   SSSubstreamFromView(const struct SSView *view);
+
 
 /*************************** byte access ***************************/
 
@@ -93,65 +106,65 @@ static ds_ForceInline u64			ss_BitsLeft(const struct ss *ss);
  * read aligned byte(s): return the next 8/16/32/64 bits as a value stored in the stream's byte order (Le/Be),
  * and advance bit_index by the size. bit_index % 8 == 0 and the value fits in the stream (both asserted).
  */
-static ds_ForceInline b8 	    ss_Read8(struct ss *ss);
-static ds_ForceInline b16 	ss_Read16Le(struct ss *ss);
-static ds_ForceInline b16 	ss_Read16Be(struct ss *ss);
-static ds_ForceInline b32 	ss_Read32Le(struct ss *ss);
-static ds_ForceInline b32 	ss_Read32Be(struct ss *ss);
-static ds_ForceInline b64 	ss_Read64Le(struct ss *ss);
-static ds_ForceInline b64 	ss_Read64Be(struct ss *ss);
+static ds_ForceInline b8 	    SSRead8(struct SS *ss);
+static ds_ForceInline b16 	SSRead16Le(struct SS *ss);
+static ds_ForceInline b16 	SSRead16Be(struct SS *ss);
+static ds_ForceInline b32 	SSRead32Le(struct SS *ss);
+static ds_ForceInline b32 	SSRead32Be(struct SS *ss);
+static ds_ForceInline b64 	SSRead64Le(struct SS *ss);
+static ds_ForceInline b64 	SSRead64Be(struct SS *ss);
 
 /*
  * write aligned byte(s): store val in the stream's byte order (Le/Be) at bit_index and advance it by the size.
  * bit_index % 8 == 0 and the value fits in the stream (both asserted).
  */
-static ds_ForceInline void 	ss_Write8(struct ss *ss, const b8 val);
-static ds_ForceInline void 	ss_Write16Le(struct ss *ss, const b16 val);
-static ds_ForceInline void 	ss_Write16Be(struct ss *ss, const b16 val);
-static ds_ForceInline void 	ss_Write32Le(struct ss *ss, const b32 val);
-static ds_ForceInline void 	ss_Write32Be(struct ss *ss, const b32 val);
-static ds_ForceInline void 	ss_Write64Le(struct ss *ss, const b64 val);
-static ds_ForceInline void 	ss_Write64Be(struct ss *ss, const b64 val);
+static ds_ForceInline void 	SSWrite8(struct SS *ss, const b8 val);
+static ds_ForceInline void 	SSWrite16Le(struct SS *ss, const b16 val);
+static ds_ForceInline void 	SSWrite16Be(struct SS *ss, const b16 val);
+static ds_ForceInline void 	SSWrite32Le(struct SS *ss, const b32 val);
+static ds_ForceInline void 	SSWrite32Be(struct SS *ss, const b32 val);
+static ds_ForceInline void 	SSWrite64Le(struct SS *ss, const b64 val);
+static ds_ForceInline void 	SSWrite64Be(struct SS *ss, const b64 val);
 
 /* return the next value as u (U8: 8 bits, no byte order), i or f (F: 32/64 only) */
-//#define ss_Read{U,I}8(ss)
-//#define ss_Read{U,I,F}{16,32,64}{Le,Be}(ss)
+//#define SSRead{U,I}8(ss)
+//#define SSRead{U,I,F}{16,32,64}{Le,Be}(ss)
 /* write val as u (U8: 8 bits, no byte order), i or f (F: 32/64 only) */
-//#define ss_Write{U,I}8(ss, val)
-//#define ss_Write{U,I,F}{16,32,64}{Le,Be}(ss, val)
+//#define SSWrite{U,I}8(ss, val)
+//#define SSWrite{U,I,F}{16,32,64}{Le,Be}(ss, val)
 
 /*************************** byte array access ***************************/
 
 /*
- * read aligned byte(s): read len values into buf[0..len-1] as ss_Read8/16/32/64{Le,Be} would one by one.
+ * read aligned byte(s): read len values into buf[0..len-1] as SSRead8/16/32/64{Le,Be} would one by one.
  * bit_index % 8 == 0 and all len values fit in the stream (both asserted).
  */
-static ds_ForceInline void	ss_Read8N(struct ss *ss, b8 *buf, const u64 len);
-static ds_ForceInline void 	ss_Read16LeN(struct ss *ss, b16 *buf, const u64 len);
-static ds_ForceInline void 	ss_Read16BeN(struct ss *ss, b16 *buf, const u64 len);
-static ds_ForceInline void 	ss_Read32LeN(struct ss *ss, b32 *buf, const u64 len);
-static ds_ForceInline void 	ss_Read32BeN(struct ss *ss, b32 *buf, const u64 len);
-static ds_ForceInline void 	ss_Read64LeN(struct ss *ss, b64 *buf, const u64 len);
-static ds_ForceInline void	ss_Read64BeN(struct ss *ss, b64 *buf, const u64 len);
+static ds_ForceInline void	SSRead8N(struct SS *ss, b8 *buf, const u64 len);
+static ds_ForceInline void 	SSRead16LeN(struct SS *ss, b16 *buf, const u64 len);
+static ds_ForceInline void 	SSRead16BeN(struct SS *ss, b16 *buf, const u64 len);
+static ds_ForceInline void 	SSRead32LeN(struct SS *ss, b32 *buf, const u64 len);
+static ds_ForceInline void 	SSRead32BeN(struct SS *ss, b32 *buf, const u64 len);
+static ds_ForceInline void 	SSRead64LeN(struct SS *ss, b64 *buf, const u64 len);
+static ds_ForceInline void	SSRead64BeN(struct SS *ss, b64 *buf, const u64 len);
 
 /*
- * write aligned byte(s): write buf[0..len-1] as ss_Write8/16/32/64{Le,Be} would one by one.
+ * write aligned byte(s): write buf[0..len-1] as SSWrite8/16/32/64{Le,Be} would one by one.
  * bit_index % 8 == 0 and all len values fit in the stream (both asserted).
  */
-static ds_ForceInline void 	ss_Write8N(struct ss *ss, const b8 *buf, const u64 len);
-static ds_ForceInline void 	ss_Write16LeN(struct ss *ss, const b16 *buf, const u64 len);
-static ds_ForceInline void 	ss_Write16BeN(struct ss *ss, const b16 *buf, const u64 len);
-static ds_ForceInline void 	ss_Write32LeN(struct ss *ss, const b32 *buf, const u64 len);
-static ds_ForceInline void 	ss_Write32BeN(struct ss *ss, const b32 *buf, const u64 len);
-static ds_ForceInline void 	ss_Write64LeN(struct ss *ss, const b64 *buf, const u64 len);
-static ds_ForceInline void 	ss_Write64BeN(struct ss *ss, const b64 *buf, const u64 len);
+static ds_ForceInline void 	SSWrite8N(struct SS *ss, const b8 *buf, const u64 len);
+static ds_ForceInline void 	SSWrite16LeN(struct SS *ss, const b16 *buf, const u64 len);
+static ds_ForceInline void 	SSWrite16BeN(struct SS *ss, const b16 *buf, const u64 len);
+static ds_ForceInline void 	SSWrite32LeN(struct SS *ss, const b32 *buf, const u64 len);
+static ds_ForceInline void 	SSWrite32BeN(struct SS *ss, const b32 *buf, const u64 len);
+static ds_ForceInline void 	SSWrite64LeN(struct SS *ss, const b64 *buf, const u64 len);
+static ds_ForceInline void 	SSWrite64BeN(struct SS *ss, const b64 *buf, const u64 len);
 
 /* read len u/i/f values into buf (cast to the bN array) */
-//#define ss_Read{U,I}8N(ss, buf, len)
-//#define ss_Read{U,I,F}{16,32,64}{Le,Be}N(ss, buf, len)
+//#define SSRead{U,I}8N(ss, buf, len)
+//#define SSRead{U,I,F}{16,32,64}{Le,Be}N(ss, buf, len)
 /* write len u/i/f values from buf */
-//#define ss_Write{U,I}8N(ss, buf, len)
-//#define ss_Write{U,I,F}{16,32,64}{Le,Be}N(ss, buf, len)
+//#define SSWrite{U,I}8N(ss, buf, len)
+//#define SSWrite{U,I,F}{16,32,64}{Le,Be}N(ss, buf, len)
 
 /*************************** partial access ***************************/
 
@@ -161,31 +174,31 @@ static ds_ForceInline void 	ss_Write64BeN(struct ss *ss, const b64 *buf, const u
  */
 
 /* return the next bit_count bits as an unsigned value (bits above bit_count are 0) */
-static ds_ForceInline u64	ss_ReadU64Partial(struct ss *ss, const u64 bit_count);
+static ds_ForceInline u64	SSReadU64Partial(struct SS *ss, const u64 bit_count);
 /*
  * write the low bit_count bits of val (higher bits are dropped) and zero the rest of the 8 bytes from the byte
  * holding bit_index, within the buffer. The bits below bit_index in its byte come from ss->acc, which only
  * partial writes maintain: a partial write after reads or byte writes on the stream must start at a byte
  * boundary (writes go front to back anyway)
  */
-static ds_ForceInline void	ss_WriteU64Partial(struct ss *ss, const u64 val, const u64 bit_count);
+static ds_ForceInline void	SSWriteU64Partial(struct SS *ss, const u64 val, const u64 bit_count);
 /*
  * write val as a bit_count-bit two's complement integer (bit bit_count-1 is the sign). val must lie in
  * [-2^(bit_count-1), 2^(bit_count-1) - 1] (not checked; outside, the sign is kept and the rest truncated)
  */
-static ds_ForceInline void	ss_WriteI64Partial(struct ss *ss, const i64 val, const u64 bit_count);
+static ds_ForceInline void	SSWriteI64Partial(struct SS *ss, const i64 val, const u64 bit_count);
 /* return the next bit_count bits as a two's complement integer, sign extended to 64 bits */
-static ds_ForceInline i64	ss_ReadI64Partial(struct ss *ss, const u64 bit_count);
+static ds_ForceInline i64	SSReadI64Partial(struct SS *ss, const u64 bit_count);
 
 /* the 64-bit partial functions under narrower names; the reads cast the result */
-//#define ss_Write{U,I}{8,16,32}Partial(ss, val, bit_count)
-//#define ss_Read{U,I}{8,16,32}Partial(ss, bit_count)
+//#define SSWrite{U,I}{8,16,32}Partial(ss, val, bit_count)
+//#define SSRead{U,I}{8,16,32}Partial(ss, bit_count)
 
 /*************************** stream: inline definitions ***************************/
 
-static ds_ForceInline struct ss ss_Alloc(struct arena *mem, const u64 bufsize)
+static ds_ForceInline struct SS SSAlloc(struct arena *mem, const u64 bufsize)
 {
-	struct ss ss = { 0 };
+	struct SS ss = { 0 };
 
 	ss.buf = (mem)
 		? ArenaPush(mem, bufsize)
@@ -200,7 +213,7 @@ static ds_ForceInline struct ss ss_Alloc(struct arena *mem, const u64 bufsize)
 	return ss;
 }
 
-static ds_ForceInline void ss_Free(struct ss *ss)
+static ds_ForceInline void SSDealloc(struct SS *ss)
 {
 	if (ss->heap_allocated)
 	{
@@ -209,9 +222,9 @@ static ds_ForceInline void ss_Free(struct ss *ss)
 	}
 }
 
-static ds_ForceInline struct ss ss_Buffered(void *buf, const u64 bufsize)
+static ds_ForceInline struct SS SSBuffered(void *buf, const u64 bufsize)
 {
-	struct ss ss =
+	struct SS ss =
 	{
 		.bit_count = bufsize * 8,
 		.bit_index = 0,
@@ -221,12 +234,35 @@ static ds_ForceInline struct ss ss_Buffered(void *buf, const u64 bufsize)
 	return ss;
 }
 
-static ds_ForceInline u64 ss_BytesLeft(const struct ss *ss)
+static ds_ForceInline u32 SSTryView(struct SSView *view, const struct SS *ss, const u64 bit_offset, const u64 bit_count)
+{
+	if (bit_offset + bit_count > ss->bit_count || bit_offset + bit_count < bit_offset)
+	{
+		*view = (struct SSView) { 0 };
+		return 0;
+	}
+
+	*view = (struct SSView) { .buf = ss->buf, .bit_offset = bit_offset, .bit_count = bit_count };
+	return 1;
+}
+
+static ds_ForceInline struct SS SSSubstreamFromView(const struct SSView *view)
+{
+	struct SS ss =
+	{
+		.bit_index = view->bit_offset,
+		.bit_count = view->bit_offset + view->bit_count,
+		.buf = view->buf,
+	};
+	return ss;
+}
+
+static ds_ForceInline u64 SSBytesLeft(const struct SS *ss)
 {
 	return (ss->bit_count - ss->bit_index) >> 3;
 }
 
-static ds_ForceInline u64 ss_BitsLeft(const struct ss *ss)
+static ds_ForceInline u64 SSBitsLeft(const struct SS *ss)
 {
 	return ss->bit_count - ss->bit_index;
 }
@@ -296,7 +332,7 @@ static ds_ForceInline b64 EndianShift64(const b64 le)
 #define		BeToNa64(val)	(val)
 #endif
 
-static ds_ForceInline b8 ss_Read8(struct ss *ss)
+static ds_ForceInline b8 SSRead8(struct SS *ss)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert(ss->bit_index + 8 <= ss->bit_count);
@@ -307,7 +343,7 @@ static ds_ForceInline b8 ss_Read8(struct ss *ss)
 	return val;
 }
 
-static ds_ForceInline void ss_Write8(struct ss *ss, const b8 val)
+static ds_ForceInline void SSWrite8(struct SS *ss, const b8 val)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert(ss->bit_index + 8 <= ss->bit_count);
@@ -317,7 +353,7 @@ static ds_ForceInline void ss_Write8(struct ss *ss, const b8 val)
 	*((b8 *) (ss->buf + offset)) = val;
 }
 
-static ds_ForceInline b16 ss_Read16Le(struct ss *ss)
+static ds_ForceInline b16 SSRead16Le(struct SS *ss)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 16) <= ss->bit_count);
@@ -330,7 +366,7 @@ static ds_ForceInline b16 ss_Read16Le(struct ss *ss)
 	return val;
 }
 
-static ds_ForceInline void ss_Write16Le(struct ss *ss, const b16 val)
+static ds_ForceInline void SSWrite16Le(struct SS *ss, const b16 val)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 16) <= ss->bit_count);
@@ -341,7 +377,7 @@ static ds_ForceInline void ss_Write16Le(struct ss *ss, const b16 val)
 	memcpy(ss->buf + offset, &stored, sizeof(stored));
 }
 
-static ds_ForceInline b16 ss_Read16Be(struct ss *ss)
+static ds_ForceInline b16 SSRead16Be(struct SS *ss)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 16) <= ss->bit_count);
@@ -354,7 +390,7 @@ static ds_ForceInline b16 ss_Read16Be(struct ss *ss)
 	return val;
 }
 
-static ds_ForceInline void ss_Write16Be(struct ss *ss, const b16 val)
+static ds_ForceInline void SSWrite16Be(struct SS *ss, const b16 val)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 16) <= ss->bit_count);
@@ -365,7 +401,7 @@ static ds_ForceInline void ss_Write16Be(struct ss *ss, const b16 val)
 	memcpy(ss->buf + offset, &stored, sizeof(stored));
 }
 
-static ds_ForceInline b32 ss_Read32Le(struct ss *ss)
+static ds_ForceInline b32 SSRead32Le(struct SS *ss)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 32) <= ss->bit_count);
@@ -378,7 +414,7 @@ static ds_ForceInline b32 ss_Read32Le(struct ss *ss)
 	return val;
 }
 
-static ds_ForceInline void ss_Write32Le(struct ss *ss, const b32 val)
+static ds_ForceInline void SSWrite32Le(struct SS *ss, const b32 val)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 32) <= ss->bit_count);
@@ -389,7 +425,7 @@ static ds_ForceInline void ss_Write32Le(struct ss *ss, const b32 val)
 	memcpy(ss->buf + offset, &stored, sizeof(stored));
 }
 
-static ds_ForceInline b32 ss_Read32Be(struct ss *ss)
+static ds_ForceInline b32 SSRead32Be(struct SS *ss)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 32) <= ss->bit_count);
@@ -402,7 +438,7 @@ static ds_ForceInline b32 ss_Read32Be(struct ss *ss)
 	return val;
 }
 
-static ds_ForceInline void ss_Write32Be(struct ss *ss, const b32 val)
+static ds_ForceInline void SSWrite32Be(struct SS *ss, const b32 val)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 32) <= ss->bit_count);
@@ -413,7 +449,7 @@ static ds_ForceInline void ss_Write32Be(struct ss *ss, const b32 val)
 	memcpy(ss->buf + offset, &stored, sizeof(stored));
 }
 
-static ds_ForceInline b64 ss_Read64Le(struct ss *ss)
+static ds_ForceInline b64 SSRead64Le(struct SS *ss)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 64) <= ss->bit_count);
@@ -426,7 +462,7 @@ static ds_ForceInline b64 ss_Read64Le(struct ss *ss)
 	return val;
 }
 
-static ds_ForceInline void ss_Write64Le(struct ss *ss, const b64 val)
+static ds_ForceInline void SSWrite64Le(struct SS *ss, const b64 val)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 64) <= ss->bit_count);
@@ -437,7 +473,7 @@ static ds_ForceInline void ss_Write64Le(struct ss *ss, const b64 val)
 	memcpy(ss->buf + offset, &stored, sizeof(stored));
 }
 
-static ds_ForceInline b64 ss_Read64Be(struct ss *ss)
+static ds_ForceInline b64 SSRead64Be(struct SS *ss)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 64) <= ss->bit_count);
@@ -450,7 +486,7 @@ static ds_ForceInline b64 ss_Read64Be(struct ss *ss)
 	return val;
 }
 
-static ds_ForceInline void ss_Write64Be(struct ss *ss, const b64 val)
+static ds_ForceInline void SSWrite64Be(struct SS *ss, const b64 val)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 64) <= ss->bit_count);
@@ -463,7 +499,7 @@ static ds_ForceInline void ss_Write64Be(struct ss *ss, const b64 val)
 
 /*************************** byte array access: inline definitions ***************************/
 
-static ds_ForceInline void ss_Read8N(struct ss *ss, b8 *buf, const u64 len)
+static ds_ForceInline void SSRead8N(struct SS *ss, b8 *buf, const u64 len)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 8*len) <= ss->bit_count);
@@ -477,7 +513,7 @@ static ds_ForceInline void ss_Read8N(struct ss *ss, b8 *buf, const u64 len)
 	}
 }
 
-static ds_ForceInline void ss_Write8N(struct ss *ss, const b8 *buf, const u64 len)
+static ds_ForceInline void SSWrite8N(struct SS *ss, const b8 *buf, const u64 len)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 8*len) <= ss->bit_count);
@@ -491,7 +527,7 @@ static ds_ForceInline void ss_Write8N(struct ss *ss, const b8 *buf, const u64 le
 	}
 }
 
-static ds_ForceInline void ss_Read16LeN(struct ss *ss, b16 *buf, const u64 len)
+static ds_ForceInline void SSRead16LeN(struct SS *ss, b16 *buf, const u64 len)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 16*len) <= ss->bit_count);
@@ -507,7 +543,7 @@ static ds_ForceInline void ss_Read16LeN(struct ss *ss, b16 *buf, const u64 len)
 	}
 }
 
-static ds_ForceInline void ss_Write16LeN(struct ss *ss, const b16 *buf, const u64 len)
+static ds_ForceInline void SSWrite16LeN(struct SS *ss, const b16 *buf, const u64 len)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 16*len) <= ss->bit_count);
@@ -522,7 +558,7 @@ static ds_ForceInline void ss_Write16LeN(struct ss *ss, const b16 *buf, const u6
 	}
 }
 
-static ds_ForceInline void ss_Read16BeN(struct ss *ss, b16 *buf, const u64 len)
+static ds_ForceInline void SSRead16BeN(struct SS *ss, b16 *buf, const u64 len)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 16*len) <= ss->bit_count);
@@ -538,7 +574,7 @@ static ds_ForceInline void ss_Read16BeN(struct ss *ss, b16 *buf, const u64 len)
 	}
 }
 
-static ds_ForceInline void ss_Write16BeN(struct ss *ss, const b16 *buf, const u64 len)
+static ds_ForceInline void SSWrite16BeN(struct SS *ss, const b16 *buf, const u64 len)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 16*len) <= ss->bit_count);
@@ -553,7 +589,7 @@ static ds_ForceInline void ss_Write16BeN(struct ss *ss, const b16 *buf, const u6
 	}
 }
 
-static ds_ForceInline void ss_Read32LeN(struct ss *ss, b32 *buf, const u64 len)
+static ds_ForceInline void SSRead32LeN(struct SS *ss, b32 *buf, const u64 len)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 32*len) <= ss->bit_count);
@@ -569,7 +605,7 @@ static ds_ForceInline void ss_Read32LeN(struct ss *ss, b32 *buf, const u64 len)
 	}
 }
 
-static ds_ForceInline void ss_Write32LeN(struct ss *ss, const b32 *buf, const u64 len)
+static ds_ForceInline void SSWrite32LeN(struct SS *ss, const b32 *buf, const u64 len)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 32*len) <= ss->bit_count);
@@ -584,7 +620,7 @@ static ds_ForceInline void ss_Write32LeN(struct ss *ss, const b32 *buf, const u6
 	}
 }
 
-static ds_ForceInline void ss_Read32BeN(struct ss *ss, b32 *buf, const u64 len)
+static ds_ForceInline void SSRead32BeN(struct SS *ss, b32 *buf, const u64 len)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 32*len) <= ss->bit_count);
@@ -600,7 +636,7 @@ static ds_ForceInline void ss_Read32BeN(struct ss *ss, b32 *buf, const u64 len)
 	}
 }
 
-static ds_ForceInline void ss_Write32BeN(struct ss *ss, const b32 *buf, const u64 len)
+static ds_ForceInline void SSWrite32BeN(struct SS *ss, const b32 *buf, const u64 len)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 32*len) <= ss->bit_count);
@@ -615,7 +651,7 @@ static ds_ForceInline void ss_Write32BeN(struct ss *ss, const b32 *buf, const u6
 	}
 }
 
-static ds_ForceInline void ss_Read64LeN(struct ss *ss, b64 *buf, const u64 len)
+static ds_ForceInline void SSRead64LeN(struct SS *ss, b64 *buf, const u64 len)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 64*len) <= ss->bit_count);
@@ -631,7 +667,7 @@ static ds_ForceInline void ss_Read64LeN(struct ss *ss, b64 *buf, const u64 len)
 	}
 }
 
-static ds_ForceInline void ss_Write64LeN(struct ss *ss, const b64 *buf, const u64 len)
+static ds_ForceInline void SSWrite64LeN(struct SS *ss, const b64 *buf, const u64 len)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 64*len) <= ss->bit_count);
@@ -646,7 +682,7 @@ static ds_ForceInline void ss_Write64LeN(struct ss *ss, const b64 *buf, const u6
 	}
 }
 
-static ds_ForceInline void ss_Read64BeN(struct ss *ss, b64 *buf, const u64 len)
+static ds_ForceInline void SSRead64BeN(struct SS *ss, b64 *buf, const u64 len)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 64*len) <= ss->bit_count);
@@ -662,7 +698,7 @@ static ds_ForceInline void ss_Read64BeN(struct ss *ss, b64 *buf, const u64 len)
 	}
 }
 
-static ds_ForceInline void ss_Write64BeN(struct ss *ss, const b64 *buf, const u64 len)
+static ds_ForceInline void SSWrite64BeN(struct SS *ss, const b64 *buf, const u64 len)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 64*len) <= ss->bit_count);
@@ -680,7 +716,7 @@ static ds_ForceInline void ss_Write64BeN(struct ss *ss, const b64 *buf, const u6
 /*************************** partial access: inline definitions ***************************/
 
 /* the low bit_count bits: a load instead of a shift by a variable count and its setup */
-static const u64 ss_partial_mask[65] =
+static const u64 SSPartialMask[65] =
 {
 	0x0000000000000000, 0x0000000000000001, 0x0000000000000003, 0x0000000000000007,
 	0x000000000000000f, 0x000000000000001f, 0x000000000000003f, 0x000000000000007f,
@@ -707,14 +743,14 @@ static const u64 ss_partial_mask[65] =
  * starts inside a byte reaches past it, into the next byte. The window is loaded whole where 8 bytes remain
  * and byte by byte (zeros above) at the end of the buffer; the value fits, so the zeros are never read.
  */
-static ds_ForceInline u64 ss_ReadU64Partial(struct ss *ss, const u64 bit_count)
+static ds_ForceInline u64 SSReadU64Partial(struct SS *ss, const u64 bit_count)
 {
 	ds_Assert(1 <= bit_count && bit_count <= 64);
 	ds_Assert(ss->bit_index + bit_count <= ss->bit_count);
 
 	const u64 p = ss->bit_index >> 3;
 	const u64 n = ss->bit_index & 7;
-	const u64 bytes_left = (ss->bit_count >> 3) - p;
+	const u64 bytes_left = ((ss->bit_count + 7) >> 3) - p;	/* a substream may end inside its last byte */
 	b64 window = { .u = 0 };
 	if (bytes_left >= 8)
 	{
@@ -726,7 +762,7 @@ static ds_ForceInline u64 ss_ReadU64Partial(struct ss *ss, const u64 bit_count)
 	}
 	window = LeToNa64(window);
 
-	const u64 mask = ss_partial_mask[bit_count];
+	const u64 mask = SSPartialMask[bit_count];
 	u64 val = (window.u >> n) & mask;
 	if (n + bit_count > 64)
 	{
@@ -742,15 +778,15 @@ static ds_ForceInline u64 ss_ReadU64Partial(struct ss *ss, const u64 bit_count)
  * touches (the value fits). What is left of the window above the completed bytes is the next acc. A value of
  * 58-64 bits that starts inside a byte overflows the window: the overflow is the next byte and the next acc.
  */
-static ds_ForceInline void ss_WriteU64Partial(struct ss *ss, const u64 val, const u64 bit_count)
+static ds_ForceInline void SSWriteU64Partial(struct SS *ss, const u64 val, const u64 bit_count)
 {
 	ds_Assert(1 <= bit_count && bit_count <= 64);
 	ds_Assert(ss->bit_index + bit_count <= ss->bit_count);
 
 	const u64 p = ss->bit_index >> 3;
 	const u64 n = ss->bit_index & 7;
-	const u64 bytes_left = (ss->bit_count >> 3) - p;
-	const u64 masked = val & ss_partial_mask[bit_count];
+	const u64 bytes_left = ((ss->bit_count + 7) >> 3) - p;	/* a substream may end inside its last byte */
+	const u64 masked = val & SSPartialMask[bit_count];
 	const u64 window = (ss->acc & (((u64) 1 << n) - 1)) | (masked << n);
 	const u64 total = n + bit_count;
 
@@ -778,17 +814,17 @@ static ds_ForceInline void ss_WriteU64Partial(struct ss *ss, const u64 val, cons
 	}
 }
 
-static ds_ForceInline void ss_WriteI64Partial(struct ss *ss, const i64 val, const u64 bit_count)
+static ds_ForceInline void SSWriteI64Partial(struct SS *ss, const i64 val, const u64 bit_count)
 {
 	b64 trunc = { .i = val };
 	const u64 mask = 0x7fffffffffffffff >> (64 - bit_count);
 	trunc.u = (trunc.u & mask) | ((trunc.u & 0x8000000000000000) >> (64 - bit_count));
-	ss_WriteU64Partial(ss, trunc.u, bit_count);
+	SSWriteU64Partial(ss, trunc.u, bit_count);
 }
 
-static ds_ForceInline i64 ss_ReadI64Partial(struct ss *ss, const u64 bit_count)
+static ds_ForceInline i64 SSReadI64Partial(struct SS *ss, const u64 bit_count)
 {
-	b64 trunc = { .u = ss_ReadU64Partial(ss, bit_count) };
+	b64 trunc = { .u = SSReadU64Partial(ss, bit_count) };
 	const u64 sign = trunc.u >> (bit_count - 1);
 	trunc.u |= (0xffffffffffffffff * sign) << (bit_count - 1);
 	return trunc.i;
@@ -796,96 +832,96 @@ static ds_ForceInline i64 ss_ReadI64Partial(struct ss *ss, const u64 bit_count)
 
 /*************************** macro definitions ***************************/
 
-#define ss_ReadU8(ss)      	ss_Read8(ss).u
-#define ss_WriteU8(ss, val)     ss_Write8(ss, (b8) { .u = val })
-#define ss_ReadU16Le(ss)        ss_Read16Le(ss).u
-#define ss_WriteU16Le(ss, val)  ss_Write16Le(ss, (b16) { .u = val })
-#define ss_ReadU16Be(ss)        ss_Read16Be(ss).u
-#define ss_WriteU16Be(ss, val)  ss_Write16Be(ss, (b16) { .u = val })
-#define ss_ReadU32Le(ss)        ss_Read32Le(ss).u
-#define ss_WriteU32Le(ss, val)  ss_Write32Le(ss, (b32) { .u = val })
-#define ss_ReadU32Be(ss)        ss_Read32Be(ss).u
-#define ss_WriteU32Be(ss, val)  ss_Write32Be(ss, (b32) { .u = val })
-#define ss_ReadU64Le(ss)        ss_Read64Le(ss).u
-#define ss_WriteU64Le(ss, val)  ss_Write64Le(ss, (b64) { .u = val })
-#define ss_ReadU64Be(ss)        ss_Read64Be(ss).u
-#define ss_WriteU64Be(ss, val)  ss_Write64Be(ss, (b64) { .u = val })
+#define SSReadU8(ss)      	SSRead8(ss).u
+#define SSWriteU8(ss, val)     SSWrite8(ss, (b8) { .u = val })
+#define SSReadU16Le(ss)        SSRead16Le(ss).u
+#define SSWriteU16Le(ss, val)  SSWrite16Le(ss, (b16) { .u = val })
+#define SSReadU16Be(ss)        SSRead16Be(ss).u
+#define SSWriteU16Be(ss, val)  SSWrite16Be(ss, (b16) { .u = val })
+#define SSReadU32Le(ss)        SSRead32Le(ss).u
+#define SSWriteU32Le(ss, val)  SSWrite32Le(ss, (b32) { .u = val })
+#define SSReadU32Be(ss)        SSRead32Be(ss).u
+#define SSWriteU32Be(ss, val)  SSWrite32Be(ss, (b32) { .u = val })
+#define SSReadU64Le(ss)        SSRead64Le(ss).u
+#define SSWriteU64Le(ss, val)  SSWrite64Le(ss, (b64) { .u = val })
+#define SSReadU64Be(ss)        SSRead64Be(ss).u
+#define SSWriteU64Be(ss, val)  SSWrite64Be(ss, (b64) { .u = val })
 
-#define ss_ReadI8(ss)      	ss_Read8(ss).i
-#define ss_WriteI8(ss, val)     ss_Write8(ss, (b8) { .i = val })
-#define ss_ReadI16Le(ss)        ss_Read16Le(ss).i
-#define ss_WriteI16Le(ss, val)  ss_Write16Le(ss, (b16) { .i = val })
-#define ss_ReadI16Be(ss)        ss_Read16Be(ss).i
-#define ss_WriteI16Be(ss, val)  ss_Write16Be(ss, (b16) { .i = val })
-#define ss_ReadI32Le(ss)        ss_Read32Le(ss).i
-#define ss_WriteI32Le(ss, val)  ss_Write32Le(ss, (b32) { .i = val })
-#define ss_ReadI32Be(ss)        ss_Read32Be(ss).i
-#define ss_WriteI32Be(ss, val)  ss_Write32Be(ss, (b32) { .i = val })
-#define ss_ReadI64Le(ss)        ss_Read64Le(ss).i
-#define ss_WriteI64Le(ss, val)  ss_Write64Le(ss, (b64) { .i = val })
-#define ss_ReadI64Be(ss)        ss_Read64Be(ss).i
-#define ss_WriteI64Be(ss, val)  ss_Write64Be(ss, (b64) { .i = val })
+#define SSReadI8(ss)      	SSRead8(ss).i
+#define SSWriteI8(ss, val)     SSWrite8(ss, (b8) { .i = val })
+#define SSReadI16Le(ss)        SSRead16Le(ss).i
+#define SSWriteI16Le(ss, val)  SSWrite16Le(ss, (b16) { .i = val })
+#define SSReadI16Be(ss)        SSRead16Be(ss).i
+#define SSWriteI16Be(ss, val)  SSWrite16Be(ss, (b16) { .i = val })
+#define SSReadI32Le(ss)        SSRead32Le(ss).i
+#define SSWriteI32Le(ss, val)  SSWrite32Le(ss, (b32) { .i = val })
+#define SSReadI32Be(ss)        SSRead32Be(ss).i
+#define SSWriteI32Be(ss, val)  SSWrite32Be(ss, (b32) { .i = val })
+#define SSReadI64Le(ss)        SSRead64Le(ss).i
+#define SSWriteI64Le(ss, val)  SSWrite64Le(ss, (b64) { .i = val })
+#define SSReadI64Be(ss)        SSRead64Be(ss).i
+#define SSWriteI64Be(ss, val)  SSWrite64Be(ss, (b64) { .i = val })
 
-#define ss_ReadF32Le(ss)   	ss_Read32Le(ss).f
-#define ss_WriteF32Le(ss, val)  ss_Write32Le(ss, (b32) { .f = val })
-#define ss_ReadF32Be(ss)        ss_Read32Be(ss).f
-#define ss_WriteF32Be(ss, val)  ss_Write32Be(ss, (b32) { .f = val })
-#define ss_ReadF64Le(ss)        ss_Read64Le(ss).f
-#define ss_WriteF64Le(ss, val)  ss_Write64Le(ss, (b64) { .f = val })
-#define ss_ReadF64Be(ss)        ss_Read64Be(ss).f
-#define ss_WriteF64Be(ss, val)  ss_Write64Be(ss, (b64) { .f = val })
+#define SSReadF32Le(ss)   	SSRead32Le(ss).f
+#define SSWriteF32Le(ss, val)  SSWrite32Le(ss, (b32) { .f = val })
+#define SSReadF32Be(ss)        SSRead32Be(ss).f
+#define SSWriteF32Be(ss, val)  SSWrite32Be(ss, (b32) { .f = val })
+#define SSReadF64Le(ss)        SSRead64Le(ss).f
+#define SSWriteF64Le(ss, val)  SSWrite64Le(ss, (b64) { .f = val })
+#define SSReadF64Be(ss)        SSRead64Be(ss).f
+#define SSWriteF64Be(ss, val)  SSWrite64Be(ss, (b64) { .f = val })
 
-#define ss_ReadU8N(ss, buf, len)		ss_Read8N(ss, (b8 *) (buf), len)
-#define ss_WriteU8N(ss, buf, len)		ss_Write8N(ss, (b8 *) (buf), len)
-#define ss_ReadU16LeN(ss, buf, len) 		ss_Read16LeN(ss, (b16 *) (buf), len)
-#define ss_WriteU16LeN(ss, buf, len) 		ss_Write16LeN(ss, (b16 *) (buf), len)
-#define ss_ReadU16BeN(ss, buf, len) 		ss_Read16BeN(ss, (b16 *) (buf), len)
-#define ss_WriteU16BeN(ss, buf, len) 		ss_Write16BeN(ss, (b16 *) (buf), len)
-#define ss_ReadU32LeN(ss, buf, len) 		ss_Read32LeN(ss, (b32 *) (buf), len)
-#define ss_WriteU32LeN(ss, buf, len) 		ss_Write32LeN(ss, (b32 *) (buf), len)
-#define ss_ReadU32BeN(ss, buf, len) 		ss_Read32BeN(ss, (b32 *) (buf), len)
-#define ss_WriteU32BeN(ss, buf, len) 		ss_Write32BeN(ss, (b32 *) (buf), len)
-#define ss_ReadU64LeN(ss, buf, len) 		ss_Read64LeN(ss, (b64 *) (buf), len)
-#define ss_WriteU64LeN(ss, buf, len) 		ss_Write64LeN(ss, (b64 *) (buf), len)
-#define ss_ReadU64BeN(ss, buf, len)		ss_Read64BeN(ss, (b64 *) (buf), len)
-#define ss_WriteU64BeN(ss, buf, len) 		ss_Write64BeN(ss, (b64 *) (buf), len)
+#define SSReadU8N(ss, buf, len)		SSRead8N(ss, (b8 *) (buf), len)
+#define SSWriteU8N(ss, buf, len)		SSWrite8N(ss, (b8 *) (buf), len)
+#define SSReadU16LeN(ss, buf, len) 		SSRead16LeN(ss, (b16 *) (buf), len)
+#define SSWriteU16LeN(ss, buf, len) 		SSWrite16LeN(ss, (b16 *) (buf), len)
+#define SSReadU16BeN(ss, buf, len) 		SSRead16BeN(ss, (b16 *) (buf), len)
+#define SSWriteU16BeN(ss, buf, len) 		SSWrite16BeN(ss, (b16 *) (buf), len)
+#define SSReadU32LeN(ss, buf, len) 		SSRead32LeN(ss, (b32 *) (buf), len)
+#define SSWriteU32LeN(ss, buf, len) 		SSWrite32LeN(ss, (b32 *) (buf), len)
+#define SSReadU32BeN(ss, buf, len) 		SSRead32BeN(ss, (b32 *) (buf), len)
+#define SSWriteU32BeN(ss, buf, len) 		SSWrite32BeN(ss, (b32 *) (buf), len)
+#define SSReadU64LeN(ss, buf, len) 		SSRead64LeN(ss, (b64 *) (buf), len)
+#define SSWriteU64LeN(ss, buf, len) 		SSWrite64LeN(ss, (b64 *) (buf), len)
+#define SSReadU64BeN(ss, buf, len)		SSRead64BeN(ss, (b64 *) (buf), len)
+#define SSWriteU64BeN(ss, buf, len) 		SSWrite64BeN(ss, (b64 *) (buf), len)
 
-#define ss_ReadI8N(ss, buf, len)		ss_Read8N(ss, (b8 *) (buf), len)
-#define ss_WriteI8N(ss, buf, len)		ss_Write8N(ss, (b8 *) (buf), len)
-#define ss_ReadI16LeN(ss, buf, len) 		ss_Read16LeN(ss, (b16 *) (buf), len)
-#define ss_WriteI16LeN(ss, buf, len)		ss_Write16LeN(ss, (b16 *) (buf), len)
-#define ss_ReadI16BeN(ss, buf, len) 		ss_Read16BeN(ss, (b16 *) (buf), len)
-#define ss_WriteI16BeN(ss, buf, len)		ss_Write16BeN(ss, (b16 *) (buf), len)
-#define ss_ReadI32LeN(ss, buf, len) 		ss_Read32LeN(ss, (b32 *) (buf), len)
-#define ss_WriteI32LeN(ss, buf, len)		ss_Write32LeN(ss, (b32 *) (buf), len)
-#define ss_ReadI32BeN(ss, buf, len) 		ss_Read32BeN(ss, (b32 *) (buf), len)
-#define ss_WriteI32BeN(ss, buf, len)		ss_Write32BeN(ss, (b32 *) (buf), len)
-#define ss_ReadI64LeN(ss, buf, len) 		ss_Read64LeN(ss, (b64 *) (buf), len)
-#define ss_WriteI64LeN(ss, buf, len)		ss_Write64LeN(ss, (b64 *) (buf), len)
-#define ss_ReadI64BeN(ss, buf, len)		ss_Read64BeN(ss, (b64 *) (buf), len)
-#define ss_WriteI64BeN(ss, buf, len)		ss_Write64BeN(ss, (b64 *) (buf), len)
+#define SSReadI8N(ss, buf, len)		SSRead8N(ss, (b8 *) (buf), len)
+#define SSWriteI8N(ss, buf, len)		SSWrite8N(ss, (b8 *) (buf), len)
+#define SSReadI16LeN(ss, buf, len) 		SSRead16LeN(ss, (b16 *) (buf), len)
+#define SSWriteI16LeN(ss, buf, len)		SSWrite16LeN(ss, (b16 *) (buf), len)
+#define SSReadI16BeN(ss, buf, len) 		SSRead16BeN(ss, (b16 *) (buf), len)
+#define SSWriteI16BeN(ss, buf, len)		SSWrite16BeN(ss, (b16 *) (buf), len)
+#define SSReadI32LeN(ss, buf, len) 		SSRead32LeN(ss, (b32 *) (buf), len)
+#define SSWriteI32LeN(ss, buf, len)		SSWrite32LeN(ss, (b32 *) (buf), len)
+#define SSReadI32BeN(ss, buf, len) 		SSRead32BeN(ss, (b32 *) (buf), len)
+#define SSWriteI32BeN(ss, buf, len)		SSWrite32BeN(ss, (b32 *) (buf), len)
+#define SSReadI64LeN(ss, buf, len) 		SSRead64LeN(ss, (b64 *) (buf), len)
+#define SSWriteI64LeN(ss, buf, len)		SSWrite64LeN(ss, (b64 *) (buf), len)
+#define SSReadI64BeN(ss, buf, len)		SSRead64BeN(ss, (b64 *) (buf), len)
+#define SSWriteI64BeN(ss, buf, len)		SSWrite64BeN(ss, (b64 *) (buf), len)
 
-#define ss_ReadF32LeN(ss, buf, len) 		ss_Read32LeN(ss, (b32 *) (buf), len)
-#define ss_WriteF32LeN(ss, buf, len)		ss_Write32LeN(ss, (b32 *) (buf), len)
-#define ss_ReadF32BeN(ss, buf, len) 		ss_Read32BeN(ss, (b32 *) (buf), len)
-#define ss_WriteF32BeN(ss, buf, len)		ss_Write32BeN(ss, (b32 *) (buf), len)
-#define ss_ReadF64LeN(ss, buf, len) 		ss_Read64LeN(ss, (b64 *) (buf), len)
-#define ss_WriteF64LeN(ss, buf, len)		ss_Write64LeN(ss, (b64 *) (buf), len)
-#define ss_ReadF64BeN(ss, buf, len)		ss_Read64BeN(ss, (b64 *) (buf), len)
-#define ss_WriteF64BeN(ss, buf, len)		ss_Write64BeN(ss, (b64 *) (buf), len)
+#define SSReadF32LeN(ss, buf, len) 		SSRead32LeN(ss, (b32 *) (buf), len)
+#define SSWriteF32LeN(ss, buf, len)		SSWrite32LeN(ss, (b32 *) (buf), len)
+#define SSReadF32BeN(ss, buf, len) 		SSRead32BeN(ss, (b32 *) (buf), len)
+#define SSWriteF32BeN(ss, buf, len)		SSWrite32BeN(ss, (b32 *) (buf), len)
+#define SSReadF64LeN(ss, buf, len) 		SSRead64LeN(ss, (b64 *) (buf), len)
+#define SSWriteF64LeN(ss, buf, len)		SSWrite64LeN(ss, (b64 *) (buf), len)
+#define SSReadF64BeN(ss, buf, len)		SSRead64BeN(ss, (b64 *) (buf), len)
+#define SSWriteF64BeN(ss, buf, len)		SSWrite64BeN(ss, (b64 *) (buf), len)
 
-#define ss_WriteU8Partial(ss, val, bit_count)		ss_WriteU64Partial(ss, val, bit_count)
-#define ss_WriteU16Partial(ss, val, bit_count)		ss_WriteU64Partial(ss, val, bit_count)
-#define ss_WriteU32Partial(ss, val, bit_count)		ss_WriteU64Partial(ss, val, bit_count)
-#define ss_ReadU8Partial(ss, bit_count)			((u8) ss_ReadU64Partial(ss, bit_count))
-#define ss_ReadU16Partial(ss, bit_count)		((u16) ss_ReadU64Partial(ss, bit_count))
-#define ss_ReadU32Partial(ss, bit_count)		((u32) ss_ReadU64Partial(ss, bit_count))
-#define ss_WriteI8Partial(ss, val, bit_count)		ss_WriteI64Partial(ss, val, bit_count)
-#define ss_WriteI16Partial(ss, val, bit_count)		ss_WriteI64Partial(ss, val, bit_count)
-#define ss_WriteI32Partial(ss, val, bit_count)		ss_WriteI64Partial(ss, val, bit_count)
-#define ss_ReadI8Partial(ss, bit_count)			((i8) ss_ReadI64Partial(ss, bit_count))
-#define ss_ReadI16Partial(ss, bit_count)		((i16) ss_ReadI64Partial(ss, bit_count))
-#define ss_ReadI32Partial(ss, bit_count)		((i32) ss_ReadI64Partial(ss, bit_count))
+#define SSWriteU8Partial(ss, val, bit_count)		SSWriteU64Partial(ss, val, bit_count)
+#define SSWriteU16Partial(ss, val, bit_count)		SSWriteU64Partial(ss, val, bit_count)
+#define SSWriteU32Partial(ss, val, bit_count)		SSWriteU64Partial(ss, val, bit_count)
+#define SSReadU8Partial(ss, bit_count)			((u8) SSReadU64Partial(ss, bit_count))
+#define SSReadU16Partial(ss, bit_count)		((u16) SSReadU64Partial(ss, bit_count))
+#define SSReadU32Partial(ss, bit_count)		((u32) SSReadU64Partial(ss, bit_count))
+#define SSWriteI8Partial(ss, val, bit_count)		SSWriteI64Partial(ss, val, bit_count)
+#define SSWriteI16Partial(ss, val, bit_count)		SSWriteI64Partial(ss, val, bit_count)
+#define SSWriteI32Partial(ss, val, bit_count)		SSWriteI64Partial(ss, val, bit_count)
+#define SSReadI8Partial(ss, bit_count)			((i8) SSReadI64Partial(ss, bit_count))
+#define SSReadI16Partial(ss, bit_count)		((i16) SSReadI64Partial(ss, bit_count))
+#define SSReadI32Partial(ss, bit_count)		((i32) SSReadI64Partial(ss, bit_count))
 
 #ifdef __cplusplus
 } 

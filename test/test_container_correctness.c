@@ -128,7 +128,7 @@ static struct test_Output BitSetTest(struct test_Environment *env)
         }
 
         const u64 size = ds_BitSetSerializeSize(&set);
-        struct ss ss = ss_Alloc(env->mem_1, size);
+        struct SS ss = SSAlloc(env->mem_1, size);
         TEST_NOT_EQUAL(NULL, ss.buf);
         ds_BitSetSerialize(&ss, &set);
         TEST_EQUAL(8*size, ss.bit_index);
@@ -144,7 +144,7 @@ static struct test_Output BitSetTest(struct test_Environment *env)
             ds_BitSetDealloc(&read);
         }
 
-        struct ss cut = ss_Buffered(ss.buf, size - 1);
+        struct SS cut = SSBuffered(ss.buf, size - 1);
         struct ds_BitSet read;
         TEST_EQUAL(0, ds_BitSetTryDeserialize(env->mem_2, &cut, &read, NOT_GROWABLE));
         TEST_EQUAL(0, cut.bit_index);
@@ -264,7 +264,7 @@ static struct test_Output HashMapTest(struct test_Environment *env)
         }
 
         const u64 size = ds_HashMapSerializeSize(&map);
-        struct ss ss = ss_Alloc(env->mem_1, size);
+        struct SS ss = SSAlloc(env->mem_1, size);
         TEST_NOT_EQUAL(NULL, ss.buf);
         ds_HashMapSerialize(&ss, &map);
         TEST_EQUAL(8*size, ss.bit_index);
@@ -283,19 +283,19 @@ static struct test_Output HashMapTest(struct test_Environment *env)
         /* truncated; hash_len not a power of two; hash_len > index_len */
         const u64 mem_left = env->mem_3->mem_left;
         struct ds_HashMap read;
-        struct ss cut = ss_Buffered(ss.buf, size - 1);
+        struct SS cut = SSBuffered(ss.buf, size - 1);
         TEST_EQUAL(0, ds_HashMapTryDeserialize(env->mem_3, &cut, &read, NOT_GROWABLE));
         TEST_EQUAL(0, cut.bit_index);
         TEST_EQUAL(NULL, read.hash);
 
         const u32 corrupt_hash_len[] = { 0, map.hash_len + 1, 2*map.index_len };
-        struct ss bad = ss_Alloc(env->mem_1, size);
+        struct SS bad = SSAlloc(env->mem_1, size);
         TEST_NOT_EQUAL(NULL, bad.buf);
         for (u32 c = 0; c < sizeof(corrupt_hash_len) / sizeof(corrupt_hash_len[0]); ++c)
         {
             memcpy(bad.buf, ss.buf, size);
             bad.bit_index = 0;
-            ss_WriteU32Le(&bad, corrupt_hash_len[c]);
+            SSWriteU32Le(&bad, corrupt_hash_len[c]);
             bad.bit_index = 0;
             TEST_EQUAL(0, ds_HashMapTryDeserialize(env->mem_3, &bad, &read, NOT_GROWABLE));
             TEST_EQUAL(0, bad.bit_index);
@@ -592,7 +592,7 @@ static struct test_Output DLLTest(struct test_Environment *env)
         TEST_TRUE(DLLTestMatches(&list, base, order, count));
     }
 
-    struct ss ss = ss_Alloc(env->mem_1, DLLSerializeSize(list));
+    struct SS ss = SSAlloc(env->mem_1, DLLSerializeSize(list));
     TEST_NOT_EQUAL(NULL, ss.buf);
     DLLSerialize(&ss, list);
     ss.bit_index = 0;
@@ -600,7 +600,7 @@ static struct test_Output DLLTest(struct test_Environment *env)
     TEST_EQUAL(1, DLLTryDeserialize(&ss, read));
     TEST_TRUE(DLLTestMatches(&read, base, order, count));
 
-    struct ss cut = ss_Buffered(ss.buf, DLLSerializeSize(list) - 1);
+    struct SS cut = SSBuffered(ss.buf, DLLSerializeSize(list) - 1);
     TEST_EQUAL(0, DLLTryDeserialize(&cut, read));
     TEST_EQUAL(0, read.count);
     TEST_EQUAL(DLL_SENTINEL, read.first);
@@ -657,7 +657,7 @@ static struct test_Output LLTest(struct test_Environment *env)
             TEST_EQUAL((i32) middle[back - 1], list.last);
         }
 
-        struct ss ss = ss_Alloc(env->mem_1, LLSerializeSize(list));
+        struct SS ss = SSAlloc(env->mem_1, LLSerializeSize(list));
         LLSerialize(&ss, list);
         ss.bit_index = 0;
         struct LL read;

@@ -410,14 +410,14 @@ u64 ds_SolverSetSerializeSize(const struct ds_Dynamics *pipeline, const u32 set_
 	return size;
 }
 
-void ds_SolverSetSerialize(struct ss *ss, const struct ds_Dynamics *pipeline, const u32 set_index)
+void ds_SolverSetSerialize(struct SS *ss, const struct ds_Dynamics *pipeline, const u32 set_index)
 {
-	ds_Assert(ds_SolverSetSerializeSize(pipeline, set_index) <= ss_BytesLeft(ss));
+	ds_Assert(ds_SolverSetSerializeSize(pipeline, set_index) <= SSBytesLeft(ss));
 
 	const struct ds_SolverSet *set = pipeline->solver_set_pool.buf + set_index;
 	ds_Assert((set_index >= SOLVER_SET_SLEEPING_FIRST) == (set->mem.mem_size != 0));
 	/* sleeping sets own one heap arena holding their pools and narrowphase data */
-	ss_WriteU64Le(ss, set->mem.mem_size);
+	SSWriteU64Le(ss, set->mem.mem_size);
 	ds_CPoolSerialize(ss, set->body_sim_pool);
 	ds_CPoolSerialize(ss, set->body_compute_pool);
 	ds_CPoolSerialize(ss, set->contact_pool);
@@ -442,20 +442,20 @@ static void ds_SolverSetClear(struct ds_SolverSet *set)
 	set->pool_slot = pool_slot;
 }
 
-u32 ds_SolverSetTryDeserialize(struct ss *ss, struct ds_Dynamics *pipeline, const u32 set_index)
+u32 ds_SolverSetTryDeserialize(struct SS *ss, struct ds_Dynamics *pipeline, const u32 set_index)
 {
 	ds_Assert(set_index < pipeline->solver_set_pool.count_max);
 	struct ds_SolverSet *set = pipeline->solver_set_pool.buf + set_index;
 	ds_Assert(ds_PoolSlotAllocated(set) && set->mem.mem_size == 0 && set->body_sim_pool.buf == NULL);
 
 	const u64 bit_index = ss->bit_index;
-	if (ss_BytesLeft(ss) < sizeof(u64))
+	if (SSBytesLeft(ss) < sizeof(u64))
 	{
 		return 0;
 	}
 
 	const u32 sleeping = (set_index >= SOLVER_SET_SLEEPING_FIRST);
-	const u64 mem_size = ss_ReadU64Le(ss);
+	const u64 mem_size = SSReadU64Le(ss);
 	if ( (sleeping && !mem_size) || (!sleeping && mem_size) )
 	{
 		ss->bit_index = bit_index;

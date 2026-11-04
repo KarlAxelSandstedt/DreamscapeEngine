@@ -231,7 +231,7 @@ static struct test_Output THashMapSerialTest(struct test_Environment *env)
 
     const u64 size = ds_THashMapSerializeSize(map);
     TEST_EQUAL(sizeof(u32) + 64*sizeof(u64), size);
-    struct ss ss = ss_Alloc(env->mem_1, size);
+    struct SS ss = SSAlloc(env->mem_1, size);
     TEST_NOT_EQUAL(NULL, ss.buf);
     ds_THashMapSerialize(&ss, map);
     TEST_EQUAL(8*size, ss.bit_index);
@@ -243,7 +243,7 @@ static struct test_Output THashMapSerialTest(struct test_Environment *env)
     TEST_TRUE(read.pool == &pool && read.state.hash_len == map.state.hash_len && read.state.hash_mask == map.state.hash_mask);
     TEST_TRUE(THashMapTestMatches(&read, index, alive));
 
-    struct ss cut = ss_Buffered(ss.buf, size - 1);
+    struct SS cut = SSBuffered(ss.buf, size - 1);
     TEST_EQUAL(0, ds_THashMapTryDeserialize(env->mem_3, &cut, read, &pool));
     TEST_EQUAL(0, cut.bit_index);
     TEST_EQUAL(NULL, read.state.a_bucket);
@@ -251,7 +251,7 @@ static struct test_Output THashMapSerialTest(struct test_Environment *env)
     for (u32 c = 0; c < sizeof(corrupt_hash_len) / sizeof(corrupt_hash_len[0]); ++c)
     {
         ss.bit_index = 0;
-        ss_WriteU32Le(&ss, corrupt_hash_len[c]);
+        SSWriteU32Le(&ss, corrupt_hash_len[c]);
         ss.bit_index = 0;
         TEST_EQUAL(0, ds_THashMapTryDeserialize(env->mem_3, &ss, read, &pool));
         TEST_EQUAL(0, ss.bit_index);

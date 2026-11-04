@@ -164,122 +164,122 @@ u64 ds_DynamicsDrawConfigSerializeSize(const struct ds_DynamicsDrawConfig *confi
     return DS_DYNAMICS_DRAW_CONFIG_SIZE;
 }
 
-void ds_DynamicsDrawConfigSerialize(struct ss *ss, const struct ds_DynamicsDrawConfig *config)
+void ds_DynamicsDrawConfigSerialize(struct SS *ss, const struct ds_DynamicsDrawConfig *config)
 {
     ds_Assert(ss->bit_index % 8 == 0);
-    ds_Assert(ds_DynamicsDrawConfigSerializeSize(config) <= ss_BytesLeft(ss));
+    ds_Assert(ds_DynamicsDrawConfigSerializeSize(config) <= SSBytesLeft(ss));
 
-    ss_WriteU32Le(ss, DS_DYNAMICS_DRAW_CONFIG_VERSION);
-    ss_WriteU32Le(ss, config->draw_shapes);
-    ss_WriteU32Le(ss, (u32) config->shape_color_mode);
-    ss_WriteU32Le(ss, config->draw_dbvh);
-    ss_WriteU32Le(ss, config->draw_sbvh);
-    ss_WriteU32Le(ss, config->draw_bounds);
-    ss_WriteU32Le(ss, config->draw_mesh_bvh);
-    ss_WriteU32Le(ss, config->draw_constraint_points);
-    ss_WriteU32Le(ss, config->draw_contact_forces);
-    ss_WriteU32Le(ss, config->draw_joints);
-    ss_WriteU32Le(ss, (u32) config->point_color_mode);
-    ss_WriteU32Le(ss, config->draw_on_top);
-    ss_WriteU32Le(ss, config->draw_body_axes);
-    ss_WriteU32Le(ss, config->draw_joint_forces);
-    ss_WriteU32Le(ss, config->draw_joint_breakage);
-    ss_WriteF32Le(ss, config->force_scale);
-    ss_WriteF32Le(ss, config->point_size);
-    ss_WriteF32Le(ss, config->joint_error_max);
-    ss_WriteF32Le(ss, config->axis_length);
-    ss_WriteU32Le(ss, config->refinement);
-    ss_WriteF32Le(ss, config->energy_max);
-    ss_WriteF32Le(ss, config->shape_alpha);
-    ss_WriteF32Le(ss, config->shape_saturation);
-    ss_WriteF32Le(ss, config->shape_lightness);
-    ss_WriteF32LeN(ss, config->color_dbvh.buf, 4);
-    ss_WriteF32LeN(ss, config->color_sbvh.buf, 4);
-    ss_WriteF32LeN(ss, config->color_bounds.buf, 4);
-    ss_WriteF32LeN(ss, config->color_mesh_bvh.buf, 4);
-    ss_WriteF32LeN(ss, config->color_shape.buf, 4);
-    ss_WriteF32LeN(ss, config->color_static.buf, 4);
-    ss_WriteF32LeN(ss, config->color_kinematic.buf, 4);
-    ss_WriteF32LeN(ss, config->color_dynamic.buf, 4);
-    ss_WriteF32LeN(ss, config->color_sleeping.buf, 4);
-    ss_WriteF32LeN(ss, config->color_awake.buf, 4);
-    ss_WriteF32LeN(ss, config->color_velocity_low.buf, 4);
-    ss_WriteF32LeN(ss, config->color_velocity_high.buf, 4);
-    ss_WriteF32LeN(ss, config->color_touching.buf, 4);
-    ss_WriteF32LeN(ss, config->color_not_touching.buf, 4);
-    ss_WriteF32LeN(ss, config->color_point[0].buf, 4*DRAW_POINT_COLOR_COUNT);
-    ss_WriteF32LeN(ss, config->color_contact_force.buf, 4);
-    ss_WriteF32LeN(ss, config->color_friction_force.buf, 4);
-    ss_WriteF32LeN(ss, config->color_joint_force.buf, 4);
-    ss_WriteF32LeN(ss, config->color_joint.buf, 4);
-    ss_WriteF32LeN(ss, config->color_mouse_joint.buf, 4);
-    ss_WriteF32LeN(ss, config->color_joint_error.buf, 4);
-    ss_WriteF32LeN(ss, config->color_joint_break.buf, 4);
-    ss_WriteF32LeN(ss, config->color_mass_center.buf, 4);
+    SSWriteU32Le(ss, DS_DYNAMICS_DRAW_CONFIG_VERSION);
+    SSWriteU32Le(ss, config->draw_shapes);
+    SSWriteU32Le(ss, (u32) config->shape_color_mode);
+    SSWriteU32Le(ss, config->draw_dbvh);
+    SSWriteU32Le(ss, config->draw_sbvh);
+    SSWriteU32Le(ss, config->draw_bounds);
+    SSWriteU32Le(ss, config->draw_mesh_bvh);
+    SSWriteU32Le(ss, config->draw_constraint_points);
+    SSWriteU32Le(ss, config->draw_contact_forces);
+    SSWriteU32Le(ss, config->draw_joints);
+    SSWriteU32Le(ss, (u32) config->point_color_mode);
+    SSWriteU32Le(ss, config->draw_on_top);
+    SSWriteU32Le(ss, config->draw_body_axes);
+    SSWriteU32Le(ss, config->draw_joint_forces);
+    SSWriteU32Le(ss, config->draw_joint_breakage);
+    SSWriteF32Le(ss, config->force_scale);
+    SSWriteF32Le(ss, config->point_size);
+    SSWriteF32Le(ss, config->joint_error_max);
+    SSWriteF32Le(ss, config->axis_length);
+    SSWriteU32Le(ss, config->refinement);
+    SSWriteF32Le(ss, config->energy_max);
+    SSWriteF32Le(ss, config->shape_alpha);
+    SSWriteF32Le(ss, config->shape_saturation);
+    SSWriteF32Le(ss, config->shape_lightness);
+    SSWriteF32LeN(ss, config->color_dbvh.buf, 4);
+    SSWriteF32LeN(ss, config->color_sbvh.buf, 4);
+    SSWriteF32LeN(ss, config->color_bounds.buf, 4);
+    SSWriteF32LeN(ss, config->color_mesh_bvh.buf, 4);
+    SSWriteF32LeN(ss, config->color_shape.buf, 4);
+    SSWriteF32LeN(ss, config->color_static.buf, 4);
+    SSWriteF32LeN(ss, config->color_kinematic.buf, 4);
+    SSWriteF32LeN(ss, config->color_dynamic.buf, 4);
+    SSWriteF32LeN(ss, config->color_sleeping.buf, 4);
+    SSWriteF32LeN(ss, config->color_awake.buf, 4);
+    SSWriteF32LeN(ss, config->color_velocity_low.buf, 4);
+    SSWriteF32LeN(ss, config->color_velocity_high.buf, 4);
+    SSWriteF32LeN(ss, config->color_touching.buf, 4);
+    SSWriteF32LeN(ss, config->color_not_touching.buf, 4);
+    SSWriteF32LeN(ss, config->color_point[0].buf, 4*DRAW_POINT_COLOR_COUNT);
+    SSWriteF32LeN(ss, config->color_contact_force.buf, 4);
+    SSWriteF32LeN(ss, config->color_friction_force.buf, 4);
+    SSWriteF32LeN(ss, config->color_joint_force.buf, 4);
+    SSWriteF32LeN(ss, config->color_joint.buf, 4);
+    SSWriteF32LeN(ss, config->color_mouse_joint.buf, 4);
+    SSWriteF32LeN(ss, config->color_joint_error.buf, 4);
+    SSWriteF32LeN(ss, config->color_joint_break.buf, 4);
+    SSWriteF32LeN(ss, config->color_mass_center.buf, 4);
 }
 
-u32 ds_DynamicsDrawConfigTryDeserialize(struct ss *ss, struct ds_DynamicsDrawConfig *config)
+u32 ds_DynamicsDrawConfigTryDeserialize(struct SS *ss, struct ds_DynamicsDrawConfig *config)
 {
     const u64 bit_index = ss->bit_index;
     u32 success = 0;
 
-    if (ss->bit_index % 8 != 0 || ss_BytesLeft(ss) < DS_DYNAMICS_DRAW_CONFIG_SIZE)
+    if (ss->bit_index % 8 != 0 || SSBytesLeft(ss) < DS_DYNAMICS_DRAW_CONFIG_SIZE)
     {
         goto end;
     }
 
-    if (ss_ReadU32Le(ss) != DS_DYNAMICS_DRAW_CONFIG_VERSION)
+    if (SSReadU32Le(ss) != DS_DYNAMICS_DRAW_CONFIG_VERSION)
     {
         goto end;
     }
 
     *config = (struct ds_DynamicsDrawConfig) { 0 };
-    config->draw_shapes = ss_ReadU32Le(ss);
-    config->shape_color_mode = (enum ds_ShapeColorMode) ss_ReadU32Le(ss);
-    config->draw_dbvh = ss_ReadU32Le(ss);
-    config->draw_sbvh = ss_ReadU32Le(ss);
-    config->draw_bounds = ss_ReadU32Le(ss);
-    config->draw_mesh_bvh = ss_ReadU32Le(ss);
-    config->draw_constraint_points = ss_ReadU32Le(ss);
-    config->draw_contact_forces = ss_ReadU32Le(ss);
-    config->draw_joints = ss_ReadU32Le(ss);
-    config->point_color_mode = (enum ds_PointColorMode) ss_ReadU32Le(ss);
-    config->draw_on_top = ss_ReadU32Le(ss);
-    config->draw_body_axes = ss_ReadU32Le(ss);
-    config->draw_joint_forces = ss_ReadU32Le(ss);
-    config->draw_joint_breakage = ss_ReadU32Le(ss);
-    config->force_scale = ss_ReadF32Le(ss);
-    config->point_size = ss_ReadF32Le(ss);
-    config->joint_error_max = ss_ReadF32Le(ss);
-    config->axis_length = ss_ReadF32Le(ss);
-    config->refinement = ss_ReadU32Le(ss);
-    config->energy_max = ss_ReadF32Le(ss);
-    config->shape_alpha = ss_ReadF32Le(ss);
-    config->shape_saturation = ss_ReadF32Le(ss);
-    config->shape_lightness = ss_ReadF32Le(ss);
-    ss_ReadF32LeN(ss, config->color_dbvh.buf, 4);
-    ss_ReadF32LeN(ss, config->color_sbvh.buf, 4);
-    ss_ReadF32LeN(ss, config->color_bounds.buf, 4);
-    ss_ReadF32LeN(ss, config->color_mesh_bvh.buf, 4);
-    ss_ReadF32LeN(ss, config->color_shape.buf, 4);
-    ss_ReadF32LeN(ss, config->color_static.buf, 4);
-    ss_ReadF32LeN(ss, config->color_kinematic.buf, 4);
-    ss_ReadF32LeN(ss, config->color_dynamic.buf, 4);
-    ss_ReadF32LeN(ss, config->color_sleeping.buf, 4);
-    ss_ReadF32LeN(ss, config->color_awake.buf, 4);
-    ss_ReadF32LeN(ss, config->color_velocity_low.buf, 4);
-    ss_ReadF32LeN(ss, config->color_velocity_high.buf, 4);
-    ss_ReadF32LeN(ss, config->color_touching.buf, 4);
-    ss_ReadF32LeN(ss, config->color_not_touching.buf, 4);
-    ss_ReadF32LeN(ss, config->color_point[0].buf, 4*DRAW_POINT_COLOR_COUNT);
-    ss_ReadF32LeN(ss, config->color_contact_force.buf, 4);
-    ss_ReadF32LeN(ss, config->color_friction_force.buf, 4);
-    ss_ReadF32LeN(ss, config->color_joint_force.buf, 4);
-    ss_ReadF32LeN(ss, config->color_joint.buf, 4);
-    ss_ReadF32LeN(ss, config->color_mouse_joint.buf, 4);
-    ss_ReadF32LeN(ss, config->color_joint_error.buf, 4);
-    ss_ReadF32LeN(ss, config->color_joint_break.buf, 4);
-    ss_ReadF32LeN(ss, config->color_mass_center.buf, 4);
+    config->draw_shapes = SSReadU32Le(ss);
+    config->shape_color_mode = (enum ds_ShapeColorMode) SSReadU32Le(ss);
+    config->draw_dbvh = SSReadU32Le(ss);
+    config->draw_sbvh = SSReadU32Le(ss);
+    config->draw_bounds = SSReadU32Le(ss);
+    config->draw_mesh_bvh = SSReadU32Le(ss);
+    config->draw_constraint_points = SSReadU32Le(ss);
+    config->draw_contact_forces = SSReadU32Le(ss);
+    config->draw_joints = SSReadU32Le(ss);
+    config->point_color_mode = (enum ds_PointColorMode) SSReadU32Le(ss);
+    config->draw_on_top = SSReadU32Le(ss);
+    config->draw_body_axes = SSReadU32Le(ss);
+    config->draw_joint_forces = SSReadU32Le(ss);
+    config->draw_joint_breakage = SSReadU32Le(ss);
+    config->force_scale = SSReadF32Le(ss);
+    config->point_size = SSReadF32Le(ss);
+    config->joint_error_max = SSReadF32Le(ss);
+    config->axis_length = SSReadF32Le(ss);
+    config->refinement = SSReadU32Le(ss);
+    config->energy_max = SSReadF32Le(ss);
+    config->shape_alpha = SSReadF32Le(ss);
+    config->shape_saturation = SSReadF32Le(ss);
+    config->shape_lightness = SSReadF32Le(ss);
+    SSReadF32LeN(ss, config->color_dbvh.buf, 4);
+    SSReadF32LeN(ss, config->color_sbvh.buf, 4);
+    SSReadF32LeN(ss, config->color_bounds.buf, 4);
+    SSReadF32LeN(ss, config->color_mesh_bvh.buf, 4);
+    SSReadF32LeN(ss, config->color_shape.buf, 4);
+    SSReadF32LeN(ss, config->color_static.buf, 4);
+    SSReadF32LeN(ss, config->color_kinematic.buf, 4);
+    SSReadF32LeN(ss, config->color_dynamic.buf, 4);
+    SSReadF32LeN(ss, config->color_sleeping.buf, 4);
+    SSReadF32LeN(ss, config->color_awake.buf, 4);
+    SSReadF32LeN(ss, config->color_velocity_low.buf, 4);
+    SSReadF32LeN(ss, config->color_velocity_high.buf, 4);
+    SSReadF32LeN(ss, config->color_touching.buf, 4);
+    SSReadF32LeN(ss, config->color_not_touching.buf, 4);
+    SSReadF32LeN(ss, config->color_point[0].buf, 4*DRAW_POINT_COLOR_COUNT);
+    SSReadF32LeN(ss, config->color_contact_force.buf, 4);
+    SSReadF32LeN(ss, config->color_friction_force.buf, 4);
+    SSReadF32LeN(ss, config->color_joint_force.buf, 4);
+    SSReadF32LeN(ss, config->color_joint.buf, 4);
+    SSReadF32LeN(ss, config->color_mouse_joint.buf, 4);
+    SSReadF32LeN(ss, config->color_joint_error.buf, 4);
+    SSReadF32LeN(ss, config->color_joint_break.buf, 4);
+    SSReadF32LeN(ss, config->color_mass_center.buf, 4);
     *config = ds_DynamicsDrawConfigDerive(config);
     success = 1;
 

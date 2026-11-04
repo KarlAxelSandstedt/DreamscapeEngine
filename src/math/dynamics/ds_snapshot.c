@@ -26,7 +26,7 @@ Example (repetition testing):
         ArenaPushRecord(mem);
 
         const u64 size = ds_DynamicsSerializeSize(pipeline);
-        struct ss snap = ss_Alloc(mem, size);
+        struct SS snap = SSAlloc(mem, size);
         if (snap.buf == NULL)
         {
             LogString(T_PHYSICS, S_FATAL, "Failed to allocate physics snapshot");
@@ -53,7 +53,7 @@ Example (repetition testing):
 /* Header: ns_tick, frame_memory, worker_count, worker_frame_size, frames_completed, the applied config, island_to_split */
 #define DS_SNAPSHOT_HEADER_FIXED_SIZE (5*sizeof(u64) + sizeof(u32))
 
-u32 ds_DynamicsFrameDataTryDeserialize(struct ss *ss, void **dst, struct ds_Dynamics *pipeline, const u64 size)
+u32 ds_DynamicsFrameDataTryDeserialize(struct SS *ss, void **dst, struct ds_Dynamics *pipeline, const u64 size)
 {
 	*dst = NULL;
 	if (size == 0)
@@ -61,7 +61,7 @@ u32 ds_DynamicsFrameDataTryDeserialize(struct ss *ss, void **dst, struct ds_Dyna
 		return 1;
 	}
 
-	if (size > ss_BytesLeft(ss))
+	if (size > SSBytesLeft(ss))
 	{
 		return 0;
 	}
@@ -80,11 +80,11 @@ u32 ds_DynamicsFrameDataTryDeserialize(struct ss *ss, void **dst, struct ds_Dyna
 		return 0;
 	}
 
-	ss_Read8N(ss, (b8 *) *dst, size);
+	SSRead8N(ss, (b8 *) *dst, size);
 	return 1;
 }
 
-u32 ds_DynamicsHeapDataTryDeserialize(struct arena *mem, struct ss *ss, void **dst, const u64 size)
+u32 ds_DynamicsHeapDataTryDeserialize(struct arena *mem, struct SS *ss, void **dst, const u64 size)
 {
 	*dst = NULL;
 	if (size == 0)
@@ -92,7 +92,7 @@ u32 ds_DynamicsHeapDataTryDeserialize(struct arena *mem, struct ss *ss, void **d
 		return 1;
 	}
 
-	if (size > ss_BytesLeft(ss))
+	if (size > SSBytesLeft(ss))
 	{
 		return 0;
 	}
@@ -103,7 +103,7 @@ u32 ds_DynamicsHeapDataTryDeserialize(struct arena *mem, struct ss *ss, void **d
 		return 0;
 	}
 
-	ss_Read8N(ss, (b8 *) *dst, size);
+	SSRead8N(ss, (b8 *) *dst, size);
 	return 1;
 }
 
@@ -144,10 +144,10 @@ u64 ds_DynamicsSerializeSize(const struct ds_Dynamics *pipeline)
 	return size;
 }
 
-void ds_DynamicsSerialize(struct ss *ss, const struct ds_Dynamics *pipeline)
+void ds_DynamicsSerialize(struct SS *ss, const struct ds_Dynamics *pipeline)
 {
 	ds_Assert(ss->bit_index % 8 == 0);
-	ds_Assert(ds_DynamicsSerializeSize(pipeline) <= ss_BytesLeft(ss));
+	ds_Assert(ds_DynamicsSerializeSize(pipeline) <= SSBytesLeft(ss));
 
 #ifdef DS_ASSERT_DEBUG
 	/* a contact without an owner would keep dangling narrowphase pointers after a restore */
@@ -164,13 +164,13 @@ void ds_DynamicsSerialize(struct ss *ss, const struct ds_Dynamics *pipeline)
 	ds_Assert(owned_contacts == pipeline->contact_pool.count);
 #endif
 
-	ss_WriteU64Le(ss, pipeline->ns_tick);
-	ss_WriteU64Le(ss, pipeline->frame.mem_size);
-	ss_WriteU32Le(ss, pipeline->worker_count);
-	ss_WriteU64Le(ss, pipeline->worker[0].frame_arr[0].mem_size);
-	ss_WriteU64Le(ss, pipeline->frames_completed);
+	SSWriteU64Le(ss, pipeline->ns_tick);
+	SSWriteU64Le(ss, pipeline->frame.mem_size);
+	SSWriteU32Le(ss, pipeline->worker_count);
+	SSWriteU64Le(ss, pipeline->worker[0].frame_arr[0].mem_size);
+	SSWriteU64Le(ss, pipeline->frames_completed);
 	ds_DynamicsConfigSerialize(ss, &pipeline->config);
-	ss_WriteU64Le(ss, pipeline->island_to_split.val);
+	SSWriteU64Le(ss, pipeline->island_to_split.val);
 
 	ds_PoolSerialize(ss, pipeline->body_pool);
 	ds_BitSetSerialize(ss, &pipeline->body_usage_set);
@@ -201,22 +201,22 @@ void ds_DynamicsSerialize(struct ss *ss, const struct ds_Dynamics *pipeline)
 	}
 }
 
-u32 ds_DynamicsTryDeserialize(struct arena *mem, struct ss *ss, struct ds_Dynamics *pipeline, struct c_ShapeDB *cshape_db)
+u32 ds_DynamicsTryDeserialize(struct arena *mem, struct SS *ss, struct ds_Dynamics *pipeline, struct c_ShapeDB *cshape_db)
 {
 	ds_Assert(mem && ss->bit_index % 8 == 0);
 
 	const u64 bit_index = ss->bit_index;
 	const u64 mem_left = mem->mem_left;
 	*pipeline = (struct ds_Dynamics) { 0 };
-	if (ss_BytesLeft(ss) < DS_SNAPSHOT_HEADER_FIXED_SIZE)
+	if (SSBytesLeft(ss) < DS_SNAPSHOT_HEADER_FIXED_SIZE)
 	{
 		return 0;
 	}
 
-	const u64 ns_tick = ss_ReadU64Le(ss);
-	const u64 frame_memory = ss_ReadU64Le(ss);
-	const u32 worker_count = ss_ReadU32Le(ss);
-	const u64 worker_frame_size = ss_ReadU64Le(ss);
+	const u64 ns_tick = SSReadU64Le(ss);
+	const u64 frame_memory = SSReadU64Le(ss);
+	const u32 worker_count = SSReadU32Le(ss);
+	const u64 worker_frame_size = SSReadU64Le(ss);
 	if (worker_count == 0)
 	{
 		ss->bit_index = bit_index;
@@ -224,13 +224,13 @@ u32 ds_DynamicsTryDeserialize(struct arena *mem, struct ss *ss, struct ds_Dynami
 	}
 
 	ds_DynamicsAllocShell(mem, pipeline, ns_tick, frame_memory, cshape_db, worker_count, worker_frame_size);
-	pipeline->frames_completed = ss_ReadU64Le(ss);
+	pipeline->frames_completed = SSReadU64Le(ss);
 	if (!ds_DynamicsConfigTryDeserialize(ss, &pipeline->config))
 	{
 		goto failure;
 	}
 	pipeline->config_pending = pipeline->config;
-	pipeline->island_to_split = (ds_IslandId) { ss_ReadU64Le(ss) };
+	pipeline->island_to_split = (ds_IslandId) { SSReadU64Le(ss) };
 
 	/* frame data goes into the buffer the next tick reads (and does not flush) */
 	const u64 f = pipeline->frames_completed & 0x1;

@@ -104,62 +104,62 @@ u64 ds_SolverConfigSerializeSize(const struct ds_SolverConfig *config)
     return DS_SOLVER_CONFIG_SIZE;
 }
 
-void ds_SolverConfigSerialize(struct ss *ss, const struct ds_SolverConfig *config)
+void ds_SolverConfigSerialize(struct SS *ss, const struct ds_SolverConfig *config)
 {
     ds_Assert(ss->bit_index % 8 == 0);
-    ds_Assert(ds_SolverConfigSerializeSize(config) <= ss_BytesLeft(ss));
+    ds_Assert(ds_SolverConfigSerializeSize(config) <= SSBytesLeft(ss));
 
-    ss_WriteU32Le(ss, DS_SOLVER_CONFIG_VERSION);
-    ss_WriteU32Le(ss, config->pgs_iteration_count);
-    ss_WriteU32Le(ss, config->ngs_iteration_count);
-    ss_WriteU32Le(ss, config->warmup_solver);
-    ss_WriteF32LeN(ss, config->gravity.buf, 3);
-    ss_WriteF32Le(ss, config->baumgarte_constant);
-    ss_WriteF32Le(ss, config->max_linear_correction);
-    ss_WriteF32Le(ss, config->max_linear_velocity_magnitude);
-    ss_WriteF32Le(ss, config->max_angular_velocity_magnitude);
-    ss_WriteF32Le(ss, config->linear_dampening);
-    ss_WriteF32Le(ss, config->angular_dampening);
-    ss_WriteF32Le(ss, config->linear_slop);
-    ss_WriteF32Le(ss, config->restitution_threshold);
-    ss_WriteU32Le(ss, config->sleep_enabled);
-    ss_WriteF32Le(ss, config->sleep_time_threshold);
-    ss_WriteF32Le(ss, config->sleep_linear_velocity_sq_limit);
-    ss_WriteF32Le(ss, config->sleep_angular_velocity_sq_limit);
+    SSWriteU32Le(ss, DS_SOLVER_CONFIG_VERSION);
+    SSWriteU32Le(ss, config->pgs_iteration_count);
+    SSWriteU32Le(ss, config->ngs_iteration_count);
+    SSWriteU32Le(ss, config->warmup_solver);
+    SSWriteF32LeN(ss, config->gravity.buf, 3);
+    SSWriteF32Le(ss, config->baumgarte_constant);
+    SSWriteF32Le(ss, config->max_linear_correction);
+    SSWriteF32Le(ss, config->max_linear_velocity_magnitude);
+    SSWriteF32Le(ss, config->max_angular_velocity_magnitude);
+    SSWriteF32Le(ss, config->linear_dampening);
+    SSWriteF32Le(ss, config->angular_dampening);
+    SSWriteF32Le(ss, config->linear_slop);
+    SSWriteF32Le(ss, config->restitution_threshold);
+    SSWriteU32Le(ss, config->sleep_enabled);
+    SSWriteF32Le(ss, config->sleep_time_threshold);
+    SSWriteF32Le(ss, config->sleep_linear_velocity_sq_limit);
+    SSWriteF32Le(ss, config->sleep_angular_velocity_sq_limit);
 }
 
-u32 ds_SolverConfigTryDeserialize(struct ss *ss, struct ds_SolverConfig *config)
+u32 ds_SolverConfigTryDeserialize(struct SS *ss, struct ds_SolverConfig *config)
 {
     const u64 bit_index = ss->bit_index;
     u32 success = 0;
 
-    if (ss->bit_index % 8 != 0 || ss_BytesLeft(ss) < DS_SOLVER_CONFIG_SIZE)
+    if (ss->bit_index % 8 != 0 || SSBytesLeft(ss) < DS_SOLVER_CONFIG_SIZE)
     {
         goto end;
     }
 
-    if (ss_ReadU32Le(ss) != DS_SOLVER_CONFIG_VERSION)
+    if (SSReadU32Le(ss) != DS_SOLVER_CONFIG_VERSION)
     {
         goto end;
     }
 
     *config = (struct ds_SolverConfig) { 0 };
-    config->pgs_iteration_count = ss_ReadU32Le(ss);
-    config->ngs_iteration_count = ss_ReadU32Le(ss);
-    config->warmup_solver = ss_ReadU32Le(ss);
-    ss_ReadF32LeN(ss, config->gravity.buf, 3);
-    config->baumgarte_constant = ss_ReadF32Le(ss);
-    config->max_linear_correction = ss_ReadF32Le(ss);
-    config->max_linear_velocity_magnitude = ss_ReadF32Le(ss);
-    config->max_angular_velocity_magnitude = ss_ReadF32Le(ss);
-    config->linear_dampening = ss_ReadF32Le(ss);
-    config->angular_dampening = ss_ReadF32Le(ss);
-    config->linear_slop = ss_ReadF32Le(ss);
-    config->restitution_threshold = ss_ReadF32Le(ss);
-    config->sleep_enabled = ss_ReadU32Le(ss);
-    config->sleep_time_threshold = ss_ReadF32Le(ss);
-    config->sleep_linear_velocity_sq_limit = ss_ReadF32Le(ss);
-    config->sleep_angular_velocity_sq_limit = ss_ReadF32Le(ss);
+    config->pgs_iteration_count = SSReadU32Le(ss);
+    config->ngs_iteration_count = SSReadU32Le(ss);
+    config->warmup_solver = SSReadU32Le(ss);
+    SSReadF32LeN(ss, config->gravity.buf, 3);
+    config->baumgarte_constant = SSReadF32Le(ss);
+    config->max_linear_correction = SSReadF32Le(ss);
+    config->max_linear_velocity_magnitude = SSReadF32Le(ss);
+    config->max_angular_velocity_magnitude = SSReadF32Le(ss);
+    config->linear_dampening = SSReadF32Le(ss);
+    config->angular_dampening = SSReadF32Le(ss);
+    config->linear_slop = SSReadF32Le(ss);
+    config->restitution_threshold = SSReadF32Le(ss);
+    config->sleep_enabled = SSReadU32Le(ss);
+    config->sleep_time_threshold = SSReadF32Le(ss);
+    config->sleep_linear_velocity_sq_limit = SSReadF32Le(ss);
+    config->sleep_angular_velocity_sq_limit = SSReadF32Le(ss);
     *config = ds_SolverConfigDerive(config);
     success = 1;
 

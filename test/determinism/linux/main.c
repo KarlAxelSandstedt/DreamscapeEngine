@@ -147,15 +147,15 @@ static struct ds_DeterminismTest ds_DeterminismProcessArguments(struct arena *pe
             exit(1);
         }
         
-        struct ss ss = ss_Buffered(buf.data, buf.size);
-        test.seed[0] = ss_ReadU64Be(&ss);
-        test.seed[1] = ss_ReadU64Be(&ss);
-        test.seed[2] = ss_ReadU64Be(&ss);
-        test.seed[3] = ss_ReadU64Be(&ss);
-        test.origin.x = ss_ReadF64Be(&ss);
-        test.origin.y = ss_ReadF64Be(&ss);
-        test.origin.z = ss_ReadF64Be(&ss);
-        const u32 hash_count = ss_ReadU32Be(&ss);
+        struct SS ss = SSBuffered(buf.data, buf.size);
+        test.seed[0] = SSReadU64Be(&ss);
+        test.seed[1] = SSReadU64Be(&ss);
+        test.seed[2] = SSReadU64Be(&ss);
+        test.seed[3] = SSReadU64Be(&ss);
+        test.origin.x = SSReadF64Be(&ss);
+        test.origin.y = SSReadF64Be(&ss);
+        test.origin.z = SSReadF64Be(&ss);
+        const u32 hash_count = SSReadU32Be(&ss);
         if (buf.size - DS_DETERMINISM_HEADER_SIZE != hash_count*sizeof(u64))
         {
             fprintf(stderr, "Bad determinism test file size, exiting.\n");
@@ -167,7 +167,7 @@ static struct ds_DeterminismTest ds_DeterminismProcessArguments(struct arena *pe
         {
            ds_CPoolPush(test.hash_pool);
         }
-        ss_ReadU64BeN(&ss, test.hash_pool.buf, hash_count);
+        SSReadU64BeN(&ss, test.hash_pool.buf, hash_count);
 
         /* the RNG was seeded from the config in ds_Init */
         if (test.seed[0] != g_config->seed[0] || test.seed[1] != g_config->seed[1] || test.seed[2] != g_config->seed[2] || test.seed[3] != g_config->seed[3])
@@ -197,16 +197,16 @@ static void ds_DeterminismGenerate(struct arena *persistent, struct ds_Determini
 
     const u64 bufsize = DS_DETERMINISM_HEADER_SIZE + (u64) test->hash_pool.count*sizeof(u64);
     u8 *buf = ArenaPush(persistent, bufsize);
-    struct ss ss = ss_Buffered(buf, bufsize);
-    ss_WriteU64Be(&ss, test->seed[0]);
-    ss_WriteU64Be(&ss, test->seed[1]);
-    ss_WriteU64Be(&ss, test->seed[2]);
-    ss_WriteU64Be(&ss, test->seed[3]);
-    ss_WriteF64Be(&ss, test->origin.x);
-    ss_WriteF64Be(&ss, test->origin.y);
-    ss_WriteF64Be(&ss, test->origin.z);
-    ss_WriteU32Be(&ss, test->hash_pool.count);
-    ss_WriteU64BeN(&ss, test->hash_pool.buf, test->hash_pool.count);
+    struct SS ss = SSBuffered(buf, bufsize);
+    SSWriteU64Be(&ss, test->seed[0]);
+    SSWriteU64Be(&ss, test->seed[1]);
+    SSWriteU64Be(&ss, test->seed[2]);
+    SSWriteU64Be(&ss, test->seed[3]);
+    SSWriteF64Be(&ss, test->origin.x);
+    SSWriteF64Be(&ss, test->origin.y);
+    SSWriteF64Be(&ss, test->origin.z);
+    SSWriteU32Be(&ss, test->hash_pool.count);
+    SSWriteU64BeN(&ss, test->hash_pool.buf, test->hash_pool.count);
 
     const u64 bytes_written = FileWriteAppend(&file, buf, bufsize);
     ds_Assert(bytes_written == bufsize);

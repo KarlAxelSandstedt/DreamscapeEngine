@@ -86,12 +86,12 @@ u64                 ds_HashMapSerializeSize(const struct ds_HashMap *map);
  * Serialize the map (at a byte boundary). WARNING: Assumes map fits in the stream (ds_HashMapSerializeSize).
  * Format (LE): u32 hash_len, u32 index_len, the hash array, the index array.
  */
-void 		        ds_HashMapSerialize(struct ss *ss, const struct ds_HashMap *map);
+void 		        ds_HashMapSerialize(struct SS *ss, const struct ds_HashMap *map);
 /*
  * Returns 1 on success and 0 on failure: the memory can't be allocated or ss holds no valid map (map has hash
  * NULL, ss's position unchanged). Reads into mem (fixed) or the heap (mem == NULL; growable allowed).
  */
-u32                 ds_HashMapTryDeserialize(struct arena *mem, struct ss *ss, struct ds_HashMap *map, const u32 growable);
+u32                 ds_HashMapTryDeserialize(struct arena *mem, struct SS *ss, struct ds_HashMap *map, const u32 growable);
 /* Add the (hash, index) pair; index (< 2^31) must not be in the map. Returns 1 on success and 0 if index doesn't fit a non-growable map. */
 u32		            ds_HashMapAdd(struct ds_HashMap *map, const u32 hash, const u32 index);
 /* Remove the (hash, index) pair (index < index_len); no-op if it isn't in the map, also under another hash. */
@@ -195,8 +195,8 @@ typedef struct ds_THashMap(T)                   \
 u32  ds_THashMapAllocInternal(struct arena *mem, struct ds_THashState *state, const u32 hash_len);
 void ds_THashMapDeallocInternal(struct ds_THashState *state);
 void ds_THashMapFlushInternal(struct ds_THashState *state);
-void ds_THashMapSerializeInternal(struct ss *ss, const struct ds_THashState *state);
-u32  ds_THashMapTryDeserializeInternal(struct arena *mem, struct ss *ss, struct ds_THashState *state);
+void ds_THashMapSerializeInternal(struct SS *ss, const struct ds_THashState *state);
+u32  ds_THashMapTryDeserializeInternal(struct arena *mem, struct SS *ss, struct ds_THashState *state);
 static ds_ForceInline u32 ds_THashFindInternal(u64 **a_prev, u64 *prev, u64 *cur, u32 *found, const struct ds_THashState *state, const struct ds_TPoolState *pool, void *const *block, const u64 slot_size, const u64 link_offset, const u32 hash, const u32 index, const void *key, u32 (*equal)(const void *, const void *));
 static ds_ForceInline void ds_THashMapAddInternal(const struct ds_THashState *state, const struct ds_TPoolState *pool, void *const *block, const u64 slot_size, const u64 link_offset, const u32 hash, const u32 index);
 static ds_ForceInline struct slot ds_THashMapLookupInternal(const struct ds_THashState *state, const struct ds_TPoolState *pool, void *const *block, const u64 slot_size, const u64 link_offset, const u32 hash, const void *key, u32 (*equal)(const void *, const void *));

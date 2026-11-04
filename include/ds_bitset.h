@@ -80,12 +80,12 @@ void 		        ds_BitSetClear(struct ds_BitSet* set, const u64 clear_bit);
 /* Bytes ds_BitSetSerialize writes. */
 u64                 ds_BitSetSerializeSize(const struct ds_BitSet *set);
 /* Write the set to ss (at a byte boundary; it must fit). Format (LE): u64 block_count, the blocks. */
-void                ds_BitSetSerialize(struct ss *ss, const struct ds_BitSet *set);
+void                ds_BitSetSerialize(struct SS *ss, const struct ds_BitSet *set);
 /*
 Read a set from ss into mem (fixed) or the heap (mem == NULL; growable allowed). Returns 1 on success; 0
 if the memory can't be allocated or ss holds no valid set (the set is empty, ss's position unchanged).
 */
-u32                 ds_BitSetTryDeserialize(struct arena *mem, struct ss *ss, struct ds_BitSet *set, const u32 growable);
+u32                 ds_BitSetTryDeserialize(struct arena *mem, struct SS *ss, struct ds_BitSet *set, const u32 growable);
 /* Return bit (< bit_count), 0 or 1. */
 static inline u8    ds_BitSetGet(const struct ds_BitSet* set, const u64 bit);
 /* Set bit (< bit_count) to bit_value (0 or 1). */

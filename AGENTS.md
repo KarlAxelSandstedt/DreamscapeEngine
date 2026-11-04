@@ -201,12 +201,12 @@ Conventions, not rules: follow them in new code; don't rename old code.
 
 - ds_Type, ds_TypeFunction: engine types and the public/physics API.
 - prefix_Function: subsystem API. r_ renderer, ui_ UI, led_ editor,
-  c_ collision, gl_ OpenGL, sat_ collision algorithms, ss_ serial
-  stream.
+  c_ collision, gl_ OpenGL, sat_ collision algorithms.
 - Small common types: short lowercase type + uppercase function family
   (v3 -> V3Add, m3 -> M3Mul).
 - Small engine containers: a short uppercase name without ds_ for the type
-  and its functions (HI, DLL, LL, BT, MQ: struct BT, BTAddRoot, MQPush).
+  and its functions (HI, DLL, LL, BT, MQ, SS: struct BT, BTAddRoot, MQPush,
+  SSWriteU32Le).
 - Try before the verb (FileTryOpen, ds_ConfigTryRead): may fail, returns a
   failure state. ...Check: returns a boolean.
 

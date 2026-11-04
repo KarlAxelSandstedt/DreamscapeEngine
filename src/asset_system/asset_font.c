@@ -290,33 +290,33 @@ void FontSerialize(const struct assetFont *asset, const struct font *font)
 
 	FileSetSize(&file, font->size);
 	void *buf = FileMemoryMapPartial(&file, font->size, 0, FS_PROT_READ | FS_PROT_WRITE, FS_MAP_SHARED);
-	struct ss ss = ss_Buffered(buf, font->size);
+	struct SS ss = SSBuffered(buf, font->size);
 
-	ss_WriteU64Be(&ss, font->size);
-	ss_WriteF32Be(&ss, font->ascent);
-	ss_WriteF32Be(&ss, font->descent);
-	ss_WriteF32Be(&ss, font->linespace);
-	ss_WriteU32Be(&ss, font->pixmap_width);
-	ss_WriteU32Be(&ss, font->pixmap_height);
-	ss_WriteU32Be(&ss, font->glyph_unknown_index);
-	ss_WriteU32Be(&ss, font->glyph_count);
+	SSWriteU64Be(&ss, font->size);
+	SSWriteF32Be(&ss, font->ascent);
+	SSWriteF32Be(&ss, font->descent);
+	SSWriteF32Be(&ss, font->linespace);
+	SSWriteU32Be(&ss, font->pixmap_width);
+	SSWriteU32Be(&ss, font->pixmap_height);
+	SSWriteU32Be(&ss, font->glyph_unknown_index);
+	SSWriteU32Be(&ss, font->glyph_count);
 
 	for (u32 i = 0; i < font->glyph_count; ++i)
 	{
-		ss_WriteI32Be(&ss, font->glyph[i].size.x);	
-		ss_WriteI32Be(&ss, font->glyph[i].size.y);	
-		ss_WriteI32Be(&ss, font->glyph[i].bearing.x);	
-		ss_WriteI32Be(&ss, font->glyph[i].bearing.y);	
-		ss_WriteU32Be(&ss, font->glyph[i].advance);	
-		ss_WriteU32Be(&ss, font->glyph[i].codepoint);	
-		ss_WriteF32Be(&ss, font->glyph[i].bl.x);
-		ss_WriteF32Be(&ss, font->glyph[i].bl.y);
-		ss_WriteF32Be(&ss, font->glyph[i].tr.x);
-		ss_WriteF32Be(&ss, font->glyph[i].tr.y);
+		SSWriteI32Be(&ss, font->glyph[i].size.x);	
+		SSWriteI32Be(&ss, font->glyph[i].size.y);	
+		SSWriteI32Be(&ss, font->glyph[i].bearing.x);	
+		SSWriteI32Be(&ss, font->glyph[i].bearing.y);	
+		SSWriteU32Be(&ss, font->glyph[i].advance);	
+		SSWriteU32Be(&ss, font->glyph[i].codepoint);	
+		SSWriteF32Be(&ss, font->glyph[i].bl.x);
+		SSWriteF32Be(&ss, font->glyph[i].bl.y);
+		SSWriteF32Be(&ss, font->glyph[i].tr.x);
+		SSWriteF32Be(&ss, font->glyph[i].tr.y);
 	}
 
 	ds_HashMapSerialize(&ss, &font->codepoint_to_glyph_map);
-	ss_Write8N(&ss, font->pixmap, font->pixmap_height * font->pixmap_width);
+	SSWrite8N(&ss, font->pixmap, font->pixmap_height * font->pixmap_width);
 
 	FileMemoryUnmap(buf, font->size);
 	FileClose(&file);
@@ -364,9 +364,9 @@ const struct font *FontDeserialize(const struct assetFont *asset)
 		goto end;
 	}
 
-	struct ss ss = ss_Buffered(buf, size);
+	struct SS ss = SSBuffered(buf, size);
 	const u64 header_size = sizeof(u64) + 3*sizeof(f32) + 4*sizeof(u32);
-	if (ss_BytesLeft(&ss) < header_size || ss_ReadU64Be(&ss) > size)
+	if (SSBytesLeft(&ss) < header_size || SSReadU64Be(&ss) > size)
 	{
 		goto corrupt;
 	}
@@ -378,16 +378,16 @@ const struct font *FontDeserialize(const struct assetFont *asset)
 		FatalCleanupAndExit();
 	}
 	*font = (struct font) { .size = size };
-	font->ascent = ss_ReadF32Be(&ss);
-	font->descent = ss_ReadF32Be(&ss);
-	font->linespace = ss_ReadF32Be(&ss);
-	font->pixmap_width = ss_ReadU32Be(&ss);
-	font->pixmap_height = ss_ReadU32Be(&ss);
-	font->glyph_unknown_index = ss_ReadU32Be(&ss);
-	font->glyph_count = ss_ReadU32Be(&ss);
+	font->ascent = SSReadF32Be(&ss);
+	font->descent = SSReadF32Be(&ss);
+	font->linespace = SSReadF32Be(&ss);
+	font->pixmap_width = SSReadU32Be(&ss);
+	font->pixmap_height = SSReadU32Be(&ss);
+	font->glyph_unknown_index = SSReadU32Be(&ss);
+	font->glyph_count = SSReadU32Be(&ss);
 	/* each serialized glyph: 4 i32, 2 u32, 4 f32 */
 	if (font->glyph_count == 0 || font->glyph_unknown_index >= font->glyph_count
-		|| ss_BytesLeft(&ss) < (u64) font->glyph_count * 10*sizeof(u32)
+		|| SSBytesLeft(&ss) < (u64) font->glyph_count * 10*sizeof(u32)
 		|| font->pixmap_width == 0 || font->pixmap_height == 0)
 	{
 		goto corrupt;
@@ -401,20 +401,20 @@ const struct font *FontDeserialize(const struct assetFont *asset)
 	}
 	for (u32 i = 0; i < font->glyph_count; ++i)
 	{
-		font->glyph[i].size.x = ss_ReadI32Be(&ss);
-		font->glyph[i].size.y = ss_ReadI32Be(&ss);
-		font->glyph[i].bearing.x = ss_ReadI32Be(&ss);
-		font->glyph[i].bearing.y = ss_ReadI32Be(&ss);
-		font->glyph[i].advance = ss_ReadU32Be(&ss);
-		font->glyph[i].codepoint = ss_ReadU32Be(&ss);
-		font->glyph[i].bl.x = ss_ReadF32Be(&ss);
-		font->glyph[i].bl.y = ss_ReadF32Be(&ss);
-		font->glyph[i].tr.x = ss_ReadF32Be(&ss);
-		font->glyph[i].tr.y = ss_ReadF32Be(&ss);
+		font->glyph[i].size.x = SSReadI32Be(&ss);
+		font->glyph[i].size.y = SSReadI32Be(&ss);
+		font->glyph[i].bearing.x = SSReadI32Be(&ss);
+		font->glyph[i].bearing.y = SSReadI32Be(&ss);
+		font->glyph[i].advance = SSReadU32Be(&ss);
+		font->glyph[i].codepoint = SSReadU32Be(&ss);
+		font->glyph[i].bl.x = SSReadF32Be(&ss);
+		font->glyph[i].bl.y = SSReadF32Be(&ss);
+		font->glyph[i].tr.x = SSReadF32Be(&ss);
+		font->glyph[i].tr.y = SSReadF32Be(&ss);
 	}
 
 	if (!ds_HashMapTryDeserialize(NULL, &ss, &font->codepoint_to_glyph_map, NOT_GROWABLE)
-		|| ss_BytesLeft(&ss) < (u64) font->pixmap_width * font->pixmap_height)
+		|| SSBytesLeft(&ss) < (u64) font->pixmap_width * font->pixmap_height)
 	{
 		goto corrupt;
 	}
@@ -424,7 +424,7 @@ const struct font *FontDeserialize(const struct assetFont *asset)
 		LogString(T_ASSET, S_FATAL, "Failed to allocate a font's pixmap");
 		FatalCleanupAndExit();
 	}
-	ss_Read8N(&ss, font->pixmap, font->pixmap_height * font->pixmap_width);
+	SSRead8N(&ss, font->pixmap, font->pixmap_height * font->pixmap_width);
 	ok = 1;
 	goto end;
 

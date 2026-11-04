@@ -423,7 +423,7 @@ static struct test_Output CPoolSerializeTest(struct test_Environment *env)
     }
 
     const u64 size = ds_CPoolSerializeSize(pool);
-    struct ss ss = ss_Alloc(env->mem_1, size);
+    struct SS ss = SSAlloc(env->mem_1, size);
     TEST_NOT_EQUAL(NULL, ss.buf);
     ds_CPoolSerialize(&ss, pool);
     TEST_EQUAL(8*size, ss.bit_index);
@@ -454,7 +454,7 @@ static struct test_Output CPoolSerializeTest(struct test_Environment *env)
     const u64 mem_left = env->mem_2->mem_left;
     ds_CPool(u64) read;
 
-    struct ss cut = ss_Buffered(ss.buf, size - 1);
+    struct SS cut = SSBuffered(ss.buf, size - 1);
     TEST_EQUAL(0, ds_CPoolTryDeserialize(env->mem_2, &cut, read, NOT_GROWABLE));
     TEST_EQUAL(0, cut.bit_index);
     TEST_EQUAL(NULL, read.buf);
@@ -462,9 +462,9 @@ static struct test_Output CPoolSerializeTest(struct test_Environment *env)
     TEST_EQUAL(mem_left, env->mem_2->mem_left);
 
     /* count > length */
-    struct ss bad = ss_Alloc(env->mem_1, 2*sizeof(u32) + 2*sizeof(u64));
-    ss_WriteU32Le(&bad, 1);
-    ss_WriteU32Le(&bad, 2);
+    struct SS bad = SSAlloc(env->mem_1, 2*sizeof(u32) + 2*sizeof(u64));
+    SSWriteU32Le(&bad, 1);
+    SSWriteU32Le(&bad, 2);
     bad.bit_index = 0;
     TEST_EQUAL(0, ds_CPoolTryDeserialize(env->mem_2, &bad, read, NOT_GROWABLE));
     TEST_EQUAL(0, bad.bit_index);
@@ -474,7 +474,7 @@ static struct test_Output CPoolSerializeTest(struct test_Environment *env)
     /* an empty length-0 pool round-trips into a pool with a stub */
     ds_CPool(u64) empty;
     ds_CPoolAlloc(env->mem_2, empty, 0, NOT_GROWABLE);
-    struct ss empty_ss = ss_Alloc(env->mem_1, ds_CPoolSerializeSize(empty));
+    struct SS empty_ss = SSAlloc(env->mem_1, ds_CPoolSerializeSize(empty));
     ds_CPoolSerialize(&empty_ss, empty);
     empty_ss.bit_index = 0;
     TEST_EQUAL(1, ds_CPoolTryDeserialize(env->mem_2, &empty_ss, read, NOT_GROWABLE));
@@ -654,7 +654,7 @@ static struct test_Output PoolSerializeTest(struct test_Environment *env)
     TEST_EQUAL(pool.count_max - pool.count, free_count);
 
     const u64 size = ds_PoolSerializeSize(pool);
-    struct ss ss = ss_Alloc(env->mem_1, size);
+    struct SS ss = SSAlloc(env->mem_1, size);
     TEST_NOT_EQUAL(NULL, ss.buf);
     ds_PoolSerialize(&ss, pool);
     TEST_EQUAL(8*size, ss.bit_index);
@@ -680,7 +680,7 @@ static struct test_Output PoolSerializeTest(struct test_Environment *env)
     const u64 mem_left = env->mem_2->mem_left;
     ds_Pool(test_PoolNode) read;
 
-    struct ss cut = ss_Buffered(ss.buf, size - 1);
+    struct SS cut = SSBuffered(ss.buf, size - 1);
     TEST_EQUAL(0, ds_PoolTryDeserialize(env->mem_2, &cut, read, NOT_GROWABLE));
     TEST_EQUAL(0, cut.bit_index);
     TEST_EQUAL(NULL, read.buf);
@@ -716,7 +716,7 @@ static struct test_Output PoolSerializeTest(struct test_Environment *env)
         slot_0_value,
     };
 
-    struct ss bad = ss_Alloc(env->mem_1, size);
+    struct SS bad = SSAlloc(env->mem_1, size);
     TEST_NOT_EQUAL(NULL, bad.buf);
     for (u32 i = 0; i < sizeof(corrupt_offset) / sizeof(corrupt_offset[0]); ++i)
     {
@@ -724,7 +724,7 @@ static struct test_Output PoolSerializeTest(struct test_Environment *env)
         {
             memcpy(bad.buf, ss.buf, size);
             bad.bit_index = 8*corrupt_offset[i];
-            ss_WriteU32Le(&bad, corrupt_value[i]);
+            SSWriteU32Le(&bad, corrupt_value[i]);
             bad.bit_index = 0;
 
             TEST_EQUAL(0, ds_PoolTryDeserialize((heap) ? NULL : env->mem_2, &bad, read, (heap) ? GROWABLE : NOT_GROWABLE));

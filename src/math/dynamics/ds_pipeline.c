@@ -90,36 +90,36 @@ u64 ds_DynamicsConfigSerializeSize(const struct ds_DynamicsConfig *config)
          + ds_NumericsConfigSerializeSize(&config->numerics);
 }
 
-void ds_DynamicsConfigSerialize(struct ss *ss, const struct ds_DynamicsConfig *config)
+void ds_DynamicsConfigSerialize(struct SS *ss, const struct ds_DynamicsConfig *config)
 {
     ds_Assert(ss->bit_index % 8 == 0);
-    ds_Assert(ds_DynamicsConfigSerializeSize(config) <= ss_BytesLeft(ss));
+    ds_Assert(ds_DynamicsConfigSerializeSize(config) <= SSBytesLeft(ss));
 
-    ss_WriteU32Le(ss, DS_DYNAMICS_CONFIG_VERSION);
-    ss_WriteU32Le(ss, config->initial_size);
-    ss_WriteU64Le(ss, config->frame_memory);
+    SSWriteU32Le(ss, DS_DYNAMICS_CONFIG_VERSION);
+    SSWriteU32Le(ss, config->initial_size);
+    SSWriteU64Le(ss, config->frame_memory);
     ds_SolverConfigSerialize(ss, &config->solver);
     ds_NumericsConfigSerialize(ss, &config->numerics);
 }
 
-u32 ds_DynamicsConfigTryDeserialize(struct ss *ss, struct ds_DynamicsConfig *config)
+u32 ds_DynamicsConfigTryDeserialize(struct SS *ss, struct ds_DynamicsConfig *config)
 {
     const u64 bit_index = ss->bit_index;
     u32 success = 0;
 
-    if (ss->bit_index % 8 != 0 || ss_BytesLeft(ss) < DS_DYNAMICS_CONFIG_FIXED_SIZE)
+    if (ss->bit_index % 8 != 0 || SSBytesLeft(ss) < DS_DYNAMICS_CONFIG_FIXED_SIZE)
     {
         goto end;
     }
 
-    if (ss_ReadU32Le(ss) != DS_DYNAMICS_CONFIG_VERSION)
+    if (SSReadU32Le(ss) != DS_DYNAMICS_CONFIG_VERSION)
     {
         goto end;
     }
 
     *config = (struct ds_DynamicsConfig) { 0 };
-    config->initial_size = ss_ReadU32Le(ss);
-    config->frame_memory = ss_ReadU64Le(ss);
+    config->initial_size = SSReadU32Le(ss);
+    config->frame_memory = SSReadU64Le(ss);
     success = ds_SolverConfigTryDeserialize(ss, &config->solver)
            && ds_NumericsConfigTryDeserialize(ss, &config->numerics);
     if (success)

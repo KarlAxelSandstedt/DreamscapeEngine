@@ -19,7 +19,7 @@
 
 #include "ds_test.h"
 
-enum ss_Type
+enum SSType
 {
 	SS_WRITE8,
 	SS_WRITE16_LE,
@@ -38,16 +38,16 @@ static struct test_Output ss_randomized_aligned(void)
 	struct test_Output output = { .success = 1, .id = __func__ };
 
 	const u64 size = 1*1024*1024;
-	struct ss ss_1 = ss_Alloc(NULL, size);
-	struct ss ss_2 = ss_1;
-	struct ss *ss_in = &ss_1;
-	struct ss *ss_out = &ss_2;
+	struct SS ss_1 = SSAlloc(NULL, size);
+	struct SS ss_2 = ss_1;
+	struct SS *ss_in = &ss_1;
+	struct SS *ss_out = &ss_2;
 	memset(ss_1.buf, 0, size);
 
 	u64 size_left = ss_in->bit_count / 8;
 	while (size_left)
 	{
-		enum ss_Type type = (enum ss_Type) RngU64Range(SS_WRITE8, SS_COUNT-1);
+		enum SSType type = (enum SSType) RngU64Range(SS_WRITE8, SS_COUNT-1);
 		if (size_left < ss_type_size[type])
 		{
 			continue;
@@ -59,56 +59,56 @@ static struct test_Output ss_randomized_aligned(void)
 			case SS_WRITE8:
 			{
 				const b8 expected = { .u = (u8) RngU64Range(0, U8_MAX), };
-				ss_Write8(ss_in, expected);
-				const b8 actual = ss_Read8(ss_out);
+				SSWrite8(ss_in, expected);
+				const b8 actual = SSRead8(ss_out);
 				TEST_EQUAL(expected.u, actual.u);
 			} break;
 
 			case SS_WRITE16_LE:
 			{
 				const b16 expected = { .u = (u16) RngU64Range(0, U16_MAX), };
-				ss_Write16Le(ss_in, expected);
-				const b16 actual = ss_Read16Le(ss_out);
+				SSWrite16Le(ss_in, expected);
+				const b16 actual = SSRead16Le(ss_out);
 				TEST_EQUAL(expected.u, actual.u);
 			} break;
 
 			case SS_WRITE16_BE:
 			{
 				const b16 expected = { .u = (u16) RngU64Range(0, U16_MAX), };
-				ss_Write16Be(ss_in, expected);
-				const b16 actual = ss_Read16Be(ss_out);
+				SSWrite16Be(ss_in, expected);
+				const b16 actual = SSRead16Be(ss_out);
 				TEST_EQUAL(expected.u, actual.u);
 			} break;
 
 			case SS_WRITE32_LE:
 			{
 				const b32 expected = { .u = (u32) RngU64Range(0, U32_MAX), };
-				ss_Write32Le(ss_in, expected);
-				const b32 actual = ss_Read32Le(ss_out);
+				SSWrite32Le(ss_in, expected);
+				const b32 actual = SSRead32Le(ss_out);
 				TEST_EQUAL(expected.u, actual.u);
 			} break;
 
 			case SS_WRITE32_BE:
 			{
 				const b32 expected = { .u = (u32) RngU64Range(0, U32_MAX), };
-				ss_Write32Be(ss_in, expected);
-				const b32 actual = ss_Read32Be(ss_out);
+				SSWrite32Be(ss_in, expected);
+				const b32 actual = SSRead32Be(ss_out);
 				TEST_EQUAL(expected.u, actual.u);
 			} break;
 
 			case SS_WRITE64_LE:
 			{
 				const b64 expected = { .u = (u64) RngU64Range(0, U64_MAX), };
-				ss_Write64Le(ss_in, expected);
-				const b64 actual = ss_Read64Le(ss_out);
+				SSWrite64Le(ss_in, expected);
+				const b64 actual = SSRead64Le(ss_out);
 				TEST_EQUAL(expected.u, actual.u);
 			} break;
 
 			case SS_WRITE64_BE:
 			{
 				const b64 expected = { .u = (u64) RngU64Range(0, U64_MAX), };
-				ss_Write64Be(ss_in, expected);
-				const b64 actual = ss_Read64Be(ss_out);
+				SSWrite64Be(ss_in, expected);
+				const b64 actual = SSRead64Be(ss_out);
 				TEST_EQUAL(expected.u, actual.u);
 			} break;
 		}
@@ -117,7 +117,7 @@ static struct test_Output ss_randomized_aligned(void)
 	TEST_EQUAL(ss_in->bit_index, ss_in->bit_count);
 	TEST_EQUAL(ss_out->bit_index, ss_out->bit_count);
 
-	ss_Free(&ss_1);
+	SSDealloc(&ss_1);
 
 	return output;
 }
@@ -127,10 +127,10 @@ static struct test_Output ss_randomized_aligned_array(void)
 	struct test_Output output = { .success = 1, .id = __func__ };
 
 	const u64 size = 1*1024*1024;
-	struct ss ss_1 = ss_Alloc(NULL, size);
-	struct ss ss_2 = ss_1;
-	struct ss *ss_in = &ss_1;
-	struct ss *ss_out = &ss_2;
+	struct SS ss_1 = SSAlloc(NULL, size);
+	struct SS ss_2 = ss_1;
+	struct SS *ss_in = &ss_1;
+	struct SS *ss_out = &ss_2;
 	memset(ss_1.buf, 0, size);
 #define MAX_COUNT 8
 	b8 arr8_write[MAX_COUNT];
@@ -147,7 +147,7 @@ static struct test_Output ss_randomized_aligned_array(void)
 	{
 		u64 count = RngU64Range(1, MAX_COUNT);
 		count = (count > MAX_COUNT) ? MAX_COUNT : count;	/* the bound where GCC can see it (-Wstringop-overflow) */
-		enum ss_Type type = (enum ss_Type) RngU64Range(SS_WRITE8, SS_COUNT-1);
+		enum SSType type = (enum SSType) RngU64Range(SS_WRITE8, SS_COUNT-1);
 		if (size_left < count*ss_type_size[type])
 		{
 			continue;
@@ -162,8 +162,8 @@ static struct test_Output ss_randomized_aligned_array(void)
 				{
 					arr8_write[i].u = (u8) RngU64Range(0, U8_MAX);
 				}
-				ss_Write8N(ss_in, arr8_write, count);
-				ss_Read8N(ss_out, arr8_read, count);
+				SSWrite8N(ss_in, arr8_write, count);
+				SSRead8N(ss_out, arr8_read, count);
 				for (u32 i = 0; i < count; ++i)
 				{
 					TEST_EQUAL(arr8_write[i].u, arr8_read[i].u);
@@ -176,8 +176,8 @@ static struct test_Output ss_randomized_aligned_array(void)
 				{
 					arr16_write[i].u = (u16) RngU64Range(0, U16_MAX);
 				}
-				ss_Write16LeN(ss_in, arr16_write, count);
-				ss_Read16LeN(ss_out, arr16_read, count);
+				SSWrite16LeN(ss_in, arr16_write, count);
+				SSRead16LeN(ss_out, arr16_read, count);
 				for (u32 i = 0; i < count; ++i)
 				{
 					TEST_EQUAL(arr16_write[i].u, arr16_read[i].u);
@@ -190,8 +190,8 @@ static struct test_Output ss_randomized_aligned_array(void)
 				{
 					arr16_write[i].u = (u16) RngU64Range(0, U16_MAX);
 				}
-				ss_Write16BeN(ss_in, arr16_write, count);
-				ss_Read16BeN(ss_out, arr16_read, count);
+				SSWrite16BeN(ss_in, arr16_write, count);
+				SSRead16BeN(ss_out, arr16_read, count);
 				for (u32 i = 0; i < count; ++i)
 				{
 					TEST_EQUAL(arr16_write[i].u, arr16_read[i].u);
@@ -204,8 +204,8 @@ static struct test_Output ss_randomized_aligned_array(void)
 				{
 					arr32_write[i].u = (u32) RngU64Range(0, U32_MAX);
 				}
-				ss_Write32LeN(ss_in, arr32_write, count);
-				ss_Read32LeN(ss_out, arr32_read, count);
+				SSWrite32LeN(ss_in, arr32_write, count);
+				SSRead32LeN(ss_out, arr32_read, count);
 				for (u32 i = 0; i < count; ++i)
 				{
 					TEST_EQUAL(arr32_write[i].u, arr32_read[i].u);
@@ -218,8 +218,8 @@ static struct test_Output ss_randomized_aligned_array(void)
 				{
 					arr32_write[i].u = (u32) RngU64Range(0, U32_MAX);
 				}
-				ss_Write32BeN(ss_in, arr32_write, count);
-				ss_Read32BeN(ss_out, arr32_read, count);
+				SSWrite32BeN(ss_in, arr32_write, count);
+				SSRead32BeN(ss_out, arr32_read, count);
 				for (u32 i = 0; i < count; ++i)
 				{
 					TEST_EQUAL(arr32_write[i].u, arr32_read[i].u);
@@ -232,8 +232,8 @@ static struct test_Output ss_randomized_aligned_array(void)
 				{
 					arr64_write[i].u = (u64) RngU64Range(0, U64_MAX);
 				}
-				ss_Write64LeN(ss_in, arr64_write, count);
-				ss_Read64LeN(ss_out, arr64_read, count);
+				SSWrite64LeN(ss_in, arr64_write, count);
+				SSRead64LeN(ss_out, arr64_read, count);
 				for (u64 i = 0; i < count; ++i)
 				{
 					TEST_EQUAL(arr64_write[i].u, arr64_read[i].u);
@@ -246,8 +246,8 @@ static struct test_Output ss_randomized_aligned_array(void)
 				{
 					arr64_write[i].u = (u64) RngU64Range(0, U64_MAX);
 				}
-				ss_Write64BeN(ss_in, arr64_write, count);
-				ss_Read64BeN(ss_out, arr64_read, count);
+				SSWrite64BeN(ss_in, arr64_write, count);
+				SSRead64BeN(ss_out, arr64_read, count);
 				for (u64 i = 0; i < count; ++i)
 				{
 					TEST_EQUAL(arr64_write[i].u, arr64_read[i].u);
@@ -262,7 +262,7 @@ static struct test_Output ss_randomized_aligned_array(void)
 	ss_in->bit_index = 0;
 	ss_out->bit_index = 0;
 
-	ss_Free(&ss_1);
+	SSDealloc(&ss_1);
 
 	return output;
 }
@@ -272,16 +272,16 @@ static struct test_Output ss_randomized_partial(void)
 	struct test_Output output = { .success = 1, .id = __func__ };
 
 	const u64 size = 1*1024*1024;
-	struct ss ss_1 = ss_Alloc(NULL, size);
-	struct ss ss_2 = ss_1;
-	struct ss *ss_in = &ss_1;
-	struct ss *ss_out = &ss_2;
+	struct SS ss_1 = SSAlloc(NULL, size);
+	struct SS ss_2 = ss_1;
+	struct SS *ss_in = &ss_1;
+	struct SS *ss_out = &ss_2;
 	memset(ss_1.buf, 0, size);
 
 	u64 bits_left = ss_in->bit_count;
 	while (bits_left)
 	{
-		enum ss_Type type = (enum ss_Type) RngU64Range(SS_WRITE8, SS_COUNT-1);
+		enum SSType type = (enum SSType) RngU64Range(SS_WRITE8, SS_COUNT-1);
 		const u64 bit_count = RngU64Range(1, 8*ss_type_size[type]);
 		if (bits_left < bit_count)
 		{
@@ -294,56 +294,56 @@ static struct test_Output ss_randomized_partial(void)
 			case SS_WRITE8:
 			{
 				const u8 expected = (u8) RngU64Range(0, U8_MAX) >> (8-bit_count);
-				ss_WriteU8Partial(ss_in, expected, bit_count);
-				const u8 actual = ss_ReadU8Partial(ss_out, bit_count);
+				SSWriteU8Partial(ss_in, expected, bit_count);
+				const u8 actual = SSReadU8Partial(ss_out, bit_count);
 				TEST_EQUAL(expected, actual);
 			} break;
 
 			case SS_WRITE16_LE:
 			{
 				const u16 expected = (u16) RngU64Range(0, U16_MAX) >> (16-bit_count);
-				ss_WriteU16Partial(ss_in, expected, bit_count);
-				const u16 actual = ss_ReadU16Partial(ss_out, bit_count);
+				SSWriteU16Partial(ss_in, expected, bit_count);
+				const u16 actual = SSReadU16Partial(ss_out, bit_count);
 				TEST_EQUAL(expected, actual);
 			} break;
 
 			case SS_WRITE16_BE:
 			{
 				const u16 expected = (u16) RngU64Range(0, U16_MAX) >> (16-bit_count);
-				ss_WriteU16Partial(ss_in, expected, bit_count);
-				const u16 actual = ss_ReadU16Partial(ss_out, bit_count);
+				SSWriteU16Partial(ss_in, expected, bit_count);
+				const u16 actual = SSReadU16Partial(ss_out, bit_count);
 				TEST_EQUAL(expected, actual);
 			} break;
 
 			case SS_WRITE32_LE:
 			{
 				const u32 expected = (u32) RngU64Range(0, U32_MAX) >> (32-bit_count);
-				ss_WriteU32Partial(ss_in, expected, bit_count);
-				const u32 actual = ss_ReadU32Partial(ss_out, bit_count);
+				SSWriteU32Partial(ss_in, expected, bit_count);
+				const u32 actual = SSReadU32Partial(ss_out, bit_count);
 				TEST_EQUAL(expected, actual);
 			} break;
 
 			case SS_WRITE32_BE:
 			{
 				const u32 expected = (u32) RngU64Range(0, U32_MAX) >> (32-bit_count);
-				ss_WriteU32Partial(ss_in, expected, bit_count);
-				const u32 actual = ss_ReadU32Partial(ss_out, bit_count);
+				SSWriteU32Partial(ss_in, expected, bit_count);
+				const u32 actual = SSReadU32Partial(ss_out, bit_count);
 				TEST_EQUAL(expected, actual);
 			} break;
 
 			case SS_WRITE64_LE:
 			{
 				const u64 expected = (u64) RngU64Range(0, U64_MAX) >> (64-bit_count);
-				ss_WriteU64Partial(ss_in, expected, bit_count);
-				const u64 actual = ss_ReadU64Partial(ss_out, bit_count);
+				SSWriteU64Partial(ss_in, expected, bit_count);
+				const u64 actual = SSReadU64Partial(ss_out, bit_count);
 				TEST_EQUAL(expected, actual);
 			} break;
 
 			case SS_WRITE64_BE:
 			{
 				const u64 expected = (u64) RngU64Range(0, U64_MAX) >> (64-bit_count);
-				ss_WriteU64Partial(ss_in, expected, bit_count);
-				const u64 actual = ss_ReadU64Partial(ss_out, bit_count);
+				SSWriteU64Partial(ss_in, expected, bit_count);
+				const u64 actual = SSReadU64Partial(ss_out, bit_count);
 				TEST_EQUAL(expected, actual);
 			} break;
 		}
@@ -355,14 +355,14 @@ static struct test_Output ss_randomized_partial(void)
 	ss_in->bit_index = 0;
 	ss_out->bit_index = 0;
 
-	ss_Free(&ss_1);
+	SSDealloc(&ss_1);
 
 	return output;
 }
 
 struct ss_sequence_entry
 {
-	enum ss_Type 	type;
+	enum SSType 	type;
 	u32		bit_count;
 	union
 	{
@@ -378,16 +378,16 @@ static struct test_Output ss_randomized_sequence_partial(void)
 	const u64 size = 1*1024*1024;
 	u32 seq_len = 0;
 	struct ss_sequence_entry *seq = malloc(sizeof(struct ss_sequence_entry) * size * 8);
-	struct ss ss_1 = ss_Alloc(NULL, size);
-	struct ss ss_2 = ss_1;
-	struct ss *ss_in = &ss_1;
-	struct ss *ss_out = &ss_2;
+	struct SS ss_1 = SSAlloc(NULL, size);
+	struct SS ss_2 = ss_1;
+	struct SS *ss_in = &ss_1;
+	struct SS *ss_out = &ss_2;
 	memset(ss_1.buf, 0, size);
 
 	u64 bits_left = ss_in->bit_count;
 	while (bits_left)
 	{
-		seq[seq_len].type = (enum ss_Type) RngU64Range(SS_WRITE8, SS_COUNT-1);
+		seq[seq_len].type = (enum SSType) RngU64Range(SS_WRITE8, SS_COUNT-1);
 		seq[seq_len].bit_count = (u32) RngU64Range(1, 8*ss_type_size[seq[seq_len].type]);
 		seq[seq_len].expected = RngU64Range(0, U64_MAX) >> (64-seq[seq_len].bit_count);
 		if (bits_left < seq[seq_len].bit_count)
@@ -398,13 +398,13 @@ static struct test_Output ss_randomized_sequence_partial(void)
 
 		switch (seq[seq_len].type)
 		{
-			case SS_WRITE8:     { ss_WriteU8Partial(ss_in,  (u8) seq[seq_len].expected, seq[seq_len].bit_count); } break;
-			case SS_WRITE16_LE: { ss_WriteU16Partial(ss_in, (u16) seq[seq_len].expected, seq[seq_len].bit_count); } break;
-			case SS_WRITE16_BE: { ss_WriteU16Partial(ss_in, (u16) seq[seq_len].expected, seq[seq_len].bit_count); } break;
-			case SS_WRITE32_LE: { ss_WriteU32Partial(ss_in, (u32) seq[seq_len].expected, seq[seq_len].bit_count); } break;
-			case SS_WRITE32_BE: { ss_WriteU32Partial(ss_in, (u32) seq[seq_len].expected, seq[seq_len].bit_count); } break;
-			case SS_WRITE64_LE: { ss_WriteU64Partial(ss_in, (u64) seq[seq_len].expected, seq[seq_len].bit_count); } break;
-			case SS_WRITE64_BE: { ss_WriteU64Partial(ss_in, (u64) seq[seq_len].expected, seq[seq_len].bit_count); } break;
+			case SS_WRITE8:     { SSWriteU8Partial(ss_in,  (u8) seq[seq_len].expected, seq[seq_len].bit_count); } break;
+			case SS_WRITE16_LE: { SSWriteU16Partial(ss_in, (u16) seq[seq_len].expected, seq[seq_len].bit_count); } break;
+			case SS_WRITE16_BE: { SSWriteU16Partial(ss_in, (u16) seq[seq_len].expected, seq[seq_len].bit_count); } break;
+			case SS_WRITE32_LE: { SSWriteU32Partial(ss_in, (u32) seq[seq_len].expected, seq[seq_len].bit_count); } break;
+			case SS_WRITE32_BE: { SSWriteU32Partial(ss_in, (u32) seq[seq_len].expected, seq[seq_len].bit_count); } break;
+			case SS_WRITE64_LE: { SSWriteU64Partial(ss_in, (u64) seq[seq_len].expected, seq[seq_len].bit_count); } break;
+			case SS_WRITE64_BE: { SSWriteU64Partial(ss_in, (u64) seq[seq_len].expected, seq[seq_len].bit_count); } break;
 		}
 		seq_len += 1;
 	}
@@ -414,20 +414,20 @@ static struct test_Output ss_randomized_sequence_partial(void)
 		u64 actual = 0;
 		switch (seq[i].type)
 		{
-			case SS_WRITE8:     { actual = ss_ReadU8Partial(ss_out, seq[i].bit_count); } break;
-			case SS_WRITE16_LE: { actual = ss_ReadU16Partial(ss_out, seq[i].bit_count); } break;
-			case SS_WRITE16_BE: { actual = ss_ReadU16Partial(ss_out, seq[i].bit_count); } break;
-			case SS_WRITE32_LE: { actual = ss_ReadU32Partial(ss_out, seq[i].bit_count); } break;
-			case SS_WRITE32_BE: { actual = ss_ReadU32Partial(ss_out, seq[i].bit_count); } break;
-			case SS_WRITE64_LE: { actual = ss_ReadU64Partial(ss_out, seq[i].bit_count); } break;
-			case SS_WRITE64_BE: { actual = ss_ReadU64Partial(ss_out, seq[i].bit_count); } break;
+			case SS_WRITE8:     { actual = SSReadU8Partial(ss_out, seq[i].bit_count); } break;
+			case SS_WRITE16_LE: { actual = SSReadU16Partial(ss_out, seq[i].bit_count); } break;
+			case SS_WRITE16_BE: { actual = SSReadU16Partial(ss_out, seq[i].bit_count); } break;
+			case SS_WRITE32_LE: { actual = SSReadU32Partial(ss_out, seq[i].bit_count); } break;
+			case SS_WRITE32_BE: { actual = SSReadU32Partial(ss_out, seq[i].bit_count); } break;
+			case SS_WRITE64_LE: { actual = SSReadU64Partial(ss_out, seq[i].bit_count); } break;
+			case SS_WRITE64_BE: { actual = SSReadU64Partial(ss_out, seq[i].bit_count); } break;
 		}
 
 		TEST_EQUAL(actual, seq[i].expected);
 	}
 
 	free(seq);
-	ss_Free(&ss_1);
+	SSDealloc(&ss_1);
 
 	return output;
 }
@@ -439,16 +439,16 @@ static struct test_Output ss_randomized_sequence_partial_signed(void)
 	const u64 size = 1*1024*1024;
 	u32 seq_len = 0;
 	struct ss_sequence_entry *seq = malloc(sizeof(struct ss_sequence_entry) * size * 8);
-	struct ss ss_1 = ss_Alloc(NULL, size);
-	struct ss ss_2 = ss_1;
-	struct ss *ss_in = &ss_1;
-	struct ss *ss_out = &ss_2;
+	struct SS ss_1 = SSAlloc(NULL, size);
+	struct SS ss_2 = ss_1;
+	struct SS *ss_in = &ss_1;
+	struct SS *ss_out = &ss_2;
 	memset(ss_1.buf, 0, size);
 
 	u64 bits_left = ss_in->bit_count;
 	while (bits_left)
 	{
-		seq[seq_len].type = (enum ss_Type) RngU64Range(SS_WRITE8, SS_COUNT-1);
+		seq[seq_len].type = (enum SSType) RngU64Range(SS_WRITE8, SS_COUNT-1);
 		seq[seq_len].bit_count = (u32) RngU64Range(1, 8*ss_type_size[seq[seq_len].type]);
 		seq[seq_len].expected = RngU64Range(0, U64_MAX) >> (64-seq[seq_len].bit_count);
 		const u64 sign = seq[seq_len].expected >> (seq[seq_len].bit_count-1);
@@ -462,13 +462,13 @@ static struct test_Output ss_randomized_sequence_partial_signed(void)
 
 		switch (seq[seq_len].type)
 		{
-			case SS_WRITE8:     { ss_WriteI8Partial(ss_in,  seq[seq_len].expected_signed, seq[seq_len].bit_count); } break;
-			case SS_WRITE16_LE: { ss_WriteI16Partial(ss_in, seq[seq_len].expected_signed, seq[seq_len].bit_count); } break;
-			case SS_WRITE16_BE: { ss_WriteI16Partial(ss_in, seq[seq_len].expected_signed, seq[seq_len].bit_count); } break;
-			case SS_WRITE32_LE: { ss_WriteI32Partial(ss_in, seq[seq_len].expected_signed, seq[seq_len].bit_count); } break;
-			case SS_WRITE32_BE: { ss_WriteI32Partial(ss_in, seq[seq_len].expected_signed, seq[seq_len].bit_count); } break;
-			case SS_WRITE64_LE: { ss_WriteI64Partial(ss_in, seq[seq_len].expected_signed, seq[seq_len].bit_count); } break;
-			case SS_WRITE64_BE: { ss_WriteI64Partial(ss_in, seq[seq_len].expected_signed, seq[seq_len].bit_count); } break;
+			case SS_WRITE8:     { SSWriteI8Partial(ss_in,  seq[seq_len].expected_signed, seq[seq_len].bit_count); } break;
+			case SS_WRITE16_LE: { SSWriteI16Partial(ss_in, seq[seq_len].expected_signed, seq[seq_len].bit_count); } break;
+			case SS_WRITE16_BE: { SSWriteI16Partial(ss_in, seq[seq_len].expected_signed, seq[seq_len].bit_count); } break;
+			case SS_WRITE32_LE: { SSWriteI32Partial(ss_in, seq[seq_len].expected_signed, seq[seq_len].bit_count); } break;
+			case SS_WRITE32_BE: { SSWriteI32Partial(ss_in, seq[seq_len].expected_signed, seq[seq_len].bit_count); } break;
+			case SS_WRITE64_LE: { SSWriteI64Partial(ss_in, seq[seq_len].expected_signed, seq[seq_len].bit_count); } break;
+			case SS_WRITE64_BE: { SSWriteI64Partial(ss_in, seq[seq_len].expected_signed, seq[seq_len].bit_count); } break;
 		}
 		seq_len += 1;
 	}
@@ -478,20 +478,20 @@ static struct test_Output ss_randomized_sequence_partial_signed(void)
 		i64 actual = 0;
 		switch (seq[i].type)
 		{
-			case SS_WRITE8:     { actual = ss_ReadI8Partial(ss_out, seq[i].bit_count); } break;
-			case SS_WRITE16_LE: { actual = ss_ReadI16Partial(ss_out, seq[i].bit_count); } break;
-			case SS_WRITE16_BE: { actual = ss_ReadI16Partial(ss_out, seq[i].bit_count); } break;
-			case SS_WRITE32_LE: { actual = ss_ReadI32Partial(ss_out, seq[i].bit_count); } break;
-			case SS_WRITE32_BE: { actual = ss_ReadI32Partial(ss_out, seq[i].bit_count); } break;
-			case SS_WRITE64_LE: { actual = ss_ReadI64Partial(ss_out, seq[i].bit_count); } break;
-			case SS_WRITE64_BE: { actual = ss_ReadI64Partial(ss_out, seq[i].bit_count); } break;
+			case SS_WRITE8:     { actual = SSReadI8Partial(ss_out, seq[i].bit_count); } break;
+			case SS_WRITE16_LE: { actual = SSReadI16Partial(ss_out, seq[i].bit_count); } break;
+			case SS_WRITE16_BE: { actual = SSReadI16Partial(ss_out, seq[i].bit_count); } break;
+			case SS_WRITE32_LE: { actual = SSReadI32Partial(ss_out, seq[i].bit_count); } break;
+			case SS_WRITE32_BE: { actual = SSReadI32Partial(ss_out, seq[i].bit_count); } break;
+			case SS_WRITE64_LE: { actual = SSReadI64Partial(ss_out, seq[i].bit_count); } break;
+			case SS_WRITE64_BE: { actual = SSReadI64Partial(ss_out, seq[i].bit_count); } break;
 		}
 
 		TEST_EQUAL(actual, seq[i].expected_signed);
 	}
 
 	free(seq);
-	ss_Free(&ss_1);
+	SSDealloc(&ss_1);
 
 	return output;
 }
@@ -504,8 +504,8 @@ read tests have one to read.
 */
 struct ss_partial_input
 {
-	struct ss	ss_w;
-	struct ss	ss_r;	/* the same buffer, its own position */
+	struct SS	ss_w;
+	struct SS	ss_r;	/* the same buffer, its own position */
 	u64		n;
 	u8 *		bits;
 	u32 *		values;
@@ -517,21 +517,21 @@ struct ss_partial_input
 static void ss_partial_write(void *args)
 {
 	struct ss_partial_input *in = args;
-	struct ss *ss = &in->ss_w;
+	struct SS *ss = &in->ss_w;
 	for (u64 i = 0; i < in->n; ++i)
 	{
-		ss_WriteU32Partial(ss, in->values[i], in->bits[i]);
+		SSWriteU32Partial(ss, in->values[i], in->bits[i]);
 	}
 }
 
 static void ss_partial_read(void *args)
 {
 	struct ss_partial_input *in = args;
-	struct ss *ss = &in->ss_r;
+	struct SS *ss = &in->ss_r;
 	u64 sum = 0;
 	for (u64 i = 0; i < in->n; ++i)
 	{
-		sum += ss_ReadU32Partial(ss, in->bits[i]);
+		sum += SSReadU32Partial(ss, in->bits[i]);
 	}
 	in->sum = sum;
 }
@@ -542,8 +542,8 @@ static void ss_partial_write_read(void *args)
 	u64 sum = 0;
 	for (u64 i = 0; i < in->n; ++i)
 	{
-		ss_WriteU32Partial(&in->ss_w, in->values[i], in->bits[i]);
-		sum += ss_ReadU32Partial(&in->ss_r, in->bits[i]);
+		SSWriteU32Partial(&in->ss_w, in->values[i], in->bits[i]);
+		sum += SSReadU32Partial(&in->ss_r, in->bits[i]);
 	}
 	in->sum = sum;
 }
@@ -553,7 +553,7 @@ static void *ss_partial_init(const u32 schema)
 	static const u8 widths[16] = { 1, 32, 5, 12, 8, 3, 16, 24, 7, 1, 9, 32, 4, 20, 11, 2 };
 	struct ss_partial_input *in = malloc(sizeof(struct ss_partial_input));
 	in->n = ss_partial_size / 4;
-	in->ss_w = ss_Alloc(NULL, ss_partial_size);
+	in->ss_w = SSAlloc(NULL, ss_partial_size);
 	in->ss_r = in->ss_w;
 	in->bits = malloc(in->n);
 	in->values = malloc(in->n * sizeof(u32));
@@ -582,13 +582,13 @@ static void ss_partial_free(void *args)
 	struct ss_partial_input *in = args;
 	free(in->values);
 	free(in->bits);
-	ss_Free(&in->ss_w);
+	SSDealloc(&in->ss_w);
 	free(in);
 }
 
 
 /*
-ss_ReadU64Partial against a bit-by-bit reference of the format (stream bit i = bit i % 8 of byte i / 8, least
+SSReadU64Partial against a bit-by-bit reference of the format (stream bit i = bit i % 8 of byte i / 8, least
 significant first): random widths over a random buffer down to its last bit, aligned widths against the Le byte
 reads, and one hand-computed pair.
 */
@@ -598,10 +598,10 @@ static struct test_Output ss_read_partial_reference(void)
 
 	{
 		u8 two[2] = { 0xB5, 0x63 };	/* 1011 0101, 0110 0011 */
-		struct ss ss = ss_Buffered(two, 2);
-		TEST_EQUAL(5u, ss_ReadU64Partial(&ss, 3));	/* bits 0-2 of 0xB5: 101 */
-		TEST_EQUAL(118u, ss_ReadU64Partial(&ss, 7));	/* bits 3-7 of 0xB5 (10110) then bits 0-1 of 0x63 (11) */
-		TEST_EQUAL(24u, ss_ReadU64Partial(&ss, 6));	/* bits 2-7 of 0x63: 0,0,0,1,1,0 = 8 + 16 */
+		struct SS ss = SSBuffered(two, 2);
+		TEST_EQUAL(5u, SSReadU64Partial(&ss, 3));	/* bits 0-2 of 0xB5: 101 */
+		TEST_EQUAL(118u, SSReadU64Partial(&ss, 7));	/* bits 3-7 of 0xB5 (10110) then bits 0-1 of 0x63 (11) */
+		TEST_EQUAL(24u, SSReadU64Partial(&ss, 6));	/* bits 2-7 of 0x63: 0,0,0,1,1,0 = 8 + 16 */
 	}
 
 	const u64 size = 4096;
@@ -611,8 +611,8 @@ static struct test_Output ss_read_partial_reference(void)
 		buf[i] = (u8) RngU64Range(0, U8_MAX);
 	}
 
-	struct ss ss = ss_Buffered(buf, size);
-	struct ss aligned = ss;
+	struct SS ss = SSBuffered(buf, size);
+	struct SS aligned = ss;
 	while (ss.bit_index < ss.bit_count)
 	{
 		const u64 bits_left = ss.bit_count - ss.bit_index;
@@ -625,7 +625,7 @@ static struct test_Output ss_read_partial_reference(void)
 			const u64 bit = (buf[(pos + k) >> 3] >> ((pos + k) & 7)) & 1;
 			expected |= bit << k;
 		}
-		const u64 actual = ss_ReadU64Partial(&ss, bit_count);
+		const u64 actual = SSReadU64Partial(&ss, bit_count);
 		TEST_EQUAL(expected, actual);
 		TEST_EQUAL(pos + bit_count, ss.bit_index);
 
@@ -633,10 +633,10 @@ static struct test_Output ss_read_partial_reference(void)
 		if ((pos & 7) == 0 && (bit_count == 8 || bit_count == 16 || bit_count == 32 || bit_count == 64))
 		{
 			aligned.bit_index = pos;
-			const u64 le = (bit_count == 8) ? ss_ReadU8(&aligned)
-				     : (bit_count == 16) ? ss_ReadU16Le(&aligned)
-				     : (bit_count == 32) ? ss_ReadU32Le(&aligned)
-				     : ss_ReadU64Le(&aligned);
+			const u64 le = (bit_count == 8) ? SSReadU8(&aligned)
+				     : (bit_count == 16) ? SSReadU16Le(&aligned)
+				     : (bit_count == 32) ? SSReadU32Le(&aligned)
+				     : SSReadU64Le(&aligned);
 			TEST_EQUAL(le, actual);
 		}
 	}
@@ -647,8 +647,8 @@ static struct test_Output ss_read_partial_reference(void)
 
 
 /*
-ss_WriteU64Partial against a bit-by-bit reference writer: random widths and values to the last bit of a buffer,
-byte writes mixed in at byte boundaries, the buffers compared, and the stream read back with ss_ReadU64Partial.
+SSWriteU64Partial against a bit-by-bit reference writer: random widths and values to the last bit of a buffer,
+byte writes mixed in at byte boundaries, the buffers compared, and the stream read back with SSReadU64Partial.
 */
 static struct test_Output ss_write_partial_reference(void)
 {
@@ -663,7 +663,7 @@ static struct test_Output ss_write_partial_reference(void)
 	memset(buf, 0xA5, size);	/* the writer must not depend on the buffer's old contents */
 	memset(reference, 0, size);
 
-	struct ss ss = ss_Buffered(buf, size);
+	struct SS ss = SSBuffered(buf, size);
 	u64 n = 0;
 	while (ss.bit_index < ss.bit_count)
 	{
@@ -677,11 +677,11 @@ static struct test_Output ss_write_partial_reference(void)
 		if ((pos & 7) == 0 && (bit_count & 7) == 0 && bit_count <= 32 && bits_left >= 32 && (n & 3) == 0)
 		{
 			bit_count = 32;
-			ss_WriteU32Le(&ss, (u32) val);
+			SSWriteU32Le(&ss, (u32) val);
 		}
 		else
 		{
-			ss_WriteU64Partial(&ss, val, bit_count);
+			SSWriteU64Partial(&ss, val, bit_count);
 		}
 		TEST_EQUAL(pos + bit_count, ss.bit_index);
 
@@ -696,10 +696,10 @@ static struct test_Output ss_write_partial_reference(void)
 	}
 	TEST_EQUAL(0, memcmp(buf, reference, size));
 
-	struct ss in = ss_Buffered(buf, size);
+	struct SS in = SSBuffered(buf, size);
 	for (u64 i = 0; i < n; ++i)
 	{
-		TEST_EQUAL(values[i], ss_ReadU64Partial(&in, bits[i]));
+		TEST_EQUAL(values[i], SSReadU64Partial(&in, bits[i]));
 	}
 
 	free(values);
@@ -709,8 +709,40 @@ static struct test_Output ss_write_partial_reference(void)
 	return output;
 }
 
+/* a view streams the parent's buffer at its own bit range and refuses a range past the end */
+static struct test_Output ss_view(void)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+	u8 buf[4] = { 0xB5, 0x63, 0x0F, 0xA0 };	/* 1011 0101, 0110 0011, 0000 1111, 1010 0000 */
+	struct SS ss = SSBuffered(buf, 4);
+	struct SSView view;
+
+	TEST_EQUAL(1, SSTryView(&view, &ss, 3, 7));		/* bits 3-9: 10110 then 11 */
+	TEST_TRUE(view.buf == buf && view.bit_offset == 3 && view.bit_count == 7);
+	struct SS sub = SSSubstreamFromView(&view);
+	TEST_TRUE(sub.buf == buf && sub.bit_index == 3 && sub.bit_count == 10 && SSBitsLeft(&sub) == 7);
+	TEST_EQUAL(118u, SSReadU64Partial(&sub, 7));
+	TEST_EQUAL(0u, SSBitsLeft(&sub));
+
+	TEST_EQUAL(1, SSTryView(&view, &ss, 8, 24));		/* byte aligned: byte access works */
+	sub = SSSubstreamFromView(&view);
+	TEST_TRUE(sub.buf == buf && sub.bit_index == 8 && SSBytesLeft(&sub) == 3);
+	TEST_EQUAL(0x63u, SSReadU8(&sub));
+
+	TEST_EQUAL(0, SSTryView(&view, &ss, 30, 3));		/* past the end */
+	TEST_TRUE(view.buf == NULL && view.bit_count == 0);
+	TEST_EQUAL(0, SSTryView(&view, &ss, 33, 0));
+	TEST_EQUAL(1, SSTryView(&view, &ss, 32, 0));		/* empty at the end */
+	sub = SSSubstreamFromView(&view);
+	TEST_EQUAL(0u, SSBitsLeft(&sub));
+
+	return output;
+}
+
 struct test_CorrectnessRepetition repetition_test[] =
 {
+	{ .test =  &ss_view, .count = 1, },
 	{ .test =  &ss_read_partial_reference, .count = 20, },
 	{ .test =  &ss_write_partial_reference, .count = 20, },
 	{ .test =  &ss_randomized_aligned, .count = 100, },
