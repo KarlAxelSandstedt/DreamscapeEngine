@@ -1082,6 +1082,245 @@ static struct test_Output ServerReplayTest(struct test_Environment *env)
 	return output;
 }
 
+/*
+ * Decoder fuzz (fixed seed): a serialized payload of three ConfigLoads, mutated per case (bit flips, truncation, a
+ * random or boundary word written over a random place, a byte inserted, random bytes, or left intact), through
+ * ds_SimCmdPayloadTryDeserializeAndAlias, its commands through ds_SimCmdTryDeserialize + ds_SimCmdFormVerify, the
+ * command reader at random bit offsets of the raw bytes, and every 32nd case through the server's door. Contracts:
+ * no assert; a failed read leaves the position as it was; a successful payload read advanced by its serialized size
+ * and views bytes inside the buffer with zero pad bits; the intact case decodes whole; the door's simulation keeps
+ * its alloc-time values (a mutated config that still checks is a valid load and may apply).
+ */
+static struct test_Output SimCmdFuzzTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct c_ShapeDB cshape_db = { 0 };
+    c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
+    ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
+    ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
+
+    struct ds_SimConfig config = ds_SimConfigDefault();
+    config.dynamics.initial_size = 32;
+    const u32 iterations = config.dynamics.solver.pgs_iteration_count;
+    struct arena mem = ArenaAlloc(NULL, ds_DynamicsShellMemoryRequirement(g_config->thread_count, config.dynamics.frame_memory) + 1024);
+    struct ds_Server srv;
+    ds_ServerAlloc(&srv, 1 << 20, 2);
+    const ds_SimId id = ds_SimHostAdd(&srv, &mem, &config, SIM_MODE_NONE, NULL, 0, NULL, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    struct ds_SimHost *host = ds_SimHostLookup(&srv, id).address;
+
+    /* the base: three ConfigLoads with distinct iteration counts, serialized as a payload for the hosted simulation */
+    struct ds_SimConfig load[3] = { config, config, config };
+    ds_CPool(ds_SimCmd) pool;
+    ds_CPoolAlloc(env->mem_1, pool, 3, NOT_GROWABLE);
+    for (u32 i = 0; i < 3; ++i)
+    {
+        load[i].dynamics.solver.pgs_iteration_count = iterations + 10 + i;
+        const struct ds_SimCmd cmd = { .type = SIM_CMD_CONFIG_LOAD, .load_config.config = &load[i] };
+        ds_CPoolPushValue(pool, cmd);
+    }
+    const struct ds_SimCmdPayload payload = ds_SimCmdPayloadPushAll(env->mem_1, id, &pool);
+    const u64 base_size = ds_SimCmdPayloadSerializeSize(&payload);
+    TEST_TRUE(base_size + 1 <= 1024);
+    u8 base[1024];
+    struct SS base_ss = SSBuffered(base, 1024);
+    ds_SimCmdPayloadSerialize(&base_ss, &payload);
+
+    struct rng rng;
+    RngLocalInit(&rng, 0xf00dfeed);
+    u8 buf[1024];
+    for (u32 n = 0; n < 20000; ++n)
+    {
+        for (u32 i = 0; i < 1024; ++i) { buf[i] = base[i]; }
+        u64 len = base_size;
+        const u64 kind = RngLocalU64Range(&rng, 0, 5);
+        switch (kind)
+        {
+            case 0:
+            {
+                const u64 flips = RngLocalU64Range(&rng, 1, 8);
+                for (u64 f = 0; f < flips; ++f) { buf[RngLocalU64Range(&rng, 0, len - 1)] ^= (u8) (1u << RngLocalU64Range(&rng, 0, 7)); }
+            } break;
+            case 1: { len = RngLocalU64Range(&rng, 0, len); } break;
+            case 2:
+            {
+                const u64 boundary[4] = { 0, U32_MAX, base_size, RngLocalU64(&rng) };
+                const u32 word = (u32) boundary[RngLocalU64Range(&rng, 0, 3)];
+                const u64 at = RngLocalU64Range(&rng, 0, len - 4);
+                buf[at] = (u8) word; buf[at + 1] = (u8) (word >> 8); buf[at + 2] = (u8) (word >> 16); buf[at + 3] = (u8) (word >> 24);
+            } break;
+            case 3:
+            {
+                const u64 at = RngLocalU64Range(&rng, 0, len);
+                for (u64 i = len; i > at; --i) { buf[i] = buf[i - 1]; }
+                buf[at] = (u8) RngLocalU64Range(&rng, 0, 255);
+                len += 1;
+            } break;
+            case 4: { for (u64 i = 0; i < len; ++i) { buf[i] = (u8) RngLocalU64Range(&rng, 0, 255); } } break;
+            default: break;    /* intact */
+        }
+
+        /* the payload reader */
+        struct SS ss = SSBuffered(buf, len);
+        struct ds_SimCmdPayload read;
+        const u32 ok = ds_SimCmdPayloadTryDeserializeAndAlias(&ss, &read);
+        if (kind == 5) { TEST_EQUAL(1, ok); }
+        if (!ok)
+        {
+            TEST_EQUAL(0, ss.bit_index);
+            TEST_TRUE(ds_SimIdNullCheck(read.dst) && read.stream.buf == NULL && read.cmd_count == 0);
+        }
+        else
+        {
+            TEST_EQUAL(ss.bit_index, 8 * (16 + (read.stream.bit_index + 7) / 8));
+            TEST_TRUE(ss.bit_index <= 8 * len);
+            TEST_TRUE(read.stream.buf >= buf && read.stream.buf + (read.stream.bit_index + 7) / 8 <= buf + len);
+            TEST_EQUAL(read.stream.bit_index, read.stream.bit_count);
+            if (read.stream.bit_index % 8) { TEST_EQUAL(0, read.stream.buf[read.stream.bit_index / 8] >> (read.stream.bit_index % 8)); }
+
+            /* its commands */
+            ArenaPushRecord(env->mem_2);
+            struct SSView view;
+            SSTryView(&view, &read.stream, 0, read.stream.bit_index);
+            struct SS cmds = SSSubstreamFromView(&view);
+            u32 decoded = 0;
+            for (u32 c = 0; c < read.cmd_count; ++c)
+            {
+                const u64 before = cmds.bit_index;
+                struct ds_SimCmd cmd;
+                if (!ds_SimCmdTryDeserialize(env->mem_2, &cmds, &cmd))
+                {
+                    TEST_EQUAL(before, cmds.bit_index);
+                    break;
+                }
+                TEST_TRUE(cmds.bit_index > before && cmds.bit_index <= read.stream.bit_index);
+                TEST_EQUAL(1, ds_SimCmdFormVerify(&cmd));
+                decoded += 1;
+            }
+            if (kind == 5) { TEST_EQUAL(3, decoded); TEST_EQUAL(0, SSBitsLeft(&cmds)); }
+            ArenaPopRecord(env->mem_2);
+        }
+
+        /* the command reader at a random bit offset of the raw bytes */
+        {
+            ArenaPushRecord(env->mem_2);
+            struct SS raw = SSBuffered(buf, len);
+            raw.bit_index = (len) ? RngLocalU64Range(&rng, 0, 8 * len - 1) : 0;
+            const u64 before = raw.bit_index;
+            struct ds_SimCmd cmd;
+            if (!ds_SimCmdTryDeserialize(env->mem_2, &raw, &cmd)) { TEST_EQUAL(before, raw.bit_index); }
+            else { TEST_TRUE(raw.bit_index > before && raw.bit_index <= 8 * len); }
+            ArenaPopRecord(env->mem_2);
+        }
+
+        /* the door */
+        if (ok && n % 32 == 0)
+        {
+            ds_CPoolPushValue(srv.payload_pool, read);
+            ds_ServerTick(&srv, 0);
+            TEST_EQUAL(0, host->cmd_pool.count);
+            TEST_EQUAL(config.us_system_tick[SIM_SYSTEM_DYNAMICS], host->sim.us_system_tick[SIM_SYSTEM_DYNAMICS]);
+            TEST_EQUAL(config.dynamics.initial_size, host->sim.dynamics.config.initial_size);
+        }
+    }
+
+    ds_ServerDealloc(&srv);
+    ArenaFree(&mem);
+    ds_SDBDealloc(prefab_db);
+    c_ShapeDBDealloc(&cshape_db);
+	return output;
+}
+
+/*
+ * Corrupt records (fixed seed): a valid record of three frames, then copies corrupted after the seed entry with a bit
+ * flipped, a truncated tail, a zeroed tail and random bytes, each added as a REPLAY and ticked past the record: it
+ * replays until it logs and runs on live, time advancing as asked. Never an assert.
+ */
+static struct test_Output ServerReplayCorruptTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct c_ShapeDB cshape_db = { 0 };
+    c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
+    ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
+    ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
+
+    struct ds_SimConfig config = ds_SimConfigDefault();
+    config.dynamics.initial_size = 32;
+    const u32 iterations = config.dynamics.solver.pgs_iteration_count;
+    const u64 period = config.us_system_tick[SIM_SYSTEM_DYNAMICS];
+    struct ds_Server srv;
+    ds_ServerAlloc(&srv, 1 << 20, 2);
+
+    /* the record: a ConfigLoad per frame, three frames */
+    struct arena mem = ArenaAlloc(NULL, ds_DynamicsShellMemoryRequirement(g_config->thread_count, config.dynamics.frame_memory) + 1024);
+    const ds_SimId id = ds_SimHostAdd(&srv, &mem, &config, SIM_MODE_RECORD, "agent_test_corrupt.bin", 0, NULL, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    struct ds_SimConfig load = config;
+    ds_CPool(ds_SimCmd) pool;
+    ds_CPoolAlloc(env->mem_1, pool, 1, NOT_GROWABLE);
+    const struct ds_SimCmd cmd = { .type = SIM_CMD_CONFIG_LOAD, .load_config.config = &load };
+    ds_CPoolPushValue(pool, cmd);
+    for (u32 frame = 0; frame < 3; ++frame)
+    {
+        load.dynamics.solver.pgs_iteration_count = iterations + 1 + frame;
+        ds_CPoolPushValue(srv.payload_pool, ds_SimCmdPayloadPushAll(env->mem_1, id, &pool));
+        ds_ServerTick(&srv, 1000 * period);
+    }
+    ds_SimHostRemove(&srv, id);
+    const struct dsBuffer record = FileDumpAtCwd(env->mem_1, "agent_test_corrupt.bin");
+    TEST_TRUE(record.size > 0);
+    /* the seed entry's end: corruption starts after it (a corrupt seed config with huge alloc-time values is fatal in ds_SimAlloc) */
+    struct SS seed_ss = SSBuffered(record.data, record.size);
+    u64 seed_delta, seed_count, seed_bits;
+    TEST_TRUE(ds_CompactSizeTryDeserialize(&seed_ss, &seed_delta) && ds_CompactSizeTryDeserialize(&seed_ss, &seed_count) && ds_CompactSizeTryDeserialize(&seed_ss, &seed_bits));
+    const u64 seed_end = seed_ss.bit_index / 8 + (seed_bits + 7) / 8;
+    TEST_TRUE(seed_end < record.size);
+
+    struct rng rng;
+    RngLocalInit(&rng, 0xbadc0de);
+    for (u32 variant = 0; variant < 12; ++variant)
+    {
+        ArenaPushRecord(env->mem_2);
+        u8 *bytes = ArenaPush(env->mem_2, record.size);
+        u64 size = record.size;
+        for (u64 i = 0; i < size; ++i) { bytes[i] = record.data[i]; }
+        switch (variant % 4)
+        {
+            case 0: { bytes[RngLocalU64Range(&rng, seed_end, size - 1)] ^= (u8) (1u << RngLocalU64Range(&rng, 0, 7)); } break;
+            case 1: { size = RngLocalU64Range(&rng, seed_end + 1, size - 1); } break;
+            case 2: { for (u64 i = RngLocalU64Range(&rng, seed_end, size - 1); i < size; ++i) { bytes[i] = 0; } } break;
+            default: { for (u64 i = seed_end; i < size; ++i) { bytes[i] = (u8) RngLocalU64Range(&rng, 0, 255); } } break;
+        }
+
+        struct file file = FileNull();
+        TEST_EQUAL(FS_SUCCESS, FileTryCreateAtCwd(env->mem_2, &file, "agent_test_corrupt_variant.bin", 1));
+        TEST_EQUAL(size, FileWriteAppend(&file, bytes, size));
+        FileClose(&file);
+
+        struct arena mem_replay = ArenaAlloc(NULL, ds_DynamicsShellMemoryRequirement(g_config->thread_count, config.dynamics.frame_memory) + 1024);
+        const ds_SimId id_replay = ds_SimHostAdd(&srv, &mem_replay, NULL, SIM_MODE_REPLAY, "agent_test_corrupt_variant.bin", 0, NULL, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+        if (!ds_SimIdNullCheck(id_replay))
+        {
+            struct ds_SimHost *replay = ds_SimHostLookup(&srv, id_replay).address;
+            for (u32 frame = 0; frame < 6; ++frame)
+            {
+                ds_ServerTick(&srv, 1000 * period);
+            }
+            TEST_EQUAL(1, replay->replay_ended);
+            TEST_EQUAL(6 * period, replay->sim.us_time);
+            ds_SimHostRemove(&srv, id_replay);
+        }
+        ArenaFree(&mem_replay);
+        ArenaPopRecord(env->mem_2);
+    }
+
+    ds_ServerDealloc(&srv);
+    ArenaFree(&mem);
+    ds_SDBDealloc(prefab_db);
+    c_ShapeDBDealloc(&cshape_db);
+	return output;
+}
+
 static struct test_Output (*simulation_tests[])(struct test_Environment *) =
 {
     SimConfigSerializeTest,
@@ -1094,6 +1333,8 @@ static struct test_Output (*simulation_tests[])(struct test_Environment *) =
     ServerDoorTest,
     ServerRecordTest,
     ServerReplayTest,
+    SimCmdFuzzTest,
+    ServerReplayCorruptTest,
 };
 
 struct suite_Correctness m_simulation_suite =

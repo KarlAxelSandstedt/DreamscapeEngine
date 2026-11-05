@@ -821,11 +821,64 @@ static struct test_Output ss_compact_size(void)
 	return output;
 }
 
+/*
+ * CompactSize fuzz (fixed seed): random values encoded then mutated (bit flips, truncation, a random marker byte,
+ * random bytes); a read that succeeds consumed exactly the value's size and re-encodes to the same bytes, a read
+ * that fails leaves the position as it was. Never an assert.
+ */
+static struct test_Output ss_compact_size_fuzz(void)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+	struct rng rng;
+	RngLocalInit(&rng, 0x5ea1ab1e);
+	for (u32 n = 0; n < 20000; ++n)
+	{
+		u8 buf[16] = { 0 };
+		struct SS ss = SSBuffered(buf, 16);
+		const u32 shift = (u32) RngLocalU64Range(&rng, 0, 63);
+		const u64 value = RngLocalU64(&rng) >> shift;
+		ds_CompactSizeSerialize(&ss, value);
+		u64 len = ss.bit_index / 8;
+
+		switch (RngLocalU64Range(&rng, 0, 3))
+		{
+			case 0: { buf[RngLocalU64Range(&rng, 0, len - 1)] ^= (u8) (1u << RngLocalU64Range(&rng, 0, 7)); } break;
+			case 1: { len = RngLocalU64Range(&rng, 0, len); } break;
+			case 2: { buf[0] = (u8) RngLocalU64Range(&rng, 0, 255); } break;
+			default: { for (u32 i = 0; i < 16; ++i) { buf[i] = (u8) RngLocalU64Range(&rng, 0, 255); } len = RngLocalU64Range(&rng, 0, 16); } break;
+		}
+
+		struct SS read = SSBuffered(buf, len);
+		read.bit_index = 0;
+		u64 decoded = 0;
+		if (ds_CompactSizeTryDeserialize(&read, &decoded))
+		{
+			const u64 size = ds_CompactSizeSerializeSize(decoded);
+			TEST_EQUAL(8*size, read.bit_index);
+			u8 again[16];
+			struct SS re = SSBuffered(again, 16);
+			ds_CompactSizeSerialize(&re, decoded);
+			for (u32 i = 0; i < size; ++i)
+			{
+				TEST_EQUAL(buf[i], again[i]);
+			}
+		}
+		else
+		{
+			TEST_EQUAL(0, read.bit_index);
+		}
+	}
+
+	return output;
+}
+
 struct test_CorrectnessRepetition repetition_test[] =
 {
 	{ .test =  &ss_view, .count = 1, },
 	{ .test =  &ss_increase_size, .count = 1, },
 	{ .test =  &ss_compact_size, .count = 1, },
+	{ .test =  &ss_compact_size_fuzz, .count = 1, },
 	{ .test =  &ss_read_partial_reference, .count = 20, },
 	{ .test =  &ss_write_partial_reference, .count = 20, },
 	{ .test =  &ss_randomized_aligned, .count = 100, },
