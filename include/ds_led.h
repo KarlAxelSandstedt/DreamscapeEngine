@@ -26,6 +26,7 @@ extern "C" {
 
 #include "ds_base.h"
 #include "ds_dynamics.h"
+#include "ds_server.h"
 #include "ds_hash_map.h"
 #include "ds_list.h"
 #include "cmd.h"
@@ -180,7 +181,6 @@ struct led
 
 	u64			            ns_engine_running;
 	u64			            ns_physics_start;       /* led->ns when the physics started: the proxies' speculation clock */
-	u64			            ns_physics_elapsed;     /* wall-clock ns the physics has to catch up with (ticks run while behind) */
 	u64			            ns_engine_paused;
 
 	u32			            pending_engine_paused;
@@ -203,7 +203,9 @@ struct led
 	struct arena 		    frame;
 	struct ui_List 		    brush_list;
 
-	struct ds_Dynamics physics;
+	struct ds_Server        srv;
+	ds_SimId                sim;                    /* the editor's one hosted simulation */
+	struct ds_Dynamics *    physics;                /* its dynamics: what the editor inspects and draws */
     struct c_ShapeDB 		        cs_db;
 	struct DLL				cs_shape_list;		/* the shapes added to cs_db, in order (c_Shape.led_shape_node) */
 	struct ui_List 		    cs_list;

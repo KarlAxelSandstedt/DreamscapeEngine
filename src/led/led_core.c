@@ -2233,7 +2233,7 @@ static void led_NodeDontDrawProxies(struct led *led, const u32 index)
 
 static void led_ColorIsland(struct led *led, const ds_IslandId id, const v4 color)
 {
-	struct ds_Island *is = ds_IslandLookup(&led->physics, id).address;
+	struct ds_Island *is = ds_IslandLookup(led->physics, id).address;
     if (!is)
     {
         return;
@@ -2242,47 +2242,25 @@ static void led_ColorIsland(struct led *led, const ds_IslandId id, const v4 colo
 	const struct ds_Body *body;
 	for (u32 i = is->body_list.first; (i32) i != DLL_SENTINEL; i = body->island_body.next)
 	{
-		body = led->physics.body_pool.buf + i;
+		body = led->physics->body_pool.buf + i;
         led_NodeColorProxies(led, body->entity, color);
 	}
 }
 
-static void led_EngineRun(struct led *led)
+static void led_EngineRun(struct led *led, const u32 physics_ticked)
 {
-	led->ns_physics_elapsed += led->ns_delta;
-
-	//const u64 game_frames_to_run = (game->ns_elapsed - (game->frames_completed * game->ns_tick)) / game->ns_tick;
-	const u64 physics_frames_to_run = (led->ns_physics_elapsed - (led->physics.frames_completed * led->physics.ns_tick)) / led->physics.ns_tick;
-
-	//u64 ns_next_game_frame = game->frames_completed * game->ns_tick;
-
-	for (u64 i = 0; i < /* game_frames_to_run + */ physics_frames_to_run; ++i)
-	{
-		//if (ns_next_game_frame <= ns_next_physics_frame)
-		//{
-		//	ArenaFlush(&game->frame);
-		//	game_tick(game);
-		//	game->frames_completed += 1;
-		//	ns_next_game_frame += game->ns_tick;
-		//}
-		//else
-		//{
-			ds_DynamicsTick(&led->physics);
-		//}
-	}
-
 	if (led->pending_body_color_mode != led->body_color_mode)
 	{
 		switch (led->pending_body_color_mode)
 		{
 			case RB_COLOR_MODE_BODY: 
 			{ 
-                for (u64 bi = 0; bi < led->physics.body_usage_set.block_count; ++bi)
+                for (u64 bi = 0; bi < led->physics->body_usage_set.block_count; ++bi)
                 {
-                    struct ds_BitBlock it = ds_BitBlockInit(led->physics.body_usage_set.bits[bi], bi);
+                    struct ds_BitBlock it = ds_BitBlockInit(led->physics->body_usage_set.bits[bi], bi);
                     while (ds_BitBlockHasNext(&it))
                     {
-                        const struct ds_Body *body = led->physics.body_pool.buf + ds_BitBlockNext(&it);
+                        const struct ds_Body *body = led->physics->body_pool.buf + ds_BitBlockNext(&it);
                         if (body->entity == U32_MAX)
                         {
                             continue;
@@ -2296,12 +2274,12 @@ static void led_EngineRun(struct led *led)
 			case RB_COLOR_MODE_COLLISION: 
 			{ 
                 v4 color;
-                for (u64 bi = 0; bi < led->physics.body_usage_set.block_count; ++bi)
+                for (u64 bi = 0; bi < led->physics->body_usage_set.block_count; ++bi)
                 {
-                    struct ds_BitBlock it = ds_BitBlockInit(led->physics.body_usage_set.bits[bi], bi);
+                    struct ds_BitBlock it = ds_BitBlockInit(led->physics->body_usage_set.bits[bi], bi);
                     while (ds_BitBlockHasNext(&it))
                     {
-				        const struct ds_Body *body = led->physics.body_pool.buf + ds_BitBlockNext(&it);
+				        const struct ds_Body *body = led->physics->body_pool.buf + ds_BitBlockNext(&it);
                         if (body->entity == U32_MAX)
                         {
                             continue;
@@ -2309,7 +2287,7 @@ static void led_EngineRun(struct led *led)
                         const struct led_Node *node = led->node_hierarchy.pool.buf + body->entity;
 					    if (ds_BodyDynamicCheck(body))
 					    {
-                            const struct ds_Island *island = led->physics.island_pool.buf + body->island;
+                            const struct ds_Island *island = led->physics->island_pool.buf + body->island;
 					    	color = (island->contact_list.count)
 					    		? led->collision_color
 					    		: node->color;
@@ -2325,12 +2303,12 @@ static void led_EngineRun(struct led *led)
 
 			case RB_COLOR_MODE_SLEEP: 
 			{ 
-                for (u64 bi = 0; bi < led->physics.body_usage_set.block_count; ++bi)
+                for (u64 bi = 0; bi < led->physics->body_usage_set.block_count; ++bi)
                 {
-                    struct ds_BitBlock it = ds_BitBlockInit(led->physics.body_usage_set.bits[bi], bi);
+                    struct ds_BitBlock it = ds_BitBlockInit(led->physics->body_usage_set.bits[bi], bi);
                     while (ds_BitBlockHasNext(&it))
                     {
-				        const struct ds_Body *body = led->physics.body_pool.buf + ds_BitBlockNext(&it);
+				        const struct ds_Body *body = led->physics->body_pool.buf + ds_BitBlockNext(&it);
                         if (!ds_BodyDynamicCheck(body))
 					    {						
                             led_NodeColorProxies(led, body->entity, led->static_color);
@@ -2347,12 +2325,12 @@ static void led_EngineRun(struct led *led)
 
 			case RB_COLOR_MODE_ISLAND: 
 			{ 
-                for (u64 bi = 0; bi < led->physics.body_usage_set.block_count; ++bi)
+                for (u64 bi = 0; bi < led->physics->body_usage_set.block_count; ++bi)
                 {
-                    struct ds_BitBlock it = ds_BitBlockInit(led->physics.body_usage_set.bits[bi], bi);
+                    struct ds_BitBlock it = ds_BitBlockInit(led->physics->body_usage_set.bits[bi], bi);
                     while (ds_BitBlockHasNext(&it))
                     {
-				        const struct ds_Body *body = led->physics.body_pool.buf + ds_BitBlockNext(&it);
+				        const struct ds_Body *body = led->physics->body_pool.buf + ds_BitBlockNext(&it);
                         if (body->entity == U32_MAX)
                         {
                             continue;
@@ -2364,7 +2342,7 @@ static void led_EngineRun(struct led *led)
 					    }
 					    else
 					    {
-					    	const struct ds_Island *is = led->physics.island_pool.buf + body->island;
+					    	const struct ds_Island *is = led->physics->island_pool.buf + body->island;
                             led_NodeColorProxies(led, body->entity, is->color);
 					    }
                     }
@@ -2374,29 +2352,29 @@ static void led_EngineRun(struct led *led)
 	}
 	led->body_color_mode = led->pending_body_color_mode;
 
-	while (led->physics.event_list.first != DLL_SENTINEL)
+	while (led->physics->event_list.first != DLL_SENTINEL)
 	{
-        const u32 ei = led->physics.event_list.first;
-	    struct ds_PhysicsEvent *event = led->physics.event_pool.buf + ei;
+        const u32 ei = led->physics->event_list.first;
+	    struct ds_PhysicsEvent *event = led->physics->event_pool.buf + ei;
 		switch (event->type)
 		{
 			case PHYSICS_EVENT_CONTACT_NEW:
 			{
 				if (led->body_color_mode == RB_COLOR_MODE_COLLISION)
 				{
-                    const struct ds_Contact *c = ds_ContactLookup(&led->physics, event->contact).address;
+                    const struct ds_Contact *c = ds_ContactLookup(led->physics, event->contact).address;
                     if (c)
                     {
                         const struct ds_Shape *shape[2] =
                         {
-                            led->physics.shape_pool.buf + c->key.shape[0],
-                            led->physics.shape_pool.buf + c->key.shape[1],
+                            led->physics->shape_pool.buf + c->key.shape[0],
+                            led->physics->shape_pool.buf + c->key.shape[1],
                         };
                         
                         const struct ds_Body *body[2] =
                         {
-		                    led->physics.body_pool.buf + shape[0]->body,
-		                    led->physics.body_pool.buf + shape[1]->body,
+		                    led->physics->body_pool.buf + shape[0]->body,
+		                    led->physics->body_pool.buf + shape[1]->body,
                         };
 
 					    if (ds_BodyDynamicCheck(body[0]))
@@ -2415,8 +2393,8 @@ static void led_EngineRun(struct led *led)
 			{
 				if (led->body_color_mode == RB_COLOR_MODE_COLLISION)
 				{
-					const struct ds_Body *body1 = ds_BodyLookup(&led->physics, event->contact_removed_bodies[0]).address;
-					const struct ds_Body *body2 = ds_BodyLookup(&led->physics, event->contact_removed_bodies[1]).address;
+					const struct ds_Body *body1 = ds_BodyLookup(led->physics, event->contact_removed_bodies[0]).address;
+					const struct ds_Body *body2 = ds_BodyLookup(led->physics, event->contact_removed_bodies[1]).address;
                     if (body1 && body2)
                     {
                         const struct led_Node *node1 = led->node_hierarchy.pool.buf + body1->entity;
@@ -2424,7 +2402,7 @@ static void led_EngineRun(struct led *led)
 
 					    if (ds_BodyDynamicCheck(body1))
 					    {
-                            const struct ds_Island *is = led->physics.island_pool.buf + body1->island;
+                            const struct ds_Island *is = led->physics->island_pool.buf + body1->island;
 					    	if (is->contact_list.count == 0)
 					    	{
                                 led_NodeColorProxies(led, body1->entity, node1->color);
@@ -2437,7 +2415,7 @@ static void led_EngineRun(struct led *led)
 		
 					    if (ds_BodyDynamicCheck(body2))
 					    {
-                            const struct ds_Island *is = led->physics.island_pool.buf + body2->island;
+                            const struct ds_Island *is = led->physics->island_pool.buf + body2->island;
 					    	if (is->contact_list.count == 0)
 					    	{
                                 led_NodeColorProxies(led, body2->entity, node2->color);
@@ -2453,7 +2431,7 @@ static void led_EngineRun(struct led *led)
 
 			case PHYSICS_EVENT_ISLAND_NEW:
 			{
-				struct ds_Island *is = ds_IslandLookup(&led->physics, event->island).address;
+				struct ds_Island *is = ds_IslandLookup(led->physics, event->island).address;
                 if (is)
 				{
 					/* one draw per statement: a call's argument order is the compiler's */
@@ -2487,19 +2465,19 @@ static void led_EngineRun(struct led *led)
 					led_ColorIsland(led, event->island, led->sleep_color);
 				}
 
-                struct ds_Island *is = ds_IslandLookup(&led->physics, event->island).address;
+                struct ds_Island *is = ds_IslandLookup(led->physics, event->island).address;
                 if (is)
                 {
-                    struct ds_SolverSet *set = led->physics.solver_set_pool.buf + is->set;
+                    struct ds_SolverSet *set = led->physics->solver_set_pool.buf + is->set;
                     for (u32 i = 0; i < set->body_sim_pool.count; ++i)
                     {
                         const struct ds_BodySim *sim = set->body_sim_pool.buf + i;
-	                	const struct ds_Body *body = led->physics.body_pool.buf + sim->body;
+	                	const struct ds_Body *body = led->physics->body_pool.buf + sim->body;
                         const struct led_Node *node = led->node_hierarchy.pool.buf + body->entity;
 
                         const v3 linear_velocity = V3Zero();
                         const v3 angular_velocity = V3Zero();
-                        const u64 ns = led->ns_physics_start + led->physics.frames_completed*led->physics.ns_tick;
+                        const u64 ns = led->ns_physics_start + led->physics->frames_completed*led->physics->ns_tick;
 
 	                	r_Proxy3dLinearSpeculationSet(sim->world.position
 	                			, sim->world.rotation
@@ -2515,7 +2493,7 @@ static void led_EngineRun(struct led *led)
             {
                 if (led->body_color_mode == RB_COLOR_MODE_ISLAND)
                 {
-                    const struct ds_Island *is = ds_IslandLookup(&led->physics, event->island).address;
+                    const struct ds_Island *is = ds_IslandLookup(led->physics, event->island).address;
                     if (is)
                     {
                         led_ColorIsland(led, event->island, is->color);
@@ -2534,23 +2512,23 @@ static void led_EngineRun(struct led *led)
 
 			case PHYSICS_EVENT_JOINT_BREAKING:
 			{
-				ds_JointRemove(&led->physics, event->joint);
+				ds_JointRemove(led->physics, event->joint);
 			} break;
 		}
 
-        DLLRemove(led->physics.event_list, led->physics.event_pool.buf, ei, node);
+        DLLRemove(led->physics->event_list, led->physics->event_pool.buf, ei, node);
 	}
 
-    if (physics_frames_to_run)
+    if (physics_ticked)
     {
-        struct ds_SolverSet *active = led->physics.solver_set_pool.buf + SOLVER_SET_ACTIVE;
+        struct ds_SolverSet *active = led->physics->solver_set_pool.buf + SOLVER_SET_ACTIVE;
         for (u32 i = 0; i < active->body_sim_pool.count; ++i)
         {
             const struct ds_BodySim *sim = active->body_sim_pool.buf + i;
-	    	const struct ds_Body *body = led->physics.body_pool.buf + sim->body;
+	    	const struct ds_Body *body = led->physics->body_pool.buf + sim->body;
             const struct ds_BodyCompute *compute = active->body_compute_pool.buf + body->sim;
             const struct led_Node *node = led->node_hierarchy.pool.buf + body->entity;
-            const u64 ns = led->ns_physics_start + led->physics.frames_completed*led->physics.ns_tick;
+            const u64 ns = led->ns_physics_start + led->physics->frames_completed*led->physics->ns_tick;
 
 	    	r_Proxy3dLinearSpeculationSet(sim->world.position
 	    			, sim->world.rotation
@@ -2562,14 +2540,15 @@ static void led_EngineRun(struct led *led)
     }
         
 	
-	ds_PoolFlush(led->physics.event_pool);
+	ds_PoolFlush(led->physics->event_pool);
 
-    //ds_DynamicsPrintUsage(&led->physics);
+    //ds_DynamicsPrintUsage(led->physics);
 }
 
 static void led_EngineFlush(struct led *led)
 {
-	ds_DynamicsFlush(&led->physics);
+	ds_SimHostReset(&led->srv, led->sim);
+	ds_DynamicsConfigPush(led->physics);
 	led->grab.joint = ds_JointIdNull();
 
     HII it; 
@@ -2602,10 +2581,9 @@ static void led_EngineFlush(struct led *led)
 static void led_EngineInit(struct led *led)
 {
 	//TODO move this into engine flush
-	ds_DynamicsFlush(&led->physics);		
+	ds_SimHostReset(&led->srv, led->sim);
+	ds_DynamicsConfigPush(led->physics);
 	led->ns_physics_start = led->ns;
-	/* wraps on purpose: led_EngineRun's first += ns_delta makes it 0 */
-	led->ns_physics_elapsed = 0 - led->ns_delta;
 	led->ns_engine_paused = 0;
 
     HII it; 
@@ -2617,7 +2595,7 @@ static void led_EngineInit(struct led *led)
         if (node->flags & LED_BODY_PREFAB)
         {
             const struct ds_BodyPrefab *body_prefab = led->body_prefab_db.pool.buf + node->body_prefab;
-	    	const ds_BodyId body = ds_BodyAdd(&led->physics, body_prefab, &node->transform, it.at);
+	    	const ds_BodyId body = ds_BodyAdd(led->physics, body_prefab, &node->transform, it.at);
             node->body = body;
     
             //TODO mass properties should be calculated on AttachShape....
@@ -2627,13 +2605,13 @@ static void led_EngineInit(struct led *led)
             {
                 instance = led->shape_prefab_instance_pool.buf + j;
                 shape_prefab = led->shape_prefab_db.pool.buf + instance->shape_prefab;
-                ds_ShapeAdd(&led->physics, shape_prefab, &instance->t_local, body);
+                ds_ShapeAdd(led->physics, shape_prefab, &instance->t_local, body);
             }
         }
         HIIAdvance(it, led->node_hierarchy);
 	}
 
-    fprintf(stderr, "BODIES: %u\n", led->physics.body_pool.count);
+    fprintf(stderr, "BODIES: %u\n", led->physics->body_pool.count);
 
     for (u32 i = 0; i < led->joint_pool.count; ++i)
     {
@@ -2646,7 +2624,7 @@ static void led_EngineInit(struct led *led)
             continue;
         }
 
-        ds_DistanceJointAdd(&led->physics, &joint->prefab, node0->body, joint->local_frame + 0, node1->body, joint->local_frame + 1);
+        ds_DistanceJointAdd(led->physics, &joint->prefab, node0->body, joint->local_frame + 0, node1->body, joint->local_frame + 1);
     }
 }
 
@@ -2685,12 +2663,17 @@ void led_Core(struct led *led)
 	led->engine_initalized = led->pending_engine_initalized;
 	led->engine_running = led->pending_engine_running;
 	led->engine_paused = led->pending_engine_paused;
-	/* the frame's edits of the physics config (draw toggles, ...) take effect now, running or not */
-	ds_DynamicsConfigUpdatePending(&led->physics);
+
+	/* the server's frame: the simulation's clock runs while the engine does, its commands always */
+	struct ds_SimHost *host = ds_SimHostLookup(&led->srv, led->sim).address;
+	host->speed = (led->engine_running) ? 1.0 : 0.0;
+	const u64 physics_frames_before = led->physics->frames_completed;
+	ds_ServerTick(&led->srv, led->ns_delta);
+	ds_DynamicsConfigPush(led->physics);    /* the tick popped it; the editor's queries until the next tick read it */
 	if (led->engine_running)
 	{
 		led->ns_engine_running += led->ns_delta;
-		led_EngineRun(led);
+		led_EngineRun(led, led->physics->frames_completed != physics_frames_before);
 	}
 
 	if (led->engine_paused)

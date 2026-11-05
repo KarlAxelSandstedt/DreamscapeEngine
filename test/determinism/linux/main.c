@@ -268,11 +268,11 @@ int main(int argc, char *argv[])
     
 		ds_ProcessEvents();
 
-        led_Main(editor, editor->physics.ns_tick);
+        led_Main(editor, editor->physics->ns_tick);
 		led_UiMain(editor);
 		r_EditorMain(editor);
 
-        const u64 hash = ds_DynamicsHash(&editor->physics);
+        const u64 hash = ds_DynamicsHash(editor->physics);
         if (test.generate)
         {
             const u32 index = ds_CPoolPush(test.hash_pool).index;
@@ -287,7 +287,7 @@ int main(int argc, char *argv[])
             }
         }
 
-        if (!success || editor->physics.solver_set_pool.buf[SOLVER_SET_ACTIVE].body_sim_pool.count == 0)
+        if (!success || editor->physics->solver_set_pool.buf[SOLVER_SET_ACTIVE].body_sim_pool.count == 0)
         {
             editor->running = 0;
         }

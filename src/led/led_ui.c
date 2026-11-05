@@ -339,21 +339,21 @@ static struct rayWorld led_ViewportPickRay(const struct led *led, const struct u
 /* grab the body under the ray at its hit: the joint pulls the hit point, and the target starts there */
 static void led_GrabBegin(struct led *led, const struct rayWorld *ray, const u32f32 hit)
 {
-	const struct ds_Shape *shape = led->physics.shape_pool.buf + hit.u;
-	const struct ds_Body *body = led->physics.body_pool.buf + shape->body;
+	const struct ds_Shape *shape = led->physics->shape_pool.buf + hit.u;
+	const struct ds_Body *body = led->physics->body_pool.buf + shape->body;
 	if (!ds_BodyDynamicCheck(body))
 	{
 		return;
 	}
 
 	const v3f64 target = V3F64Add(ray->origin, V3Promote(V3Scale(ray->dir, hit.f)));
-	const struct ds_BodySim *bsim = led->physics.solver_set_pool.buf[body->set].body_sim_pool.buf + body->sim;
+	const struct ds_BodySim *bsim = led->physics->solver_set_pool.buf[body->set].body_sim_pool.buf + body->sim;
 	ds_Transform local_frame = ds_TransformIdentity();
 	local_frame.position = ds_TransformWorldPointToLocal(&bsim->world, target);
 
 	struct ds_MouseJointPrefab prefab;
-	ds_MouseJointPrefabFromBody(&prefab, &led->physics, body->id, target, LED_GRAB_HERTZ, LED_GRAB_DAMPING_RATIO, LED_GRAB_FORCE_SCALE, LED_GRAB_TORQUE_SCALE, ds_BreakageOptionNone());
-	led->grab.joint = ds_MouseJointAdd(&led->physics, &prefab, body->id, &local_frame);
+	ds_MouseJointPrefabFromBody(&prefab, led->physics, body->id, target, LED_GRAB_HERTZ, LED_GRAB_DAMPING_RATIO, LED_GRAB_FORCE_SCALE, LED_GRAB_TORQUE_SCALE, ds_BreakageOptionNone());
+	led->grab.joint = ds_MouseJointAdd(led->physics, &prefab, body->id, &local_frame);
 	led->grab.distance = hit.f;
 	led->grab.target = target;
 }
@@ -366,17 +366,17 @@ static void led_GrabUpdate(struct led *led, const struct rayWorld *ray)
 		return;
 	}
 
-	if (g_ui->inter.button_pressed[MOUSE_BUTTON_LEFT] && ds_JointLookup(&led->physics, led->grab.joint).address)
+	if (g_ui->inter.button_pressed[MOUSE_BUTTON_LEFT] && ds_JointLookup(led->physics, led->grab.joint).address)
 	{
 		const v3f64 point = V3F64Add(ray->origin, V3Promote(V3Scale(ray->dir, led->grab.distance)));
 		const f32 dt = (f32) led->ns_delta / NSEC_PER_SEC;
 		const f32 a = dt / (dt + LED_GRAB_LAG);
 		led->grab.target = V3F64Add(led->grab.target, V3Promote(V3Scale(V3F64Demote(V3F64Sub(point, led->grab.target)), a)));
-		ds_MouseJointTargetSet(&led->physics, led->grab.joint, led->grab.target);
+		ds_MouseJointTargetSet(led->physics, led->grab.joint, led->grab.target);
 	}
 	else
 	{
-		ds_JointRemove(&led->physics, led->grab.joint);
+		ds_JointRemove(led->physics, led->grab.joint);
 		led->grab.joint = ds_JointIdNull();
 	}
 }
@@ -575,11 +575,11 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 					const struct rayWorld ray = led_ViewportPickRay(led, node, pointer);
 					if (node->inter & UI_INTER_HOVER)
 					{
-						const u32f32 hit = ds_DynamicsRaycastParameter(&led->physics, &ray);
+						const u32f32 hit = ds_DynamicsRaycastParameter(led->physics, &ray);
 						if (hit.f < F32_INFINITY)
 						{
-							const struct ds_Shape *shape = led->physics.shape_pool.buf + hit.u;	
-							const struct ds_Body *body = led->physics.body_pool.buf + shape->body;	
+							const struct ds_Shape *shape = led->physics->shape_pool.buf + hit.u;	
+							const struct ds_Body *body = led->physics->body_pool.buf + shape->body;	
 							const struct led_Node *entity = led->node_hierarchy.pool.buf + body->entity;
 							const char *body_id = CstrUtf8(g_ui->mem_frame, entity->id);
 
@@ -936,7 +936,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 				ui_Parent(ui_NodeAllocNonHashed(UI_DRAW_BACKGROUND).index)
 				ui_Flags(UI_DRAW_ROUNDED_CORNERS | UI_TEXT_ALLOW_OVERFLOW)
 				{
-					if (ui_DropdownMenuF(&led->shape_color_mode_menu, "%s###%p_shape_color_mode", shape_color_mode_str[led->physics.draw_config.shape_color_mode], &led->shape_color_mode_menu))
+					if (ui_DropdownMenuF(&led->shape_color_mode_menu, "%s###%p_shape_color_mode", shape_color_mode_str[led->physics->draw_config.shape_color_mode], &led->shape_color_mode_menu))
 					{
 						ui_DropdownMenuPush(&led->shape_color_mode_menu);
 
@@ -950,7 +950,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 									i).address;
 							if (drop->inter & UI_INTER_SELECT)
 							{
-								led->physics.draw_config.shape_color_mode = i;
+								led->physics->draw_config.shape_color_mode = i;
 							}
 						}
 
@@ -959,7 +959,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 
 					ui_Pad();
 
-					if (ui_DropdownMenuF(&led->point_color_mode_menu, "%s###%p_point_color_mode", point_color_mode_str[led->physics.draw_config.point_color_mode], &led->point_color_mode_menu))
+					if (ui_DropdownMenuF(&led->point_color_mode_menu, "%s###%p_point_color_mode", point_color_mode_str[led->physics->draw_config.point_color_mode], &led->point_color_mode_menu))
 					{
 						ui_DropdownMenuPush(&led->point_color_mode_menu);
 
@@ -973,7 +973,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 									i).address;
 							if (drop->inter & UI_INTER_SELECT)
 							{
-								led->physics.draw_config.point_color_mode = i;
+								led->physics->draw_config.point_color_mode = i;
 							}
 						}
 
@@ -1006,10 +1006,10 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 									ui_NodeAllocF(UI_DRAW_TEXT, "draw DBVT");
 									if (node->inter & UI_INTER_LEFT_CLICK)
 									{
-										led->physics.draw_config.draw_dbvh = !led->physics.draw_config.draw_dbvh;
+										led->physics->draw_config.draw_dbvh = !led->physics->draw_config.draw_dbvh;
 									}
 
-									if (led->physics.draw_config.draw_dbvh)
+									if (led->physics->draw_config.draw_dbvh)
 									{
 										node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
 									}
@@ -1029,10 +1029,10 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 									ui_NodeAllocF(UI_DRAW_TEXT, "draw SBVT");
 									if (node->inter & UI_INTER_LEFT_CLICK)
 									{
-										led->physics.draw_config.draw_sbvh = !led->physics.draw_config.draw_sbvh;
+										led->physics->draw_config.draw_sbvh = !led->physics->draw_config.draw_sbvh;
 									}
 
-									if (led->physics.draw_config.draw_sbvh)
+									if (led->physics->draw_config.draw_sbvh)
 									{
 										node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
 									}
@@ -1052,10 +1052,10 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 									ui_NodeAllocF(UI_DRAW_TEXT, "draw bounding boxes");
 									if (node->inter & UI_INTER_LEFT_CLICK)
 									{
-										led->physics.draw_config.draw_bounds = !led->physics.draw_config.draw_bounds;
+										led->physics->draw_config.draw_bounds = !led->physics->draw_config.draw_bounds;
 									}
 
-									if (led->physics.draw_config.draw_bounds)
+									if (led->physics->draw_config.draw_bounds)
 									{
 										node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
 									}
@@ -1075,10 +1075,10 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 									ui_NodeAllocF(UI_DRAW_TEXT, "draw shapes");
 									if (node->inter & UI_INTER_LEFT_CLICK)
 									{
-										led->physics.draw_config.draw_shapes = !led->physics.draw_config.draw_shapes;
+										led->physics->draw_config.draw_shapes = !led->physics->draw_config.draw_shapes;
 									}
 
-									if (led->physics.draw_config.draw_shapes)
+									if (led->physics->draw_config.draw_shapes)
 									{
 										node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
 									}
@@ -1098,10 +1098,10 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 									ui_NodeAllocF(UI_DRAW_TEXT, "draw mesh BVHs");
 									if (node->inter & UI_INTER_LEFT_CLICK)
 									{
-										led->physics.draw_config.draw_mesh_bvh = !led->physics.draw_config.draw_mesh_bvh;
+										led->physics->draw_config.draw_mesh_bvh = !led->physics->draw_config.draw_mesh_bvh;
 									}
 
-									if (led->physics.draw_config.draw_mesh_bvh)
+									if (led->physics->draw_config.draw_mesh_bvh)
 									{
 										node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
 									}
@@ -1130,10 +1130,10 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 									ui_NodeAllocF(UI_DRAW_TEXT, "draw contact forces");
 									if (node->inter & UI_INTER_LEFT_CLICK)
 									{
-										led->physics.draw_config.draw_contact_forces = !led->physics.draw_config.draw_contact_forces;
+										led->physics->draw_config.draw_contact_forces = !led->physics->draw_config.draw_contact_forces;
 									}
 
-									if (led->physics.draw_config.draw_contact_forces)
+									if (led->physics->draw_config.draw_contact_forces)
 									{
 										node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
 									}
@@ -1153,10 +1153,10 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 									ui_NodeAllocF(UI_DRAW_TEXT, "draw joint forces");
 									if (node->inter & UI_INTER_LEFT_CLICK)
 									{
-										led->physics.draw_config.draw_joint_forces = !led->physics.draw_config.draw_joint_forces;
+										led->physics->draw_config.draw_joint_forces = !led->physics->draw_config.draw_joint_forces;
 									}
 
-									if (led->physics.draw_config.draw_joint_forces)
+									if (led->physics->draw_config.draw_joint_forces)
 									{
 										node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
 									}
@@ -1176,10 +1176,10 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 									ui_NodeAllocF(UI_DRAW_TEXT, "draw constraint points");
 									if (node->inter & UI_INTER_LEFT_CLICK)
 									{
-										led->physics.draw_config.draw_constraint_points = !led->physics.draw_config.draw_constraint_points;
+										led->physics->draw_config.draw_constraint_points = !led->physics->draw_config.draw_constraint_points;
 									}
 
-									if (led->physics.draw_config.draw_constraint_points)
+									if (led->physics->draw_config.draw_constraint_points)
 									{
 										node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
 									}
@@ -1199,10 +1199,10 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 									ui_NodeAllocF(UI_DRAW_TEXT, "draw on top");
 									if (node->inter & UI_INTER_LEFT_CLICK)
 									{
-										led->physics.draw_config.draw_on_top = !led->physics.draw_config.draw_on_top;
+										led->physics->draw_config.draw_on_top = !led->physics->draw_config.draw_on_top;
 									}
 
-									if (led->physics.draw_config.draw_on_top)
+									if (led->physics->draw_config.draw_on_top)
 									{
 										node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
 									}
@@ -1222,10 +1222,10 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 									ui_NodeAllocF(UI_DRAW_TEXT, "draw body axes");
 									if (node->inter & UI_INTER_LEFT_CLICK)
 									{
-										led->physics.draw_config.draw_body_axes = !led->physics.draw_config.draw_body_axes;
+										led->physics->draw_config.draw_body_axes = !led->physics->draw_config.draw_body_axes;
 									}
 
-									if (led->physics.draw_config.draw_body_axes)
+									if (led->physics->draw_config.draw_body_axes)
 									{
 										node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
 									}
@@ -1245,10 +1245,10 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 									ui_NodeAllocF(UI_DRAW_TEXT, "draw joints");
 									if (node->inter & UI_INTER_LEFT_CLICK)
 									{
-										led->physics.draw_config.draw_joints = !led->physics.draw_config.draw_joints;
+										led->physics->draw_config.draw_joints = !led->physics->draw_config.draw_joints;
 									}
 
-									if (led->physics.draw_config.draw_joints)
+									if (led->physics->draw_config.draw_joints)
 									{
 										node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
 									}
@@ -1277,10 +1277,10 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 									ui_NodeAllocF(UI_DRAW_TEXT, "draw joint breakage");
 									if (node->inter & UI_INTER_LEFT_CLICK)
 									{
-										led->physics.draw_config.draw_joint_breakage = !led->physics.draw_config.draw_joint_breakage;
+										led->physics->draw_config.draw_joint_breakage = !led->physics->draw_config.draw_joint_breakage;
 									}
 
-									if (led->physics.draw_config.draw_joint_breakage)
+									if (led->physics->draw_config.draw_joint_breakage)
 									{
 										node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
 									}
@@ -1302,7 +1302,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 					{
 						ui_Pad();
 						ui_Width(ui_SizePixel(80.0f, 1.0f))
-						led->physics.draw_config.force_scale = ui_FieldF32F(led->physics.draw_config.force_scale, Intv(0.0001f, 100.0f), "%f###force_scale_in", led->physics.draw_config.force_scale);
+						led->physics->draw_config.force_scale = ui_FieldF32F(led->physics->draw_config.force_scale, Intv(0.0001f, 100.0f), "%f###force_scale_in", led->physics->draw_config.force_scale);
 						ui_Pad();
 						ui_NodeAllocF(UI_DRAW_TEXT, "force scale (m/N)");
 					}

@@ -292,11 +292,11 @@ static void ds_MainLoop(void)
     
 	ds_ProcessEvents();
 
-    led_Main(g_editor, g_editor->physics.ns_tick);
+    led_Main(g_editor, g_editor->physics->ns_tick);
 	led_UiMain(g_editor);
 	r_EditorMain(g_editor);
 
-    const u64 hash = ds_DynamicsHash(&g_editor->physics);
+    const u64 hash = ds_DynamicsHash(g_editor->physics);
     if (g_test.generate)
     {
         const u32 index = ds_CPoolPush(g_test.hash_pool).index;
@@ -311,7 +311,7 @@ static void ds_MainLoop(void)
         }
     }
 
-    if (!g_success || g_editor->physics.solver_set_pool.buf[SOLVER_SET_ACTIVE].body_sim_pool.count == 0)
+    if (!g_success || g_editor->physics->solver_set_pool.buf[SOLVER_SET_ACTIVE].body_sim_pool.count == 0)
     {
         g_editor->running = 0;
     }

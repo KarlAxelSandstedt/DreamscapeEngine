@@ -132,9 +132,16 @@ struct led *led_Alloc(const u32 thread_count, const u64 thread_framesize)
 	ds_SDBAlloc(NULL, g_editor->body_prefab_db, 32, GROWABLE);
 	c_ShapeDBAlloc(NULL, &g_editor->cs_db, 32, GROWABLE);
 	DLLFlush(g_editor->cs_shape_list);
-	g_editor->physics = ds_DynamicsAlloc(&g_editor->mem_persistent, 1024, NSEC_PER_SEC / (u64) 60, 16*1024*1024, &g_editor->cs_db, &g_editor->body_prefab_db, thread_count, thread_framesize);
+	ds_ServerAlloc(&g_editor->srv, 1 << 20, 1);
+	struct ds_SimConfig sim_config = ds_SimConfigDefault();
+	sim_config.dynamics.initial_size = 1024;
+	sim_config.dynamics.frame_memory = 16*1024*1024;
+	g_editor->sim = ds_SimHostAdd(&g_editor->srv, &g_editor->mem_persistent, &sim_config, SIM_MODE_NONE, NULL, 0, NULL, &g_editor->cs_db, &g_editor->body_prefab_db, thread_count, thread_framesize);
+	struct ds_SimHost *host = ds_SimHostLookup(&g_editor->srv, g_editor->sim).address;
+	host->speed = 0.0;
+	g_editor->physics = &host->sim.dynamics;
 	/* the editor's queries and prefab constructors between ticks read the pushed config */
-	ds_DynamicsConfigPush(&g_editor->physics);
+	ds_DynamicsConfigPush(g_editor->physics);
     ds_CPoolAlloc(NULL, g_editor->joint_pool, 256, GROWABLE);
     g_editor->grab.joint = ds_JointIdNull();
 
@@ -187,7 +194,7 @@ struct led *led_Alloc(const u32 thread_count, const u64 thread_framesize)
 
 void led_Dealloc(struct led *led)
 {
-	ds_DynamicsFree(&g_editor->physics);
+	ds_ServerDealloc(&g_editor->srv);
 	led_ProjectMenuDealloc(&led->project_menu);
     ds_PoolDealloc(led->shape_prefab_instance_pool);
     ds_CPoolDealloc(g_editor->joint_pool);

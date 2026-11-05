@@ -325,7 +325,7 @@ static v4 r_InternalShapeColor(const struct ds_Dynamics *pipeline, const struct 
 static void r_InternalDrawShapes(const struct led *led)
 {
 	ProfZone;
-	const struct ds_Dynamics *pipeline = &led->physics;
+	const struct ds_Dynamics *pipeline = led->physics;
 	const struct ds_DynamicsDrawConfig *config = &pipeline->draw_config;
 	const u32 depth_exponent = 1 + F32ExponentBits(led->cam.fz_far);
 	for (u64 bi = 0; bi < pipeline->body_usage_set.block_count; ++bi)
@@ -459,7 +459,7 @@ static void r_InternalDrawSegments(const struct led *led)
 {
 	ProfZone;
 
-	const struct ds_Dynamics *pipeline = &led->physics;
+	const struct ds_Dynamics *pipeline = led->physics;
 	const struct ds_DynamicsDrawConfig *config = &pipeline->draw_config;
 	const u32 source_count = pipeline->worker_count + 1;
 
@@ -581,8 +581,8 @@ static void r_EditorDraw(const struct led *led)
 	//	}
 
 	/* the proxy trees, in world space: rebuilt every frame */
-	const struct ds_DynamicsDrawConfig *draw_config = &led->physics.draw_config;
-	const struct BVH *tree[2] = { &led->physics.dynamic_bvh, &led->physics.static_bvh };
+	const struct ds_DynamicsDrawConfig *draw_config = &led->physics->draw_config;
+	const struct BVH *tree[2] = { &led->physics->dynamic_bvh, &led->physics->static_bvh };
 	const u32 draw_tree[2] = { draw_config->draw_dbvh, draw_config->draw_sbvh };
 	const v4 tree_color[2] = { draw_config->color_dbvh, draw_config->color_sbvh };
 	for (u32 t = 0; t < 2; ++t)
@@ -604,7 +604,7 @@ static void r_EditorDraw(const struct led *led)
 		}
 	}
 
-	if (led->physics.draw_config.draw_shapes)
+	if (led->physics->draw_config.draw_shapes)
 	{
 		r_InternalDrawShapes(led);
 	}
@@ -616,7 +616,7 @@ static void r_EditorDraw(const struct led *led)
 		const u64 material = r_MaterialConstruct(PROGRAM_COLOR, MESH_NONE, TEXTURE_NONE);
 		const u64 depth = 0x7fffff;
 		const u64 cmd = r_CommandKey(R_CMD_SCREEN_LAYER_GAME, depth, R_CMD_TRANSPARENCY_ADDITIVE, material, R_CMD_PRIMITIVE_LINE, R_CMD_NON_INSTANCED, R_CMD_ARRAYS);
-		struct r_Mesh *mesh = BoundingBoxesMesh(&g_r_core->frame, &led->physics, g_scene->view_origin, draw_config->color_bounds);
+		struct r_Mesh *mesh = BoundingBoxesMesh(&g_r_core->frame, led->physics, g_scene->view_origin, draw_config->color_bounds);
 		if (mesh)
 		{
 			struct r_Instance *instance = r_InstanceAddNonCached(cmd);
@@ -664,7 +664,7 @@ static void r_InternalProxy3dUniforms(const struct led *led, const u32 window)
 	ds_glUniform1f(aspect_ratio_addr, (f32) cam->aspect_ratio);
 	ds_glUniformMatrix4fv(perspective_addr, 1, GL_FALSE, perspective.buf);
 	ds_glUniformMatrix4fv(view_addr, 1, GL_FALSE, view.buf);
-	ds_glUniform1f(point_size_addr, led->physics.draw_config.point_size);
+	ds_glUniform1f(point_size_addr, led->physics->draw_config.point_size);
 }
 
 static void r_InternalUiUniforms(const u32 window)
@@ -871,7 +871,7 @@ void r_EditorMain(const struct led *led)
 			//fprintf(stderr, "led ns: %lu\n", led->ns);
 			//fprintf(stderr, "r   ns: %lu\n", g_r_core->ns_elapsed);
 			//fprintf(stderr, "p   ns: %lu\n", led->ns_physics_start + led->ns_physics_elapsed);
-			//fprintf(stderr, "p f ns: %lu\n", led->physics.frames_completed * led->physics.ns_tick);
+			//fprintf(stderr, "p f ns: %lu\n", led->physics->frames_completed * led->physics->ns_tick);
 			//fprintf(stderr, "spec:   %lu\n", led->ns - led->ns_engine_paused);
 
 			struct ds_Window *win = NULL;

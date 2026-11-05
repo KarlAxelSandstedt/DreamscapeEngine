@@ -11,5 +11,6 @@ target_link_libraries(DreamscapeEditor
 	PUBLIC
 		Dreamscape::Containers
 		Dreamscape::Renderer
+		Dreamscape::Server
 )
 
