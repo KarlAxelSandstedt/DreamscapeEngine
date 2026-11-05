@@ -2158,7 +2158,7 @@ void			ds_DynamicsFlush(struct ds_Dynamics *pipeline);
  */
 void 			ds_DynamicsTick(struct ds_Dynamics *pipeline);
 /* Hash bodies in order from low to high and return the final hash  */
-u64             ds_DynamicsOrientationHash(const struct ds_Dynamics *pipeline);
+u64             ds_DynamicsHash(const struct ds_Dynamics *pipeline);
 /* validate and ds_Assert internal state of physics pipeline */
 void			ds_DynamicsValidate(const struct ds_Dynamics *pipeline);
 /*

@@ -203,9 +203,12 @@ void    ds_SimDealloc(struct ds_Sim *sim);
 void    ds_SimFlush(struct ds_Sim *sim);
 /*
  * Advance the simulation by us_delta of simulation time: the frame's external commands cmds (may be empty) execute
- * first, at the current time, then every system tick that is due.
+ * first, at the current time, then every system tick that is due. Optional(hash_pool): If non-null, hashes are
+ * generated per-subsystem tick (of the tick's time, system and ds_SimHash) and pushed onto it.
  */
-void    ds_SimTick(struct ds_Sim *sim, const ds_CPool(ds_SimCmd) *cmds, const u64 us_delta);
+void    ds_SimTick(struct ds_Sim *sim, ds_CPool(u64) *hash_pool, const ds_CPool(ds_SimCmd) *cmds, const u64 us_delta);
+/* Return the hash of the simulation's state (every system's state hash). */
+u64     ds_SimHash(const struct ds_Sim *sim);
 
 //TODO Serialize API for sim 
 

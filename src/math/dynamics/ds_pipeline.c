@@ -1969,7 +1969,7 @@ void ds_DynamicsTick(struct ds_Dynamics *pipeline)
 	ProfZoneEnd;
 }
 
-u64 ds_DynamicsOrientationHash(const struct ds_Dynamics *pipeline)
+u64 ds_DynamicsHash(const struct ds_Dynamics *pipeline)
 {
     XXH3_state_t* state = XXH3_createState();
     if (!state)

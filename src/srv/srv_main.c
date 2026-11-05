@@ -162,25 +162,105 @@ static u32 ds_SimHostReplayTrySeed(struct SS *record, u64 *us_previous, struct d
     return valid;
 }
 
+static void ds_SimHostWriteHashes(struct ds_SimHost *host)
+{
+    const u64 size = host->hash_pool.count * sizeof(u64);
+    if (size == 0)
+    {
+        return;
+    }
+    SSIncreaseSize(&host->hash_stream, size);
+    host->hash_stream.bit_index = 0;
+    SSWriteU64LeN(&host->hash_stream, host->hash_pool.buf, host->hash_pool.count);
+    if (FileWriteAppend(&host->hash_file, host->hash_stream.buf, size) != size)
+    {
+        Log(T_SYSTEM, S_ERROR, "ds_SimHostWriteHashes: simulation %lu's hashes not written whole, hashing stops", host->id.val);
+        host->hash = 0;
+        return;
+    }
+    host->hash_count += host->hash_pool.count;
+}
+
+static void ds_SimHostReadAndCheckHashes(struct ds_SimHost *host)
+{
+    for (u32 i = 0; i < host->hash_pool.count; ++i)
+    {
+        if (SSBytesLeft(&host->hash_stream) < sizeof(u64))
+        {
+            Log(T_SYSTEM, S_NOTE, "ds_SimHostReadAndCheckHashes: simulation %lu's hash file ends at hash %lu, comparing stops", host->id.val, host->hash_count);
+            host->hash = 0;
+            return;
+        }
+
+        const u64 expected = SSReadU64Le(&host->hash_stream);
+        if (expected != host->hash_pool.buf[i])
+        {
+            Log(T_SYSTEM, S_FATAL, "ds_SimHostReadAndCheckHashes: simulation %lu diverges at hash %lu (frame ending at %lu us): %lu, expected %lu", host->id.val, host->hash_count, host->sim.us_time, host->hash_pool.buf[i], expected);
+            FatalCleanupAndExit();
+        }
+        host->hash_count += 1;
+
+        if (SSBytesLeft(&host->hash_stream) < sizeof(u64))
+        {
+            Log(T_SYSTEM, S_SUCCESS, "ds_SimHostReadAndCheckHashes: simulation %lu matched all %lu hashes", host->id.val, host->hash_count);
+            host->hash = 0;
+            host->hash_success = 1;
+            return;
+        }
+    }
+}
+
 static void ds_SimHostDealloc(struct ds_SimHost *host)
 {
     FileClose(&host->record_file);
-    if (host->mode == SIM_MODE_REPLAY)
+    if (host->record_mode == SIM_MODE_REPLAY)
     {
         FileMemoryUnmap(host->record_stream.buf, host->record_stream.bit_count / 8);
     }
     SSDealloc(&host->record_stream);
+
+    FileClose(&host->hash_file);
+    if (host->hash_stream.buf && !host->hash_stream.heap_allocated)
+    {
+        FileMemoryUnmap(host->hash_stream.buf, host->hash_stream.bit_count / 8);
+    }
+    SSDealloc(&host->hash_stream);
+    ds_CPoolDealloc(host->hash_pool);
+
     ds_CPoolDealloc(host->cmd_pool);
     ds_SimDealloc(&host->sim);
 }
 
-ds_SimId ds_SimHostAdd(struct ds_Server *srv, struct arena *mem, const struct ds_SimConfig *config, const enum ds_SimMode mode, const char *path, struct c_ShapeDB *cshape_db, ds_SDB(ds_BodyPrefab) *prefab_db, const u32 worker_count, const u64 worker_frame_size)
+ds_SimId ds_SimHostAdd(struct ds_Server *srv, struct arena *mem, const struct ds_SimConfig *config, const enum ds_SimMode mode, const char *path, const u32 hash_wanted, const char *hash_path, struct c_ShapeDB *cshape_db, ds_SDB(ds_BodyPrefab) *prefab_db, const u32 worker_count, const u64 worker_frame_size)
 {
+    const u32 hash = hash_wanted && mode != SIM_MODE_NONE;
+
     struct file file = FileNull();
     if ((mode == SIM_MODE_RECORD && FileTryCreateAtCwd(mem, &file, path, 1) != FS_SUCCESS)
         || (mode == SIM_MODE_REPLAY && FileTryOpenAtCwd(mem, &file, path, 0) != FS_SUCCESS))
     {
         Log(T_SYSTEM, S_ERROR, "ds_SimHostAdd: record file \"%s\" could not be %s, no simulation added", path, (mode == SIM_MODE_RECORD) ? "created" : "opened");
+        return ds_SimIdNull();
+    }
+
+    struct file hash_file = FileNull();
+    struct SS hash_stream = { 0 };
+    if (hash && mode == SIM_MODE_RECORD && FileTryCreateAtCwd(mem, &hash_file, hash_path, 1) == FS_SUCCESS)
+    {
+        hash_stream = SSAlloc(NULL, 4096);
+    }
+    else if (hash && mode == SIM_MODE_REPLAY && FileTryOpenAtCwd(mem, &hash_file, hash_path, 0) == FS_SUCCESS)
+    {
+        u64 size = 0;
+        void *map = FileMemoryMap(&size, &hash_file, FS_PROT_READ, FS_MAP_PRIVATE);
+        hash_stream = SSBuffered(map, size);
+    }
+
+    if (hash && hash_stream.buf == NULL)
+    {
+        Log(T_SYSTEM, S_ERROR, "ds_SimHostAdd: hash file \"%s\" could not be %s, no simulation added", hash_path, (mode == SIM_MODE_RECORD) ? "created" : "opened");
+        FileClose(&hash_file);
+        FileClose(&file);
         return ds_SimIdNull();
     }
 
@@ -197,6 +277,9 @@ ds_SimId ds_SimHostAdd(struct ds_Server *srv, struct arena *mem, const struct ds
             Log(T_SYSTEM, S_ERROR, "ds_SimHostAdd: record file \"%s\" has no seed entry, no simulation added", path);
             if (map) { FileMemoryUnmap(map, size); }
             FileClose(&file);
+            if (hash_stream.buf && !hash_stream.heap_allocated) { FileMemoryUnmap(hash_stream.buf, hash_stream.bit_count / 8); }
+            SSDealloc(&hash_stream);
+            FileClose(&hash_file);
             return ds_SimIdNull();
         }
     }
@@ -211,7 +294,7 @@ ds_SimId ds_SimHostAdd(struct ds_Server *srv, struct arena *mem, const struct ds
     }
     host->id = ds_SimIdNextGeneration(host->id);
 
-    host->mode = mode;
+    host->record_mode = mode;
     host->speed = 1.0;
     host->ns_remainder = 0;
     host->ns_budget = 0;
@@ -223,6 +306,12 @@ ds_SimId ds_SimHostAdd(struct ds_Server *srv, struct arena *mem, const struct ds
     host->record_stream = (mode == SIM_MODE_RECORD) ? SSAlloc(NULL, 4096) : record;
     host->us_previous_record = us_previous;
     host->replay_ended = 0;
+    host->hash = hash;
+    host->hash_file = hash_file;
+    host->hash_stream = hash_stream;
+    ds_CPoolAlloc(NULL, host->hash_pool, 64, GROWABLE);
+    host->hash_count = 0;
+    host->hash_success = 0;
     ds_CPoolAlloc(NULL, host->cmd_pool, 64, GROWABLE);
     host->frame_payload = ds_SimCmdPayloadEmpty(host->id);
 
@@ -250,7 +339,7 @@ void ds_SimHostReset(struct ds_Server *srv, const ds_SimId id)
     host->frame_payload = ds_SimCmdPayloadEmpty(host->id);
     ds_SimFlush(&host->sim);
 
-    if (host->mode == SIM_MODE_RECORD)
+    if (host->record_mode == SIM_MODE_RECORD)
     {
         if (!FileSetSize(&host->record_file, 0))
         {
@@ -259,13 +348,22 @@ void ds_SimHostReset(struct ds_Server *srv, const ds_SimId id)
         host->us_previous_record = 0;
         ds_SimHostRecordSeed(host);
     }
-    else if (host->mode == SIM_MODE_REPLAY)
+    else if (host->record_mode == SIM_MODE_REPLAY)
     {
         struct ds_SimConfig seed;
         const u32 valid = ds_SimHostReplayTrySeed(&host->record_stream, &host->us_previous_record, &seed);
         ds_Assert(valid);
         host->replay_ended = 0;
     }
+
+    if (host->hash && host->record_mode == SIM_MODE_RECORD && !FileSetSize(&host->hash_file, 0))
+    {
+        Log(T_SYSTEM, S_ERROR, "ds_SimHostReset: simulation %lu's hash file could not be truncated", id.val);
+    }
+    host->hash_stream.bit_index = 0;
+    host->hash_count = 0;
+    host->hash_success = 0;
+    ds_CPoolFlush(host->hash_pool);
 }
 
 void ds_SimHostRemove(struct ds_Server *srv, const ds_SimId id)
@@ -318,7 +416,7 @@ void ds_ServerTick(struct ds_Server *srv, const u64 ns_delta)
     {
         struct ds_SimCmdPayload *payload = srv->payload_pool.buf + i;
         struct ds_SimHost *host = ds_SimHostLookup(srv, payload->dst).address;
-        if (host == NULL || (host->mode == SIM_MODE_REPLAY && !host->replay_ended))
+        if (host == NULL || (host->record_mode == SIM_MODE_REPLAY && !host->replay_ended))
         {
             Log(T_SYSTEM, S_WARNING, "ds_ServerTick: payload for %s simulation %lu dropped", (host) ? "replaying" : "unknown", payload->dst.val);
             *payload = ds_SimCmdPayloadEmpty(ds_SimIdNull());
@@ -405,8 +503,9 @@ void ds_ServerTick(struct ds_Server *srv, const u64 ns_delta)
         const u64 ns_sim_delta = U64Min(ns_wanted, host->ns_budget);
         host->ns_remainder = ns_sim_delta % 1000;
         const u64 us_sim_delta = ns_sim_delta / 1000;
+        ds_CPool(u64) *hash_pool = (host->hash) ? &host->hash_pool : NULL;
 
-        if (host->mode == SIM_MODE_REPLAY && !host->replay_ended)
+        if (host->record_mode == SIM_MODE_REPLAY && !host->replay_ended)
         {
             const u64 sim_us_time_final = host->sim.us_time + us_sim_delta;
             while (1)
@@ -431,7 +530,7 @@ void ds_ServerTick(struct ds_Server *srv, const u64 ns_delta)
                     break;
                 }
 
-                ds_SimTick(&host->sim, &host->cmd_pool, us_entry - host->sim.us_time);
+                ds_SimTick(&host->sim, hash_pool, &host->cmd_pool, us_entry - host->sim.us_time);
                 if (!ds_SimHostReplayTryReadPayload(&host->record_stream, &host->us_previous_record, &srv->frame, &host->cmd_pool))
                 {
                     Log(T_SYSTEM, S_ERROR, "ds_ServerTick: simulation %lu's record is corrupt at %lu us, it runs on live", host->id.val, us_entry);
@@ -439,21 +538,26 @@ void ds_ServerTick(struct ds_Server *srv, const u64 ns_delta)
                     break;
                 }
 
-                ds_SimTick(&host->sim, &host->cmd_pool, 0);
+                ds_SimTick(&host->sim, hash_pool, &host->cmd_pool, 0);
                 ds_CPoolFlush(host->cmd_pool);
             }
 
-            ds_SimTick(&host->sim, &host->cmd_pool, sim_us_time_final - host->sim.us_time);
+            ds_SimTick(&host->sim, hash_pool, &host->cmd_pool, sim_us_time_final - host->sim.us_time);
+            if (host->hash) { ds_SimHostReadAndCheckHashes(host); }
+            ds_CPoolFlush(host->hash_pool);
             continue;
         }
 
-        if (host->mode == SIM_MODE_RECORD && host->frame_payload.cmd_count)
+        if (host->record_mode == SIM_MODE_RECORD && host->frame_payload.cmd_count)
         {
             ds_SimHostRecord(host, host->sim.us_time, &host->frame_payload);
         }
 
-        ds_SimTick(&host->sim, &host->cmd_pool, us_sim_delta);
+        ds_SimTick(&host->sim, hash_pool, &host->cmd_pool, us_sim_delta);
         ds_CPoolFlush(host->cmd_pool);
+        if (host->hash && host->record_mode == SIM_MODE_RECORD) { ds_SimHostWriteHashes(host); }
+        if (host->hash && host->record_mode == SIM_MODE_REPLAY) { ds_SimHostReadAndCheckHashes(host); }
+        ds_CPoolFlush(host->hash_pool);
     }
 
     ArenaFlush(&srv->frame);    /* arrivals until the next tick may live here */

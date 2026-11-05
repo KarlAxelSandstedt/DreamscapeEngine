@@ -296,7 +296,7 @@ static void ds_MainLoop(void)
 	led_UiMain(g_editor);
 	r_EditorMain(g_editor);
 
-    const u64 hash = ds_DynamicsOrientationHash(&g_editor->physics);
+    const u64 hash = ds_DynamicsHash(&g_editor->physics);
     if (g_test.generate)
     {
         const u32 index = ds_CPoolPush(g_test.hash_pool).index;

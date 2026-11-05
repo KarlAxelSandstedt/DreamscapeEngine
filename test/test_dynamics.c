@@ -43,7 +43,7 @@ islands that fall asleep at different frames is snapshotted at several frames. E
     - be as large as ds_DynamicsSerializeSize predicts;
     - fail to restore from every truncated stream, leaving the stream position and the arena as they were;
     - restore twice, both copies equal to the original right away and after each of the next
-      SNAPSHOT_TEST_COMPARE_TICKS ticks, ticked side by side (frame count, pool counts, orientation hash, and
+      SNAPSHOT_TEST_COMPARE_TICKS ticks, ticked side by side (frame count, pool counts, dynamics hash, and
       every body's id, set, sim slot, island, sleep timer and pose, bit for bit);
     - re-serialize from a copy to the same size.
 A lone box is removed before one check (pools with free slots), and the last check first wakes every sleeping
@@ -511,7 +511,7 @@ static u32 SnapshotTestWakeAll(struct ds_Dynamics *pipeline)
 }
 
 /*
- * Bit for bit: frame count, pool counts, the orientation hash, and every body's id, set, sim slot, island, sleep
+ * Bit for bit: frame count, pool counts, the dynamics hash, and every body's id, set, sim slot, island, sleep
  * timer and simulated pose.
  */
 static u32 SnapshotTestEqual(const struct ds_Dynamics *a, const struct ds_Dynamics *b)
@@ -523,7 +523,7 @@ static u32 SnapshotTestEqual(const struct ds_Dynamics *a, const struct ds_Dynami
         || a->contact_pool.count != b->contact_pool.count
         || a->island_pool.count != b->island_pool.count
         || a->solver_set_pool.count != b->solver_set_pool.count
-        || ds_DynamicsOrientationHash(a) != ds_DynamicsOrientationHash(b))
+        || ds_DynamicsHash(a) != ds_DynamicsHash(b))
     {
         return 0;
     }

@@ -340,21 +340,21 @@ static struct test_Output SimTickTest(struct test_Environment *env)
     ds_CPoolAlloc(env->mem_1, none, 1, NOT_GROWABLE);
 
     /* no time: no tick */
-    ds_SimTick(&sim, &none, 0);
+    ds_SimTick(&sim, NULL, &none, 0);
     TEST_EQUAL(0, sim.us_time);
     TEST_EQUAL(0, sim.dynamics.frames_completed);
 
     /* no physics tick before its period */
-    ds_SimTick(&sim, &none, 1);
+    ds_SimTick(&sim, NULL, &none, 1);
     TEST_EQUAL(1, sim.us_delta);
     TEST_EQUAL(1, sim.us_time);
     TEST_EQUAL(0, sim.dynamics.frames_completed);
 
     /* one period: the first physics tick; two periods: two */
-    ds_SimTick(&sim, &none, period - 1);
+    ds_SimTick(&sim, NULL, &none, period - 1);
     TEST_EQUAL(period, sim.us_time);
     TEST_EQUAL(1, sim.dynamics.frames_completed);
-    ds_SimTick(&sim, &none, 2 * period);
+    ds_SimTick(&sim, NULL, &none, 2 * period);
     TEST_EQUAL(3 * period, sim.us_time);
     TEST_EQUAL(3, sim.dynamics.frames_completed);
 
@@ -609,7 +609,7 @@ static struct test_Output SimCmdSerializeTest(struct test_Environment *env)
 /* Run a zero-delta frame with the pool as the frame's commands. */
 static void SimTestBatch(struct ds_Sim *sim, const ds_CPool(ds_SimCmd) *pool)
 {
-    ds_SimTick(sim, pool, 0);
+    ds_SimTick(sim, NULL, pool, 0);
 }
 
 /*
@@ -704,10 +704,10 @@ static struct test_Output ServerClockTest(struct test_Environment *env)
 
     struct ds_Server srv;
     ds_ServerAlloc(&srv, 1 << 20, 2);
-    const ds_SimId id = ds_SimHostAdd(&srv, &mem, &config, SIM_MODE_NONE, NULL, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    const ds_SimId id = ds_SimHostAdd(&srv, &mem, &config, SIM_MODE_NONE, NULL, 0, NULL, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
     struct ds_SimHost *host = ds_SimHostLookup(&srv, id).address;
     struct ds_Sim *sim = &host->sim;
-    TEST_TRUE(host != NULL && host->mode == SIM_MODE_NONE && host->speed == 1.0 && sim->initialized);
+    TEST_TRUE(host != NULL && host->record_mode == SIM_MODE_NONE && host->speed == 1.0 && sim->initialized);
 
     /* sub-microsecond deltas: the remainder carries them */
     ds_ServerTick(&srv, 600);
@@ -769,7 +769,7 @@ static struct test_Output ServerDoorTest(struct test_Environment *env)
 
     struct ds_Server srv;
     ds_ServerAlloc(&srv, 1 << 20, 2);
-    const ds_SimId id = ds_SimHostAdd(&srv, &mem, &config, SIM_MODE_NONE, NULL, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    const ds_SimId id = ds_SimHostAdd(&srv, &mem, &config, SIM_MODE_NONE, NULL, 0, NULL, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
     struct ds_SimHost *host = ds_SimHostLookup(&srv, id).address;
     struct ds_Sim *sim = &host->sim;
     TEST_EQUAL(NULL, ds_SimHostLookup(&srv, ds_SimIdInit(1, 0)).address);
@@ -884,10 +884,10 @@ static struct test_Output ServerRecordTest(struct test_Environment *env)
 
     struct ds_Server srv;
     ds_ServerAlloc(&srv, 1 << 20, 2);
-    const ds_SimId id = ds_SimHostAdd(&srv, &mem, &config, SIM_MODE_RECORD, "agent_test_record.bin", &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    const ds_SimId id = ds_SimHostAdd(&srv, &mem, &config, SIM_MODE_RECORD, "agent_test_record.bin", 0, NULL, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
     TEST_EQUAL(0, ds_SimIdNullCheck(id));
     struct ds_SimHost *host = ds_SimHostLookup(&srv, id).address;
-    TEST_EQUAL(SIM_MODE_RECORD, host->mode);
+    TEST_EQUAL(SIM_MODE_RECORD, host->record_mode);
 
     /* frame 1: two commands at time 0; frame 2: a period, no commands; frame 3: one command */
     struct ds_SimConfig load[3] = { config, config, config };
@@ -950,8 +950,9 @@ static struct test_Output ServerRecordTest(struct test_Environment *env)
  * config), then replayed from the file with another frame cadence: the config comes from the record's seed entry,
  * after every replay frame the applied config is the last recorded load at or before the simulation's time and the
  * physics ticks match the time, a live payload for the replaying simulation is dropped, the end of the record is
- * reached at the same final state (time, ticks, config, orientation hash), after which a live payload is applied
- * (the fork); ds_SimHostReset rewinds the replay.
+ * reached at the same final state (time, ticks, config, dynamics hash), after which a live payload is applied
+ * (the fork); ds_SimHostReset rewinds the replay. The recording generates a hash file (one hash per system tick),
+ * the replay compares against it without a mismatch (a mismatch is fatal), and a bare run's hash request is dropped.
  */
 static struct test_Output ServerReplayTest(struct test_Environment *env)
 {
@@ -985,7 +986,7 @@ static struct test_Output ServerReplayTest(struct test_Environment *env)
 
     /* record: 8 frames of half a period */
     struct arena mem = ArenaAlloc(NULL, ds_DynamicsShellMemoryRequirement(g_config->thread_count, config.dynamics.frame_memory) + 1024);
-    const ds_SimId id = ds_SimHostAdd(&srv, &mem, &config, SIM_MODE_RECORD, "agent_test_replay.bin", &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    const ds_SimId id = ds_SimHostAdd(&srv, &mem, &config, SIM_MODE_RECORD, "agent_test_replay.bin", 1, "agent_test_hash.bin", &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
     struct ds_SimHost *host = ds_SimHostLookup(&srv, id).address;
     for (u32 frame = 0, l = 0; frame < 8; ++frame)
     {
@@ -1001,17 +1002,19 @@ static struct test_Output ServerReplayTest(struct test_Environment *env)
     }
     const u64 us_end = host->sim.us_time;
     const u64 ticks_end = host->sim.dynamics.frames_completed;
-    const u64 hash_end = ds_DynamicsOrientationHash(&host->sim.dynamics);
+    const u64 hash_end = ds_SimHash(&host->sim);
+    const u64 hash_count = host->hash_count;
     TEST_EQUAL(8 * half, us_end);
     TEST_EQUAL(iterations + 7, host->sim.dynamics.config.solver.pgs_iteration_count);
+    TEST_TRUE(hash_count >= ticks_end);     /* one hash per system tick: dynamics and game */
     ds_SimHostRemove(&srv, id);
 
     /* replay: frames of 12499 us, then the rest */
     struct arena mem_replay = ArenaAlloc(NULL, ds_DynamicsShellMemoryRequirement(g_config->thread_count, config.dynamics.frame_memory) + 1024);
-    const ds_SimId id_replay = ds_SimHostAdd(&srv, &mem_replay, NULL, SIM_MODE_REPLAY, "agent_test_replay.bin", &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    const ds_SimId id_replay = ds_SimHostAdd(&srv, &mem_replay, NULL, SIM_MODE_REPLAY, "agent_test_replay.bin", 1, "agent_test_hash.bin", &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
     TEST_EQUAL(0, ds_SimIdNullCheck(id_replay));
     struct ds_SimHost *replay = ds_SimHostLookup(&srv, id_replay).address;
-    TEST_EQUAL(SIM_MODE_REPLAY, replay->mode);
+    TEST_EQUAL(SIM_MODE_REPLAY, replay->record_mode);
     TEST_EQUAL(1, SimConfigTestEqual(&config, &replay->sim.config_seed));
     TEST_EQUAL(iterations, replay->sim.dynamics.config.solver.pgs_iteration_count);
 
@@ -1041,8 +1044,12 @@ static struct test_Output ServerReplayTest(struct test_Environment *env)
     }
     TEST_EQUAL(us_end, replay->sim.us_time);
     TEST_EQUAL(ticks_end, replay->sim.dynamics.frames_completed);
-    TEST_EQUAL(hash_end, ds_DynamicsOrientationHash(&replay->sim.dynamics));
+    TEST_EQUAL(hash_end, ds_SimHash(&replay->sim));
     TEST_EQUAL(1, replay->replay_ended);
+    /* the hash file: every tick's hash compared, none differed */
+    TEST_EQUAL(hash_count, replay->hash_count);
+    TEST_EQUAL(1, replay->hash_success);
+    TEST_EQUAL(0, replay->hash);
 
     /* the fork: live payloads apply from here on */
     ds_CPoolPushValue(srv.payload_pool, ds_SimCmdPayloadPushAll(env->mem_1, id_replay, &pool));
@@ -1053,11 +1060,21 @@ static struct test_Output ServerReplayTest(struct test_Environment *env)
     ds_SimHostReset(&srv, id_replay);
     TEST_EQUAL(0, replay->sim.us_time);
     TEST_EQUAL(0, replay->replay_ended);
+    TEST_EQUAL(0, replay->hash_count);
+    TEST_EQUAL(0, replay->hash_success);
     TEST_EQUAL(iterations, replay->sim.dynamics.config.solver.pgs_iteration_count);
     ds_ServerTick(&srv, 1000 * (half + 1));
     TEST_EQUAL(iterations + 3, replay->sim.dynamics.config.solver.pgs_iteration_count);
+    ds_SimHostRemove(&srv, id_replay);
+
+    /* hashing pairs with recording: a bare run's hash request is dropped */
+    struct arena mem_bare = ArenaAlloc(NULL, ds_DynamicsShellMemoryRequirement(g_config->thread_count, config.dynamics.frame_memory) + 1024);
+    const ds_SimId id_bare = ds_SimHostAdd(&srv, &mem_bare, &config, SIM_MODE_NONE, NULL, 1, "agent_test_hash.bin", &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    TEST_EQUAL(0, ((struct ds_SimHost *) ds_SimHostLookup(&srv, id_bare).address)->hash);
+    ds_SimHostRemove(&srv, id_bare);
 
     ds_ServerDealloc(&srv);
+    ArenaFree(&mem_bare);
     ArenaFree(&mem_replay);
     ArenaFree(&mem);
     ds_SDBDealloc(prefab_db);

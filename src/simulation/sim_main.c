@@ -39,6 +39,7 @@ Todo-List (not complete, need to fill in as we get more questions)
 #include "ds_base.h"
 #include "ds_platform.h"
 #include "ds_simulation.h"
+#include "xxhash.h"
 
 ds_StaticAssert(SIM_SYSTEM_COUNT <= (1u << DS_SIM_KEY_SYSTEM_BITS), "the system tag must fit the key");
 
@@ -215,7 +216,7 @@ static void ds_SimSeed(struct ds_Sim *sim, const struct ds_SimConfig *config)
     ds_CPool(ds_SimCmd) cmds;
     ds_CPoolAlloc(tmp, cmds, 1, NOT_GROWABLE);
     ds_CPoolPushValue(cmds, seed);
-    ds_SimTick(sim, &cmds, 0);
+    ds_SimTick(sim, NULL, &cmds, 0);
 
     ArenaPopScratch();
 }
@@ -258,7 +259,15 @@ static void ds_SimExecuteCmdBatch(struct ds_Sim *sim, const ds_CPool(ds_SimCmd) 
     }
 }
 
-void ds_SimTick(struct ds_Sim *sim, const ds_CPool(ds_SimCmd) *cmds, const u64 us_delta)
+u64 ds_SimHash(const struct ds_Sim *sim)
+{
+    u64 words[SIM_SYSTEM_COUNT] = { 0 };
+    words[SIM_SYSTEM_DYNAMICS] = ds_DynamicsHash(&sim->dynamics);
+    //TODO words[SIM_SYSTEM_GAME]
+    return XXH3_64bits(words, sizeof(words));
+}
+
+void ds_SimTick(struct ds_Sim *sim, ds_CPool(u64) *hash_pool, const ds_CPool(ds_SimCmd) *cmds, const u64 us_delta)
 {
     ds_DynamicsConfigPush(&sim->dynamics); 
 
@@ -301,6 +310,12 @@ void ds_SimTick(struct ds_Sim *sim, const ds_CPool(ds_SimCmd) *cmds, const u64 u
             {
                 ds_AssertString(0, "Invalid system in ds_SimKey");
             } break;
+        }
+
+        if (hash_pool)
+        {
+            const u64 words[3] = { us, (u64) sys, ds_SimHash(sim) };
+            ds_CPoolPushValue(*hash_pool, XXH3_64bits(words, sizeof(words)));
         }
     }
 

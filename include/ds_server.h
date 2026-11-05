@@ -160,7 +160,7 @@ struct ds_SimHost
     struct DLLNode          srv_sim;        /* ds_Server.sim_list */
     ds_SimId                id;             /* generational identifier: the pool slot */
 
-    enum ds_SimMode         mode;
+    enum ds_SimMode         record_mode;
     f64                     speed;          /* scales wall-clock time */
     u64                     ns_remainder;   /* wall-clock time not yet accounted for (sub-microsecond) */
     u64                     ns_budget;      /* the simulation never advances more than this per tick: sum of the system periods */
@@ -168,6 +168,13 @@ struct ds_SimHost
     struct SS               record_stream;  /* RECORD: the frame's entry staged before it is appended; REPLAY: the mapped record, bit_index the read position */
     u64                     us_previous_record; /* the last entry's timestamp (entries store the delta) */
     u32                     replay_ended;   /* REPLAY: the record is consumed or corrupt; the simulation runs on live */
+
+    u32                     hash;           /* every system tick's hash goes to the hash file: RECORD appends, REPLAY compares */
+    struct file             hash_file;      /* RECORD: appended every frame; REPLAY: mapped; else closed */
+    struct SS               hash_stream;    /* RECORD: the frame's hashes staged; REPLAY: the mapped file, bit_index the read position */
+    ds_CPool(u64)           hash_pool;      /* the frame's hashes from the ticks */
+    u64                     hash_count;     /* hashes generated or compared since add/reset; a compared hash that differs is fatal */
+    u32                     hash_success;   /* REPLAY: every hash of the file compared equal (logged); the host may shut down */
 
     ds_CPool(ds_SimCmd)     cmd_pool;       /* the frame's commands, decoded at the door, executed by the simulation's tick */
     struct ds_SimCmdPayload frame_payload;  /* the frame's arrivals fused: the record's entry */
@@ -192,15 +199,16 @@ void    ds_ServerDealloc(struct ds_Server *srv);
 /* Handle any incoming payloads after which every simulation is advanced by ns_delta of wall-clock time */
 void    ds_ServerTick(struct ds_Server *srv, const u64 ns_delta);
 /*
- * Host a new simulation (ds_SimAlloc on mem, its path copied there too) and return its id. RECORD creates (truncates)
- * the record file at path (relative to the cwd) and writes the seed entry; REPLAY maps it and takes the config from
- * its seed entry (config ignored); path is ignored for NONE. config NULL is the default config. If the file fails,
- * nothing is added (logged) and the null id is returned.
+ * Host a new simulation (ds_SimAlloc on mem, its paths copied there too) and return its id. RECORD creates (truncates)
+ * the record file at record_path (relative to the cwd) and writes the seed entry; REPLAY maps it and takes the config
+ * from its seed entry (config ignored); record_path is ignored for NONE. hash: RECORD creates (truncates) the hash file
+ * at hash_path and appends every system tick's hash, REPLAY maps it and compares; ignored for NONE. config NULL is the
+ * default config. If a file fails, nothing is added (logged) and the null id is returned.
  */
-ds_SimId    ds_SimHostAdd(struct ds_Server *srv, struct arena *mem, const struct ds_SimConfig *config, const enum ds_SimMode mode, const char *path, struct c_ShapeDB *cshape_db, ds_SDB(ds_BodyPrefab) *prefab_db, const u32 worker_count, const u64 worker_frame_size);
+ds_SimId    ds_SimHostAdd(struct ds_Server *srv, struct arena *mem, const struct ds_SimConfig *config, const enum ds_SimMode record_mode, const char *record_path, const u32 hash, const char *hash_path, struct c_ShapeDB *cshape_db, ds_SDB(ds_BodyPrefab) *prefab_db, const u32 worker_count, const u64 worker_frame_size);
 /* Remove the hosted simulation with the given id (ds_SimDealloc, the record closed); an unknown id is logged. */
 void        ds_SimHostRemove(struct ds_Server *srv, const ds_SimId id);
-/* Reset the hosted simulation to time 0 (ds_SimFlush); RECORD truncates the record and writes the seed entry again. An unknown id is logged. */
+/* Reset the hosted simulation to time 0 (ds_SimFlush); RECORD truncates the record and writes the seed entry again, REPLAY rewinds it; the hash file likewise. An unknown id is logged. */
 void        ds_SimHostReset(struct ds_Server *srv, const ds_SimId id);
 /* Return the slot of the hosted simulation with the given id, or { NULL, U32_MAX } if there is none. */
 struct slot ds_SimHostLookup(const struct ds_Server *srv, const ds_SimId id);
