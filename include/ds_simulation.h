@@ -39,14 +39,6 @@ extern "C" {
 
 struct ds_Sim;
 
-enum ds_SimMode
-{
-    SIM_MODE_NONE,   // Run new simulation without recording
-    SIM_MODE_RECORD, // Run new simulation while recording
-    SIM_MODE_REPLAY, // Run old simulation from replay
-    SIM_MODE_COUNT
-};
-
 
 /* Ordered by priority; on tie-breakers, external precedes dynamics precedes game ... */
 enum ds_SimSystem
@@ -183,27 +175,11 @@ typedef u64 ds_SimKey;
 
 struct ds_Sim
 {
-    POOL_NODE;
-    struct DLLNode          srv_sim;            /* the server's list of simulations (ds_Server.sim_list) */
-    ds_SimId                id;                 /* generational identifier: the server's pool slot */
-
-    enum ds_SimMode  mode;
-    //FILE                    record;           /* TODO Null if mode == NONE. */
     struct ds_SimConfig     config_seed;        /* the alloc-time config: the seed batch of ds_SimAlloc and ds_SimFlush */
     u32                     initialized;        /* a ConfigLoad was applied since alloc/flush: the seed; later ones must keep the alloc-time values */
 
-    f64                     speed;              /* Simulation speed (scales wall-clock); host state, 1.0 at alloc */
     u64                     us_time;            /* Simulation time                          */
     u64                     us_delta;           /* Simulation time delta                    */
-    u64                     ns_remainder;       /* Unaccounted time from previous frame     */
-    u64                     ns_budget;          /* Simulation time-budget, us_time is never
-                                                   incremented by more than the budget
-                                                    ns_budget = sum_i system_i.us_budget    */
-
-
-    ds_CPool(ds_SimCmdPayload) payload_pool;  /* arrived payloads, not yet stamped        */
-    ds_CPool(ds_SimCmd)     cmd_pool;           /* the frame's commands, decoded at the server's door; executed and flushed by the tick */
-    struct ds_SimCmdPayload srv_frame_payload;  /* Lifetime: ds_ServerTick, external commands to be issued (if any): */
 
     struct ds_Dynamics      dynamics;
     //struct ds_Game          game;             /* TODO: ds_Game undefined */
@@ -212,26 +188,25 @@ struct ds_Sim
     u64                     us_system_tick[SIM_SYSTEM_COUNT];
     ds_SimKey               sys_schedule[SIM_SYSTEM_COUNT];
 };
-DEFINE_POOL(ds_Sim);
 
 /*
  * Allocate a new simulation from config (ds_SimConfigCheck asserted) at time 0: the systems' shells are pushed on mem
  * (ds_DynamicsShellMemoryRequirement for the dynamics), the seed batch is the first external command and the first
  * system ticks are one period in. The databases are externally owned and must outlive sim; worker_count and
- * worker_frame_size are passed on to ds_DynamicsAllocConfig. record != 0 records the simulation.
+ * worker_frame_size are passed on to ds_DynamicsAllocConfig.
  */
-void    ds_SimAlloc(struct arena *mem, struct ds_Sim *sim, const struct ds_SimConfig *config, const u32 record, struct c_ShapeDB *cshape_db, ds_SDB(ds_BodyPrefab) *prefab_db, const u32 worker_count, const u64 worker_frame_size);
+void    ds_SimAlloc(struct arena *mem, struct ds_Sim *sim, const struct ds_SimConfig *config, struct c_ShapeDB *cshape_db, ds_SDB(ds_BodyPrefab) *prefab_db, const u32 worker_count, const u64 worker_frame_size);
 //TODO
 //void    ds_SimAllocReplay(struct ds_Sim *sim, struct ds_SimReplay *replay);
 /* Free the simulation's heap resources. */
 void    ds_SimDealloc(struct ds_Sim *sim);
 /* Flush systems, reset schedule to time=0 and reseed the simulation. Config and capacities stay. */
 void    ds_SimFlush(struct ds_Sim *sim);
-/* 
- * Advance the simulation by ns_delta of wall-clock time, scaled by speed and capped by the simulation's time budget.
- * Any pending external commands are dispatched, and executed before any pending system ticks.
+/*
+ * Advance the simulation by us_delta of simulation time: the frame's external commands cmds (may be empty) execute
+ * first, stamped the first time after the current one, then every system tick that is due.
  */
-void    ds_SimTick(struct ds_Sim *sim, const u64 ns_delta);
+void    ds_SimTick(struct ds_Sim *sim, const ds_CPool(ds_SimCmd) *cmds, const u64 us_delta);
 
 //TODO Serialize API for sim 
 

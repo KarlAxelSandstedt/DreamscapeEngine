@@ -309,10 +309,9 @@ static struct test_Output DynamicsConfigSerializeTest(struct test_Environment *e
 }
 
 /*
- * ds_SimAlloc from the default config (which runs the seed batch) then ds_SimTick with fake wall-clock deltas: nothing
- * ticks at time 0, a frame of one dynamics period runs one physics tick and a frame of two
- * runs two, sub-microsecond deltas accumulate in the remainder until they make a microsecond, the budget caps a long
- * frame, speed 0 holds time still, and ds_SimFlush restarts at 0.
+ * ds_SimAlloc from the default config (which runs the seed batch) then ds_SimTick with simulation-time deltas and no
+ * commands: nothing ticks at time 0 or before the first period, a frame of one dynamics period runs one physics tick
+ * and a frame of two runs two, and ds_SimFlush restarts at 0.
  */
 static struct test_Output SimTickTest(struct test_Environment *env)
 {
@@ -329,57 +328,41 @@ static struct test_Output SimTickTest(struct test_Environment *env)
 
     struct arena mem = ArenaAlloc(NULL, ds_DynamicsShellMemoryRequirement(g_config->thread_count, config.dynamics.frame_memory));
     struct ds_Sim sim;
-    ds_SimAlloc(&mem, &sim, &config, 0, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    ds_SimAlloc(&mem, &sim, &config, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
     TEST_TRUE(mem.mem_left < mem.mem_size);
     TEST_EQUAL(0, sim.us_time);
-    TEST_EQUAL(SIM_MODE_NONE, sim.mode);
     TEST_EQUAL(1000 * period, sim.dynamics.ns_tick);
     /* the seed batch ran inside ds_SimAlloc: the external slot is empty, time still 0 */
     TEST_EQUAL(U64_MAX, sim.sys_schedule[SIM_SYSTEM_EXTERNAL]);
     TEST_EQUAL(0, sim.dynamics.frames_completed);
 
+    ds_CPool(ds_SimCmd) none;
+    ds_CPoolAlloc(env->mem_1, none, 1, NOT_GROWABLE);
+
     /* no time: no tick */
-    ds_SimTick(&sim, 0);
+    ds_SimTick(&sim, &none, 0);
     TEST_EQUAL(0, sim.us_time);
     TEST_EQUAL(0, sim.dynamics.frames_completed);
     TEST_EQUAL(U64_MAX, sim.sys_schedule[SIM_SYSTEM_EXTERNAL]);
 
-    /* sub-microsecond deltas: the remainder carries them */
-    ds_SimTick(&sim, 600);
-    TEST_EQUAL(0, sim.us_delta);
-    TEST_EQUAL(600, sim.ns_remainder);
-    ds_SimTick(&sim, 600);
-    TEST_EQUAL(1, sim.us_delta);
-    TEST_EQUAL(200, sim.ns_remainder);
-    TEST_EQUAL(1, sim.us_time);
     /* no physics tick before its period */
+    ds_SimTick(&sim, &none, 1);
+    TEST_EQUAL(1, sim.us_delta);
+    TEST_EQUAL(1, sim.us_time);
     TEST_EQUAL(0, sim.dynamics.frames_completed);
 
-    /* one period: the first physics tick */
-    ds_SimTick(&sim, 1000 * (period - 1));
+    /* one period: the first physics tick; two periods: two */
+    ds_SimTick(&sim, &none, period - 1);
     TEST_EQUAL(period, sim.us_time);
     TEST_EQUAL(1, sim.dynamics.frames_completed);
+    ds_SimTick(&sim, &none, 2 * period);
+    TEST_EQUAL(3 * period, sim.us_time);
+    TEST_EQUAL(3, sim.dynamics.frames_completed);
 
-    /* the budget caps a long frame at the sum of the periods: two ticks, not twenty */
-    ds_SimTick(&sim, 20 * 1000 * period);
-    TEST_EQUAL(sim.ns_budget / 1000, sim.us_delta);
-    TEST_EQUAL(period + sim.ns_budget / 1000, sim.us_time);
-    TEST_EQUAL(1 + sim.ns_budget / (1000 * period), sim.dynamics.frames_completed);
-
-    /* speed 0: time stands still, the remainder too */
-    sim.speed = 0.0;
-    ds_SimTick(&sim, 1000 * period);
-    TEST_EQUAL(0, sim.us_delta);
-    TEST_EQUAL(period + sim.ns_budget / 1000, sim.us_time);
-    sim.speed = 2.0;
-    ds_SimTick(&sim, 500 * period);
-    TEST_EQUAL(period, sim.us_delta);
-
-    /* flush: back to 0 with the seed slot armed */
+    /* flush: back to 0, reseeded (the seed batch ran) */
     ds_SimFlush(&sim);
     TEST_EQUAL(0, sim.us_time);
-    TEST_EQUAL(0, sim.ns_remainder);
-    TEST_EQUAL(U64_MAX, sim.sys_schedule[SIM_SYSTEM_EXTERNAL]);    /* reseeded: the seed batch ran */
+    TEST_EQUAL(U64_MAX, sim.sys_schedule[SIM_SYSTEM_EXTERNAL]);
     TEST_EQUAL(0, sim.dynamics.frames_completed);
 
     ds_SimDealloc(&sim);
@@ -625,14 +608,10 @@ static struct test_Output SimCmdSerializeTest(struct test_Environment *env)
 	return output;
 }
 
-/* Push the pool's commands onto sim's command pool (what the server's door does) and run a zero-delta frame. */
+/* Run a zero-delta frame with the pool as the frame's commands. */
 static void SimTestBatch(struct ds_Sim *sim, const ds_CPool(ds_SimCmd) *pool)
 {
-    for (u32 i = 0; i < pool->count; ++i)
-    {
-        ds_CPoolPushValue(sim->cmd_pool, pool->buf[i]);
-    }
-    ds_SimTick(sim, 0);
+    ds_SimTick(sim, pool, 0);
 }
 
 /*
@@ -655,7 +634,7 @@ static struct test_Output SimConfigLoadTest(struct test_Environment *env)
     const u32 iterations = config.dynamics.solver.pgs_iteration_count;
     struct arena mem = ArenaAlloc(NULL, ds_DynamicsShellMemoryRequirement(g_config->thread_count, config.dynamics.frame_memory));
     struct ds_Sim sim;
-    ds_SimAlloc(&mem, &sim, &config, 0, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    ds_SimAlloc(&mem, &sim, &config, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
     TEST_EQUAL(1, sim.initialized);     /* the seed batch ran */
     TEST_EQUAL(iterations, sim.dynamics.config.solver.pgs_iteration_count);
 
@@ -672,7 +651,6 @@ static struct test_Output SimConfigLoadTest(struct test_Environment *env)
     TEST_EQUAL(iterations + 3, sim.dynamics.config.solver.pgs_iteration_count);
     TEST_EQUAL(iterations + 3, sim.dynamics.config_pending.solver.pgs_iteration_count);
     TEST_EQUAL(U64_MAX, sim.sys_schedule[SIM_SYSTEM_EXTERNAL]);
-    TEST_TRUE(sim.speed == 1.0);
 
     /* two commands in one batch run in order: the second wins */
     struct ds_SimConfig second = config;
@@ -708,6 +686,88 @@ static struct test_Output SimConfigLoadTest(struct test_Environment *env)
 	return output;
 }
 
+/* Host a simulation in srv (what ds_ServerSimAdd will do): pool slot, id, mode NONE, speed 1, budget, command pool, list. */
+static struct ds_SimHost *ServerTestSimAdd(struct ds_Server *srv, struct arena *mem, const struct ds_SimConfig *config, struct c_ShapeDB *cshape_db, ds_SDB(ds_BodyPrefab) *prefab_db)
+{
+    const struct slot slot = ds_PoolAdd(srv->sim_pool);
+    struct ds_SimHost *host = slot.address;
+    host->id = ds_SimIdInit(slot.index, 0);
+    host->mode = SIM_MODE_NONE;
+    host->speed = 1.0;
+    host->ns_remainder = 0;
+    host->ns_budget = 0;
+    for (u32 i = 0; i < SIM_SYSTEM_COUNT; ++i)
+    {
+        host->ns_budget += 1000 * config->us_system_tick[i];
+    }
+    ds_CPoolAlloc(NULL, host->cmd_pool, 64, GROWABLE);
+    host->frame_payload = ds_SimCmdPayloadEmpty(host->id);
+    ds_SimAlloc(mem, &host->sim, config, cshape_db, prefab_db, g_config->thread_count, g_config->thread_framesize);
+    DLLAppend(srv->sim_list, srv->sim_pool.buf, slot.index, srv_sim);
+    return host;
+}
+
+/*
+ * The server's clock: a hosted simulation ticked through ds_ServerTick with wall-clock deltas. Sub-microsecond
+ * deltas accumulate in the host's remainder until they make a microsecond, the budget caps a long frame at the sum
+ * of the periods, speed 0 holds time still and speed 2 doubles it.
+ */
+static struct test_Output ServerClockTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct c_ShapeDB cshape_db = { 0 };
+    c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
+    ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
+    ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
+
+    struct ds_SimConfig config = ds_SimConfigDefault();
+    config.dynamics.initial_size = 32;
+    const u64 period = config.us_system_tick[SIM_SYSTEM_DYNAMICS];
+    struct arena mem = ArenaAlloc(NULL, ds_DynamicsShellMemoryRequirement(g_config->thread_count, config.dynamics.frame_memory));
+
+    struct ds_Server srv;
+    ds_ServerAlloc(&srv, 1 << 20, 2);
+    struct ds_SimHost *host = ServerTestSimAdd(&srv, &mem, &config, &cshape_db, &prefab_db);
+    struct ds_Sim *sim = &host->sim;
+
+    /* sub-microsecond deltas: the remainder carries them */
+    ds_ServerTick(&srv, 600);
+    TEST_EQUAL(0, sim->us_delta);
+    TEST_EQUAL(600, host->ns_remainder);
+    ds_ServerTick(&srv, 600);
+    TEST_EQUAL(1, sim->us_delta);
+    TEST_EQUAL(200, host->ns_remainder);
+    TEST_EQUAL(1, sim->us_time);
+    TEST_EQUAL(0, sim->dynamics.frames_completed);
+
+    /* one period: the first physics tick */
+    ds_ServerTick(&srv, 1000 * (period - 1));
+    TEST_EQUAL(period, sim->us_time);
+    TEST_EQUAL(1, sim->dynamics.frames_completed);
+
+    /* the budget caps a long frame at the sum of the periods: two ticks, not twenty */
+    ds_ServerTick(&srv, 20 * 1000 * period);
+    TEST_EQUAL(host->ns_budget / 1000, sim->us_delta);
+    TEST_EQUAL(period + host->ns_budget / 1000, sim->us_time);
+    TEST_EQUAL(1 + host->ns_budget / (1000 * period), sim->dynamics.frames_completed);
+
+    /* speed 0: time stands still, the remainder too */
+    host->speed = 0.0;
+    ds_ServerTick(&srv, 1000 * period);
+    TEST_EQUAL(0, sim->us_delta);
+    TEST_EQUAL(period + host->ns_budget / 1000, sim->us_time);
+    host->speed = 2.0;
+    ds_ServerTick(&srv, 500 * period);
+    TEST_EQUAL(period, sim->us_delta);
+
+    ds_ServerDealloc(&srv);
+    ArenaFree(&mem);
+    ds_SDBDealloc(prefab_db);
+    c_ShapeDBDealloc(&cshape_db);
+	return output;
+}
+
 /*
  * The server's door: a server with one hand-wired simulation and four arrivals in payload_pool, a ConfigLoad, a
  * payload for an unknown id, a payload whose command bits are corrupt, a payload whose command count is wrong, and a
@@ -729,14 +789,10 @@ static struct test_Output ServerDoorTest(struct test_Environment *env)
     const u32 iterations = config.dynamics.solver.pgs_iteration_count;
     struct arena mem = ArenaAlloc(NULL, ds_DynamicsShellMemoryRequirement(g_config->thread_count, config.dynamics.frame_memory));
 
-    /* a server with one simulation (what ds_ServerSimAdd will do) */
     struct ds_Server srv;
     ds_ServerAlloc(&srv, 1 << 20, 2);
-    const struct slot slot = ds_PoolAdd(srv.sim_pool);
-    struct ds_Sim *sim = slot.address;
-    ds_SimAlloc(&mem, sim, &config, 0, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
-    sim->id = ds_SimIdInit(slot.index, 0);
-    DLLAppend(srv.sim_list, srv.sim_pool.buf, slot.index, srv_sim);
+    struct ds_SimHost *host = ServerTestSimAdd(&srv, &mem, &config, &cshape_db, &prefab_db);
+    struct ds_Sim *sim = &host->sim;
 
     /* the arrivals */
     struct ds_SimConfig load[2] = { config, config };
@@ -747,16 +803,16 @@ static struct test_Output ServerDoorTest(struct test_Environment *env)
     struct ds_SimCmd cmd = { .type = SIM_CMD_CONFIG_LOAD, .load_config.config = &load[0] };
     ds_CPoolPushValue(pool, cmd);
 
-    struct ds_SimCmdPayload good_first = ds_SimCmdPayloadPushAll(env->mem_1, sim->id, &pool);
+    struct ds_SimCmdPayload good_first = ds_SimCmdPayloadPushAll(env->mem_1, host->id, &pool);
     struct ds_SimCmdPayload unknown = ds_SimCmdPayloadPushAll(env->mem_1, ds_SimIdInit(1, 0), &pool);
-    struct ds_SimCmdPayload corrupt = ds_SimCmdPayloadPushAll(env->mem_1, sim->id, &pool);
+    struct ds_SimCmdPayload corrupt = ds_SimCmdPayloadPushAll(env->mem_1, host->id, &pool);
     corrupt.stream.buf[0] = 0xff;                                               /* the type */
-    struct ds_SimCmdPayload miscounted = ds_SimCmdPayloadPushAll(env->mem_1, sim->id, &pool);
+    struct ds_SimCmdPayload miscounted = ds_SimCmdPayloadPushAll(env->mem_1, host->id, &pool);
     miscounted.cmd_count = 2;
     cmd.load_config.config = &load[1];
     ds_CPoolFlush(pool);
     ds_CPoolPushValue(pool, cmd);
-    struct ds_SimCmdPayload good_second = ds_SimCmdPayloadPushAll(env->mem_1, sim->id, &pool);
+    struct ds_SimCmdPayload good_second = ds_SimCmdPayloadPushAll(env->mem_1, host->id, &pool);
     const u64 cmd_bits = good_first.stream.bit_index;
 
     ds_CPoolPushValue(srv.payload_pool, good_first);
@@ -767,15 +823,15 @@ static struct test_Output ServerDoorTest(struct test_Environment *env)
 
     ds_ServerTick(&srv, 0);
     TEST_EQUAL(iterations + 5, sim->dynamics.config.solver.pgs_iteration_count);
-    TEST_EQUAL(2, sim->srv_frame_payload.cmd_count);
-    TEST_EQUAL(2*cmd_bits, sim->srv_frame_payload.stream.bit_index);
+    TEST_EQUAL(2, host->frame_payload.cmd_count);
+    TEST_EQUAL(2*cmd_bits, host->frame_payload.stream.bit_index);
     TEST_EQUAL(0, srv.payload_pool.count);
-    TEST_EQUAL(0, sim->cmd_pool.count);
+    TEST_EQUAL(0, host->cmd_pool.count);
 
     /* an empty frame */
     ds_ServerTick(&srv, 0);
     TEST_EQUAL(iterations + 5, sim->dynamics.config.solver.pgs_iteration_count);
-    TEST_EQUAL(0, sim->srv_frame_payload.cmd_count);
+    TEST_EQUAL(0, host->frame_payload.cmd_count);
 
     ds_ServerDealloc(&srv);
     ArenaFree(&mem);
@@ -792,6 +848,7 @@ static struct test_Output (*simulation_tests[])(struct test_Environment *) =
     SimCmdSerializeTest,
     SimTickTest,
     SimConfigLoadTest,
+    ServerClockTest,
     ServerDoorTest,
 };
 

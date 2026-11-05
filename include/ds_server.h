@@ -144,11 +144,39 @@ extern "C" {
 #include "ds_list.h"
 #include "ds_simulation.h"
 
+enum ds_SimMode
+{
+    SIM_MODE_NONE,   // Run new simulation without recording
+    SIM_MODE_RECORD, // Run new simulation while recording
+    SIM_MODE_REPLAY, // Run old simulation from replay
+    SIM_MODE_COUNT
+};
+
+/* A hosted simulation: the server's per-simulation state (clock conversion, mode, record, the frame's commands) and the simulation. */
+struct ds_SimHost
+{
+    POOL_NODE;
+    struct DLLNode          srv_sim;        /* ds_Server.sim_list */
+    ds_SimId                id;             /* generational identifier: the pool slot */
+
+    enum ds_SimMode         mode;
+    f64                     speed;          /* scales wall-clock time */
+    u64                     ns_remainder;   /* wall-clock time not yet accounted for (sub-microsecond) */
+    u64                     ns_budget;      /* the simulation never advances more than this per tick: sum of the system periods */
+    //TODO the record stream (RECORD), when it is allocated and when it is written to a file
+
+    ds_CPool(ds_SimCmd)     cmd_pool;       /* the frame's commands, decoded at the door, executed by the simulation's tick */
+    struct ds_SimCmdPayload frame_payload;  /* the frame's arrivals fused: the record's entry */
+
+    struct ds_Sim           sim;
+};
+DEFINE_POOL(ds_SimHost);
+
 struct ds_Server
 {
     struct arena        frame;      /* frame memory: flushed every tick */
 
-    ds_Pool(ds_Sim)     sim_pool;   
+    ds_Pool(ds_SimHost) sim_pool;   
     struct DLL          sim_list;   /* the active simulations */
     ds_CPool(ds_SimCmdPayload) payload_pool;    /* the frame's arrived payloads, valid during the tick */
 };

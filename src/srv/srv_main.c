@@ -23,7 +23,7 @@
 
 /**************** ds_Server ****************/
 
-/* Return the slot of the simulation with the given id, or { NULL, U32_MAX } if there is none. */
+/* Return the slot of the hosted simulation with the given id, or { NULL, U32_MAX } if there is none. */
 static struct slot ds_SimLookup(const struct ds_Server *srv, const ds_SimId id)
 {
     struct slot slot = { .address = NULL, .index = U32_MAX };
@@ -31,10 +31,10 @@ static struct slot ds_SimLookup(const struct ds_Server *srv, const ds_SimId id)
     const u32 index = ds_SimIdIndex(id);
     if (index < srv->sim_pool.count_max)
     {
-        struct ds_Sim *sim = srv->sim_pool.buf + index;
-        if (ds_PoolSlotAllocated(sim) && ds_SimIdEqual(sim->id, id))
+        struct ds_SimHost *host = srv->sim_pool.buf + index;
+        if (ds_PoolSlotAllocated(host) && ds_SimIdEqual(host->id, id))
         {
-            slot.address = sim;
+            slot.address = host;
             slot.index = index;
         }
     }
@@ -55,7 +55,9 @@ void ds_ServerDealloc(struct ds_Server *srv)
 {
     for (i32 i = srv->sim_list.first; i != DLL_SENTINEL; i = srv->sim_pool.buf[i].srv_sim.next)
     {
-        ds_SimDealloc(srv->sim_pool.buf + i);
+        struct ds_SimHost *host = srv->sim_pool.buf + i;
+        ds_SimDealloc(&host->sim);
+        ds_CPoolDealloc(host->cmd_pool);
     }
     ds_PoolDealloc(srv->sim_pool);
     ds_CPoolDealloc(srv->payload_pool);
@@ -82,53 +84,53 @@ void ds_ServerTick(struct ds_Server *srv, const u64 ns_delta)
 
     for (i32 i = srv->sim_list.first; i != DLL_SENTINEL; i = srv->sim_pool.buf[i].srv_sim.next)
     {
-        srv->sim_pool.buf[i].srv_frame_payload.stream.bit_count = 0;
+        srv->sim_pool.buf[i].frame_payload.stream.bit_count = 0;
     }
 
     for (u32 i = 0; i < srv->payload_pool.count; ++i)
     {
         struct ds_SimCmdPayload *payload = srv->payload_pool.buf + i;
-        struct ds_Sim *sim = ds_SimLookup(srv, payload->dst).address;
-        if (sim == NULL)
+        struct ds_SimHost *host = ds_SimLookup(srv, payload->dst).address;
+        if (host == NULL)
         {
             Log(T_SYSTEM, S_WARNING, "ds_ServerTick: payload for unknown simulation %lu dropped", payload->dst.val);
             *payload = ds_SimCmdPayloadEmpty(ds_SimIdNull());
             continue;
         }
 
-        const u32 old_count = sim->cmd_pool.count;
+        const u32 old_count = host->cmd_pool.count;
         struct SSView view;
         SSTryView(&view, &payload->stream, 0, payload->stream.bit_index);
         struct SS ss = SSSubstreamFromView(&view);
         u32 valid = 1;
         for (u32 c = 0; c < payload->cmd_count && valid; ++c)
         {
-            struct ds_SimCmd *cmd = ds_CPoolPush(sim->cmd_pool).address;
+            struct ds_SimCmd *cmd = ds_CPoolPush(host->cmd_pool).address;
             valid = ds_SimCmdTryDeserialize(&srv->frame, &ss, cmd) && ds_SimCmdFormVerify(cmd);
         }
 
         if (!valid || SSBitsLeft(&ss) != 0)
         {
             Log(T_SYSTEM, S_WARNING, "ds_ServerTick: malformed payload for simulation %lu dropped (%u commands)", payload->dst.val, payload->cmd_count);
-            ds_CPoolPopBatch(sim->cmd_pool, sim->cmd_pool.count - old_count);
+            ds_CPoolPopBatch(host->cmd_pool, host->cmd_pool.count - old_count);
             *payload = ds_SimCmdPayloadEmpty(ds_SimIdNull());
             continue;
         }
 
-        sim->srv_frame_payload.stream.bit_count += payload->stream.bit_index;
+        host->frame_payload.stream.bit_count += payload->stream.bit_index;
     }
 
     for (i32 i = srv->sim_list.first; i != DLL_SENTINEL; i = srv->sim_pool.buf[i].srv_sim.next)
     {
-        struct ds_Sim *sim = srv->sim_pool.buf + i;
-        const u64 bit_count = sim->srv_frame_payload.stream.bit_count;
+        struct ds_SimHost *host = srv->sim_pool.buf + i;
+        const u64 bit_count = host->frame_payload.stream.bit_count;
         const u64 size =  (bit_count + 7) / 8;
-        sim->srv_frame_payload = ds_SimCmdPayloadAlloc(&srv->frame, sim->id, size);
+        host->frame_payload = ds_SimCmdPayloadAlloc(&srv->frame, host->id, size);
 
-        if (bit_count && sim->srv_frame_payload.stream.buf == NULL)
+        if (bit_count && host->frame_payload.stream.buf == NULL)
         {
-            Log(T_SYSTEM, S_ERROR, "ds_ServerTick: no frame memory for %lu bytes, simulation %lu's payloads dropped", size, sim->id.val);
-            sim->srv_frame_payload = ds_SimCmdPayloadEmpty(sim->id);
+            Log(T_SYSTEM, S_ERROR, "ds_ServerTick: no frame memory for %lu bytes, simulation %lu's payloads dropped", size, host->id.val);
+            host->frame_payload = ds_SimCmdPayloadEmpty(host->id);
         }
     }
 
@@ -140,8 +142,8 @@ void ds_ServerTick(struct ds_Server *srv, const u64 ns_delta)
             continue;
         }
 
-        struct ds_Sim *sim = ds_SimLookup(srv, payload->dst).address;
-        if (sim->srv_frame_payload.stream.bit_count && !ds_SimCmdPayloadAppend(&sim->srv_frame_payload, payload))
+        struct ds_SimHost *host = ds_SimLookup(srv, payload->dst).address;
+        if (host->frame_payload.stream.bit_count && !ds_SimCmdPayloadAppend(&host->frame_payload, payload))
         {
             Log(T_SYSTEM, S_ERROR, "ds_ServerTick: payload of %u commands for simulation %lu dropped (no room)", payload->cmd_count, payload->dst.val);
         }
@@ -159,6 +161,15 @@ void ds_ServerTick(struct ds_Server *srv, const u64 ns_delta)
 
     for (i32 i = srv->sim_list.first; i != DLL_SENTINEL; i = srv->sim_pool.buf[i].srv_sim.next)
     {
-        ds_SimTick(srv->sim_pool.buf + i, ns_delta);
+        struct ds_SimHost *host = srv->sim_pool.buf + i;
+
+        /* wall-clock to simulation time: scaled by speed, the sub-microsecond rest carried, capped by the budget */
+        const u64 ns_wanted = host->ns_remainder + (u64) (ns_delta * host->speed);
+        const u64 ns_sim_delta = U64Min(ns_wanted, host->ns_budget);
+        host->ns_remainder = ns_sim_delta % 1000;
+
+        //TODO RECORD: timestamp (sim.us_time + 1) + frame_payload
+        ds_SimTick(&host->sim, &host->cmd_pool, ns_sim_delta / 1000);
+        ds_CPoolFlush(host->cmd_pool);
     }
 }

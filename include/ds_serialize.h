@@ -90,6 +90,8 @@ static ds_ForceInline struct SS   SSAlloc(struct arena *mem, const u64 bufsize);
 static ds_ForceInline struct SS   SSBuffered(void *buf, const u64 bufsize);
 /* free stream resources (the ds_Alloc buffer of a heap stream); no-op for arena and buffered streams; buf dangles */
 static ds_ForceInline void 	    SSDealloc(struct SS *ss);
+/* Resize a heap stream's buffer to bufsize bytes (ds_Realloc: the first bytes are kept, fatal if growing fails); bit_index must fit (asserted). bufsize 0 frees it. */
+static ds_ForceInline void 	    SSRealloc(struct SS *ss, const u64 bufsize);
 /* return number of whole bytes left: (bit_count - bit_index) / 8, rounded down */
 static ds_ForceInline u64		    SSBytesLeft(const struct SS *ss);
 /* return number of bits left */
@@ -220,6 +222,16 @@ static ds_ForceInline void SSDealloc(struct SS *ss)
 		ds_Free(ss->buf);
 		ss->heap_allocated = 0;
 	}
+}
+
+static ds_ForceInline void SSRealloc(struct SS *ss, const u64 bufsize)
+{
+	ds_Assert(ss->heap_allocated);
+	ds_Assert(ss->bit_index <= 8 * bufsize);
+
+	ss->buf = ds_Realloc(ss->buf, ss->bit_count / 8, bufsize, DS_CACHE_LINE);
+	ss->bit_count = 8 * bufsize;
+	ss->heap_allocated = (bufsize != 0);
 }
 
 static ds_ForceInline struct SS SSBuffered(void *buf, const u64 bufsize)

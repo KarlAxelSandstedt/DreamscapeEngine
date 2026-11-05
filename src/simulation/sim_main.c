@@ -203,7 +203,6 @@ static void ds_SimScheduleInit(struct ds_Sim *sim)
 {
     sim->us_time = 0;
     sim->us_delta = 0;
-    sim->ns_remainder = 0;
 
     sim->sys_schedule[SIM_SYSTEM_EXTERNAL] = ds_SimKeyNull();   /* the seed is a batch (ds_SimSeed) */
     for (u32 i = SIM_SYSTEM_EXTERNAL + 1; i < SIM_SYSTEM_COUNT; ++i)
@@ -218,33 +217,29 @@ static void ds_SimScheduleInit(struct ds_Sim *sim)
  */
 static void ds_SimSeed(struct ds_Sim *sim, const struct ds_SimConfig *config)
 {
+    struct arena *tmp = ArenaPushScratch();
+
     const struct ds_SimCmd seed = { .type = SIM_CMD_CONFIG_LOAD, .load_config.config = config };
-    ds_CPoolPushValue(sim->cmd_pool, seed);
-    ds_SimTick(sim, 0);     
-    //TODO RECORD: the seed batch as a payload, the record's head (point 5)
+    ds_CPool(ds_SimCmd) cmds;
+    ds_CPoolAlloc(tmp, cmds, 1, NOT_GROWABLE);
+    ds_CPoolPushValue(cmds, seed);
+    ds_SimTick(sim, &cmds, 0);
+
+    ArenaPopScratch();
 }
 
-void ds_SimAlloc(struct arena *mem, struct ds_Sim *sim, const struct ds_SimConfig *config, const u32 record, struct c_ShapeDB *cshape_db, ds_SDB(ds_BodyPrefab) *prefab_db, const u32 worker_count, const u64 worker_frame_size)
+void ds_SimAlloc(struct arena *mem, struct ds_Sim *sim, const struct ds_SimConfig *config, struct c_ShapeDB *cshape_db, ds_SDB(ds_BodyPrefab) *prefab_db, const u32 worker_count, const u64 worker_frame_size)
 {
     ds_Assert(ds_SimConfigCheck(config));
 
     *sim = (struct ds_Sim) { 0 };
-    sim->mode = (record) ? SIM_MODE_RECORD : SIM_MODE_NONE;
     sim->config_seed = *config;
-    sim->speed = 1.0;
-
-    sim->ns_budget = 0;
     for (u32 i = 0; i < SIM_SYSTEM_COUNT; ++i)
     {
         sim->us_system_tick[i] = config->us_system_tick[i];
-        sim->ns_budget += 1000 * config->us_system_tick[i];
     }
 
-    ds_CPoolAlloc(NULL, sim->payload_pool, 16, GROWABLE);
-    ds_CPoolAlloc(NULL, sim->cmd_pool, 64, GROWABLE);
-
     sim->dynamics = ds_DynamicsAllocConfig(mem, &config->dynamics, 1000 * config->us_system_tick[SIM_SYSTEM_DYNAMICS], cshape_db, prefab_db, worker_count, worker_frame_size);
-    //TODO record mode: open the record (the seed batch is its head)
 
     ds_SimScheduleInit(sim);
     ds_SimSeed(sim, &sim->config_seed);
@@ -253,48 +248,36 @@ void ds_SimAlloc(struct arena *mem, struct ds_Sim *sim, const struct ds_SimConfi
 void ds_SimDealloc(struct ds_Sim *sim)
 {
     ds_DynamicsFree(&sim->dynamics);
-    ds_CPoolDealloc(sim->payload_pool);
-    ds_CPoolDealloc(sim->cmd_pool);
-    //TODO record mode: close the record
 }
 
 void ds_SimFlush(struct ds_Sim *sim)
 {
-    ds_CPoolFlush(sim->payload_pool);
-    ds_CPoolFlush(sim->cmd_pool);
     ds_DynamicsFlush(&sim->dynamics);
     ds_SimScheduleInit(sim);
     sim->initialized = 0;
-    //TODO record mode: restart the record
     ds_SimSeed(sim, &sim->config_seed);
 }
 
-static void ds_SimExecuteCmdBatch(struct ds_Sim *sim)
+static void ds_SimExecuteCmdBatch(struct ds_Sim *sim, const ds_CPool(ds_SimCmd) *cmds)
 {
-    //TODO REPLAY: decode the record's batch onto cmd_pool first (point 6)
-    for (u32 i = 0; i < sim->cmd_pool.count; ++i)
+    for (u32 i = 0; i < cmds->count; ++i)
     {
-        ds_SimCmdTryExecute(sim, sim->cmd_pool.buf + i);
+        ds_SimCmdTryExecute(sim, cmds->buf + i);
     }
-    ds_CPoolFlush(sim->cmd_pool);
 }
 
-void ds_SimTick(struct ds_Sim *sim, const u64 ns_delta)
+void ds_SimTick(struct ds_Sim *sim, const ds_CPool(ds_SimCmd) *cmds, const u64 us_delta)
 {
     ds_DynamicsConfigPush(&sim->dynamics); 
 
     /* If external commands exist, they will be prioritized and executed immediately. */
-    sim->sys_schedule[SIM_SYSTEM_EXTERNAL] = (sim->cmd_pool.count)
+    sim->sys_schedule[SIM_SYSTEM_EXTERNAL] = (cmds->count)
                                            ? ds_SimKeyInit(sim->us_time + 1, SIM_SYSTEM_EXTERNAL)
                                            : ds_SimKeyNull();
 
-    const u64 ns_wanted = sim->ns_remainder + (u64) (ns_delta*sim->speed);
-    const u64 ns_sim_delta = U64Min(ns_wanted, sim->ns_budget);
-    sim->ns_remainder = ns_sim_delta % 1000;
-    sim->us_delta = ns_sim_delta / 1000;
-    sim->us_time += sim->us_delta;
+    sim->us_delta = us_delta;
+    sim->us_time += us_delta;
 
-    //TODO record the batch: its key (sys_schedule[SIM_SYSTEM_EXTERNAL]) + srv_frame_payload (RECORD); REPLAY: read the record's due entry instead
     while (1)
     {
         ds_SimKey key = ds_SimKeyNull();
@@ -324,7 +307,7 @@ void ds_SimTick(struct ds_Sim *sim, const u64 ns_delta)
         {
             case SIM_SYSTEM_EXTERNAL:
             {
-                ds_SimExecuteCmdBatch(sim);
+                ds_SimExecuteCmdBatch(sim, cmds);
             } break;
 
             case SIM_SYSTEM_DYNAMICS:

@@ -740,9 +740,45 @@ static struct test_Output ss_view(void)
 	return output;
 }
 
+/* SSRealloc: growing keeps the bytes and the position, shrinking (position within) keeps the first bytes, 0 frees */
+static struct test_Output ss_realloc(void)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+	struct SS ss = SSAlloc(NULL, 8);
+	for (u32 i = 0; i < 4; ++i)
+	{
+		SSWriteU16Le(&ss, (u16) (0x1000 + i));
+	}
+
+	SSRealloc(&ss, 64);
+	TEST_TRUE(ss.heap_allocated && ss.bit_count == 512 && ss.bit_index == 64);
+	SSWriteU16Le(&ss, 0x2000);
+	ss.bit_index = 0;
+	for (u32 i = 0; i < 4; ++i)
+	{
+		TEST_EQUAL(0x1000 + i, SSReadU16Le(&ss));
+	}
+	TEST_EQUAL(0x2000u, SSReadU16Le(&ss));
+
+	ss.bit_index = 16;
+	SSRealloc(&ss, 3);
+	TEST_TRUE(ss.heap_allocated && ss.bit_count == 24 && ss.bit_index == 16);
+	ss.bit_index = 0;
+	TEST_EQUAL(0x1000u, SSReadU16Le(&ss));
+
+	ss.bit_index = 0;
+	SSRealloc(&ss, 0);
+	TEST_TRUE(ss.buf == NULL && ss.bit_count == 0 && ss.bit_index == 0 && !ss.heap_allocated);
+	SSDealloc(&ss);		/* no-op */
+
+	return output;
+}
+
 struct test_CorrectnessRepetition repetition_test[] =
 {
 	{ .test =  &ss_view, .count = 1, },
+	{ .test =  &ss_realloc, .count = 1, },
 	{ .test =  &ss_read_partial_reference, .count = 20, },
 	{ .test =  &ss_write_partial_reference, .count = 20, },
 	{ .test =  &ss_randomized_aligned, .count = 100, },
