@@ -18,6 +18,7 @@
 */
 
 #include "ds_test.h"
+#include "ds_compact_size.h"
 
 enum SSType
 {
@@ -770,10 +771,61 @@ static struct test_Output ss_increase_size(void)
 	return output;
 }
 
+/*
+ * CompactSize: every size boundary round trips at its size (252/253, 65535/65536, 2^32 - 1 / 2^32, U64_MAX), reading
+ * advances by exactly the size; a truncated stream and each longer-than-shortest encoding are refused with the
+ * stream position as before.
+ */
+static struct test_Output ss_compact_size(void)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+	const u64 values[] = { 0, 1, 252, 253, 254, 255, 256, U16_MAX, (u64) U16_MAX + 1, U32_MAX, (u64) U32_MAX + 1, U64_MAX };
+	const u64 sizes[]  = { 1, 1,   1,   3,   3,   3,   3,       3,                 5,       5,                 9,       9 };
+	u8 buf[32];
+	for (u32 i = 0; i < sizeof(values) / sizeof(values[0]); ++i)
+	{
+		struct SS ss = SSBuffered(buf, 32);
+		TEST_EQUAL(sizes[i], ds_CompactSizeSerializeSize(values[i]));
+		ds_CompactSizeSerialize(&ss, values[i]);
+		TEST_EQUAL(8*sizes[i], ss.bit_index);
+
+		ss.bit_index = 0;
+		u64 read = 0;
+		TEST_EQUAL(1, ds_CompactSizeTryDeserialize(&ss, &read));
+		TEST_EQUAL(values[i], read);
+		TEST_EQUAL(8*sizes[i], ss.bit_index);
+
+		/* truncated: one byte short */
+		struct SS cut = SSBuffered(buf, sizes[i] - 1);
+		TEST_EQUAL(0, ds_CompactSizeTryDeserialize(&cut, &read));
+		TEST_EQUAL(0, cut.bit_index);
+	}
+
+	/* not the shortest encoding: 252 as u16, 65535 as u32, 2^32 - 1 as u64 */
+	struct SS ss = SSBuffered(buf, 32);
+	SSWriteU8(&ss, 0xFD); SSWriteU16Le(&ss, 252);
+	SSWriteU8(&ss, 0xFE); SSWriteU32Le(&ss, U16_MAX);
+	SSWriteU8(&ss, 0xFF); SSWriteU64Le(&ss, U32_MAX);
+	ss.bit_index = 0;
+	u64 read = 0;
+	TEST_EQUAL(0, ds_CompactSizeTryDeserialize(&ss, &read));
+	TEST_EQUAL(0, ss.bit_index);
+	ss.bit_index = 8*3;
+	TEST_EQUAL(0, ds_CompactSizeTryDeserialize(&ss, &read));
+	TEST_EQUAL(8*3, ss.bit_index);
+	ss.bit_index = 8*8;
+	TEST_EQUAL(0, ds_CompactSizeTryDeserialize(&ss, &read));
+	TEST_EQUAL(8*8, ss.bit_index);
+
+	return output;
+}
+
 struct test_CorrectnessRepetition repetition_test[] =
 {
 	{ .test =  &ss_view, .count = 1, },
 	{ .test =  &ss_increase_size, .count = 1, },
+	{ .test =  &ss_compact_size, .count = 1, },
 	{ .test =  &ss_read_partial_reference, .count = 20, },
 	{ .test =  &ss_write_partial_reference, .count = 20, },
 	{ .test =  &ss_randomized_aligned, .count = 100, },

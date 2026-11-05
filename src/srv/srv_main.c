@@ -19,11 +19,12 @@
 
 #include "ds_base.h"
 #include "ds_server.h"
+#include "ds_compact_size.h"
 
 
 /**************** ds_Server ****************/
 
-struct slot ds_SimLookup(const struct ds_Server *srv, const ds_SimId id)
+struct slot ds_SimHostLookup(const struct ds_Server *srv, const ds_SimId id)
 {
     struct slot slot = { .address = NULL, .index = U32_MAX };
     /* the index is bounded before the slot is read: a foreign id must not read past the pool */
@@ -51,17 +52,41 @@ void ds_ServerAlloc(struct ds_Server *srv, const u64 frame_size, const u32 initi
 }
 
 /* Append the entry (us_timestamp, payload) to the host's record file, staged on its record stream. */
+/*
+ * Record entry: timestamp delta from the previous entry, cmd_count and the command bit count as CompactSize, then
+ * the command bytes (the last byte's unused bits zero). No destination: the file is the simulation's.
+ */
 static void ds_SimHostRecord(struct ds_SimHost *host, const u64 us_timestamp, const struct ds_SimCmdPayload *payload)
 {
-    const u64 size = sizeof(u64) + ds_SimCmdPayloadSerializeSize(payload);
+    ds_Assert(us_timestamp >= host->us_previous_record);
+    const u64 us_delta = us_timestamp - host->us_previous_record;
+    const u64 bit_count = payload->stream.bit_index;
+    const u64 size = ds_CompactSizeSerializeSize(us_delta) + ds_CompactSizeSerializeSize(payload->cmd_count)
+                   + ds_CompactSizeSerializeSize(bit_count) + (bit_count + 7) / 8;
     SSIncreaseSize(&host->record_stream, size);
     host->record_stream.bit_index = 0;
-    SSWriteU64Le(&host->record_stream, us_timestamp);
-    ds_SimCmdPayloadSerialize(&host->record_stream, payload);
+    ds_CompactSizeSerialize(&host->record_stream, us_delta);
+    ds_CompactSizeSerialize(&host->record_stream, payload->cmd_count);
+    ds_CompactSizeSerialize(&host->record_stream, bit_count);
+    SSWriteU8N(&host->record_stream, payload->stream.buf, (bit_count + 7) / 8);
+    host->us_previous_record = us_timestamp;
     if (FileWriteAppend(&host->record_file, host->record_stream.buf, size) != size)
     {
         Log(T_SYSTEM, S_ERROR, "ds_SimHostRecord: simulation %lu's record entry at %lu us not written whole", host->id.val, us_timestamp);
     }
+}
+
+/* The seed entry: the simulation's seed batch at time 0. */
+static void ds_SimHostRecordSeed(struct ds_SimHost *host)
+{
+    struct arena *tmp = ArenaPushScratch();
+    const struct ds_SimCmd seed = { .type = SIM_CMD_CONFIG_LOAD, .load_config.config = &host->sim.config_seed };
+    ds_CPool(ds_SimCmd) cmds;
+    ds_CPoolAlloc(tmp, cmds, 1, NOT_GROWABLE);
+    ds_CPoolPushValue(cmds, seed);
+    const struct ds_SimCmdPayload payload = ds_SimCmdPayloadPushAll(tmp, host->id, &cmds);
+    ds_SimHostRecord(host, 0, &payload);
+    ArenaPopScratch();
 }
 
 static void ds_SimHostDealloc(struct ds_SimHost *host)
@@ -72,7 +97,7 @@ static void ds_SimHostDealloc(struct ds_SimHost *host)
     ds_SimDealloc(&host->sim);
 }
 
-ds_SimId ds_SimAdd(struct ds_Server *srv, struct arena *mem, const struct ds_SimConfig *config, const enum ds_SimMode mode, const char *path, struct c_ShapeDB *cshape_db, ds_SDB(ds_BodyPrefab) *prefab_db, const u32 worker_count, const u64 worker_frame_size)
+ds_SimId ds_SimHostAdd(struct ds_Server *srv, struct arena *mem, const struct ds_SimConfig *config, const enum ds_SimMode mode, const char *path, struct c_ShapeDB *cshape_db, ds_SDB(ds_BodyPrefab) *prefab_db, const u32 worker_count, const u64 worker_frame_size)
 {
     struct file file = FileNull();
     if ((mode == SIM_MODE_RECORD && FileTryCreateAtCwd(mem, &file, path, 1) != FS_SUCCESS)
@@ -101,6 +126,7 @@ ds_SimId ds_SimAdd(struct ds_Server *srv, struct arena *mem, const struct ds_Sim
     }
     host->record_file = file;
     host->record_stream = (mode == SIM_MODE_RECORD) ? SSAlloc(NULL, 4096) : (struct SS) { 0 };
+    host->us_previous_record = 0;
     ds_CPoolAlloc(NULL, host->cmd_pool, 64, GROWABLE);
     host->frame_payload = ds_SimCmdPayloadEmpty(host->id);
 
@@ -109,22 +135,40 @@ ds_SimId ds_SimAdd(struct ds_Server *srv, struct arena *mem, const struct ds_Sim
 
     if (mode == SIM_MODE_RECORD)
     {
-        struct arena *tmp = ArenaPushScratch();
-        const struct ds_SimCmd seed = { .type = SIM_CMD_CONFIG_LOAD, .load_config.config = &host->sim.config_seed };
-        ds_CPool(ds_SimCmd) cmds;
-        ds_CPoolAlloc(tmp, cmds, 1, NOT_GROWABLE);
-        ds_CPoolPushValue(cmds, seed);
-        const struct ds_SimCmdPayload payload = ds_SimCmdPayloadPushAll(tmp, host->id, &cmds);
-        ds_SimHostRecord(host, 0, &payload);
-        ArenaPopScratch();
+        ds_SimHostRecordSeed(host);
     }
 
     return host->id;
 }
 
-void ds_SimRemove(struct ds_Server *srv, const ds_SimId id)
+void ds_SimHostReset(struct ds_Server *srv, const ds_SimId id)
 {
-    const struct slot slot = ds_SimLookup(srv, id);
+    struct ds_SimHost *host = ds_SimHostLookup(srv, id).address;
+    if (host == NULL)
+    {
+        Log(T_SYSTEM, S_WARNING, "ds_SimHostReset: no simulation %lu", id.val);
+        return;
+    }
+
+    ds_CPoolFlush(host->cmd_pool);
+    host->frame_payload = ds_SimCmdPayloadEmpty(host->id);
+    ds_SimFlush(&host->sim);
+
+    if (host->mode == SIM_MODE_RECORD)
+    {
+        if (!FileSetSize(&host->record_file, 0))
+        {
+            Log(T_SYSTEM, S_ERROR, "ds_SimHostReset: simulation %lu's record could not be truncated", id.val);
+        }
+        host->us_previous_record = 0;
+        ds_SimHostRecordSeed(host);
+    }
+    //TODO REPLAY: rewind the record
+}
+
+void ds_SimHostRemove(struct ds_Server *srv, const ds_SimId id)
+{
+    const struct slot slot = ds_SimHostLookup(srv, id);
     if (slot.address == NULL)
     {
         Log(T_SYSTEM, S_WARNING, "ds_SimRemove: no simulation %lu", id.val);
@@ -173,7 +217,7 @@ void ds_ServerTick(struct ds_Server *srv, const u64 ns_delta)
     for (u32 i = 0; i < srv->payload_pool.count; ++i)
     {
         struct ds_SimCmdPayload *payload = srv->payload_pool.buf + i;
-        struct ds_SimHost *host = ds_SimLookup(srv, payload->dst).address;
+        struct ds_SimHost *host = ds_SimHostLookup(srv, payload->dst).address;
         if (host == NULL)
         {
             Log(T_SYSTEM, S_WARNING, "ds_ServerTick: payload for unknown simulation %lu dropped", payload->dst.val);
@@ -225,7 +269,7 @@ void ds_ServerTick(struct ds_Server *srv, const u64 ns_delta)
             continue;
         }
 
-        struct ds_SimHost *host = ds_SimLookup(srv, payload->dst).address;
+        struct ds_SimHost *host = ds_SimHostLookup(srv, payload->dst).address;
         if (host->frame_payload.stream.bit_count && !ds_SimCmdPayloadAppend(&host->frame_payload, payload))
         {
             Log(T_SYSTEM, S_ERROR, "ds_ServerTick: payload of %u commands for simulation %lu dropped (no room)", payload->cmd_count, payload->dst.val);

@@ -21,6 +21,7 @@
 #include "ds_init.h"
 #include "ds_simulation.h"
 #include "ds_server.h"
+#include "ds_compact_size.h"
 
 /* 1 if every field of a and b is the same (floats by their bits) */
 static u32 SimConfigTestEqual(const struct ds_SimConfig *a, const struct ds_SimConfig *b)
@@ -703,8 +704,8 @@ static struct test_Output ServerClockTest(struct test_Environment *env)
 
     struct ds_Server srv;
     ds_ServerAlloc(&srv, 1 << 20, 2);
-    const ds_SimId id = ds_SimAdd(&srv, &mem, &config, SIM_MODE_NONE, NULL, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
-    struct ds_SimHost *host = ds_SimLookup(&srv, id).address;
+    const ds_SimId id = ds_SimHostAdd(&srv, &mem, &config, SIM_MODE_NONE, NULL, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    struct ds_SimHost *host = ds_SimHostLookup(&srv, id).address;
     struct ds_Sim *sim = &host->sim;
     TEST_TRUE(host != NULL && host->mode == SIM_MODE_NONE && host->speed == 1.0 && sim->initialized);
 
@@ -768,10 +769,10 @@ static struct test_Output ServerDoorTest(struct test_Environment *env)
 
     struct ds_Server srv;
     ds_ServerAlloc(&srv, 1 << 20, 2);
-    const ds_SimId id = ds_SimAdd(&srv, &mem, &config, SIM_MODE_NONE, NULL, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
-    struct ds_SimHost *host = ds_SimLookup(&srv, id).address;
+    const ds_SimId id = ds_SimHostAdd(&srv, &mem, &config, SIM_MODE_NONE, NULL, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    struct ds_SimHost *host = ds_SimHostLookup(&srv, id).address;
     struct ds_Sim *sim = &host->sim;
-    TEST_EQUAL(NULL, ds_SimLookup(&srv, ds_SimIdInit(1, 0)).address);
+    TEST_EQUAL(NULL, ds_SimHostLookup(&srv, ds_SimIdInit(1, 0)).address);
 
     /* the arrivals */
     struct ds_SimConfig load[2] = { config, config };
@@ -819,11 +820,47 @@ static struct test_Output ServerDoorTest(struct test_Environment *env)
 	return output;
 }
 
+/* Read the record file back: n entries of (delta, count, first command's solver iterations), every command a ConfigLoad of config. */
+static struct test_Output RecordTestRead(struct test_Environment *env, const struct ds_SimConfig *config, const u64 *deltas, const u64 *counts, const u32 *first_iterations, const u32 n)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+    const u64 cmd_bits = 8 + 32 + 8*ds_SimConfigSerializeSize(config);
+    const struct dsBuffer file = FileDumpAtCwd(env->mem_1, "agent_test_record.bin");
+    TEST_TRUE(file.size > 0);
+    struct SS ss = SSBuffered(file.data, file.size);
+    for (u32 e = 0; e < n; ++e)
+    {
+        u64 delta = 1, count = 0, bit_count = 0;
+        TEST_EQUAL(1, ds_CompactSizeTryDeserialize(&ss, &delta));
+        TEST_EQUAL(1, ds_CompactSizeTryDeserialize(&ss, &count));
+        TEST_EQUAL(1, ds_CompactSizeTryDeserialize(&ss, &bit_count));
+        TEST_EQUAL(deltas[e], delta);
+        TEST_EQUAL(counts[e], count);
+        TEST_EQUAL(counts[e] * cmd_bits, bit_count);
+
+        struct SSView view;
+        TEST_EQUAL(1, SSTryView(&view, &ss, ss.bit_index, bit_count));
+        struct SS cmds = SSSubstreamFromView(&view);
+        struct ds_SimCmd cmd;
+        TEST_EQUAL(1, ds_SimCmdTryDeserialize(env->mem_1, &cmds, &cmd));
+        TEST_EQUAL(first_iterations[e], cmd.load_config.config->dynamics.solver.pgs_iteration_count);
+        TEST_EQUAL(1, SimConfigTestEqual(config, cmd.load_config.config));
+        for (u32 c = 1; c < counts[e]; ++c)
+        {
+            TEST_EQUAL(1, ds_SimCmdTryDeserialize(env->mem_1, &cmds, &cmd));
+        }
+        TEST_EQUAL(0, SSBitsLeft(&cmds));
+        ss.bit_index += 8 * ((bit_count + 7) / 8);
+    }
+    TEST_EQUAL(0, SSBitsLeft(&ss));
+    return output;
+}
+
 /*
- * Recording: a RECORD simulation writes its record file in the build directory. Entries: the seed (timestamp 0, one
- * ConfigLoad equal to the config), a frame with two commands at timestamp 0 (no time passed yet), nothing for an
- * empty frame, and a frame with one command at the period. Removing the simulation closes the file and frees its
- * id; the file reads back entry by entry with the payload and command readers.
+ * Recording: a RECORD simulation writes its record file in the build directory. Entries: the seed (delta 0, one
+ * ConfigLoad equal to the config), a frame with two commands at delta 0 (no time passed yet), nothing for an
+ * empty frame, and a frame with one command a period later. ds_SimHostReset truncates the record to a new seed
+ * entry and restarts the timeline; a frame after it is the second entry. Removing the simulation closes the file.
  */
 static struct test_Output ServerRecordTest(struct test_Environment *env)
 {
@@ -838,13 +875,14 @@ static struct test_Output ServerRecordTest(struct test_Environment *env)
     config.dynamics.initial_size = 32;
     const u32 iterations = config.dynamics.solver.pgs_iteration_count;
     const u64 period = config.us_system_tick[SIM_SYSTEM_DYNAMICS];
+    const u64 cmd_bits = 8 + 32 + 8*ds_SimConfigSerializeSize(&config);
     struct arena mem = ArenaAlloc(NULL, ds_DynamicsShellMemoryRequirement(g_config->thread_count, config.dynamics.frame_memory) + 1024);
 
     struct ds_Server srv;
     ds_ServerAlloc(&srv, 1 << 20, 2);
-    const ds_SimId id = ds_SimAdd(&srv, &mem, &config, SIM_MODE_RECORD, "agent_test_record.bin", &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    const ds_SimId id = ds_SimHostAdd(&srv, &mem, &config, SIM_MODE_RECORD, "agent_test_record.bin", &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
     TEST_EQUAL(0, ds_SimIdNullCheck(id));
-    struct ds_SimHost *host = ds_SimLookup(&srv, id).address;
+    struct ds_SimHost *host = ds_SimHostLookup(&srv, id).address;
     TEST_EQUAL(SIM_MODE_RECORD, host->mode);
 
     /* frame 1: two commands at time 0; frame 2: a period, no commands; frame 3: one command */
@@ -869,39 +907,32 @@ static struct test_Output ServerRecordTest(struct test_Environment *env)
     TEST_EQUAL(iterations + 7, host->sim.dynamics.config.solver.pgs_iteration_count);
     TEST_EQUAL(period, host->sim.us_time);
 
-    ds_SimRemove(&srv, id);
-    TEST_EQUAL(NULL, ds_SimLookup(&srv, id).address);
-    TEST_EQUAL(0, srv.sim_list.count);
-
-    /* read it back */
-    const struct dsBuffer file = FileDumpAtCwd(env->mem_1, "agent_test_record.bin");
-    TEST_TRUE(file.size > 0);
-    struct SS ss = SSBuffered(file.data, file.size);
-    const u64 timestamps[3] = { 0, 0, period };
-    const u32 counts[3] = { 1, 2, 1 };
+    const u64 deltas[3] = { 0, 0, period };
+    const u64 counts[3] = { 1, 2, 1 };
     const u32 first_iterations[3] = { iterations, iterations + 3, iterations + 7 };
-    for (u32 e = 0; e < 3; ++e)
-    {
-        TEST_EQUAL(timestamps[e], SSReadU64Le(&ss));
-        struct ds_SimCmdPayload payload;
-        TEST_EQUAL(1, ds_SimCmdPayloadTryDeserializeAndAlias(&ss, &payload));
-        TEST_EQUAL(id.val, payload.dst.val);
-        TEST_EQUAL(counts[e], payload.cmd_count);
+    const struct test_Output read = RecordTestRead(env, &config, deltas, counts, first_iterations, 3);
+    TEST_TRUE(read.success);
 
-        struct SSView view;
-        TEST_EQUAL(1, SSTryView(&view, &payload.stream, 0, payload.stream.bit_index));
-        struct SS cmds = SSSubstreamFromView(&view);
-        struct ds_SimCmd cmd;
-        TEST_EQUAL(1, ds_SimCmdTryDeserialize(env->mem_1, &cmds, &cmd));
-        TEST_EQUAL(first_iterations[e], cmd.load_config.config->dynamics.solver.pgs_iteration_count);
-        TEST_EQUAL(1, SimConfigTestEqual(&config, cmd.load_config.config));
-        for (u32 c = 1; c < counts[e]; ++c)
-        {
-            TEST_EQUAL(1, ds_SimCmdTryDeserialize(env->mem_1, &cmds, &cmd));
-        }
-        TEST_EQUAL(0, SSBitsLeft(&cmds));
-    }
-    TEST_EQUAL(0, SSBitsLeft(&ss));
+    /* reset: a new seed entry, then one frame */
+    ds_SimHostReset(&srv, id);
+    TEST_EQUAL(0, host->sim.us_time);
+    TEST_EQUAL(iterations, host->sim.dynamics.config.solver.pgs_iteration_count);
+    ds_CPoolFlush(pool);
+    load[0].dynamics.solver.pgs_iteration_count = iterations + 9;
+    const struct ds_SimCmd after = { .type = SIM_CMD_CONFIG_LOAD, .load_config.config = &load[0] };
+    ds_CPoolPushValue(pool, after);
+    ds_CPoolPushValue(srv.payload_pool, ds_SimCmdPayloadPushAll(env->mem_1, id, &pool));
+    ds_ServerTick(&srv, 0);
+    TEST_EQUAL(iterations + 9, host->sim.dynamics.config.solver.pgs_iteration_count);
+
+    ds_SimHostRemove(&srv, id);
+    TEST_EQUAL(NULL, ds_SimHostLookup(&srv, id).address);
+    TEST_EQUAL(0, srv.sim_list.count);
+    const u64 deltas_reset[2] = { 0, 0 };
+    const u64 counts_reset[2] = { 1, 1 };
+    const u32 first_iterations_reset[2] = { iterations, iterations + 9 };
+    const struct test_Output read_reset = RecordTestRead(env, &config, deltas_reset, counts_reset, first_iterations_reset, 2);
+    TEST_TRUE(read_reset.success);
 
     ds_ServerDealloc(&srv);
     ArenaFree(&mem);

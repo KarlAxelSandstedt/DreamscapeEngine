@@ -6,6 +6,7 @@ add_library(DreamscapeBase
 	"${DS_INCLUDE_PATH}/ds_atomic.h"
 	"${DS_INCLUDE_PATH}/ds_allocator.h"
 	"${DS_INCLUDE_PATH}/ds_serialize.h"
+	"${DS_INCLUDE_PATH}/ds_compact_size.h"
 	"${DS_INCLUDE_PATH}/ds_string.h"
 	"${DS_INCLUDE_PATH}/ds_error.h"
 	"${DS_INCLUDE_PATH}/ds_semaphore.h"
