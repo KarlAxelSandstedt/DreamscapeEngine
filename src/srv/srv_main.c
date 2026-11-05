@@ -143,14 +143,3 @@ void ds_ServerTick(struct ds_Server *srv, const u64 ns_delta)
         ds_SimTick(srv->sim_pool.buf + i, ns_delta);
     }
 }
-
-
-/* Stamp and record the frame payload (RECORD), then execute external_cmd_buf in order and flush the frame's buffers. */
-static void ds_SimDispatchFramePayload(struct ds_Sim *sim)
-{
-    //TODO stamp (us_time_old + 1) | EXTERNAL and record the frame payload
-    //TODO ds_SimCmdTryExecute each command of external_cmd_buf in order
-    ds_CPoolFlush(sim->external_cmd_buf);
-    ds_CPoolFlush(sim->payload_pool);
-}
-

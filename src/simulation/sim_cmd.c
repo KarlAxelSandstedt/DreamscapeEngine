@@ -143,6 +143,8 @@ u32 ds_SimCmdFormVerify(const struct ds_SimCmd *cmd)
 /* Return 1 if the well-formed cmd is a valid command within sim's context, 0 otherwise.*/
 static u32 ds_SimCmdDataVerify(const struct ds_Sim *sim, const struct ds_SimCmd *cmd)
 {
+    ds_Assert(ds_SimCmdFormVerify(cmd));
+
     switch (cmd->type)
     {
         case SIM_CMD_CONFIG_LOAD:

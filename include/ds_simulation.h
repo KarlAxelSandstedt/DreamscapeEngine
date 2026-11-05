@@ -201,7 +201,6 @@ struct ds_Sim
                                                     ns_budget = sum_i system_i.us_budget    */
 
 
-    ds_CPool(ds_SimCmd)     external_cmd_buf;   /* external command batch, not yet stamped  */
     ds_CPool(ds_SimCmdPayload) payload_pool;  /* arrived payloads, not yet stamped        */
     struct ds_SimCmdPayload srv_frame_payload;  /* Lifetime: ds_ServerTick, external commands to be issued (if any): */
 
@@ -225,7 +224,7 @@ void    ds_SimAlloc(struct arena *mem, struct ds_Sim *sim, const struct ds_SimCo
 //void    ds_SimAllocReplay(struct ds_Sim *sim, struct ds_SimReplay *replay);
 /* Free the simulation's heap resources. */
 void    ds_SimDealloc(struct ds_Sim *sim);
-/* Flush the external command buffer and systems, reset schedule to time=0 and reseed (config_seed). Config and capacities stay. */
+/* Flush systems, reset schedule to time=0 and reseed the simulation. Config and capacities stay. */
 void    ds_SimFlush(struct ds_Sim *sim);
 /* 
  * Advance the simulation by ns_delta of wall-clock time, scaled by speed and capped by the simulation's time budget.

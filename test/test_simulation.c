@@ -624,11 +624,18 @@ static struct test_Output SimCmdSerializeTest(struct test_Environment *env)
 	return output;
 }
 
+/* Put the pool's commands into sim's frame batch (on mem) and run a zero-delta frame. */
+static void SimTestBatch(struct arena *mem, struct ds_Sim *sim, const ds_CPool(ds_SimCmd) *pool)
+{
+    sim->srv_frame_payload = ds_SimCmdPayloadPushAll(mem, sim->id, pool);
+    ds_SimTick(sim, 0);
+}
+
 /*
- * ConfigLoad through ds_SimCmdTryExecute (the tick does not execute batches yet): the first apply is the seed,
- * accepted as is and setting initialized; a later one with more solver iterations is applied to the dynamics and
- * leaves the tick periods alone; one with another dynamics period is rejected and changes nothing;
- * ds_SimFlush clears initialized.
+ * ConfigLoad through the tick: ds_SimAlloc's seed batch applied the config (initialized); a frame batch with more
+ * solver iterations is applied to the dynamics and leaves the tick periods alone; a batch of two commands runs in
+ * order (the second wins); one with another dynamics period is rejected and changes nothing; ds_SimFlush clears
+ * initialized and reseeds.
  */
 static struct test_Output SimConfigLoadTest(struct test_Environment *env)
 {
@@ -645,40 +652,50 @@ static struct test_Output SimConfigLoadTest(struct test_Environment *env)
     struct arena mem = ArenaAlloc(NULL, ds_DynamicsShellMemoryRequirement(g_config->thread_count, config.dynamics.frame_memory));
     struct ds_Sim sim;
     ds_SimAlloc(&mem, &sim, &config, 0, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
-    TEST_EQUAL(0, sim.initialized);
+    TEST_EQUAL(1, sim.initialized);     /* the seed batch ran */
     TEST_EQUAL(iterations, sim.dynamics.config.solver.pgs_iteration_count);
-    ds_DynamicsConfigPush(&sim.dynamics);   /* outside a tick: what ds_SimTick does for the frame */
 
-    /* the seed */
-    struct ds_SimCmd cmd = { .type = SIM_CMD_CONFIG_LOAD, .load_config.config = &config };
-    TEST_EQUAL(1, ds_SimCmdTryExecute(&sim, &cmd));
-    TEST_EQUAL(1, sim.initialized);
-    TEST_EQUAL(iterations, sim.dynamics.config.solver.pgs_iteration_count);
+    ds_CPool(ds_SimCmd) pool;
+    ds_CPoolAlloc(env->mem_1, pool, 2, NOT_GROWABLE);
+    struct ds_SimCmd cmd = { .type = SIM_CMD_CONFIG_LOAD };
 
     /* a runtime load: more iterations */
     struct ds_SimConfig runtime = config;
     runtime.dynamics.solver.pgs_iteration_count = iterations + 3;
     cmd.load_config.config = &runtime;
-    TEST_EQUAL(1, ds_SimCmdTryExecute(&sim, &cmd));
+    ds_CPoolPushValue(pool, cmd);
+    SimTestBatch(env->mem_1, &sim, &pool);
     TEST_EQUAL(iterations + 3, sim.dynamics.config.solver.pgs_iteration_count);
     TEST_EQUAL(iterations + 3, sim.dynamics.config_pending.solver.pgs_iteration_count);
+    TEST_EQUAL(U64_MAX, sim.sys_schedule[SIM_SYSTEM_EXTERNAL]);
     TEST_TRUE(sim.speed == 1.0);
 
+    /* two commands in one batch run in order: the second wins */
+    struct ds_SimConfig second = config;
+    second.dynamics.solver.pgs_iteration_count = iterations + 5;
+    cmd.load_config.config = &second;
+    ds_CPoolPushValue(pool, cmd);
+    SimTestBatch(env->mem_1, &sim, &pool);
+    TEST_EQUAL(iterations + 5, sim.dynamics.config.solver.pgs_iteration_count);
+
     /* an alloc-time value changed: rejected whole */
+    ds_CPoolFlush(pool);
     struct ds_SimConfig rejected = runtime;
     rejected.dynamics.solver.pgs_iteration_count = iterations + 7;
     rejected.us_system_tick[SIM_SYSTEM_DYNAMICS] = 2 * config.us_system_tick[SIM_SYSTEM_DYNAMICS];
     cmd.load_config.config = &rejected;
-    TEST_EQUAL(0, ds_SimCmdTryExecute(&sim, &cmd));
-    TEST_EQUAL(iterations + 3, sim.dynamics.config.solver.pgs_iteration_count);
+    ds_CPoolPushValue(pool, cmd);
+    SimTestBatch(env->mem_1, &sim, &pool);
+    TEST_EQUAL(iterations + 5, sim.dynamics.config.solver.pgs_iteration_count);
     TEST_EQUAL(config.us_system_tick[SIM_SYSTEM_DYNAMICS], sim.us_system_tick[SIM_SYSTEM_DYNAMICS]);
     rejected = runtime;
     rejected.dynamics.initial_size = 64;
-    TEST_EQUAL(0, ds_SimCmdTryExecute(&sim, &cmd));
+    SimTestBatch(env->mem_1, &sim, &pool);
+    TEST_EQUAL(iterations + 5, sim.dynamics.config.solver.pgs_iteration_count);
 
-    ds_DynamicsConfigPop(&sim.dynamics);
-    ds_SimFlush(&sim);  /* its seed tick pushes and pops by itself */
-    TEST_EQUAL(0, sim.initialized);
+    ds_SimFlush(&sim);
+    TEST_EQUAL(1, sim.initialized);     /* reseeded */
+    TEST_EQUAL(iterations, sim.dynamics.config.solver.pgs_iteration_count);
 
     ds_SimDealloc(&sim);
     ArenaFree(&mem);
