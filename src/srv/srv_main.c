@@ -96,6 +96,25 @@ void ds_ServerTick(struct ds_Server *srv, const u64 ns_delta)
             continue;
         }
 
+        const u32 old_count = sim->cmd_pool.count;
+        struct SSView view;
+        SSTryView(&view, &payload->stream, 0, payload->stream.bit_index);
+        struct SS ss = SSSubstreamFromView(&view);
+        u32 valid = 1;
+        for (u32 c = 0; c < payload->cmd_count && valid; ++c)
+        {
+            struct ds_SimCmd *cmd = ds_CPoolPush(sim->cmd_pool).address;
+            valid = ds_SimCmdTryDeserialize(&srv->frame, &ss, cmd) && ds_SimCmdFormVerify(cmd);
+        }
+
+        if (!valid || SSBitsLeft(&ss) != 0)
+        {
+            Log(T_SYSTEM, S_WARNING, "ds_ServerTick: malformed payload for simulation %lu dropped (%u commands)", payload->dst.val, payload->cmd_count);
+            ds_CPoolPopBatch(sim->cmd_pool, sim->cmd_pool.count - old_count);
+            *payload = ds_SimCmdPayloadEmpty(ds_SimIdNull());
+            continue;
+        }
+
         sim->srv_frame_payload.stream.bit_count += payload->stream.bit_index;
     }
 

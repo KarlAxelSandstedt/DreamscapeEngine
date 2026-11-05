@@ -20,6 +20,7 @@
 #include "ds_test.h"
 #include "ds_init.h"
 #include "ds_simulation.h"
+#include "ds_server.h"
 
 /* 1 if every field of a and b is the same (floats by their bits) */
 static u32 SimConfigTestEqual(const struct ds_SimConfig *a, const struct ds_SimConfig *b)
@@ -624,10 +625,13 @@ static struct test_Output SimCmdSerializeTest(struct test_Environment *env)
 	return output;
 }
 
-/* Put the pool's commands into sim's frame batch (on mem) and run a zero-delta frame. */
-static void SimTestBatch(struct arena *mem, struct ds_Sim *sim, const ds_CPool(ds_SimCmd) *pool)
+/* Push the pool's commands onto sim's command pool (what the server's door does) and run a zero-delta frame. */
+static void SimTestBatch(struct ds_Sim *sim, const ds_CPool(ds_SimCmd) *pool)
 {
-    sim->srv_frame_payload = ds_SimCmdPayloadPushAll(mem, sim->id, pool);
+    for (u32 i = 0; i < pool->count; ++i)
+    {
+        ds_CPoolPushValue(sim->cmd_pool, pool->buf[i]);
+    }
     ds_SimTick(sim, 0);
 }
 
@@ -664,7 +668,7 @@ static struct test_Output SimConfigLoadTest(struct test_Environment *env)
     runtime.dynamics.solver.pgs_iteration_count = iterations + 3;
     cmd.load_config.config = &runtime;
     ds_CPoolPushValue(pool, cmd);
-    SimTestBatch(env->mem_1, &sim, &pool);
+    SimTestBatch(&sim, &pool);
     TEST_EQUAL(iterations + 3, sim.dynamics.config.solver.pgs_iteration_count);
     TEST_EQUAL(iterations + 3, sim.dynamics.config_pending.solver.pgs_iteration_count);
     TEST_EQUAL(U64_MAX, sim.sys_schedule[SIM_SYSTEM_EXTERNAL]);
@@ -675,7 +679,7 @@ static struct test_Output SimConfigLoadTest(struct test_Environment *env)
     second.dynamics.solver.pgs_iteration_count = iterations + 5;
     cmd.load_config.config = &second;
     ds_CPoolPushValue(pool, cmd);
-    SimTestBatch(env->mem_1, &sim, &pool);
+    SimTestBatch(&sim, &pool);
     TEST_EQUAL(iterations + 5, sim.dynamics.config.solver.pgs_iteration_count);
 
     /* an alloc-time value changed: rejected whole */
@@ -685,12 +689,12 @@ static struct test_Output SimConfigLoadTest(struct test_Environment *env)
     rejected.us_system_tick[SIM_SYSTEM_DYNAMICS] = 2 * config.us_system_tick[SIM_SYSTEM_DYNAMICS];
     cmd.load_config.config = &rejected;
     ds_CPoolPushValue(pool, cmd);
-    SimTestBatch(env->mem_1, &sim, &pool);
+    SimTestBatch(&sim, &pool);
     TEST_EQUAL(iterations + 5, sim.dynamics.config.solver.pgs_iteration_count);
     TEST_EQUAL(config.us_system_tick[SIM_SYSTEM_DYNAMICS], sim.us_system_tick[SIM_SYSTEM_DYNAMICS]);
     rejected = runtime;
     rejected.dynamics.initial_size = 64;
-    SimTestBatch(env->mem_1, &sim, &pool);
+    SimTestBatch(&sim, &pool);
     TEST_EQUAL(iterations + 5, sim.dynamics.config.solver.pgs_iteration_count);
 
     ds_SimFlush(&sim);
@@ -698,6 +702,82 @@ static struct test_Output SimConfigLoadTest(struct test_Environment *env)
     TEST_EQUAL(iterations, sim.dynamics.config.solver.pgs_iteration_count);
 
     ds_SimDealloc(&sim);
+    ArenaFree(&mem);
+    ds_SDBDealloc(prefab_db);
+    c_ShapeDBDealloc(&cshape_db);
+	return output;
+}
+
+/*
+ * The server's door: a server with one hand-wired simulation and four arrivals in payload_pool, a ConfigLoad, a
+ * payload for an unknown id, a payload whose command bits are corrupt, a payload whose command count is wrong, and a
+ * second ConfigLoad. One ds_ServerTick: the two good payloads are decoded onto the simulation's pool in arrival order
+ * and executed by its tick (the last wins), the bad ones are dropped before the fuse (the fused payload holds the two
+ * good ones), payload_pool and cmd_pool are empty afterwards. An empty frame changes nothing.
+ */
+static struct test_Output ServerDoorTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct c_ShapeDB cshape_db = { 0 };
+    c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
+    ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
+    ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
+
+    struct ds_SimConfig config = ds_SimConfigDefault();
+    config.dynamics.initial_size = 32;
+    const u32 iterations = config.dynamics.solver.pgs_iteration_count;
+    struct arena mem = ArenaAlloc(NULL, ds_DynamicsShellMemoryRequirement(g_config->thread_count, config.dynamics.frame_memory));
+
+    /* a server with one simulation (what ds_ServerSimAdd will do) */
+    struct ds_Server srv;
+    ds_ServerAlloc(&srv, 1 << 20, 2);
+    const struct slot slot = ds_PoolAdd(srv.sim_pool);
+    struct ds_Sim *sim = slot.address;
+    ds_SimAlloc(&mem, sim, &config, 0, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    sim->id = ds_SimIdInit(slot.index, 0);
+    DLLAppend(srv.sim_list, srv.sim_pool.buf, slot.index, srv_sim);
+
+    /* the arrivals */
+    struct ds_SimConfig load[2] = { config, config };
+    load[0].dynamics.solver.pgs_iteration_count = iterations + 3;
+    load[1].dynamics.solver.pgs_iteration_count = iterations + 5;
+    ds_CPool(ds_SimCmd) pool;
+    ds_CPoolAlloc(env->mem_1, pool, 1, NOT_GROWABLE);
+    struct ds_SimCmd cmd = { .type = SIM_CMD_CONFIG_LOAD, .load_config.config = &load[0] };
+    ds_CPoolPushValue(pool, cmd);
+
+    struct ds_SimCmdPayload good_first = ds_SimCmdPayloadPushAll(env->mem_1, sim->id, &pool);
+    struct ds_SimCmdPayload unknown = ds_SimCmdPayloadPushAll(env->mem_1, ds_SimIdInit(1, 0), &pool);
+    struct ds_SimCmdPayload corrupt = ds_SimCmdPayloadPushAll(env->mem_1, sim->id, &pool);
+    corrupt.stream.buf[0] = 0xff;                                               /* the type */
+    struct ds_SimCmdPayload miscounted = ds_SimCmdPayloadPushAll(env->mem_1, sim->id, &pool);
+    miscounted.cmd_count = 2;
+    cmd.load_config.config = &load[1];
+    ds_CPoolFlush(pool);
+    ds_CPoolPushValue(pool, cmd);
+    struct ds_SimCmdPayload good_second = ds_SimCmdPayloadPushAll(env->mem_1, sim->id, &pool);
+    const u64 cmd_bits = good_first.stream.bit_index;
+
+    ds_CPoolPushValue(srv.payload_pool, good_first);
+    ds_CPoolPushValue(srv.payload_pool, unknown);
+    ds_CPoolPushValue(srv.payload_pool, corrupt);
+    ds_CPoolPushValue(srv.payload_pool, miscounted);
+    ds_CPoolPushValue(srv.payload_pool, good_second);
+
+    ds_ServerTick(&srv, 0);
+    TEST_EQUAL(iterations + 5, sim->dynamics.config.solver.pgs_iteration_count);
+    TEST_EQUAL(2, sim->srv_frame_payload.cmd_count);
+    TEST_EQUAL(2*cmd_bits, sim->srv_frame_payload.stream.bit_index);
+    TEST_EQUAL(0, srv.payload_pool.count);
+    TEST_EQUAL(0, sim->cmd_pool.count);
+
+    /* an empty frame */
+    ds_ServerTick(&srv, 0);
+    TEST_EQUAL(iterations + 5, sim->dynamics.config.solver.pgs_iteration_count);
+    TEST_EQUAL(0, sim->srv_frame_payload.cmd_count);
+
+    ds_ServerDealloc(&srv);
     ArenaFree(&mem);
     ds_SDBDealloc(prefab_db);
     c_ShapeDBDealloc(&cshape_db);
@@ -712,6 +792,7 @@ static struct test_Output (*simulation_tests[])(struct test_Environment *) =
     SimCmdSerializeTest,
     SimTickTest,
     SimConfigLoadTest,
+    ServerDoorTest,
 };
 
 struct suite_Correctness m_simulation_suite =

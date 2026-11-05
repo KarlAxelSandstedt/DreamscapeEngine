@@ -202,6 +202,7 @@ struct ds_Sim
 
 
     ds_CPool(ds_SimCmdPayload) payload_pool;  /* arrived payloads, not yet stamped        */
+    ds_CPool(ds_SimCmd)     cmd_pool;           /* the frame's commands, decoded at the server's door; executed and flushed by the tick */
     struct ds_SimCmdPayload srv_frame_payload;  /* Lifetime: ds_ServerTick, external commands to be issued (if any): */
 
     struct ds_Dynamics      dynamics;

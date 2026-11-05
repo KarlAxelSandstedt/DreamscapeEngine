@@ -218,20 +218,10 @@ static void ds_SimScheduleInit(struct ds_Sim *sim)
  */
 static void ds_SimSeed(struct ds_Sim *sim, const struct ds_SimConfig *config)
 {
-    struct arena *tmp = ArenaPushScratch();
-
     const struct ds_SimCmd seed = { .type = SIM_CMD_CONFIG_LOAD, .load_config.config = config };
-
-    ds_CPool(ds_SimCmd) pool;
-    ds_CPoolAlloc(tmp, pool, 1, NOT_GROWABLE);
-    ds_CPoolPushValue(pool, seed);
-
-    /* Immediate execution of seed command without modfying simulation clock */
-    sim->srv_frame_payload = ds_SimCmdPayloadPushAll(tmp, sim->id, &pool);
+    ds_CPoolPushValue(sim->cmd_pool, seed);
     ds_SimTick(sim, 0);     
-    sim->srv_frame_payload = ds_SimCmdPayloadEmpty(sim->id);   
-
-    ArenaPopScratch();
+    //TODO RECORD: the seed batch as a payload, the record's head (point 5)
 }
 
 void ds_SimAlloc(struct arena *mem, struct ds_Sim *sim, const struct ds_SimConfig *config, const u32 record, struct c_ShapeDB *cshape_db, ds_SDB(ds_BodyPrefab) *prefab_db, const u32 worker_count, const u64 worker_frame_size)
@@ -251,6 +241,7 @@ void ds_SimAlloc(struct arena *mem, struct ds_Sim *sim, const struct ds_SimConfi
     }
 
     ds_CPoolAlloc(NULL, sim->payload_pool, 16, GROWABLE);
+    ds_CPoolAlloc(NULL, sim->cmd_pool, 64, GROWABLE);
 
     sim->dynamics = ds_DynamicsAllocConfig(mem, &config->dynamics, 1000 * config->us_system_tick[SIM_SYSTEM_DYNAMICS], cshape_db, prefab_db, worker_count, worker_frame_size);
     //TODO record mode: open the record (the seed batch is its head)
@@ -263,12 +254,14 @@ void ds_SimDealloc(struct ds_Sim *sim)
 {
     ds_DynamicsFree(&sim->dynamics);
     ds_CPoolDealloc(sim->payload_pool);
+    ds_CPoolDealloc(sim->cmd_pool);
     //TODO record mode: close the record
 }
 
 void ds_SimFlush(struct ds_Sim *sim)
 {
     ds_CPoolFlush(sim->payload_pool);
+    ds_CPoolFlush(sim->cmd_pool);
     ds_DynamicsFlush(&sim->dynamics);
     ds_SimScheduleInit(sim);
     sim->initialized = 0;
@@ -278,25 +271,12 @@ void ds_SimFlush(struct ds_Sim *sim)
 
 static void ds_SimExecuteCmdBatch(struct ds_Sim *sim)
 {
-    const struct ds_SimCmdPayload *batch = &sim->srv_frame_payload;
-    struct SSView view;
-    SSTryView(&view, &batch->stream, 0, batch->stream.bit_index);
-    struct SS ss = SSSubstreamFromView(&view);
-
-    struct arena *tmp = ArenaPushScratch();
-    for (u32 i = 0; i < batch->cmd_count; ++i)
+    //TODO REPLAY: decode the record's batch onto cmd_pool first (point 6)
+    for (u32 i = 0; i < sim->cmd_pool.count; ++i)
     {
-        struct ds_SimCmd cmd;
-        if (!ds_SimCmdTryDeserialize(tmp, &ss, &cmd))
-        {
-            ds_AssertString(0, "ds_SimExecuteCmdBatch: malformed command in the frame's batch");
-            Log(T_SYSTEM, S_ERROR, "ds_SimExecuteCmdBatch: malformed command %u of %u, the rest of the batch dropped", i, batch->cmd_count);
-            break;
-        }
-
-        ds_SimCmdTryExecute(sim, &cmd);
+        ds_SimCmdTryExecute(sim, sim->cmd_pool.buf + i);
     }
-    ArenaPopScratch();
+    ds_CPoolFlush(sim->cmd_pool);
 }
 
 void ds_SimTick(struct ds_Sim *sim, const u64 ns_delta)
@@ -304,7 +284,7 @@ void ds_SimTick(struct ds_Sim *sim, const u64 ns_delta)
     ds_DynamicsConfigPush(&sim->dynamics); 
 
     /* If external commands exist, they will be prioritized and executed immediately. */
-    sim->sys_schedule[SIM_SYSTEM_EXTERNAL] = (sim->srv_frame_payload.cmd_count)
+    sim->sys_schedule[SIM_SYSTEM_EXTERNAL] = (sim->cmd_pool.count)
                                            ? ds_SimKeyInit(sim->us_time + 1, SIM_SYSTEM_EXTERNAL)
                                            : ds_SimKeyNull();
 
