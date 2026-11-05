@@ -142,6 +142,7 @@ extern "C" {
 #include "ds_types.h"
 #include "ds_allocator.h"
 #include "ds_list.h"
+#include "ds_platform.h"
 #include "ds_simulation.h"
 
 enum ds_SimMode
@@ -163,7 +164,8 @@ struct ds_SimHost
     f64                     speed;          /* scales wall-clock time */
     u64                     ns_remainder;   /* wall-clock time not yet accounted for (sub-microsecond) */
     u64                     ns_budget;      /* the simulation never advances more than this per tick: sum of the system periods */
-    //TODO the record stream (RECORD), when it is allocated and when it is written to a file
+    struct file             record_file;    /* RECORD: appended every frame with commands; REPLAY: read (TODO); else closed */
+    struct SS               record_stream;       /* RECORD: the frame's entry staged (timestamp, frame payload) before it is appended */
 
     ds_CPool(ds_SimCmd)     cmd_pool;       /* the frame's commands, decoded at the door, executed by the simulation's tick */
     struct ds_SimCmdPayload frame_payload;  /* the frame's arrivals fused: the record's entry */
@@ -187,6 +189,16 @@ void    ds_ServerAlloc(struct ds_Server *srv, const u64 frame_size, const u32 in
 void    ds_ServerDealloc(struct ds_Server *srv);
 /* Handle any incoming payloads after which every simulation is advanced by ns_delta of wall-clock time */
 void    ds_ServerTick(struct ds_Server *srv, const u64 ns_delta);
+/*
+ * Host a new simulation (ds_SimAlloc on mem, its path copied there too) and return its id. RECORD creates (truncates)
+ * the record file at path (relative to the cwd) and writes the seed entry, REPLAY opens it; path is ignored for NONE.
+ * If the file fails, nothing is added (logged) and the null id is returned.
+ */
+ds_SimId    ds_SimAdd(struct ds_Server *srv, struct arena *mem, const struct ds_SimConfig *config, const enum ds_SimMode mode, const char *path, struct c_ShapeDB *cshape_db, ds_SDB(ds_BodyPrefab) *prefab_db, const u32 worker_count, const u64 worker_frame_size);
+/* Remove the hosted simulation with the given id (ds_SimDealloc, the record closed); an unknown id is logged. */
+void        ds_SimRemove(struct ds_Server *srv, const ds_SimId id);
+/* Return the slot of the hosted simulation with the given id, or { NULL, U32_MAX } if there is none. */
+struct slot ds_SimLookup(const struct ds_Server *srv, const ds_SimId id);
 
 #ifdef __cplusplus
 }

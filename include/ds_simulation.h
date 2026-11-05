@@ -40,10 +40,9 @@ extern "C" {
 struct ds_Sim;
 
 
-/* Ordered by priority; on tie-breakers, external precedes dynamics precedes game ... */
+/* Ordered by priority; on tie-breakers, dynamics precedes game ... */
 enum ds_SimSystem
 {
-    SIM_SYSTEM_EXTERNAL,    /* command batches with external sources as origin (users, ...) */
     SIM_SYSTEM_DYNAMICS,
     SIM_SYSTEM_GAME,
     SIM_SYSTEM_COUNT
@@ -170,7 +169,7 @@ on the simulation by an external source, goes through the simulations exterkjnal
 buffer, enforcing a deterministic and replayable simulation.
 */
 
-/* Internal scheduling key of system ticks and external commands.  */
+/* Internal scheduling key. */
 typedef u64 ds_SimKey;
 
 struct ds_Sim
@@ -204,7 +203,7 @@ void    ds_SimDealloc(struct ds_Sim *sim);
 void    ds_SimFlush(struct ds_Sim *sim);
 /*
  * Advance the simulation by us_delta of simulation time: the frame's external commands cmds (may be empty) execute
- * first, stamped the first time after the current one, then every system tick that is due.
+ * first, at the current time, then every system tick that is due.
  */
 void    ds_SimTick(struct ds_Sim *sim, const ds_CPool(ds_SimCmd) *cmds, const u64 us_delta);
 

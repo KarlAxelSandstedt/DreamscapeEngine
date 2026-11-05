@@ -66,7 +66,7 @@ static enum ds_SimSystem ds_SimKeySystem(const ds_SimKey key)
 
 /**************** ds_SimConfig ****************/
 
-/* seed nonzero, external tick 0, other ticks in [1, DS_SIM_TICK_US_MAX] */
+/* seed nonzero, system ticks in [1, DS_SIM_TICK_US_MAX] */
 static u32 ds_SimConfigCheck(const struct ds_SimConfig *config)
 {
     if ((config->seed[0] | config->seed[1] | config->seed[2] | config->seed[3]) == 0)
@@ -74,12 +74,7 @@ static u32 ds_SimConfigCheck(const struct ds_SimConfig *config)
         return 0;
     }
 
-    if (config->us_system_tick[SIM_SYSTEM_EXTERNAL] != 0)
-    {
-        return 0;
-    }
-
-    for (u32 i = SIM_SYSTEM_EXTERNAL + 1; i < SIM_SYSTEM_COUNT; ++i)
+    for (u32 i = 0; i < SIM_SYSTEM_COUNT; ++i)
     {
         if (config->us_system_tick[i] == 0 || config->us_system_tick[i] > DS_SIM_TICK_US_MAX)
         {
@@ -99,7 +94,6 @@ struct ds_SimConfig ds_SimConfigDefault(void)
     config.seed[2] = 3;
     config.seed[3] = 7;
 
-    config.us_system_tick[SIM_SYSTEM_EXTERNAL] = 0;
     config.us_system_tick[SIM_SYSTEM_DYNAMICS] = 1000000 / 60;
     config.us_system_tick[SIM_SYSTEM_GAME]     = 1000000 / 60;
 
@@ -131,7 +125,7 @@ void ds_SimConfigGenerateSeed(struct ds_SimConfig *config)
     } while ((config->seed[0] | config->seed[1] | config->seed[2] | config->seed[3]) == 0);
 }
 
-#define DS_SIM_CONFIG_VERSION       2u
+#define DS_SIM_CONFIG_VERSION       3u
 /* version + seed + ticks */
 #define DS_SIM_CONFIG_FIXED_SIZE    (4 + 4*8 + SIM_SYSTEM_COUNT*8)
 
@@ -198,14 +192,12 @@ end:
 
 /**************** ds_Sim ****************/
 
-/* time 0: the seed batch first, then each system's first tick one period in */
 static void ds_SimScheduleInit(struct ds_Sim *sim)
 {
     sim->us_time = 0;
     sim->us_delta = 0;
 
-    sim->sys_schedule[SIM_SYSTEM_EXTERNAL] = ds_SimKeyNull();   /* the seed is a batch (ds_SimSeed) */
-    for (u32 i = SIM_SYSTEM_EXTERNAL + 1; i < SIM_SYSTEM_COUNT; ++i)
+    for (u32 i = 0; i < SIM_SYSTEM_COUNT; ++i)
     {
         sim->sys_schedule[i] = ds_SimKeyInit(sim->us_system_tick[i], (enum ds_SimSystem) i);
     }
@@ -270,10 +262,7 @@ void ds_SimTick(struct ds_Sim *sim, const ds_CPool(ds_SimCmd) *cmds, const u64 u
 {
     ds_DynamicsConfigPush(&sim->dynamics); 
 
-    /* If external commands exist, they will be prioritized and executed immediately. */
-    sim->sys_schedule[SIM_SYSTEM_EXTERNAL] = (cmds->count)
-                                           ? ds_SimKeyInit(sim->us_time + 1, SIM_SYSTEM_EXTERNAL)
-                                           : ds_SimKeyNull();
+    ds_SimExecuteCmdBatch(sim, cmds);
 
     sim->us_delta = us_delta;
     sim->us_time += us_delta;
@@ -289,27 +278,15 @@ void ds_SimTick(struct ds_Sim *sim, const ds_CPool(ds_SimCmd) *cmds, const u64 u
         const u64 us = ds_SimKeyUs(key);
         const enum ds_SimSystem sys = ds_SimKeySystem(key);
 
-        /* 
-         * Last check comes from us always executing external command payloads
-         * even if us_old == us_new, i.e. because we allow multiple command
-         * payloads per time-unit (simplifies memory management in server).
-         */
-        if (sim->us_time < us && sys != SIM_SYSTEM_EXTERNAL)
+        if (sim->us_time < us)
         {
             break;
         }
 
-        sim->sys_schedule[sys] = (sys == SIM_SYSTEM_EXTERNAL)
-                               ? ds_SimKeyNull()
-                               : ds_SimKeyInit(us + sim->us_system_tick[sys], sys);
+        sim->sys_schedule[sys] = ds_SimKeyInit(us + sim->us_system_tick[sys], sys);
 
         switch (sys)
         {
-            case SIM_SYSTEM_EXTERNAL:
-            {
-                ds_SimExecuteCmdBatch(sim, cmds);
-            } break;
-
             case SIM_SYSTEM_DYNAMICS:
             {
                 ds_DynamicsTick(&sim->dynamics);

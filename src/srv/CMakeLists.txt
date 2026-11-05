@@ -10,5 +10,6 @@ target_link_libraries(DreamscapeServer
 	PUBLIC
 		Dreamscape::Base
 		Dreamscape::Containers
+		Dreamscape::Platform
 		Dreamscape::Simulation
 	)

@@ -23,8 +23,7 @@
 
 /**************** ds_Server ****************/
 
-/* Return the slot of the hosted simulation with the given id, or { NULL, U32_MAX } if there is none. */
-static struct slot ds_SimLookup(const struct ds_Server *srv, const ds_SimId id)
+struct slot ds_SimLookup(const struct ds_Server *srv, const ds_SimId id)
 {
     struct slot slot = { .address = NULL, .index = U32_MAX };
     /* the index is bounded before the slot is read: a foreign id must not read past the pool */
@@ -51,13 +50,97 @@ void ds_ServerAlloc(struct ds_Server *srv, const u64 frame_size, const u32 initi
     ds_CPoolAlloc(NULL, srv->payload_pool, 64, GROWABLE);
 }
 
+/* Append the entry (us_timestamp, payload) to the host's record file, staged on its record stream. */
+static void ds_SimHostRecord(struct ds_SimHost *host, const u64 us_timestamp, const struct ds_SimCmdPayload *payload)
+{
+    const u64 size = sizeof(u64) + ds_SimCmdPayloadSerializeSize(payload);
+    SSIncreaseSize(&host->record_stream, size);
+    host->record_stream.bit_index = 0;
+    SSWriteU64Le(&host->record_stream, us_timestamp);
+    ds_SimCmdPayloadSerialize(&host->record_stream, payload);
+    if (FileWriteAppend(&host->record_file, host->record_stream.buf, size) != size)
+    {
+        Log(T_SYSTEM, S_ERROR, "ds_SimHostRecord: simulation %lu's record entry at %lu us not written whole", host->id.val, us_timestamp);
+    }
+}
+
+static void ds_SimHostDealloc(struct ds_SimHost *host)
+{
+    FileClose(&host->record_file);
+    SSDealloc(&host->record_stream);
+    ds_CPoolDealloc(host->cmd_pool);
+    ds_SimDealloc(&host->sim);
+}
+
+ds_SimId ds_SimAdd(struct ds_Server *srv, struct arena *mem, const struct ds_SimConfig *config, const enum ds_SimMode mode, const char *path, struct c_ShapeDB *cshape_db, ds_SDB(ds_BodyPrefab) *prefab_db, const u32 worker_count, const u64 worker_frame_size)
+{
+    struct file file = FileNull();
+    if ((mode == SIM_MODE_RECORD && FileTryCreateAtCwd(mem, &file, path, 1) != FS_SUCCESS)
+        || (mode == SIM_MODE_REPLAY && FileTryOpenAtCwd(mem, &file, path, 0) != FS_SUCCESS))
+    {
+        Log(T_SYSTEM, S_ERROR, "ds_SimAdd: record file \"%s\" could not be %s, no simulation added", path, (mode == SIM_MODE_RECORD) ? "created" : "opened");
+        return ds_SimIdNull();
+    }
+
+    const u32 old_max = srv->sim_pool.count_max;
+    const struct slot slot = ds_PoolAdd(srv->sim_pool);
+    struct ds_SimHost *host = slot.address;
+    if (old_max != srv->sim_pool.count_max)
+    {
+        host->id = ds_SimIdInit(slot.index, 0);
+    }
+    host->id = ds_SimIdNextGeneration(host->id);
+
+    host->mode = mode;
+    host->speed = 1.0;
+    host->ns_remainder = 0;
+    host->ns_budget = 0;
+    for (u32 i = 0; i < SIM_SYSTEM_COUNT; ++i)
+    {
+        host->ns_budget += 1000 * config->us_system_tick[i];
+    }
+    host->record_file = file;
+    host->record_stream = (mode == SIM_MODE_RECORD) ? SSAlloc(NULL, 4096) : (struct SS) { 0 };
+    ds_CPoolAlloc(NULL, host->cmd_pool, 64, GROWABLE);
+    host->frame_payload = ds_SimCmdPayloadEmpty(host->id);
+
+    ds_SimAlloc(mem, &host->sim, config, cshape_db, prefab_db, worker_count, worker_frame_size);
+    DLLAppend(srv->sim_list, srv->sim_pool.buf, slot.index, srv_sim);
+
+    if (mode == SIM_MODE_RECORD)
+    {
+        struct arena *tmp = ArenaPushScratch();
+        const struct ds_SimCmd seed = { .type = SIM_CMD_CONFIG_LOAD, .load_config.config = &host->sim.config_seed };
+        ds_CPool(ds_SimCmd) cmds;
+        ds_CPoolAlloc(tmp, cmds, 1, NOT_GROWABLE);
+        ds_CPoolPushValue(cmds, seed);
+        const struct ds_SimCmdPayload payload = ds_SimCmdPayloadPushAll(tmp, host->id, &cmds);
+        ds_SimHostRecord(host, 0, &payload);
+        ArenaPopScratch();
+    }
+
+    return host->id;
+}
+
+void ds_SimRemove(struct ds_Server *srv, const ds_SimId id)
+{
+    const struct slot slot = ds_SimLookup(srv, id);
+    if (slot.address == NULL)
+    {
+        Log(T_SYSTEM, S_WARNING, "ds_SimRemove: no simulation %lu", id.val);
+        return;
+    }
+
+    ds_SimHostDealloc(slot.address);
+    DLLRemove(srv->sim_list, srv->sim_pool.buf, slot.index, srv_sim);
+    ds_PoolRemove(srv->sim_pool, slot.index);
+}
+
 void ds_ServerDealloc(struct ds_Server *srv)
 {
     for (i32 i = srv->sim_list.first; i != DLL_SENTINEL; i = srv->sim_pool.buf[i].srv_sim.next)
     {
-        struct ds_SimHost *host = srv->sim_pool.buf + i;
-        ds_SimDealloc(&host->sim);
-        ds_CPoolDealloc(host->cmd_pool);
+        ds_SimHostDealloc(srv->sim_pool.buf + i);
     }
     ds_PoolDealloc(srv->sim_pool);
     ds_CPoolDealloc(srv->payload_pool);
@@ -168,7 +251,11 @@ void ds_ServerTick(struct ds_Server *srv, const u64 ns_delta)
         const u64 ns_sim_delta = U64Min(ns_wanted, host->ns_budget);
         host->ns_remainder = ns_sim_delta % 1000;
 
-        //TODO RECORD: timestamp (sim.us_time + 1) + frame_payload
+        if (host->mode == SIM_MODE_RECORD && host->frame_payload.cmd_count)
+        {
+            ds_SimHostRecord(host, host->sim.us_time, &host->frame_payload);
+        }
+
         ds_SimTick(&host->sim, &host->cmd_pool, ns_sim_delta / 1000);
         ds_CPoolFlush(host->cmd_pool);
     }

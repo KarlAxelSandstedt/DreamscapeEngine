@@ -60,7 +60,7 @@ static struct test_Output SimConfigSerializeTest(struct test_Environment *env)
     ds_SimConfigSeed(&rejected, zero);
     const struct ds_SimConfig def = ds_SimConfigDefault();
     TEST_TRUE(rejected.seed[0] == def.seed[0] && rejected.seed[1] == def.seed[1] && rejected.seed[2] == def.seed[2] && rejected.seed[3] == def.seed[3]);
-    for (u32 i = SIM_SYSTEM_EXTERNAL + 1; i < SIM_SYSTEM_COUNT; ++i)
+    for (u32 i = 0; i < SIM_SYSTEM_COUNT; ++i)
     {
         changed.us_system_tick[i] = 1000 * (i + 1);
     }
@@ -106,17 +106,16 @@ static struct test_Output SimConfigSerializeTest(struct test_Environment *env)
     }
 
     /* out-of-range values survive the write and fail the read */
-    struct ds_SimConfig invalid[4];
-    for (u32 i = 0; i < 4; ++i)
+    struct ds_SimConfig invalid[3];
+    for (u32 i = 0; i < 3; ++i)
     {
         invalid[i] = changed;
     }
     invalid[0].seed[0] = invalid[0].seed[1] = invalid[0].seed[2] = invalid[0].seed[3] = 0;
-    invalid[1].us_system_tick[SIM_SYSTEM_EXTERNAL] = 1;
-    invalid[2].us_system_tick[SIM_SYSTEM_DYNAMICS] = 0;
-    invalid[3].us_system_tick[SIM_SYSTEM_GAME] = DS_SIM_TICK_US_MAX + 1;
+    invalid[1].us_system_tick[SIM_SYSTEM_DYNAMICS] = 0;
+    invalid[2].us_system_tick[SIM_SYSTEM_GAME] = DS_SIM_TICK_US_MAX + 1;
 
-    for (u32 i = 0; i < 4; ++i)
+    for (u32 i = 0; i < 3; ++i)
     {
         const u64 size = ds_SimConfigSerializeSize(&invalid[i]);
         struct SS ss = SSAlloc(env->mem_1, size);
@@ -332,8 +331,8 @@ static struct test_Output SimTickTest(struct test_Environment *env)
     TEST_TRUE(mem.mem_left < mem.mem_size);
     TEST_EQUAL(0, sim.us_time);
     TEST_EQUAL(1000 * period, sim.dynamics.ns_tick);
-    /* the seed batch ran inside ds_SimAlloc: the external slot is empty, time still 0 */
-    TEST_EQUAL(U64_MAX, sim.sys_schedule[SIM_SYSTEM_EXTERNAL]);
+    /* the seed batch ran inside ds_SimAlloc: time still 0, the first dynamics tick a period out */
+    TEST_EQUAL(1, sim.initialized);
     TEST_EQUAL(0, sim.dynamics.frames_completed);
 
     ds_CPool(ds_SimCmd) none;
@@ -343,7 +342,6 @@ static struct test_Output SimTickTest(struct test_Environment *env)
     ds_SimTick(&sim, &none, 0);
     TEST_EQUAL(0, sim.us_time);
     TEST_EQUAL(0, sim.dynamics.frames_completed);
-    TEST_EQUAL(U64_MAX, sim.sys_schedule[SIM_SYSTEM_EXTERNAL]);
 
     /* no physics tick before its period */
     ds_SimTick(&sim, &none, 1);
@@ -362,7 +360,6 @@ static struct test_Output SimTickTest(struct test_Environment *env)
     /* flush: back to 0, reseeded (the seed batch ran) */
     ds_SimFlush(&sim);
     TEST_EQUAL(0, sim.us_time);
-    TEST_EQUAL(U64_MAX, sim.sys_schedule[SIM_SYSTEM_EXTERNAL]);
     TEST_EQUAL(0, sim.dynamics.frames_completed);
 
     ds_SimDealloc(&sim);
@@ -650,7 +647,6 @@ static struct test_Output SimConfigLoadTest(struct test_Environment *env)
     SimTestBatch(&sim, &pool);
     TEST_EQUAL(iterations + 3, sim.dynamics.config.solver.pgs_iteration_count);
     TEST_EQUAL(iterations + 3, sim.dynamics.config_pending.solver.pgs_iteration_count);
-    TEST_EQUAL(U64_MAX, sim.sys_schedule[SIM_SYSTEM_EXTERNAL]);
 
     /* two commands in one batch run in order: the second wins */
     struct ds_SimConfig second = config;
@@ -686,27 +682,6 @@ static struct test_Output SimConfigLoadTest(struct test_Environment *env)
 	return output;
 }
 
-/* Host a simulation in srv (what ds_ServerSimAdd will do): pool slot, id, mode NONE, speed 1, budget, command pool, list. */
-static struct ds_SimHost *ServerTestSimAdd(struct ds_Server *srv, struct arena *mem, const struct ds_SimConfig *config, struct c_ShapeDB *cshape_db, ds_SDB(ds_BodyPrefab) *prefab_db)
-{
-    const struct slot slot = ds_PoolAdd(srv->sim_pool);
-    struct ds_SimHost *host = slot.address;
-    host->id = ds_SimIdInit(slot.index, 0);
-    host->mode = SIM_MODE_NONE;
-    host->speed = 1.0;
-    host->ns_remainder = 0;
-    host->ns_budget = 0;
-    for (u32 i = 0; i < SIM_SYSTEM_COUNT; ++i)
-    {
-        host->ns_budget += 1000 * config->us_system_tick[i];
-    }
-    ds_CPoolAlloc(NULL, host->cmd_pool, 64, GROWABLE);
-    host->frame_payload = ds_SimCmdPayloadEmpty(host->id);
-    ds_SimAlloc(mem, &host->sim, config, cshape_db, prefab_db, g_config->thread_count, g_config->thread_framesize);
-    DLLAppend(srv->sim_list, srv->sim_pool.buf, slot.index, srv_sim);
-    return host;
-}
-
 /*
  * The server's clock: a hosted simulation ticked through ds_ServerTick with wall-clock deltas. Sub-microsecond
  * deltas accumulate in the host's remainder until they make a microsecond, the budget caps a long frame at the sum
@@ -728,8 +703,10 @@ static struct test_Output ServerClockTest(struct test_Environment *env)
 
     struct ds_Server srv;
     ds_ServerAlloc(&srv, 1 << 20, 2);
-    struct ds_SimHost *host = ServerTestSimAdd(&srv, &mem, &config, &cshape_db, &prefab_db);
+    const ds_SimId id = ds_SimAdd(&srv, &mem, &config, SIM_MODE_NONE, NULL, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    struct ds_SimHost *host = ds_SimLookup(&srv, id).address;
     struct ds_Sim *sim = &host->sim;
+    TEST_TRUE(host != NULL && host->mode == SIM_MODE_NONE && host->speed == 1.0 && sim->initialized);
 
     /* sub-microsecond deltas: the remainder carries them */
     ds_ServerTick(&srv, 600);
@@ -791,8 +768,10 @@ static struct test_Output ServerDoorTest(struct test_Environment *env)
 
     struct ds_Server srv;
     ds_ServerAlloc(&srv, 1 << 20, 2);
-    struct ds_SimHost *host = ServerTestSimAdd(&srv, &mem, &config, &cshape_db, &prefab_db);
+    const ds_SimId id = ds_SimAdd(&srv, &mem, &config, SIM_MODE_NONE, NULL, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    struct ds_SimHost *host = ds_SimLookup(&srv, id).address;
     struct ds_Sim *sim = &host->sim;
+    TEST_EQUAL(NULL, ds_SimLookup(&srv, ds_SimIdInit(1, 0)).address);
 
     /* the arrivals */
     struct ds_SimConfig load[2] = { config, config };
@@ -840,6 +819,97 @@ static struct test_Output ServerDoorTest(struct test_Environment *env)
 	return output;
 }
 
+/*
+ * Recording: a RECORD simulation writes its record file in the build directory. Entries: the seed (timestamp 0, one
+ * ConfigLoad equal to the config), a frame with two commands at timestamp 0 (no time passed yet), nothing for an
+ * empty frame, and a frame with one command at the period. Removing the simulation closes the file and frees its
+ * id; the file reads back entry by entry with the payload and command readers.
+ */
+static struct test_Output ServerRecordTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct c_ShapeDB cshape_db = { 0 };
+    c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
+    ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
+    ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
+
+    struct ds_SimConfig config = ds_SimConfigDefault();
+    config.dynamics.initial_size = 32;
+    const u32 iterations = config.dynamics.solver.pgs_iteration_count;
+    const u64 period = config.us_system_tick[SIM_SYSTEM_DYNAMICS];
+    struct arena mem = ArenaAlloc(NULL, ds_DynamicsShellMemoryRequirement(g_config->thread_count, config.dynamics.frame_memory) + 1024);
+
+    struct ds_Server srv;
+    ds_ServerAlloc(&srv, 1 << 20, 2);
+    const ds_SimId id = ds_SimAdd(&srv, &mem, &config, SIM_MODE_RECORD, "agent_test_record.bin", &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    TEST_EQUAL(0, ds_SimIdNullCheck(id));
+    struct ds_SimHost *host = ds_SimLookup(&srv, id).address;
+    TEST_EQUAL(SIM_MODE_RECORD, host->mode);
+
+    /* frame 1: two commands at time 0; frame 2: a period, no commands; frame 3: one command */
+    struct ds_SimConfig load[3] = { config, config, config };
+    ds_CPool(ds_SimCmd) pool;
+    ds_CPoolAlloc(env->mem_1, pool, 2, NOT_GROWABLE);
+    for (u32 i = 0; i < 3; ++i)
+    {
+        load[i].dynamics.solver.pgs_iteration_count = iterations + 3 + 2*i;
+        const struct ds_SimCmd cmd = { .type = SIM_CMD_CONFIG_LOAD, .load_config.config = &load[i] };
+        ds_CPoolPushValue(pool, cmd);
+        if (i == 1)
+        {
+            ds_CPoolPushValue(srv.payload_pool, ds_SimCmdPayloadPushAll(env->mem_1, id, &pool));
+            ds_ServerTick(&srv, 0);
+            ds_ServerTick(&srv, 1000 * period);
+            ds_CPoolFlush(pool);
+        }
+    }
+    ds_CPoolPushValue(srv.payload_pool, ds_SimCmdPayloadPushAll(env->mem_1, id, &pool));
+    ds_ServerTick(&srv, 0);
+    TEST_EQUAL(iterations + 7, host->sim.dynamics.config.solver.pgs_iteration_count);
+    TEST_EQUAL(period, host->sim.us_time);
+
+    ds_SimRemove(&srv, id);
+    TEST_EQUAL(NULL, ds_SimLookup(&srv, id).address);
+    TEST_EQUAL(0, srv.sim_list.count);
+
+    /* read it back */
+    const struct dsBuffer file = FileDumpAtCwd(env->mem_1, "agent_test_record.bin");
+    TEST_TRUE(file.size > 0);
+    struct SS ss = SSBuffered(file.data, file.size);
+    const u64 timestamps[3] = { 0, 0, period };
+    const u32 counts[3] = { 1, 2, 1 };
+    const u32 first_iterations[3] = { iterations, iterations + 3, iterations + 7 };
+    for (u32 e = 0; e < 3; ++e)
+    {
+        TEST_EQUAL(timestamps[e], SSReadU64Le(&ss));
+        struct ds_SimCmdPayload payload;
+        TEST_EQUAL(1, ds_SimCmdPayloadTryDeserializeAndAlias(&ss, &payload));
+        TEST_EQUAL(id.val, payload.dst.val);
+        TEST_EQUAL(counts[e], payload.cmd_count);
+
+        struct SSView view;
+        TEST_EQUAL(1, SSTryView(&view, &payload.stream, 0, payload.stream.bit_index));
+        struct SS cmds = SSSubstreamFromView(&view);
+        struct ds_SimCmd cmd;
+        TEST_EQUAL(1, ds_SimCmdTryDeserialize(env->mem_1, &cmds, &cmd));
+        TEST_EQUAL(first_iterations[e], cmd.load_config.config->dynamics.solver.pgs_iteration_count);
+        TEST_EQUAL(1, SimConfigTestEqual(&config, cmd.load_config.config));
+        for (u32 c = 1; c < counts[e]; ++c)
+        {
+            TEST_EQUAL(1, ds_SimCmdTryDeserialize(env->mem_1, &cmds, &cmd));
+        }
+        TEST_EQUAL(0, SSBitsLeft(&cmds));
+    }
+    TEST_EQUAL(0, SSBitsLeft(&ss));
+
+    ds_ServerDealloc(&srv);
+    ArenaFree(&mem);
+    ds_SDBDealloc(prefab_db);
+    c_ShapeDBDealloc(&cshape_db);
+	return output;
+}
+
 static struct test_Output (*simulation_tests[])(struct test_Environment *) =
 {
     SimConfigSerializeTest,
@@ -850,6 +920,7 @@ static struct test_Output (*simulation_tests[])(struct test_Environment *) =
     SimConfigLoadTest,
     ServerClockTest,
     ServerDoorTest,
+    ServerRecordTest,
 };
 
 struct suite_Correctness m_simulation_suite =
