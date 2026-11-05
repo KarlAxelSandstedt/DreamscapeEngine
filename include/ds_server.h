@@ -164,9 +164,10 @@ struct ds_SimHost
     f64                     speed;          /* scales wall-clock time */
     u64                     ns_remainder;   /* wall-clock time not yet accounted for (sub-microsecond) */
     u64                     ns_budget;      /* the simulation never advances more than this per tick: sum of the system periods */
-    struct file             record_file;    /* RECORD: appended every frame with commands; REPLAY: read (TODO); else closed */
-    struct SS               record_stream;  /* RECORD: the frame's entry staged before it is appended */
-    u64                     us_previous_record;    /* RECORD: the last entry's timestamp (entries store the delta) */
+    struct file             record_file;    /* RECORD: appended every frame with commands; REPLAY: mapped; else closed */
+    struct SS               record_stream;  /* RECORD: the frame's entry staged before it is appended; REPLAY: the mapped record, bit_index the read position */
+    u64                     us_previous_record; /* the last entry's timestamp (entries store the delta) */
+    u32                     replay_ended;   /* REPLAY: the record is consumed or corrupt; the simulation runs on live */
 
     ds_CPool(ds_SimCmd)     cmd_pool;       /* the frame's commands, decoded at the door, executed by the simulation's tick */
     struct ds_SimCmdPayload frame_payload;  /* the frame's arrivals fused: the record's entry */
@@ -192,8 +193,9 @@ void    ds_ServerDealloc(struct ds_Server *srv);
 void    ds_ServerTick(struct ds_Server *srv, const u64 ns_delta);
 /*
  * Host a new simulation (ds_SimAlloc on mem, its path copied there too) and return its id. RECORD creates (truncates)
- * the record file at path (relative to the cwd) and writes the seed entry, REPLAY opens it; path is ignored for NONE.
- * If the file fails, nothing is added (logged) and the null id is returned.
+ * the record file at path (relative to the cwd) and writes the seed entry; REPLAY maps it and takes the config from
+ * its seed entry (config ignored); path is ignored for NONE. config NULL is the default config. If the file fails,
+ * nothing is added (logged) and the null id is returned.
  */
 ds_SimId    ds_SimHostAdd(struct ds_Server *srv, struct arena *mem, const struct ds_SimConfig *config, const enum ds_SimMode mode, const char *path, struct c_ShapeDB *cshape_db, ds_SDB(ds_BodyPrefab) *prefab_db, const u32 worker_count, const u64 worker_frame_size);
 /* Remove the hosted simulation with the given id (ds_SimDealloc, the record closed); an unknown id is logged. */

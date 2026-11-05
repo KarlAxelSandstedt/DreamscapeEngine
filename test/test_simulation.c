@@ -941,6 +941,126 @@ static struct test_Output ServerRecordTest(struct test_Environment *env)
 	return output;
 }
 
+/*
+ * Replay: a run is recorded (frames of half a period, ConfigLoads before frames 1, 3 and 6; a changed seed in the
+ * config), then replayed from the file with another frame cadence: the config comes from the record's seed entry,
+ * after every replay frame the applied config is the last recorded load at or before the simulation's time and the
+ * physics ticks match the time, a live payload for the replaying simulation is dropped, the end of the record is
+ * reached at the same final state (time, ticks, config, orientation hash), after which a live payload is applied
+ * (the fork); ds_SimHostReset rewinds the replay.
+ */
+static struct test_Output ServerReplayTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct c_ShapeDB cshape_db = { 0 };
+    c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
+    ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
+    ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
+
+    struct ds_SimConfig config = ds_SimConfigDefault();
+    config.dynamics.initial_size = 32;
+    const u64 seed[4] = { 11, 22, 33, 44 };
+    ds_SimConfigSeed(&config, seed);
+    const u32 iterations = config.dynamics.solver.pgs_iteration_count;
+    const u64 period = config.us_system_tick[SIM_SYSTEM_DYNAMICS];
+    const u64 half = period / 2;
+    struct ds_SimConfig load[3] = { config, config, config };
+    const u32 load_frame[3] = { 1, 3, 6 };
+    u64 load_time[3];
+    for (u32 i = 0; i < 3; ++i)
+    {
+        load[i].dynamics.solver.pgs_iteration_count = iterations + 3 + 2*i;
+        load_time[i] = load_frame[i] * half;
+    }
+    ds_CPool(ds_SimCmd) pool;
+    ds_CPoolAlloc(env->mem_1, pool, 1, NOT_GROWABLE);
+
+    struct ds_Server srv;
+    ds_ServerAlloc(&srv, 1 << 20, 2);
+
+    /* record: 8 frames of half a period */
+    struct arena mem = ArenaAlloc(NULL, ds_DynamicsShellMemoryRequirement(g_config->thread_count, config.dynamics.frame_memory) + 1024);
+    const ds_SimId id = ds_SimHostAdd(&srv, &mem, &config, SIM_MODE_RECORD, "agent_test_replay.bin", &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    struct ds_SimHost *host = ds_SimHostLookup(&srv, id).address;
+    for (u32 frame = 0, l = 0; frame < 8; ++frame)
+    {
+        if (l < 3 && load_frame[l] == frame)
+        {
+            ds_CPoolFlush(pool);
+            const struct ds_SimCmd cmd = { .type = SIM_CMD_CONFIG_LOAD, .load_config.config = &load[l] };
+            ds_CPoolPushValue(pool, cmd);
+            ds_CPoolPushValue(srv.payload_pool, ds_SimCmdPayloadPushAll(env->mem_1, id, &pool));
+            l += 1;
+        }
+        ds_ServerTick(&srv, 1000 * half);
+    }
+    const u64 us_end = host->sim.us_time;
+    const u64 ticks_end = host->sim.dynamics.frames_completed;
+    const u64 hash_end = ds_DynamicsOrientationHash(&host->sim.dynamics);
+    TEST_EQUAL(8 * half, us_end);
+    TEST_EQUAL(iterations + 7, host->sim.dynamics.config.solver.pgs_iteration_count);
+    ds_SimHostRemove(&srv, id);
+
+    /* replay: frames of 12499 us, then the rest */
+    struct arena mem_replay = ArenaAlloc(NULL, ds_DynamicsShellMemoryRequirement(g_config->thread_count, config.dynamics.frame_memory) + 1024);
+    const ds_SimId id_replay = ds_SimHostAdd(&srv, &mem_replay, NULL, SIM_MODE_REPLAY, "agent_test_replay.bin", &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    TEST_EQUAL(0, ds_SimIdNullCheck(id_replay));
+    struct ds_SimHost *replay = ds_SimHostLookup(&srv, id_replay).address;
+    TEST_EQUAL(SIM_MODE_REPLAY, replay->mode);
+    TEST_EQUAL(1, SimConfigTestEqual(&config, &replay->sim.config_seed));
+    TEST_EQUAL(iterations, replay->sim.dynamics.config.solver.pgs_iteration_count);
+
+    struct ds_SimConfig live = config;
+    live.dynamics.solver.pgs_iteration_count = iterations + 11;
+    const struct ds_SimCmd live_cmd = { .type = SIM_CMD_CONFIG_LOAD, .load_config.config = &live };
+    ds_CPoolFlush(pool);
+    ds_CPoolPushValue(pool, live_cmd);
+
+    const u64 step = 12499;
+    while (replay->sim.us_time < us_end)
+    {
+        if (replay->sim.us_time == 2 * step)
+        {
+            ds_CPoolPushValue(srv.payload_pool, ds_SimCmdPayloadPushAll(env->mem_1, id_replay, &pool));   /* dropped: replaying */
+        }
+        const u64 us_delta = U64Min(step, us_end - replay->sim.us_time);
+        ds_ServerTick(&srv, 1000 * us_delta);
+
+        u32 expected = iterations;
+        for (u32 i = 0; i < 3; ++i)
+        {
+            expected = (load_time[i] <= replay->sim.us_time) ? load[i].dynamics.solver.pgs_iteration_count : expected;
+        }
+        TEST_EQUAL(expected, replay->sim.dynamics.config.solver.pgs_iteration_count);
+        TEST_EQUAL(replay->sim.us_time / period, replay->sim.dynamics.frames_completed);
+    }
+    TEST_EQUAL(us_end, replay->sim.us_time);
+    TEST_EQUAL(ticks_end, replay->sim.dynamics.frames_completed);
+    TEST_EQUAL(hash_end, ds_DynamicsOrientationHash(&replay->sim.dynamics));
+    TEST_EQUAL(1, replay->replay_ended);
+
+    /* the fork: live payloads apply from here on */
+    ds_CPoolPushValue(srv.payload_pool, ds_SimCmdPayloadPushAll(env->mem_1, id_replay, &pool));
+    ds_ServerTick(&srv, 0);
+    TEST_EQUAL(iterations + 11, replay->sim.dynamics.config.solver.pgs_iteration_count);
+
+    /* reset: the replay restarts from the seed */
+    ds_SimHostReset(&srv, id_replay);
+    TEST_EQUAL(0, replay->sim.us_time);
+    TEST_EQUAL(0, replay->replay_ended);
+    TEST_EQUAL(iterations, replay->sim.dynamics.config.solver.pgs_iteration_count);
+    ds_ServerTick(&srv, 1000 * (half + 1));
+    TEST_EQUAL(iterations + 3, replay->sim.dynamics.config.solver.pgs_iteration_count);
+
+    ds_ServerDealloc(&srv);
+    ArenaFree(&mem_replay);
+    ArenaFree(&mem);
+    ds_SDBDealloc(prefab_db);
+    c_ShapeDBDealloc(&cshape_db);
+	return output;
+}
+
 static struct test_Output (*simulation_tests[])(struct test_Environment *) =
 {
     SimConfigSerializeTest,
@@ -952,6 +1072,7 @@ static struct test_Output (*simulation_tests[])(struct test_Environment *) =
     ServerClockTest,
     ServerDoorTest,
     ServerRecordTest,
+    ServerReplayTest,
 };
 
 struct suite_Correctness m_simulation_suite =

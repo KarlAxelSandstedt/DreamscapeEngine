@@ -89,9 +89,86 @@ static void ds_SimHostRecordSeed(struct ds_SimHost *host)
     ArenaPopScratch();
 }
 
+/* Record reader: the next entry's timestamp (ss's position kept). Returns 0 on a bad stream. */
+static u32 ds_SimHostReplayPeek(const struct SS *record, const u64 us_previous, u64 *us_timestamp)
+{
+    struct SS ss = *record;
+    u64 us_delta;
+    if (!ds_CompactSizeTryDeserialize(&ss, &us_delta))
+    {
+        return 0;
+    }
+
+    *us_timestamp = us_previous + us_delta;
+    return 1;
+}
+
+/*
+ * Record reader: the next entry's commands onto cmds (their data on mem), *us_previous set to its timestamp. Returns
+ * 0 on a bad stream or a malformed command: the stream position and cmds are as before.
+ */
+static u32 ds_SimHostReplayTryReadPayload(struct SS *record, u64 *us_previous, struct arena *mem, ds_CPool(ds_SimCmd) *cmds)
+{
+    struct SS ss = *record;
+    const u32 old_count = cmds->count;
+    u64 us_delta, cmd_count, bit_count;
+    if (!ds_CompactSizeTryDeserialize(&ss, &us_delta)
+        || !ds_CompactSizeTryDeserialize(&ss, &cmd_count)
+        || !ds_CompactSizeTryDeserialize(&ss, &bit_count)
+        || SSBytesLeft(&ss) < (bit_count + 7) / 8)
+    {
+        return 0;
+    }
+
+    struct SSView view;
+    SSTryView(&view, &ss, ss.bit_index, bit_count);
+    struct SS commands = SSSubstreamFromView(&view);
+    u32 valid = 1;
+    for (u64 c = 0; c < cmd_count && valid; ++c)
+    {
+        struct ds_SimCmd *cmd = ds_CPoolPush(*cmds).address;
+        valid = ds_SimCmdTryDeserialize(mem, &commands, cmd) && ds_SimCmdFormVerify(cmd);
+    }
+
+    if (!valid || SSBitsLeft(&commands) != 0)
+    {
+        ds_CPoolPopBatch(*cmds, cmds->count - old_count);
+        return 0;
+    }
+
+    ss.bit_index += 8 * ((bit_count + 7) / 8);
+    *record = ss;
+    *us_previous += us_delta;
+    return 1;
+}
+
+/* Record reader: the seed entry (one ConfigLoad at 0) from the start of record; config set, the position after it. */
+static u32 ds_SimHostReplayTrySeed(struct SS *record, u64 *us_previous, struct ds_SimConfig *config)
+{
+    record->bit_index = 0;
+    *us_previous = 0;
+
+    struct arena *tmp = ArenaPushScratch();
+    ds_CPool(ds_SimCmd) cmds;
+    ds_CPoolAlloc(tmp, cmds, 1, NOT_GROWABLE);
+    const u32 valid = ds_SimHostReplayTryReadPayload(record, us_previous, tmp, &cmds)
+                   && *us_previous == 0 && cmds.count == 1 && cmds.buf[0].type == SIM_CMD_CONFIG_LOAD;
+    if (valid)
+    {
+        *config = *cmds.buf[0].load_config.config;
+    }
+    ArenaPopScratch();
+
+    return valid;
+}
+
 static void ds_SimHostDealloc(struct ds_SimHost *host)
 {
     FileClose(&host->record_file);
+    if (host->mode == SIM_MODE_REPLAY)
+    {
+        FileMemoryUnmap(host->record_stream.buf, host->record_stream.bit_count / 8);
+    }
     SSDealloc(&host->record_stream);
     ds_CPoolDealloc(host->cmd_pool);
     ds_SimDealloc(&host->sim);
@@ -103,9 +180,27 @@ ds_SimId ds_SimHostAdd(struct ds_Server *srv, struct arena *mem, const struct ds
     if ((mode == SIM_MODE_RECORD && FileTryCreateAtCwd(mem, &file, path, 1) != FS_SUCCESS)
         || (mode == SIM_MODE_REPLAY && FileTryOpenAtCwd(mem, &file, path, 0) != FS_SUCCESS))
     {
-        Log(T_SYSTEM, S_ERROR, "ds_SimAdd: record file \"%s\" could not be %s, no simulation added", path, (mode == SIM_MODE_RECORD) ? "created" : "opened");
+        Log(T_SYSTEM, S_ERROR, "ds_SimHostAdd: record file \"%s\" could not be %s, no simulation added", path, (mode == SIM_MODE_RECORD) ? "created" : "opened");
         return ds_SimIdNull();
     }
+
+    struct ds_SimConfig config_used = (config) ? *config : ds_SimConfigDefault();
+    struct SS record = { 0 };
+    u64 us_previous = 0;
+    if (mode == SIM_MODE_REPLAY)
+    {
+        u64 size = 0;
+        void *map = FileMemoryMap(&size, &file, FS_PROT_READ, FS_MAP_PRIVATE);
+        record = SSBuffered(map, size);
+        if (map == NULL || !ds_SimHostReplayTrySeed(&record, &us_previous, &config_used))
+        {
+            Log(T_SYSTEM, S_ERROR, "ds_SimHostAdd: record file \"%s\" has no seed entry, no simulation added", path);
+            if (map) { FileMemoryUnmap(map, size); }
+            FileClose(&file);
+            return ds_SimIdNull();
+        }
+    }
+    config = &config_used;
 
     const u32 old_max = srv->sim_pool.count_max;
     const struct slot slot = ds_PoolAdd(srv->sim_pool);
@@ -125,8 +220,9 @@ ds_SimId ds_SimHostAdd(struct ds_Server *srv, struct arena *mem, const struct ds
         host->ns_budget += 1000 * config->us_system_tick[i];
     }
     host->record_file = file;
-    host->record_stream = (mode == SIM_MODE_RECORD) ? SSAlloc(NULL, 4096) : (struct SS) { 0 };
-    host->us_previous_record = 0;
+    host->record_stream = (mode == SIM_MODE_RECORD) ? SSAlloc(NULL, 4096) : record;
+    host->us_previous_record = us_previous;
+    host->replay_ended = 0;
     ds_CPoolAlloc(NULL, host->cmd_pool, 64, GROWABLE);
     host->frame_payload = ds_SimCmdPayloadEmpty(host->id);
 
@@ -163,7 +259,13 @@ void ds_SimHostReset(struct ds_Server *srv, const ds_SimId id)
         host->us_previous_record = 0;
         ds_SimHostRecordSeed(host);
     }
-    //TODO REPLAY: rewind the record
+    else if (host->mode == SIM_MODE_REPLAY)
+    {
+        struct ds_SimConfig seed;
+        const u32 valid = ds_SimHostReplayTrySeed(&host->record_stream, &host->us_previous_record, &seed);
+        ds_Assert(valid);
+        host->replay_ended = 0;
+    }
 }
 
 void ds_SimHostRemove(struct ds_Server *srv, const ds_SimId id)
@@ -218,9 +320,9 @@ void ds_ServerTick(struct ds_Server *srv, const u64 ns_delta)
     {
         struct ds_SimCmdPayload *payload = srv->payload_pool.buf + i;
         struct ds_SimHost *host = ds_SimHostLookup(srv, payload->dst).address;
-        if (host == NULL)
+        if (host == NULL || (host->mode == SIM_MODE_REPLAY && !host->replay_ended))
         {
-            Log(T_SYSTEM, S_WARNING, "ds_ServerTick: payload for unknown simulation %lu dropped", payload->dst.val);
+            Log(T_SYSTEM, S_WARNING, "ds_ServerTick: payload for %s simulation %lu dropped", (host) ? "replaying" : "unknown", payload->dst.val);
             *payload = ds_SimCmdPayloadEmpty(ds_SimIdNull());
             continue;
         }
@@ -294,13 +396,55 @@ void ds_ServerTick(struct ds_Server *srv, const u64 ns_delta)
         const u64 ns_wanted = host->ns_remainder + (u64) (ns_delta * host->speed);
         const u64 ns_sim_delta = U64Min(ns_wanted, host->ns_budget);
         host->ns_remainder = ns_sim_delta % 1000;
+        const u64 us_sim_delta = ns_sim_delta / 1000;
+
+        if (host->mode == SIM_MODE_REPLAY && !host->replay_ended)
+        {
+            const u64 sim_us_time_final = host->sim.us_time + us_sim_delta;
+            while (1)
+            {
+                if (SSBitsLeft(&host->record_stream) == 0)
+                {
+                    Log(T_SYSTEM, S_NOTE, "ds_ServerTick: simulation %lu's record ends at %lu us, it runs on live", host->id.val, host->us_previous_record);
+                    host->replay_ended = 1;
+                    break;
+                }
+
+                u64 us_entry;
+                if (!ds_SimHostReplayPeek(&host->record_stream, host->us_previous_record, &us_entry))
+                {
+                    Log(T_SYSTEM, S_ERROR, "ds_ServerTick: simulation %lu's record is corrupt after %lu us, it runs on live", host->id.val, host->us_previous_record);
+                    host->replay_ended = 1;
+                    break;
+                }
+
+                if (us_entry > sim_us_time_final)
+                {
+                    break;
+                }
+
+                ds_SimTick(&host->sim, &host->cmd_pool, us_entry - host->sim.us_time);
+                if (!ds_SimHostReplayTryReadPayload(&host->record_stream, &host->us_previous_record, &srv->frame, &host->cmd_pool))
+                {
+                    Log(T_SYSTEM, S_ERROR, "ds_ServerTick: simulation %lu's record is corrupt at %lu us, it runs on live", host->id.val, us_entry);
+                    host->replay_ended = 1;
+                    break;
+                }
+
+                ds_SimTick(&host->sim, &host->cmd_pool, 0);
+                ds_CPoolFlush(host->cmd_pool);
+            }
+
+            ds_SimTick(&host->sim, &host->cmd_pool, sim_us_time_final - host->sim.us_time);
+            continue;
+        }
 
         if (host->mode == SIM_MODE_RECORD && host->frame_payload.cmd_count)
         {
             ds_SimHostRecord(host, host->sim.us_time, &host->frame_payload);
         }
 
-        ds_SimTick(&host->sim, &host->cmd_pool, ns_sim_delta / 1000);
+        ds_SimTick(&host->sim, &host->cmd_pool, us_sim_delta);
         ds_CPoolFlush(host->cmd_pool);
     }
 }
