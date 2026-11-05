@@ -295,8 +295,6 @@ void ds_ServerDealloc(struct ds_Server *srv)
 
 void ds_ServerTick(struct ds_Server *srv, const u64 ns_delta)
 {
-    ArenaFlush(&srv->frame);
-
     /************** Payload Deserialization and Aliasing **************/
 
     /* TODO receive payloads (network, local), route by dst. */
@@ -323,6 +321,16 @@ void ds_ServerTick(struct ds_Server *srv, const u64 ns_delta)
         if (host == NULL || (host->mode == SIM_MODE_REPLAY && !host->replay_ended))
         {
             Log(T_SYSTEM, S_WARNING, "ds_ServerTick: payload for %s simulation %lu dropped", (host) ? "replaying" : "unknown", payload->dst.val);
+            *payload = ds_SimCmdPayloadEmpty(ds_SimIdNull());
+            continue;
+        }
+
+//TODO guesses until there is data: what one payload may make the door decode (a hostile sender picks the counts)
+#define DS_SIM_PAYLOAD_CMD_COUNT_MAX    4096
+#define DS_SIM_PAYLOAD_BIT_COUNT_MAX    (1 << 20)
+        if (payload->cmd_count > DS_SIM_PAYLOAD_CMD_COUNT_MAX || payload->stream.bit_index > DS_SIM_PAYLOAD_BIT_COUNT_MAX)
+        {
+            Log(T_SYSTEM, S_WARNING, "ds_ServerTick: payload of %u commands, %lu bits for simulation %lu dropped (over the cap)", payload->cmd_count, payload->stream.bit_index, payload->dst.val);
             *payload = ds_SimCmdPayloadEmpty(ds_SimIdNull());
             continue;
         }
@@ -447,4 +455,6 @@ void ds_ServerTick(struct ds_Server *srv, const u64 ns_delta)
         ds_SimTick(&host->sim, &host->cmd_pool, us_sim_delta);
         ds_CPoolFlush(host->cmd_pool);
     }
+
+    ArenaFlush(&srv->frame);    /* arrivals until the next tick may live here */
 }
