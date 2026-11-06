@@ -284,7 +284,7 @@ static void DynamicsTestRun(struct dynamics_TestResult *result, const struct dyn
     result->jitter_sq = 0.0;
     for (u32 t = 0; t < DYNAMICS_TEST_SETTLE_TICKS + DYNAMICS_TEST_MEASURE_TICKS; ++t)
     {
-        ds_DynamicsTick(DynamicsTestTickArena(), &pipeline);
+        ds_DynamicsTick(DynamicsTestTickArena(), &pipeline, NSEC_PER_SEC / 60);
         ds_PoolFlush(pipeline.event_pool);
         DLLFlush(pipeline.event_list);
 
@@ -491,7 +491,7 @@ static u32 SnapshotTestScene(struct dynamics_TestBox box[SNAPSHOT_TEST_BOX_MAX])
 static void SnapshotTestTick(struct ds_Dynamics *pipeline)
 {
     ds_DynamicsConfigPush(pipeline);
-    ds_DynamicsTick(DynamicsTestTickArena(), pipeline);
+    ds_DynamicsTick(DynamicsTestTickArena(), pipeline, NSEC_PER_SEC / 60);
     ds_PoolFlush(pipeline->event_pool);
     DLLFlush(pipeline->event_list);
 }
@@ -1079,7 +1079,7 @@ static struct test_Output DynamicsContactTest(struct test_Environment *env)
     {
         body[i] = DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, box + i, (v3f64) { 0 }, i);
     }
-    ds_DynamicsTick(DynamicsTestTickArena(), &pipeline);
+    ds_DynamicsTick(DynamicsTestTickArena(), &pipeline, NSEC_PER_SEC / 60);
     ds_PoolFlush(pipeline.event_pool);
     DLLFlush(pipeline.event_list);
     ds_ContactValidateAll(&pipeline);
@@ -1112,7 +1112,7 @@ static struct test_Output DynamicsContactTest(struct test_Environment *env)
     ds_ContactValidateAll(&pipeline);
     TEST_NOT_ZERO(ds_ContactLookup(&pipeline, contact_id).address == NULL && ds_ContactKeyLookup(&pipeline, key).address == NULL);
     TEST_NOT_ZERO(shape1->contact_list.count == 1 && pipeline.contact_pool.count == 1);
-    ds_DynamicsTick(DynamicsTestTickArena(), &pipeline);
+    ds_DynamicsTick(DynamicsTestTickArena(), &pipeline, NSEC_PER_SEC / 60);
     ds_PoolFlush(pipeline.event_pool);
     DLLFlush(pipeline.event_list);
     ds_ContactValidateAll(&pipeline);
@@ -1185,7 +1185,7 @@ static struct test_Output DynamicsIslandTest(struct test_Environment *env)
     {
         body[i] = DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, row + i, (v3f64) { 0 }, 2 + i);
     }
-    ds_DynamicsTick(DynamicsTestTickArena(), &pipeline);
+    ds_DynamicsTick(DynamicsTestTickArena(), &pipeline, NSEC_PER_SEC / 60);
     ds_PoolFlush(pipeline.event_pool);
     DLLFlush(pipeline.event_list);
     ds_IslandValidateAll(&pipeline);
@@ -1199,7 +1199,7 @@ static struct test_Output DynamicsIslandTest(struct test_Environment *env)
     /* the pipeline splits a flagged island once its bodies have rested for the sleep time threshold: let them settle */
     for (u32 t = 0; t < 600 && pipeline.island_pool.count < 2; ++t)
     {
-        ds_DynamicsTick(DynamicsTestTickArena(), &pipeline);
+        ds_DynamicsTick(DynamicsTestTickArena(), &pipeline, NSEC_PER_SEC / 60);
         ds_PoolFlush(pipeline.event_pool);
         DLLFlush(pipeline.event_list);
         ds_IslandValidateAll(&pipeline);
@@ -3382,7 +3382,7 @@ static void DynamicsWarmSceneRun(struct ds_DynamicsMetrics *sum, const struct dy
     u32 manifolds = 0;
     for (u32 t = 0; t < settle_ticks + measure_ticks; ++t)
     {
-        ds_DynamicsTick(DynamicsTestTickArena(), &pipeline);
+        ds_DynamicsTick(DynamicsTestTickArena(), &pipeline, NSEC_PER_SEC / 60);
         ds_PoolFlush(pipeline.event_pool);
         DLLFlush(pipeline.event_list);
         if (settle_ticks <= t)
@@ -3593,7 +3593,7 @@ static struct test_Output DynamicsSlideWarmTest(struct test_Environment *env)
     const f32 damp = 1.0f / (1.0f + pipeline.config.solver.linear_dampening * pipeline.timestep);
     for (u32 t = 0; t < ticks; ++t)
     {
-        ds_DynamicsTick(DynamicsTestTickArena(), &pipeline);
+        ds_DynamicsTick(DynamicsTestTickArena(), &pipeline, NSEC_PER_SEC / 60);
         ds_PoolFlush(pipeline.event_pool);
         DLLFlush(pipeline.event_list);
         coulomb = (coulomb + (g_t - mu * g_n) * pipeline.timestep) * damp;
@@ -3823,7 +3823,7 @@ static struct test_Output DynamicsJointBreakingTest(struct test_Environment *env
     u32 event_weak_count = 0;
     for (u32 t = 0; t < 60; ++t)
     {
-        ds_DynamicsTick(DynamicsTestTickArena(), &pipeline);
+        ds_DynamicsTick(DynamicsTestTickArena(), &pipeline, NSEC_PER_SEC / 60);
         for (i32 ei = pipeline.event_list.first; ei != DLL_SENTINEL; ei = pipeline.event_pool.buf[ei].node.next)
         {
             const struct ds_PhysicsEvent *event = pipeline.event_pool.buf + ei;
@@ -3847,7 +3847,7 @@ static struct test_Output DynamicsJointBreakingTest(struct test_Environment *env
     event_count = 0;
     for (u32 t = 0; t < 30; ++t)
     {
-        ds_DynamicsTick(DynamicsTestTickArena(), &pipeline);
+        ds_DynamicsTick(DynamicsTestTickArena(), &pipeline, NSEC_PER_SEC / 60);
         for (i32 ei = pipeline.event_list.first; ei != DLL_SENTINEL; ei = pipeline.event_pool.buf[ei].node.next)
         {
             event_count += (pipeline.event_pool.buf[ei].type == PHYSICS_EVENT_JOINT_BREAKING);
@@ -4042,7 +4042,7 @@ static void *DynamicsPerfPrepInit(void)
 
     for (u32 t = 0; t < DYNAMICS_PERF_SETTLE_TICKS; ++t)
     {
-        ds_DynamicsTick(DynamicsTestTickArena(), &in->pipeline);
+        ds_DynamicsTick(DynamicsTestTickArena(), &in->pipeline, NSEC_PER_SEC / 60);
         ds_PoolFlush(in->pipeline.event_pool);
         DLLFlush(in->pipeline.event_list);
     }
@@ -4249,7 +4249,7 @@ static void DynamicsPerfSnapshotBuild(const enum dynamics_PerfScene scene)
 
     for (u32 t = 0; t < DYNAMICS_PERF_SETTLE_TICKS; ++t)
     {
-        ds_DynamicsTick(DynamicsTestTickArena(), &pipeline);
+        ds_DynamicsTick(DynamicsTestTickArena(), &pipeline, NSEC_PER_SEC / 60);
         ds_PoolFlush(pipeline.event_pool);
         DLLFlush(pipeline.event_list);
     }

@@ -41,7 +41,7 @@ Example (repetition testing):
             snap.bit_index = 0;                                 // rewind
             ds_DynamicsTryDeserialize(mem, &snap, &copy, pipeline->external);  // restore (setup, not measured)
             ds_DynamicsConfigPush(&copy);
-            ds_DynamicsTick(srv_frame, &copy);                  // zone of interest
+            ds_DynamicsTick(srv_frame, &copy, copy.ns_tick);    // zone of interest
             ds_DynamicsDealloc(&copy);                             // worker frames are heap allocated
             ArenaPopRecord(mem);
         }

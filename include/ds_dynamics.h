@@ -2168,8 +2168,9 @@ void			ds_DynamicsFlush(struct ds_Dynamics *pipeline);
  * contact promotion/demotion, at most one island split, the solver, proxy updates (or a rebuild of the
  * dynamic BVH), contact removal, the sleep bookkeeping. The pipeline must be pushed (ds_DynamicsConfigPush).
  * srv_frame is the server's frame arena, the tick's scratch memory: pushed on during the tick, left at its mark on return.
+ * ns_tick is the frame's duration: the pipeline's ns_tick and timestep are set from it.
  */
-void 			ds_DynamicsTick(struct arena *srv_frame, struct ds_Dynamics *pipeline);
+void 			ds_DynamicsTick(struct arena *srv_frame, struct ds_Dynamics *pipeline, const u64 ns_tick);
 /* Hash bodies in order from low to high and return the final hash  */
 u64             ds_DynamicsHash(const struct ds_Dynamics *pipeline);
 /* validate and ds_Assert internal state of physics pipeline */

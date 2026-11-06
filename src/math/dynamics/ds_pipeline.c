@@ -1930,11 +1930,13 @@ void ds_DynamicsProfilePrint(FILE *file, const struct ds_DynamicsProfile *p)
 }
 
 
-void ds_DynamicsTick(struct arena *srv_frame, struct ds_Dynamics *pipeline)
+void ds_DynamicsTick(struct arena *srv_frame, struct ds_Dynamics *pipeline, const u64 ns_tick)
 {
 	ProfZone;
 
     ds_Assert(g_dynamics_config == &pipeline->config);
+    pipeline->ns_tick = ns_tick;
+    pipeline->timestep = (f32) ns_tick / NSEC_PER_SEC;
     ds_Assert(pipeline->runtime.srv_frame == NULL);
     pipeline->runtime.srv_frame = srv_frame;
     ArenaPushRecord(srv_frame);

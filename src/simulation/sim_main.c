@@ -309,7 +309,7 @@ void ds_SimTick(struct arena *srv_frame, struct ds_Sim *sim, ds_CPool(u64) *hash
         {
             case SIM_SYSTEM_DYNAMICS:
             {
-                ds_DynamicsTick(srv_frame, &sim->dynamics);
+                ds_DynamicsTick(srv_frame, &sim->dynamics, 1000 * sim->us_system_tick[SIM_SYSTEM_DYNAMICS]);
             } break;
 
             case SIM_SYSTEM_GAME:
