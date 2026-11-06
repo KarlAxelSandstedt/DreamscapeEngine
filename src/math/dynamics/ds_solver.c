@@ -264,7 +264,7 @@ void ds_BodyUpdateOrientationRange(struct ds_Dynamics *pipeline, struct ds_Proxy
 {
     ProfZone;
 
-    struct arena *frame = pipeline->runtime.worker[ds_ThreadSelfIndex()].frame;
+    struct arena *frame = pipeline->runtime->worker[ds_ThreadSelfIndex()].frame;
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
     struct ds_Shape *shape = NULL;
 
@@ -332,7 +332,7 @@ void ds_BodyUpdateOrientationRange(struct ds_Dynamics *pipeline, struct ds_Proxy
 
     ArenaPopPacked(frame, sizeof(struct ds_ProxyDirty)*(arr.len - proxy_range->count));
 
-    if (pipeline->runtime.draw_config.draw_body_axes)
+    if (pipeline->runtime->draw_config.draw_body_axes)
     {
         ds_BodyDrawRange(pipeline, low, high);
     }
@@ -346,7 +346,7 @@ void ds_ContactConstraintInitRange(struct ds_Dynamics *pipeline, const u32 color
 
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
     struct ds_CGraph *cg = &pipeline->cgraph;
-    struct arena *frame = pipeline->runtime.worker[ds_ThreadSelfIndex()].frame;
+    struct arena *frame = pipeline->runtime->worker[ds_ThreadSelfIndex()].frame;
 
     struct ds_CGraphColor *color = cg->color + color_index;
     for (u32 ci = low; ci < high; ++ci)
@@ -753,10 +753,10 @@ void ds_PositionConstraintInitAndCacheImpulsesRange(struct ds_Dynamics *pipeline
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
     struct ds_CGraph *cg = &pipeline->cgraph;
     struct ds_CGraphColor *color = cg->color + color_index;
-    struct arena *frame = pipeline->runtime.worker[ds_ThreadSelfIndex()].frame;
+    struct arena *frame = pipeline->runtime->worker[ds_ThreadSelfIndex()].frame;
 
     /* the levers leave world axes below */
-    if (pipeline->runtime.draw_config.draw_constraint_points || pipeline->runtime.draw_config.draw_contact_forces)
+    if (pipeline->runtime->draw_config.draw_constraint_points || pipeline->runtime->draw_config.draw_contact_forces)
     {
         ds_ContactDrawRange(pipeline, color_index, low, high);
     }

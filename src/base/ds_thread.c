@@ -38,7 +38,7 @@ const char *thread_profiler_id[] =
 ds_StaticAssert(sizeof(thread_profiler_id) / sizeof(thread_profiler_id[0]) == DS_THREAD_COUNT_MAX, "one profiler name per thread index");
 
 
-static void ds_ThreadAllocMemory(struct arena *mem, struct ds_Thread *thr, const u64 frame_size, const u64 scratch_size, const u32 scratch_count)
+static void ds_ThreadAllocMemory(struct arena *mem, struct ds_Thread *thr, const u64 scratch_size, const u32 scratch_count)
 {
     thr->scratch_next = 0;
     thr->scratch_count = scratch_count;
@@ -47,13 +47,9 @@ static void ds_ThreadAllocMemory(struct arena *mem, struct ds_Thread *thr, const
     {
         thr->scratch[i] = ArenaAlloc(mem, scratch_size);
     }
-    thr->frame_arr[0] = ArenaAlloc(mem, frame_size);
-    thr->frame_arr[1] = ArenaAlloc(mem, frame_size);
-    thr->frame_index = 0;
-    thr->frame = thr->frame_arr + thr->frame_index;
     ArenaPush(mem, DS_CACHE_LINE);
 
-    if (!thr->scratch || !thr->scratch[thr->scratch_count-1].stack_ptr || !thr->frame_arr[1].stack_ptr)
+    if (!thr->scratch || !thr->scratch[thr->scratch_count-1].stack_ptr)
     {
 		LogString(T_SYSTEM, S_FATAL, "Failed to alloc thread memory, aborting.");
 		FatalCleanupAndExit();
@@ -80,13 +76,6 @@ void ArenaPopScratch(void)
     g_tl_self->scratch_next -= 1;
 }
 
-void ArenaSwitchAndFlushFrame(void)
-{
-    g_tl_self->frame_index = 1 - g_tl_self->frame_index;
-    g_tl_self->frame = g_tl_self->frame_arr + g_tl_self->frame_index;
-    ArenaFlush(g_tl_self->frame);
-}
-
 #if __DS_PLATFORM__ == __DS_LINUX__ ||__DS_PLATFORM__ == __DS_WEB__
 
 #include <unistd.h>
@@ -106,7 +95,7 @@ static void *ds_ThreadCloneStart(void *void_thr)
 	return NULL;
 }
 
-void ds_ThreadMasterInit(struct arena *mem, const u64 frame_size, const u64 scratch_size, const u32 scratch_count)
+void ds_ThreadMasterInit(struct arena *mem, const u64 scratch_size, const u32 scratch_count)
 {
 	ds_AssertString(g_tl_self == NULL, "ds_ThreadMasterInit runs once");
 	ds_AssertString(AtomicLoadRlx32(&a_index_counter) == 1, "no ds_ThreadClone before ds_ThreadMasterInit (ds_Init)");
@@ -115,13 +104,13 @@ void ds_ThreadMasterInit(struct arena *mem, const u64 frame_size, const u64 scra
 	g_tl_self->gtid = getpid();
 	g_tl_self->tid = gettid();
 	g_tl_self->index = 0;
-    ds_ThreadAllocMemory(mem, g_tl_self, frame_size, scratch_size, scratch_count);
+    ds_ThreadAllocMemory(mem, g_tl_self, scratch_size, scratch_count);
 	DmgDtoaThreadInit(0);
 
 	ProfThreadNamed(thread_profiler_id[g_tl_self->index]);
 }
 
-ds_Thread *ds_ThreadClone(struct arena *mem, void (*start)(ds_Thread *), void *args, const u64 stack_size, const u64 frame_size, const u64 scratch_size, const u32 scratch_count)
+ds_Thread *ds_ThreadClone(struct arena *mem, void (*start)(ds_Thread *), void *args, const u64 stack_size, const u64 scratch_size, const u32 scratch_count)
 {
 	ds_Assert(stack_size > 0);
 
@@ -150,7 +139,7 @@ ds_Thread *ds_ThreadClone(struct arena *mem, void (*start)(ds_Thread *), void *a
 	thr->stack_size = (stack_size % g_arch_config->pagesize == 0) 
 				? stack_size 
 				: stack_size + (g_arch_config->pagesize - stack_size % g_arch_config->pagesize);
-    ds_ThreadAllocMemory(mem, thr, frame_size, scratch_size, scratch_count);
+    ds_ThreadAllocMemory(mem, thr, scratch_size, scratch_count);
 
 	pthread_attr_t attr;
 	if (pthread_attr_init(&attr) != 0)
@@ -222,20 +211,20 @@ DWORD WINAPI ds_ThreadCloneStart(LPVOID void_thr)
 	return 0;
 }
 
-void ds_ThreadMasterInit(struct arena *mem, const u64 frame_size, const u64 scratch_size, const u32 scratch_count)
+void ds_ThreadMasterInit(struct arena *mem, const u64 scratch_size, const u32 scratch_count)
 {
 	ds_AssertString(g_tl_self == NULL, "ds_ThreadMasterInit runs once");
 	ds_AssertString(AtomicLoadRlx32(&a_index_counter) == 1, "no ds_ThreadClone before ds_ThreadMasterInit (ds_Init)");
 	g_tl_self = ArenaPush(mem, sizeof(struct ds_Thread));
 	g_tl_self->tid = GetCurrentThreadId();
 	g_tl_self->index = 0;
-    ds_ThreadAllocMemory(mem, g_tl_self, frame_size, scratch_size, scratch_count);
+    ds_ThreadAllocMemory(mem, g_tl_self, scratch_size, scratch_count);
 	DmgDtoaThreadInit(0);
 
 	ProfThreadNamed(thread_profiler_id[g_tl_self->index]);
 }
 
-ds_Thread *ds_ThreadClone(struct arena *mem, void (*start)(ds_Thread *), void *args, const u64 stack_size, const u64 frame_size, const u64 scratch_size, const u32 scratch_count)
+ds_Thread *ds_ThreadClone(struct arena *mem, void (*start)(ds_Thread *), void *args, const u64 stack_size, const u64 scratch_size, const u32 scratch_count)
 {
 	ds_Assert(stack_size > 0);
 
@@ -264,7 +253,7 @@ ds_Thread *ds_ThreadClone(struct arena *mem, void (*start)(ds_Thread *), void *a
 	thr->stack_size = (stack_size % g_arch_config->pagesize == 0) 
 				? stack_size 
 				: stack_size + (g_arch_config->pagesize - stack_size % g_arch_config->pagesize);
-    ds_ThreadAllocMemory(mem, thr, frame_size, scratch_size, scratch_count);
+    ds_ThreadAllocMemory(mem, thr, scratch_size, scratch_count);
 
   	LPSECURITY_ATTRIBUTES   lpThreadAttributes = NULL; 	/* default attributes */
   	DWORD                   dwCreationFlags = 0;		/* default creation flags */

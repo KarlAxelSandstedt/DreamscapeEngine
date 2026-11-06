@@ -19,6 +19,7 @@
 
 #include <string.h>
 #include "led_local.h"
+#include "ds_init.h"
 
 struct led g_editor_storage = { 0 };
 struct led *g_editor = &g_editor_storage;
@@ -66,7 +67,7 @@ const char *point_color_mode_str_buf[DRAW_POINT_COLOR_MODE_COUNT] =
 const char **point_color_mode_str = point_color_mode_str_buf;
 
 
-struct led *led_Alloc(const u32 thread_count, const u64 thread_framesize, const utf8 simulation_path, const utf8 record_path, const utf8 replay_path, const utf8 hash_path)
+struct led *led_Alloc(const utf8 simulation_path, const utf8 record_path, const utf8 replay_path, const utf8 hash_path)
 {
 	ds_Assert(!(record_path.size && replay_path.size));
 	ds_Assert(!simulation_path.size);     /* TODO an initial simulation state, with record only */
@@ -135,7 +136,7 @@ struct led *led_Alloc(const u32 thread_count, const u64 thread_framesize, const 
 	ds_SDBAlloc(NULL, g_editor->body_prefab_db, 32, GROWABLE);
 	c_ShapeDBAlloc(NULL, &g_editor->cs_db, 32, GROWABLE);
 	DLLFlush(g_editor->cs_shape_list);
-	ds_ServerAlloc(&g_editor->srv, 32*1024*1024, 1);     /* the arrivals and the ticks' scratch memory */
+	ds_ServerAlloc(&g_editor->srv, g_config->server_framesize, 1);
 	struct ds_SimConfig sim_config = ds_SimConfigDefault();
 	sim_config.dynamics.initial_size = 1024;
 	const enum ds_SimMode mode = (record_path.size) ? SIM_MODE_RECORD : (replay_path.size) ? SIM_MODE_REPLAY : SIM_MODE_NONE;
@@ -143,7 +144,7 @@ struct led *led_Alloc(const u32 thread_count, const u64 thread_framesize, const 
 	                        : (mode == SIM_MODE_REPLAY) ? CstrUtf8(&g_editor->mem_persistent, replay_path) : NULL;
 	const char *hash_cstr = (hash_path.size) ? CstrUtf8(&g_editor->mem_persistent, hash_path) : NULL;
 	g_editor->dynamics_external = (struct ds_DynamicsExternal) { .cshape_db = &g_editor->cs_db };
-	g_editor->sim = ds_SimHostAdd(&g_editor->srv, &g_editor->mem_persistent, (mode == SIM_MODE_REPLAY) ? NULL : &sim_config, mode, record_cstr, hash_cstr != NULL, hash_cstr, &g_editor->dynamics_external, &g_editor->body_prefab_db, &g_editor->shape_prefab_db, thread_count, thread_framesize);
+	g_editor->sim = ds_SimHostAdd(&g_editor->srv, &g_editor->mem_persistent, (mode == SIM_MODE_REPLAY) ? NULL : &sim_config, mode, record_cstr, hash_cstr != NULL, hash_cstr, &g_editor->dynamics_external, &g_editor->body_prefab_db, &g_editor->shape_prefab_db);
 	struct ds_SimHost *host = ds_SimHostLookup(&g_editor->srv, g_editor->sim).address;
 	host->speed = 0.0;
 	g_editor->physics = &host->sim.dynamics;

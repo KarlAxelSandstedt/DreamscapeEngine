@@ -50,7 +50,7 @@ extern "C" {
  * report, and the job scheduler with thread_count workers and the given per-thread arena sizes. Called by ds_Init and
  * ds_Shutdown (ds_init.h), not by programs.
  */
-void 	ds_PlatformApiInit(struct arena *mem, const u64 framesize, const u64 scratchsize, const u32 scratch_count, const u32 thread_count);
+void 	ds_PlatformApiInit(struct arena *mem, const u64 scratchsize, const u32 scratch_count, const u32 thread_count);
 void 	ds_PlatformApiShutdown(void);
 
 

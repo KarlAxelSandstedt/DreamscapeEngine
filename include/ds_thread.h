@@ -20,7 +20,7 @@
 /*
 ds_thread.h
 ===========
-Engine threads (pthreads, Windows threads): an index in clone order and per-thread scratch and frame
+Engine threads (pthreads, Windows threads): an index in clone order and per-thread scratch
 arenas. ds_Init sets up the main thread (index 0) and the job scheduler clones the workers; the rules for
 indices and for threads the engine didn't create are in ds_init.h.
 */
@@ -72,9 +72,6 @@ struct ds_Thread
     u32             scratch_next;
     u32             scratch_count;
     struct arena *  scratch;
-    struct arena    frame_arr[2];   /* Double buffered frame arena for easy caching */
-    struct arena *  frame;
-    u32             frame_index;
 };
 
 #elif __DS_PLATFORM__ == __DS_WIN64__
@@ -96,9 +93,6 @@ struct ds_Thread
     u32             scratch_next;
     u32             scratch_count;
     struct arena *  scratch;
-    struct arena    frame_arr[2];   /* Double buffered frame arena for easy caching */
-    struct arena *  frame;
-    u32             frame_index;
 };
 
 #endif
@@ -107,17 +101,15 @@ struct ds_Thread
 struct arena *  ArenaPushScratch(void);
 /* Pop thread owned Scratch Arena: the latest one pushed (LIFO) */
 void            ArenaPopScratch(void);
-/* Switch thread owned frame arenas and clear the switched in arena. */
-void            ArenaSwitchAndFlushFrame(void);
 
 /* Alloc and initiate master thread information (index 0, arenas on mem); should only be called once, before any ds_ThreadClone! */
-void        ds_ThreadMasterInit(struct arena *mem, const u64 framesize, const u64 scratch_size, const u32 scratch_count);
+void        ds_ThreadMasterInit(struct arena *mem, const u64 scratch_size, const u32 scratch_count);
 /*
  * Alloc and initiate thread. On success, return valid address. On failure, Fatally cleanup and exit.
  * The thread's index is the next one in clone order (< DS_THREAD_COUNT_MAX), assigned before the thread starts;
  * the stack size is rounded up to whole pages.
  */
-ds_Thread * ds_ThreadClone(struct arena *mem, void (*start)(ds_Thread *), void *args, const u64 stack_size, const u64 frame_size, const u64 scratch_size, const u32 scratch_count);
+ds_Thread * ds_ThreadClone(struct arena *mem, void (*start)(ds_Thread *), void *args, const u64 stack_size, const u64 scratch_size, const u32 scratch_count);
 /* Exit calling thread (its g_tl_self becomes NULL) */
 void		ds_ThreadExit(void);
 /* Wait for given thread to finish execution; once per thread (Windows closes its handle) */

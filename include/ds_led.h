@@ -260,7 +260,7 @@ extern u32	cmd_led_stop;
  * the record, the editor pushes no commands until it ends), neither in NONE; a hash path writes (RECORD) or
  * compares (REPLAY) the tick hashes. simulation_path: TODO (an initial simulation state), unused.
  */
-struct led *led_Alloc(const u32 thread_count, const u64 thread_framesize, const utf8 simulation_path, const utf8 record_path, const utf8 replay_path, const utf8 hash_path);
+struct led *led_Alloc(const utf8 simulation_path, const utf8 record_path, const utf8 replay_path, const utf8 hash_path);
 /* deallocate led resources */
 void		led_Dealloc(struct led *led);
 

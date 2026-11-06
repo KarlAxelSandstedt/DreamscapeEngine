@@ -42,10 +42,11 @@ static struct ds_RuntimeConfig ds_ConfigDefault(void)
     struct ds_RuntimeConfig config = { 0 };
     config.persistent_size = 256*1024*1024;
     config.thread_count = 0;
-    config.thread_framesize = 4*1024*1024;
     config.thread_scratchsize = 1*1024*1024;
     config.thread_scratch_count = 5;
     config.headless = 0;
+    config.dynamics_worker_framesize = 4*1024*1024;
+    config.server_framesize = 32*1024*1024;
     return config;
 }
 
@@ -92,10 +93,11 @@ static const struct
     DS_CONFIG_FIELD(rng_seed,                 DS_CONFIG_FIELD_U64, 4, 0, U64_MAX, "Xoshiro256Init seed, 4 words; all 0: system entropy"),
     DS_CONFIG_FIELD(persistent_size,      DS_CONFIG_FIELD_U64, 1, 1, U64_MAX, "engine persistent arena, bytes"),
     DS_CONFIG_FIELD(thread_count,         DS_CONFIG_FIELD_U32, 1, 0, U32_MAX, "workers including the main thread; 0: logical cores - 2"),
-    DS_CONFIG_FIELD(thread_framesize,     DS_CONFIG_FIELD_U64, 1, 1, U64_MAX, "per-thread frame arena, bytes"),
     DS_CONFIG_FIELD(thread_scratchsize,   DS_CONFIG_FIELD_U64, 1, 1, U64_MAX, "per-thread scratch arena, bytes"),
     DS_CONFIG_FIELD(thread_scratch_count, DS_CONFIG_FIELD_U32, 1, 1, U32_MAX, "per-thread scratch arenas"),
     DS_CONFIG_FIELD(headless,             DS_CONFIG_FIELD_U32, 1, 0, 1,       "1: no graphics (SDL, windows, UI, GL)"),
+    DS_CONFIG_FIELD(dynamics_worker_framesize, DS_CONFIG_FIELD_U64, 1, 1, U64_MAX, "per dynamics worker frame arena, bytes"),
+    DS_CONFIG_FIELD(server_framesize,     DS_CONFIG_FIELD_U64, 1, 1, U64_MAX, "server frame arena (arrivals and the ticks' scratch), bytes"),
 };
 
 #define DS_CONFIG_FIELD_COUNT   (sizeof(g_config_field) / sizeof(g_config_field[0]))
@@ -499,7 +501,7 @@ void ds_Init(const int argc, char *argv[])
     }
 
     LogInit(&g_init_persistent, log_path);
-    ds_ThreadMasterInit(&g_init_persistent, config->thread_framesize, config->thread_scratchsize, config->thread_scratch_count);
+    ds_ThreadMasterInit(&g_init_persistent, config->thread_scratchsize, config->thread_scratch_count);
 
     /* before ds_PlatformApiInit: workers derive their RNG streams from it when they start */
     if (config->rng_seed[0] == 0 && config->rng_seed[1] == 0 && config->rng_seed[2] == 0 && config->rng_seed[3] == 0)
@@ -539,12 +541,12 @@ void ds_Init(const int argc, char *argv[])
     config->thread_count = (config->thread_count > DS_THREAD_COUNT_MAX) ? DS_THREAD_COUNT_MAX : config->thread_count;
     g_config = config;
 
-    Log(T_SYSTEM, S_NOTE, "ds_Init: rng_seed (%lu, %lu, %lu, %lu), %u workers, persistent %lu B, thread frame %lu B, scratch %u x %lu B, headless %u",
+    Log(T_SYSTEM, S_NOTE, "ds_Init: rng_seed (%lu, %lu, %lu, %lu), %u workers, persistent %lu B, scratch %u x %lu B, headless %u, dynamics worker frame %lu B, server frame %lu B",
         config->rng_seed[0], config->rng_seed[1], config->rng_seed[2], config->rng_seed[3], config->thread_count,
-        config->persistent_size, config->thread_framesize, config->thread_scratch_count, config->thread_scratchsize,
-        config->headless);
+        config->persistent_size, config->thread_scratch_count, config->thread_scratchsize,
+        config->headless, config->dynamics_worker_framesize, config->server_framesize);
 
-    ds_PlatformApiInit(&g_init_persistent, config->thread_framesize, config->thread_scratchsize, config->thread_scratch_count, config->thread_count);
+    ds_PlatformApiInit(&g_init_persistent, config->thread_scratchsize, config->thread_scratch_count, config->thread_count);
     ds_CmdApiInit();
     ds_UiApiInit();
     if (!config->headless)

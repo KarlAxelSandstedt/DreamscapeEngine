@@ -217,7 +217,6 @@ static void ds_MainLoop(void)
 
 	ds_DeallocTaggedWindows();
 
-    ds_JobSchedulerFrameClear();
 
 	ds_ProcessEvents();
 
@@ -245,7 +244,7 @@ int main(int argc, char *argv[])
     g_test = ds_DeterminismProcessArguments(&g_persistent);
     fprintf(stderr, "scene origin: (%.17g, %.17g, %.17g)\n", g_test.origin.x, g_test.origin.y, g_test.origin.z);
 
-	g_editor = led_Alloc(g_config->thread_count, g_config->thread_framesize, g_argv[ARGV_SIMULATION], g_argv[ARGV_RECORD], g_argv[ARGV_REPLAY], g_argv[ARGV_HASH]);
+	g_editor = led_Alloc(g_argv[ARGV_SIMULATION], g_argv[ARGV_RECORD], g_argv[ARGV_REPLAY], g_argv[ARGV_HASH]);
     g_editor->scene_origin = g_test.origin;
 
 	const u64 renderer_framerate = 144;	

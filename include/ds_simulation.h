@@ -235,6 +235,7 @@ struct ds_Sim
     u64                     us_time;            /* Simulation time                          */
     u64                     us_delta;           /* Simulation time delta                    */
 
+    struct ds_DynamicsRuntime dynamics_runtime;
     struct ds_Dynamics      dynamics;
     //struct ds_Game          game;             /* TODO: ds_Game undefined */
     ds_SDB(ds_BodyPrefab)  *body_prefab_db;     /* externally owned */
@@ -250,9 +251,9 @@ struct ds_Sim
 /*
  * Allocate a new simulation from config (ds_SimConfigCheck asserted) at time 0: the systems' runtimes go on mem (NULL:
  * the heap), the seed batch is the first external command and the first system ticks are one period in. The databases
- * are externally owned and must outlive sim; worker_count and worker_frame_size are passed on to ds_DynamicsAlloc.
+ * are externally owned and must outlive sim.
  */
-void    ds_SimAlloc(struct arena *mem, struct ds_Sim *sim, const struct ds_SimConfig *config, const struct ds_DynamicsExternal *external, ds_SDB(ds_BodyPrefab) *prefab_db, ds_SDB(ds_ShapePrefab) *shape_prefab_db, const u32 worker_count, const u64 worker_frame_size);
+void    ds_SimAlloc(struct arena *mem, struct ds_Sim *sim, const struct ds_SimConfig *config, const struct ds_DynamicsExternal *external, ds_SDB(ds_BodyPrefab) *prefab_db, ds_SDB(ds_ShapePrefab) *shape_prefab_db);
 //TODO
 //void    ds_SimAllocReplay(struct ds_Sim *sim, struct ds_SimReplay *replay);
 /* Free the simulation's heap resources. */
@@ -261,11 +262,11 @@ void    ds_SimDealloc(struct ds_Sim *sim);
 void    ds_SimFlush(struct ds_Sim *sim);
 /*
  * Advance the simulation by us_delta of simulation time: the frame's external commands cmds (may be empty) execute
- * first, at the current time, then every system tick that is due. tick is the ticks' scratch memory: each system tick
+ * first, at the current time, then every system tick that is due. srv_frame is the server's frame arena, the ticks' scratch memory: each system tick
  * runs between a push and a pop of a record on it. Optional(hash_pool): If non-null, hashes are generated
  * per-subsystem tick (of the tick's time, system and ds_SimHash) and pushed onto it.
  */
-void    ds_SimTick(struct arena *tick, struct ds_Sim *sim, ds_CPool(u64) *hash_pool, const ds_CPool(ds_SimCmd) *cmds, const u64 us_delta);
+void    ds_SimTick(struct arena *srv_frame, struct ds_Sim *sim, ds_CPool(u64) *hash_pool, const ds_CPool(ds_SimCmd) *cmds, const u64 us_delta);
 /* Return the hash of the simulation's state (every system's state hash). */
 u64     ds_SimHash(const struct ds_Sim *sim);
 /* TODO(Remove/Refactor) Return the body added for entity (SIM_CMD_BODY_ADD), or the null id. */

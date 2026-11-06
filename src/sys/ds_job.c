@@ -72,7 +72,6 @@ static void ds_WSDequeStaticAssert(void)
 static void ds_WorkerStaticAssert(void)
 {
     ds_StaticAssert((u64) &((struct ds_Worker *)0)->thr == 0, "");
-    ds_StaticAssert((u64) &((struct ds_Worker *)0)->a_mem_frame_switch < DS_CACHE_LINE, "");
     ds_StaticAssert(sizeof(struct ds_Worker) == DS_CACHE_LINE, "Unexpected size of ds_Worker");
 }
 
@@ -309,12 +308,6 @@ static void ds_WorkerRunJob(const ds_JobId job)
 
 static void ds_TrySeedAndRunJobs(struct ds_Worker *w, const u32 thread)
 {
-    if (AtomicLoadRlx32(&w->a_mem_frame_switch))
-    {
-        AtomicStoreRlx32(&w->a_mem_frame_switch, 0);
-        ArenaSwitchAndFlushFrame();
-    }
-
     /* When we get here, we know for sure that the deque we own is empty. We check if there are any special
      * seed tasks to grab, and seed of deque if that is the case. */
 
@@ -412,11 +405,11 @@ void ds_MasterRunAvailableJobs(void)
     ds_TrySeedAndRunJobs(g_scheduler->worker + 0, 0);
 }
 
-void ds_JobSchedulerInit(struct arena *mem_persistent, const u32 thread_count, const u64 stacksize, const u64 framesize, const u64 scratchsize, const u32 scratch_count, const u64 initial_deque_size)
+void ds_JobSchedulerInit(struct arena *mem_persistent, const u32 thread_count, const u64 stacksize, const u64 scratchsize, const u32 scratch_count, const u64 initial_deque_size)
 {
 	Log(T_SYSTEM, S_NOTE, "ds_JobScheduler worker count: %u", thread_count);
 
-    /* zeroed: workers read a_running and a_mem_frame_switch as soon as they start */
+    /* zeroed: workers read a_running as soon as they start */
     g_scheduler = ArenaPushAlignedZero(mem_persistent, sizeof(struct ds_JobScheduler), DS_CACHE_LINE);
     g_scheduler->worker_count = thread_count;
 	g_scheduler->worker = ArenaPushAlignedZero(mem_persistent, thread_count*sizeof(struct ds_Worker), DS_CACHE_LINE);	
@@ -446,7 +439,7 @@ void ds_JobSchedulerInit(struct arena *mem_persistent, const u32 thread_count, c
 	for (u32 i = 1; i < thread_count; ++i)
 	{
 		/* indices are assigned in clone order, so clone i is thread index i */
-		const ds_Thread *thr = ds_ThreadClone(mem_persistent, ds_WorkerMain, g_scheduler->worker + i, stacksize, framesize, scratchsize, scratch_count);
+		const ds_Thread *thr = ds_ThreadClone(mem_persistent, ds_WorkerMain, g_scheduler->worker + i, stacksize, scratchsize, scratch_count);
 		ds_AssertString(ds_ThreadIndex(thr) == i, "no other ds_ThreadClone before the scheduler's workers");
 	}
 
@@ -480,14 +473,6 @@ void ds_JobSchedulerShutdown(void)
 
 	SemaphoreDestroy(&g_scheduler->jobs_are_available);
     SemaphoreDestroy(&g_scheduler->phase_completed);
-}
-
-void ds_JobSchedulerFrameClear(void)
-{
-	for (u32 i = 0; i < g_scheduler->worker_count; ++i)
-	{
-		AtomicStoreRel32(&g_scheduler->worker[i].a_mem_frame_switch, 1);
-	}
 }
 
 void ds_JobPhaseAlloc(struct arena *mem, struct ds_JobPhase *phase, const u32 job_type_count, ds_JobDispatchFunction dispatch)

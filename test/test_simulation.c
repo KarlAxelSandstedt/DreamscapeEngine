@@ -330,7 +330,7 @@ static struct test_Output SimTickTest(struct test_Environment *env)
     const u64 period = config.us_system_tick[SIM_SYSTEM_DYNAMICS];
 
     struct ds_Sim sim;
-    ds_SimAlloc(NULL, &sim, &config, &external, &prefab_db, &shape_prefab_db, g_config->thread_count, g_config->thread_framesize);
+    ds_SimAlloc(NULL, &sim, &config, &external, &prefab_db, &shape_prefab_db);
     TEST_EQUAL(0, sim.us_time);
     TEST_EQUAL(1000 * period, sim.dynamics.ns_tick);
     /* the seed batch ran inside ds_SimAlloc: time still 0, the first dynamics tick a period out */
@@ -704,8 +704,8 @@ static struct test_Output SimCmdSerializeTest(struct test_Environment *env)
 /* Run a zero-delta frame with the pool as the frame's commands. */
 static void SimTestBatch(struct ds_Sim *sim, const ds_CPool(ds_SimCmd) *pool)
 {
-    struct arena *tick = ArenaPushScratch();
-    ds_SimTick(tick, sim, NULL, pool, 0);
+    struct arena *srv_frame = ArenaPushScratch();
+    ds_SimTick(srv_frame, sim, NULL, pool, 0);
     ArenaPopScratch();
 }
 
@@ -731,7 +731,7 @@ static struct test_Output SimConfigLoadTest(struct test_Environment *env)
     config.dynamics.initial_size = 32;
     const u32 iterations = config.dynamics.solver.pgs_iteration_count;
     struct ds_Sim sim;
-    ds_SimAlloc(NULL, &sim, &config, &external, &prefab_db, &shape_prefab_db, g_config->thread_count, g_config->thread_framesize);
+    ds_SimAlloc(NULL, &sim, &config, &external, &prefab_db, &shape_prefab_db);
     TEST_EQUAL(1, sim.initialized);     /* the seed batch ran */
     TEST_EQUAL(iterations, sim.dynamics.config.solver.pgs_iteration_count);
 
@@ -806,7 +806,7 @@ static struct test_Output ServerClockTest(struct test_Environment *env)
 
     struct ds_Server srv;
     ds_ServerAlloc(&srv, 16*1024*1024, 2);
-    const ds_SimId id = ds_SimHostAdd(&srv, &mem, &config, SIM_MODE_NONE, NULL, 0, NULL, &external, &prefab_db, &shape_prefab_db, g_config->thread_count, g_config->thread_framesize);
+    const ds_SimId id = ds_SimHostAdd(&srv, &mem, &config, SIM_MODE_NONE, NULL, 0, NULL, &external, &prefab_db, &shape_prefab_db);
     struct ds_SimHost *host = ds_SimHostLookup(&srv, id).address;
     struct ds_Sim *sim = &host->sim;
     TEST_TRUE(host != NULL && host->record_mode == SIM_MODE_NONE && host->speed == 1.0 && sim->initialized);
@@ -875,7 +875,7 @@ static struct test_Output ServerDoorTest(struct test_Environment *env)
 
     struct ds_Server srv;
     ds_ServerAlloc(&srv, 16*1024*1024, 2);
-    const ds_SimId id = ds_SimHostAdd(&srv, &mem, &config, SIM_MODE_NONE, NULL, 0, NULL, &external, &prefab_db, &shape_prefab_db, g_config->thread_count, g_config->thread_framesize);
+    const ds_SimId id = ds_SimHostAdd(&srv, &mem, &config, SIM_MODE_NONE, NULL, 0, NULL, &external, &prefab_db, &shape_prefab_db);
     struct ds_SimHost *host = ds_SimHostLookup(&srv, id).address;
     struct ds_Sim *sim = &host->sim;
     TEST_EQUAL(NULL, ds_SimHostLookup(&srv, ds_SimIdInit(1, 0)).address);
@@ -994,7 +994,7 @@ static struct test_Output ServerRecordTest(struct test_Environment *env)
 
     struct ds_Server srv;
     ds_ServerAlloc(&srv, 16*1024*1024, 2);
-    const ds_SimId id = ds_SimHostAdd(&srv, &mem, &config, SIM_MODE_RECORD, "agent_test_record.bin", 0, NULL, &external, &prefab_db, &shape_prefab_db, g_config->thread_count, g_config->thread_framesize);
+    const ds_SimId id = ds_SimHostAdd(&srv, &mem, &config, SIM_MODE_RECORD, "agent_test_record.bin", 0, NULL, &external, &prefab_db, &shape_prefab_db);
     TEST_EQUAL(0, ds_SimIdNullCheck(id));
     struct ds_SimHost *host = ds_SimHostLookup(&srv, id).address;
     TEST_EQUAL(SIM_MODE_RECORD, host->record_mode);
@@ -1100,7 +1100,7 @@ static struct test_Output ServerReplayTest(struct test_Environment *env)
 
     /* record: 8 frames of half a period */
     struct arena mem = ArenaAlloc(NULL, 2*1024*1024);
-    const ds_SimId id = ds_SimHostAdd(&srv, &mem, &config, SIM_MODE_RECORD, "agent_test_replay.bin", 1, "agent_test_hash.bin", &external, &prefab_db, &shape_prefab_db, g_config->thread_count, g_config->thread_framesize);
+    const ds_SimId id = ds_SimHostAdd(&srv, &mem, &config, SIM_MODE_RECORD, "agent_test_replay.bin", 1, "agent_test_hash.bin", &external, &prefab_db, &shape_prefab_db);
     struct ds_SimHost *host = ds_SimHostLookup(&srv, id).address;
     for (u32 frame = 0, l = 0; frame < 8; ++frame)
     {
@@ -1125,7 +1125,7 @@ static struct test_Output ServerReplayTest(struct test_Environment *env)
 
     /* replay: frames of 12499 us, then the rest */
     struct arena mem_replay = ArenaAlloc(NULL, 2*1024*1024);
-    const ds_SimId id_replay = ds_SimHostAdd(&srv, &mem_replay, NULL, SIM_MODE_REPLAY, "agent_test_replay.bin", 1, "agent_test_hash.bin", &external, &prefab_db, &shape_prefab_db, g_config->thread_count, g_config->thread_framesize);
+    const ds_SimId id_replay = ds_SimHostAdd(&srv, &mem_replay, NULL, SIM_MODE_REPLAY, "agent_test_replay.bin", 1, "agent_test_hash.bin", &external, &prefab_db, &shape_prefab_db);
     TEST_EQUAL(0, ds_SimIdNullCheck(id_replay));
     struct ds_SimHost *replay = ds_SimHostLookup(&srv, id_replay).address;
     TEST_EQUAL(SIM_MODE_REPLAY, replay->record_mode);
@@ -1183,7 +1183,7 @@ static struct test_Output ServerReplayTest(struct test_Environment *env)
 
     /* hashing pairs with recording: a bare run's hash request is dropped */
     struct arena mem_bare = ArenaAlloc(NULL, 2*1024*1024);
-    const ds_SimId id_bare = ds_SimHostAdd(&srv, &mem_bare, &config, SIM_MODE_NONE, NULL, 1, "agent_test_hash.bin", &external, &prefab_db, &shape_prefab_db, g_config->thread_count, g_config->thread_framesize);
+    const ds_SimId id_bare = ds_SimHostAdd(&srv, &mem_bare, &config, SIM_MODE_NONE, NULL, 1, "agent_test_hash.bin", &external, &prefab_db, &shape_prefab_db);
     TEST_EQUAL(0, ((struct ds_SimHost *) ds_SimHostLookup(&srv, id_bare).address)->hash);
     ds_SimHostRemove(&srv, id_bare);
 
@@ -1260,7 +1260,7 @@ static struct test_Output ServerSceneTest(struct test_Environment *env)
     struct ds_Server srv;
     ds_ServerAlloc(&srv, 16*1024*1024, 2);
     struct arena mem = ArenaAlloc(NULL, 2*1024*1024);
-    const ds_SimId id = ds_SimHostAdd(&srv, &mem, &config, SIM_MODE_RECORD, "agent_test_scene.bin", 1, "agent_test_scene_hash.bin", &external, &prefab_db, &shape_prefab_db, g_config->thread_count, g_config->thread_framesize);
+    const ds_SimId id = ds_SimHostAdd(&srv, &mem, &config, SIM_MODE_RECORD, "agent_test_scene.bin", 1, "agent_test_scene_hash.bin", &external, &prefab_db, &shape_prefab_db);
     struct ds_SimHost *host = ds_SimHostLookup(&srv, id).address;
     const u32 bodies_before = host->sim.dynamics.body_pool.count;    /* the mouse anchor */
     ds_CPoolPushValue(srv.payload_pool, ds_SimCmdPayloadPushAll(&srv.frame, id, &cmds));
@@ -1286,7 +1286,7 @@ static struct test_Output ServerSceneTest(struct test_Environment *env)
 
     /* replay */
     struct arena mem_replay = ArenaAlloc(NULL, 2*1024*1024);
-    const ds_SimId id_replay = ds_SimHostAdd(&srv, &mem_replay, NULL, SIM_MODE_REPLAY, "agent_test_scene.bin", 1, "agent_test_scene_hash.bin", &external, &prefab_db, &shape_prefab_db, g_config->thread_count, g_config->thread_framesize);
+    const ds_SimId id_replay = ds_SimHostAdd(&srv, &mem_replay, NULL, SIM_MODE_REPLAY, "agent_test_scene.bin", 1, "agent_test_scene_hash.bin", &external, &prefab_db, &shape_prefab_db);
     struct ds_SimHost *replay = ds_SimHostLookup(&srv, id_replay).address;
     while (replay->sim.us_time < us_end)
     {
@@ -1353,7 +1353,7 @@ static struct test_Output ServerGrabTest(struct test_Environment *env)
     struct ds_Server srv;
     ds_ServerAlloc(&srv, 16*1024*1024, 2);
     struct arena mem = ArenaAlloc(NULL, 2*1024*1024);
-    const ds_SimId id = ds_SimHostAdd(&srv, &mem, &config, SIM_MODE_RECORD, "agent_test_grab.bin", 1, "agent_test_grab_hash.bin", &external, &prefab_db, &shape_prefab_db, g_config->thread_count, g_config->thread_framesize);
+    const ds_SimId id = ds_SimHostAdd(&srv, &mem, &config, SIM_MODE_RECORD, "agent_test_grab.bin", 1, "agent_test_grab_hash.bin", &external, &prefab_db, &shape_prefab_db);
     struct ds_SimHost *host = ds_SimHostLookup(&srv, id).address;
     for (u32 i = 0; i < sizeof(scene) / sizeof(scene[0]); ++i)
     {
@@ -1428,7 +1428,7 @@ static struct test_Output ServerGrabTest(struct test_Environment *env)
     ds_SimHostRemove(&srv, id);
 
     struct arena mem_replay = ArenaAlloc(NULL, 2*1024*1024);
-    const ds_SimId id_replay = ds_SimHostAdd(&srv, &mem_replay, NULL, SIM_MODE_REPLAY, "agent_test_grab.bin", 1, "agent_test_grab_hash.bin", &external, &prefab_db, &shape_prefab_db, g_config->thread_count, g_config->thread_framesize);
+    const ds_SimId id_replay = ds_SimHostAdd(&srv, &mem_replay, NULL, SIM_MODE_REPLAY, "agent_test_grab.bin", 1, "agent_test_grab_hash.bin", &external, &prefab_db, &shape_prefab_db);
     struct ds_SimHost *replay = ds_SimHostLookup(&srv, id_replay).address;
     while (replay->sim.us_time < us_end)
     {
@@ -1475,7 +1475,7 @@ static struct test_Output SimCmdFuzzTest(struct test_Environment *env)
     struct arena mem = ArenaAlloc(NULL, 2*1024*1024);
     struct ds_Server srv;
     ds_ServerAlloc(&srv, 16*1024*1024, 2);
-    const ds_SimId id = ds_SimHostAdd(&srv, &mem, &config, SIM_MODE_NONE, NULL, 0, NULL, &external, &prefab_db, &shape_prefab_db, g_config->thread_count, g_config->thread_framesize);
+    const ds_SimId id = ds_SimHostAdd(&srv, &mem, &config, SIM_MODE_NONE, NULL, 0, NULL, &external, &prefab_db, &shape_prefab_db);
     struct ds_SimHost *host = ds_SimHostLookup(&srv, id).address;
 
     /* the base: three ConfigLoads with distinct iteration counts, serialized as a payload for the hosted simulation */
@@ -1627,7 +1627,7 @@ static struct test_Output ServerReplayCorruptTest(struct test_Environment *env)
 
     /* the record: a ConfigLoad per frame, three frames */
     struct arena mem = ArenaAlloc(NULL, 2*1024*1024);
-    const ds_SimId id = ds_SimHostAdd(&srv, &mem, &config, SIM_MODE_RECORD, "agent_test_corrupt.bin", 0, NULL, &external, &prefab_db, &shape_prefab_db, g_config->thread_count, g_config->thread_framesize);
+    const ds_SimId id = ds_SimHostAdd(&srv, &mem, &config, SIM_MODE_RECORD, "agent_test_corrupt.bin", 0, NULL, &external, &prefab_db, &shape_prefab_db);
     struct ds_SimConfig load = config;
     ds_CPool(ds_SimCmd) pool;
     ds_CPoolAlloc(env->mem_1, pool, 1, NOT_GROWABLE);
@@ -1671,7 +1671,7 @@ static struct test_Output ServerReplayCorruptTest(struct test_Environment *env)
         FileClose(&file);
 
         struct arena mem_replay = ArenaAlloc(NULL, 2*1024*1024);
-        const ds_SimId id_replay = ds_SimHostAdd(&srv, &mem_replay, NULL, SIM_MODE_REPLAY, "agent_test_corrupt_variant.bin", 0, NULL, &external, &prefab_db, &shape_prefab_db, g_config->thread_count, g_config->thread_framesize);
+        const ds_SimId id_replay = ds_SimHostAdd(&srv, &mem_replay, NULL, SIM_MODE_REPLAY, "agent_test_corrupt_variant.bin", 0, NULL, &external, &prefab_db, &shape_prefab_db);
         if (!ds_SimIdNullCheck(id_replay))
         {
             struct ds_SimHost *replay = ds_SimHostLookup(&srv, id_replay).address;

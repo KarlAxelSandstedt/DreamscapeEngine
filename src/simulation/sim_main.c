@@ -193,7 +193,7 @@ static void ds_SimSeed(struct ds_Sim *sim, const struct ds_SimConfig *config)
     ArenaPopScratch();
 }
 
-void ds_SimAlloc(struct arena *mem, struct ds_Sim *sim, const struct ds_SimConfig *config, const struct ds_DynamicsExternal *external, ds_SDB(ds_BodyPrefab) *prefab_db, ds_SDB(ds_ShapePrefab) *shape_prefab_db, const u32 worker_count, const u64 worker_frame_size)
+void ds_SimAlloc(struct arena *mem, struct ds_Sim *sim, const struct ds_SimConfig *config, const struct ds_DynamicsExternal *external, ds_SDB(ds_BodyPrefab) *prefab_db, ds_SDB(ds_ShapePrefab) *shape_prefab_db)
 {
     ds_Assert(ds_SimConfigCheck(config));
     ds_Assert(external && prefab_db && shape_prefab_db);
@@ -209,7 +209,8 @@ void ds_SimAlloc(struct arena *mem, struct ds_Sim *sim, const struct ds_SimConfi
         sim->us_system_tick[i] = config->us_system_tick[i];
     }
 
-    sim->dynamics = ds_DynamicsAlloc(mem, &config->dynamics, 1000 * config->us_system_tick[SIM_SYSTEM_DYNAMICS], external, worker_count, worker_frame_size);
+    ds_DynamicsRuntimeAlloc(mem, &sim->dynamics_runtime);
+    sim->dynamics = ds_DynamicsAlloc(&config->dynamics, 1000 * config->us_system_tick[SIM_SYSTEM_DYNAMICS], external, &sim->dynamics_runtime);
 
     ds_SimScheduleInit(sim);
     ds_SimSeed(sim, &sim->config_seed);
@@ -218,6 +219,7 @@ void ds_SimAlloc(struct arena *mem, struct ds_Sim *sim, const struct ds_SimConfi
 void ds_SimDealloc(struct ds_Sim *sim)
 {
     ds_DynamicsDealloc(&sim->dynamics);
+    ds_DynamicsRuntimeDealloc(&sim->dynamics_runtime);
     ds_HashMapDealloc(&sim->entity_map);
     ds_HashMapDealloc(&sim->joint_entity_map);
 }
@@ -277,7 +279,7 @@ u64 ds_SimHash(const struct ds_Sim *sim)
     return XXH3_64bits(words, sizeof(words));
 }
 
-void ds_SimTick(struct arena *tick, struct ds_Sim *sim, ds_CPool(u64) *hash_pool, const ds_CPool(ds_SimCmd) *cmds, const u64 us_delta)
+void ds_SimTick(struct arena *srv_frame, struct ds_Sim *sim, ds_CPool(u64) *hash_pool, const ds_CPool(ds_SimCmd) *cmds, const u64 us_delta)
 {
     ds_DynamicsConfigPush(&sim->dynamics); 
 
@@ -304,12 +306,12 @@ void ds_SimTick(struct arena *tick, struct ds_Sim *sim, ds_CPool(u64) *hash_pool
 
         sim->sys_schedule[sys] = ds_SimKeyInit(us + sim->us_system_tick[sys], sys);
 
-        ArenaPushRecord(tick);
+        ArenaPushRecord(srv_frame);
         switch (sys)
         {
             case SIM_SYSTEM_DYNAMICS:
             {
-                ds_DynamicsTick(tick, &sim->dynamics);
+                ds_DynamicsTick(srv_frame, &sim->dynamics);
             } break;
 
             case SIM_SYSTEM_GAME:
@@ -322,7 +324,7 @@ void ds_SimTick(struct arena *tick, struct ds_Sim *sim, ds_CPool(u64) *hash_pool
                 ds_AssertString(0, "Invalid system in ds_SimKey");
             } break;
         }
-        ArenaPopRecord(tick);
+        ArenaPopRecord(srv_frame);
 
         if (hash_pool)
         {

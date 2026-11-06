@@ -20,6 +20,7 @@
 #include "ds_float.h"
 #include "ds_vector.h"
 #include "ds_job.h"
+#include "ds_init.h"
 
 struct ds_DynamicsWorker *g_dynamics_worker;
 
@@ -39,7 +40,7 @@ const struct ds_DynamicsConfig *g_dynamics_config = NULL;
 
 void ds_DynamicsConfigPush(struct ds_Dynamics *pipeline)
 {
-    g_dynamics_worker = pipeline->runtime.worker;
+    g_dynamics_worker = pipeline->runtime->worker;
     g_dynamics_config = &pipeline->config;
     g_numerics_config = &pipeline->config.numerics;
     g_solver_config = &pipeline->config.solver;
@@ -139,8 +140,11 @@ void ds_DynamicsConfigUpdatePending(struct ds_Dynamics *pipeline)
 
 #define DS_DYNAMICS_PROFILE_LENGTH 8192
 
-void ds_DynamicsRuntimeAlloc(struct arena *mem, struct ds_DynamicsRuntime *runtime, const u32 worker_count, const u64 worker_frame_size)
+void ds_DynamicsRuntimeAlloc(struct arena *mem, struct ds_DynamicsRuntime *runtime)
 {
+    const u32 worker_count = g_config->thread_count;
+    const u64 worker_frame_size = g_config->dynamics_worker_framesize;
+
     *runtime = (struct ds_DynamicsRuntime) { 0 };
     runtime->heap_allocated = (mem == NULL);
     runtime->draw_config = ds_DynamicsDrawConfigDefault();
@@ -192,6 +196,27 @@ void ds_DynamicsRuntimeAlloc(struct arena *mem, struct ds_DynamicsRuntime *runti
     runtime->profile_next = runtime->profile_length;
 }
 
+void ds_DynamicsRuntimeFlush(struct ds_DynamicsRuntime *runtime)
+{
+    for (u32 i = 0; i < runtime->worker_count; ++i)
+    {
+        ArenaFlush(runtime->worker[i].frame_arr + 0);
+        ArenaFlush(runtime->worker[i].frame_arr + 1);
+        runtime->worker[i].frame = NULL;
+        ds_BitSetClear(&runtime->worker[i].joint_breaking_set, 0);
+        ds_DynamicsMetricsFlush(&runtime->worker[i].metrics);
+        ds_CPoolFlush(runtime->worker[i].draw.segment);
+        ds_CPoolFlush(runtime->worker[i].draw.point);
+        ds_CPoolFlush(runtime->worker[i].draw.force);
+    }
+    ds_CPoolFlush(runtime->draw.segment);
+    ds_CPoolFlush(runtime->draw.point);
+    ds_CPoolFlush(runtime->draw.force);
+    ds_DynamicsMetricsFlush(&runtime->metrics);
+    memset(runtime->profile_buf, 0, runtime->profile_length*sizeof(struct ds_DynamicsProfile));
+    runtime->profile_next = runtime->profile_length;
+}
+
 void ds_DynamicsRuntimeDealloc(struct ds_DynamicsRuntime *runtime)
 {
     for (u32 i = 0; i < runtime->worker_count; ++i)
@@ -235,27 +260,28 @@ static void ds_DynamicsMouseAnchorAdd(struct ds_Dynamics *pipeline)
     ds_Assert(ds_BodyIdEqual(id, DS_BODY_MOUSE_ANCHOR_ID));
 }
 
-struct ds_Dynamics ds_DynamicsAllocDefault(struct arena *mem, const u32 initial_size, const u64 ns_tick, const struct ds_DynamicsExternal *external, const u32 worker_count, const u64 worker_frame_size)
+struct ds_Dynamics ds_DynamicsAllocDefault(const u32 initial_size, const u64 ns_tick, const struct ds_DynamicsExternal *external, struct ds_DynamicsRuntime *runtime)
 {
 	struct ds_DynamicsConfig config = ds_DynamicsConfigDefault();
 	config.initial_size = initial_size;
-	return ds_DynamicsAlloc(mem, &config, ns_tick, external, worker_count, worker_frame_size);
+	return ds_DynamicsAlloc(&config, ns_tick, external, runtime);
 }
 
-struct ds_Dynamics ds_DynamicsAlloc(struct arena *mem, const struct ds_DynamicsConfig *config, const u64 ns_tick, const struct ds_DynamicsExternal *external, const u32 worker_count, const u64 worker_frame_size)
+struct ds_Dynamics ds_DynamicsAlloc(const struct ds_DynamicsConfig *config, const u64 ns_tick, const struct ds_DynamicsExternal *external, struct ds_DynamicsRuntime *runtime)
 {
 	const struct ds_DynamicsConfig derived = ds_DynamicsConfigDerive(config);
 	const u32 initial_size = derived.initial_size;
 
 	struct ds_Dynamics pipeline =
 	{
+		.runtime = runtime,
 		.ns_tick = ns_tick,
         .timestep = (f32) ns_tick / NSEC_PER_SEC,
 		.external = external,
 		.island_to_split = ds_IslandIdNull(),
 	};
 	DLLFlush(pipeline.event_list);
-    ds_DynamicsRuntimeAlloc(mem, &pipeline.runtime, worker_count, worker_frame_size);
+    ds_DynamicsRuntimeFlush(runtime);
 	pipeline.config_pending = derived;
 	pipeline.config = derived;
 
@@ -263,9 +289,10 @@ struct ds_Dynamics ds_DynamicsAlloc(struct arena *mem, const struct ds_DynamicsC
     pipeline.body_usage_set = ds_BitSetAlloc(NULL, initial_size, 0, GROWABLE);
 
     ds_PoolAlloc(NULL, pipeline.joint_pool, initial_size, GROWABLE);
-    for (u32 i = 0; i < pipeline.runtime.worker_count; ++i)
+    for (u32 i = 0; i < pipeline.runtime->worker_count; ++i)
     {
-        pipeline.runtime.worker[i].joint_breaking_set = ds_BitSetAlloc(NULL, pipeline.joint_pool.length, 0, GROWABLE);
+        ds_BitSetDealloc(&pipeline.runtime->worker[i].joint_breaking_set);
+        pipeline.runtime->worker[i].joint_breaking_set = ds_BitSetAlloc(NULL, pipeline.joint_pool.length, 0, GROWABLE);
     }
 
 	ds_PoolAlloc(NULL, pipeline.shape_pool, initial_size, GROWABLE);
@@ -301,7 +328,6 @@ struct ds_Dynamics ds_DynamicsAlloc(struct arena *mem, const struct ds_DynamicsC
 
 void ds_DynamicsDealloc(struct ds_Dynamics *pipeline)
 {
-    ds_DynamicsRuntimeDealloc(&pipeline->runtime);
 
     ds_BitSetDealloc(&pipeline->shape_dynamic_usage_set);
     ds_BitSetDealloc(&pipeline->shape_dirty_set);
@@ -338,15 +364,15 @@ static void ds_DynamicsClearFrame(struct ds_Dynamics *pipeline)
 
 void ds_DynamicsFlush(struct ds_Dynamics *pipeline)
 {
-    for (u32 i = 0; i < pipeline->runtime.worker_count; ++i)
+    for (u32 i = 0; i < pipeline->runtime->worker_count; ++i)
     {
-        ArenaFlush(pipeline->runtime.worker[i].frame_arr + 0);
-        ArenaFlush(pipeline->runtime.worker[i].frame_arr + 1);
-        ds_BitSetClear(&pipeline->runtime.worker[i].joint_breaking_set, 0);
+        ArenaFlush(pipeline->runtime->worker[i].frame_arr + 0);
+        ArenaFlush(pipeline->runtime->worker[i].frame_arr + 1);
+        ds_BitSetClear(&pipeline->runtime->worker[i].joint_breaking_set, 0);
     }
 
-    memset(pipeline->runtime.profile_buf, 0, pipeline->runtime.profile_length*sizeof(struct ds_DynamicsProfile));
-    pipeline->runtime.profile_next = pipeline->runtime.profile_length;
+    memset(pipeline->runtime->profile_buf, 0, pipeline->runtime->profile_length*sizeof(struct ds_DynamicsProfile));
+    pipeline->runtime->profile_next = pipeline->runtime->profile_length;
 
     ds_SolverSetFlush(pipeline, SOLVER_SET_DISABLED);
     ds_SolverSetFlush(pipeline, SOLVER_SET_STATIC);
@@ -419,7 +445,7 @@ u32 ds_BroadJobPhaseDispatch(const ds_JobId job)
     struct ds_ParallelFor *pf = chain->parallel_for + 0;
     struct ds_BitSet *dirty = &pipeline->shape_dirty_set;
     struct ds_ProxyQuery *query = pipeline->dirty_shape_query.buf;
-    struct arena *frame = pipeline->runtime.worker[ds_ThreadSelfIndex()].frame;
+    struct arena *frame = pipeline->runtime->worker[ds_ThreadSelfIndex()].frame;
     struct arena *tmp = ArenaPushScratch();
     u32 low, high;
 
@@ -485,7 +511,7 @@ u32 ds_NarrowJobPhaseDispatch(const ds_JobId job)
 
     struct ds_NarrowJobPhase *phase = (struct ds_NarrowJobPhase *) g_scheduler->phase;
     struct ds_Dynamics *pipeline = phase->pipeline;
-    struct arena *frame = pipeline->runtime.worker[ds_ThreadSelfIndex()].frame;
+    struct arena *frame = pipeline->runtime->worker[ds_ThreadSelfIndex()].frame;
     struct ds_ParallelForChain *chain;
     struct ds_ParallelFor *pf;
     u32 low, high;
@@ -560,21 +586,21 @@ static void CollisionDetection(struct ds_Dynamics *pipeline)
      * and the master thread then traverses the results from low to high, adding the contacts in a
      * canonical way.
      */
-    struct ds_BroadJobPhase *broad_phase = pipeline->runtime.broad_phase;
+    struct ds_BroadJobPhase *broad_phase = pipeline->runtime->broad_phase;
     {
     	ProfZoneNamed("JobPhase(Broadphase)");
-        pipeline->runtime.profile->ns_broadphase_start = ds_TimeNs();
+        pipeline->runtime->profile->ns_broadphase_start = ds_TimeNs();
 
         ds_JobPhaseBegin(&broad_phase->phase);
 
-        broad_phase->pf = ds_ParallelForChainAlloc(pipeline->runtime.tick, 1); 
+        broad_phase->pf = ds_ParallelForChainAlloc(pipeline->runtime->srv_frame, 1); 
         
         //TODO: this range size is random hardcoded value, change
         ds_ParallelForInit(broad_phase->pf.parallel_for, (u32) pipeline->shape_dirty_set.block_count, 1);
 
         broad_phase->pipeline = pipeline;
         broad_phase->job_count = g_scheduler->worker_count;
-        broad_phase->job = ArenaPushZero(pipeline->runtime.tick, broad_phase->job_count*sizeof(struct ds_BroadJob));
+        broad_phase->job = ArenaPushZero(pipeline->runtime->srv_frame, broad_phase->job_count*sizeof(struct ds_BroadJob));
         ds_JobPhaseReserve(&broad_phase->phase, BROAD_JOB_SEED, broad_phase->job_count);
 
         for (u32 i = 0; i < broad_phase->job_count; ++i)
@@ -594,7 +620,7 @@ static void CollisionDetection(struct ds_Dynamics *pipeline)
         
         ds_JobPhaseEnd();
 
-        pipeline->runtime.profile->ns_broadphase_end = ds_TimeNs();
+        pipeline->runtime->profile->ns_broadphase_end = ds_TimeNs();
         ProfZoneEnd;
     }
 
@@ -631,16 +657,16 @@ static void CollisionDetection(struct ds_Dynamics *pipeline)
         ProfZoneEnd;
     }
 
-    struct ds_NarrowJobPhase *narrow_phase = pipeline->runtime.narrow_phase;
+    struct ds_NarrowJobPhase *narrow_phase = pipeline->runtime->narrow_phase;
     {
     	ProfZoneNamed("JobPhase(Narrowphase)");
-        pipeline->runtime.profile->ns_narrowphase_start = ds_TimeNs();
+        pipeline->runtime->profile->ns_narrowphase_start = ds_TimeNs();
 
         ds_JobPhaseBegin(&narrow_phase->phase);
 
         for (u32 i = 0; i < CG_COLOR_COUNT + 1; ++i)
         {
-            narrow_phase->pf[i] = ds_ParallelForChainAlloc(pipeline->runtime.tick, 1); 
+            narrow_phase->pf[i] = ds_ParallelForChainAlloc(pipeline->runtime->srv_frame, 1); 
         }
 
         struct ds_ParallelFor *pf;
@@ -658,7 +684,7 @@ static void CollisionDetection(struct ds_Dynamics *pipeline)
 
         narrow_phase->pipeline = pipeline;
         narrow_phase->job_count = g_scheduler->worker_count;
-        narrow_phase->job = ArenaPushZero(pipeline->runtime.tick, narrow_phase->job_count*sizeof(struct ds_NarrowJob));
+        narrow_phase->job = ArenaPushZero(pipeline->runtime->srv_frame, narrow_phase->job_count*sizeof(struct ds_NarrowJob));
         ds_JobPhaseReserve(&narrow_phase->phase, NARROW_JOB_SEED, narrow_phase->job_count);
 
         for (u32 i = 0; i < narrow_phase->job_count; ++i)
@@ -678,7 +704,7 @@ static void CollisionDetection(struct ds_Dynamics *pipeline)
         
         ds_JobPhaseEnd();
 
-        pipeline->runtime.profile->ns_narrowphase_end = ds_TimeNs();
+        pipeline->runtime->profile->ns_narrowphase_end = ds_TimeNs();
     	ProfZoneEnd;
     }
 
@@ -1367,23 +1393,23 @@ u32 ds_RemovalJobPhaseDispatch(const ds_JobId job_id)
 
 static void SolveConstraints(struct ds_Dynamics *pipeline) 
 {
-    struct ds_SolverJobPhase *solver_phase = pipeline->runtime.solver_phase;
+    struct ds_SolverJobPhase *solver_phase = pipeline->runtime->solver_phase;
     {
     	ProfZoneNamed("JobPhase(Solve)");
-        pipeline->runtime.profile->ns_solverphase_start = ds_TimeNs();
+        pipeline->runtime->profile->ns_solverphase_start = ds_TimeNs();
 
         ds_JobPhaseBegin(&solver_phase->phase);
 
-        solver_phase->pf_body_update = ds_ParallelForChainAlloc(pipeline->runtime.tick, 1);
-        solver_phase->pf_contact_init = ds_ParallelForChainAlloc(pipeline->runtime.tick, CG_COLOR_COUNT);
-        solver_phase->pf_joint_init = ds_ParallelForChainAlloc(pipeline->runtime.tick, CG_COLOR_COUNT);
-        solver_phase->pf_contact_warmup = ds_ParallelForChainAlloc(pipeline->runtime.tick, CG_COLOR_COUNT);
-        solver_phase->pf_joint_warmup = ds_ParallelForChainAlloc(pipeline->runtime.tick, CG_COLOR_COUNT);
-        solver_phase->pf_velocity_solve = ds_ParallelForChainAlloc(pipeline->runtime.tick, 2*g_solver_config->pgs_iteration_count*CG_COLOR_COUNT);
-        solver_phase->pf_integrate = ds_ParallelForChainAlloc(pipeline->runtime.tick, 1);
-        solver_phase->pf_cache_impulse_and_position_init = ds_ParallelForChainAlloc(pipeline->runtime.tick, CG_COLOR_COUNT);
-        solver_phase->pf_position_solve = ds_ParallelForChainAlloc(pipeline->runtime.tick, 2*g_solver_config->ngs_iteration_count*CG_COLOR_COUNT);
-        solver_phase->pf_orientation = ds_ParallelForChainAlloc(pipeline->runtime.tick, 1);
+        solver_phase->pf_body_update = ds_ParallelForChainAlloc(pipeline->runtime->srv_frame, 1);
+        solver_phase->pf_contact_init = ds_ParallelForChainAlloc(pipeline->runtime->srv_frame, CG_COLOR_COUNT);
+        solver_phase->pf_joint_init = ds_ParallelForChainAlloc(pipeline->runtime->srv_frame, CG_COLOR_COUNT);
+        solver_phase->pf_contact_warmup = ds_ParallelForChainAlloc(pipeline->runtime->srv_frame, CG_COLOR_COUNT);
+        solver_phase->pf_joint_warmup = ds_ParallelForChainAlloc(pipeline->runtime->srv_frame, CG_COLOR_COUNT);
+        solver_phase->pf_velocity_solve = ds_ParallelForChainAlloc(pipeline->runtime->srv_frame, 2*g_solver_config->pgs_iteration_count*CG_COLOR_COUNT);
+        solver_phase->pf_integrate = ds_ParallelForChainAlloc(pipeline->runtime->srv_frame, 1);
+        solver_phase->pf_cache_impulse_and_position_init = ds_ParallelForChainAlloc(pipeline->runtime->srv_frame, CG_COLOR_COUNT);
+        solver_phase->pf_position_solve = ds_ParallelForChainAlloc(pipeline->runtime->srv_frame, 2*g_solver_config->ngs_iteration_count*CG_COLOR_COUNT);
+        solver_phase->pf_orientation = ds_ParallelForChainAlloc(pipeline->runtime->srv_frame, 1);
 
         struct ds_ParallelFor *pfb = solver_phase->pf_body_update.parallel_for;
         struct ds_ParallelFor *pfin = solver_phase->pf_integrate.parallel_for;
@@ -1392,7 +1418,7 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
         ds_ParallelForInit(pfb + 0, pipeline->solver_set_pool.buf[SOLVER_SET_ACTIVE].body_compute_pool.count, 32);
         ds_ParallelForInit(pfin + 0, pipeline->solver_set_pool.buf[SOLVER_SET_ACTIVE].body_compute_pool.count, 32);
         ds_ParallelForInit(pfo + 0, pipeline->solver_set_pool.buf[SOLVER_SET_ACTIVE].body_compute_pool.count, 32);
-        solver_phase->proxy_range = ArenaPush(pipeline->runtime.tick, pfo->range_count*sizeof(struct ds_ProxyRange));
+        solver_phase->proxy_range = ArenaPush(pipeline->runtime->srv_frame, pfo->range_count*sizeof(struct ds_ProxyRange));
 
         struct ds_ParallelFor *pfci = solver_phase->pf_contact_init.parallel_for;
         struct ds_ParallelFor *pfji = solver_phase->pf_joint_init.parallel_for;
@@ -1438,7 +1464,7 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
 
         solver_phase->pipeline = pipeline;
         solver_phase->job_count = g_scheduler->worker_count;
-        solver_phase->job = ArenaPushZero(pipeline->runtime.tick, solver_phase->job_count*sizeof(struct ds_SolverJob));
+        solver_phase->job = ArenaPushZero(pipeline->runtime->srv_frame, solver_phase->job_count*sizeof(struct ds_SolverJob));
         ds_JobPhaseReserve(&solver_phase->phase, SOLVER_JOB_SEED, solver_phase->job_count);
 
         for (u32 i = 0; i < solver_phase->job_count; ++i)
@@ -1458,19 +1484,19 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
         
         ds_JobPhaseEnd();
 
-        pipeline->runtime.profile->ns_solverphase_end = ds_TimeNs();
+        pipeline->runtime->profile->ns_solverphase_end = ds_TimeNs();
     	ProfZoneEnd;
     }
 
     /* joint breaking events: OR the workers' sets block by block (clearing them), the bits walked in joint index order */
     {
-        const struct ds_BitSet *set = &pipeline->runtime.worker[0].joint_breaking_set;
+        const struct ds_BitSet *set = &pipeline->runtime->worker[0].joint_breaking_set;
         for (u64 b = 0; b < set->block_count; ++b)
         {
             u64 block = 0;
-            for (u32 w = 0; w < pipeline->runtime.worker_count; ++w)
+            for (u32 w = 0; w < pipeline->runtime->worker_count; ++w)
             {
-                u64 *bits = pipeline->runtime.worker[w].joint_breaking_set.bits + b;
+                u64 *bits = pipeline->runtime->worker[w].joint_breaking_set.bits + b;
                 block |= *bits;
                 *bits = 0;
             }
@@ -1498,7 +1524,7 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
         ds_Assert(dirty_count >= reinsert_count);
         if (dirty_count)
         {
-            pipeline->runtime.profile->ns_rebuildphase_start = ds_TimeNs();
+            pipeline->runtime->profile->ns_rebuildphase_start = ds_TimeNs();
 
             const f32 reinsert_fraction = reinsert_count / dirty_count;
             const u32 rebuild = !(dirty_count <= 1 || reinsert_fraction < g_numerics_config->dbvh_reinsert_threshold);
@@ -1526,21 +1552,21 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
             }
             else
             {       
-                struct ds_RebuildJobPhase *rebuild_phase = pipeline->runtime.rebuild_phase;
+                struct ds_RebuildJobPhase *rebuild_phase = pipeline->runtime->rebuild_phase;
                 {
                 	ProfZoneNamed("JobPhase(Rebuild)");
 
-                    ArenaPushRecord(pipeline->runtime.tick);
+                    ArenaPushRecord(pipeline->runtime->srv_frame);
 
                     ds_JobPhaseBegin(&rebuild_phase->phase);
 
-                    rebuild_phase->pf_proxy_update = ds_ParallelForChainAlloc(pipeline->runtime.tick, 1); 
+                    rebuild_phase->pf_proxy_update = ds_ParallelForChainAlloc(pipeline->runtime->srv_frame, 1); 
                     {
                         ProfZoneNamed("LeafArray Ordering");
 
                         const struct ds_BitSet *leaf_usage = &pipeline->dynamic_bvh.leaf_set;
                         rebuild_phase->leaf_count = BTLeafCount(pipeline->dynamic_bvh.bt);
-                        rebuild_phase->leaf_buf = ArenaPushAligned(pipeline->runtime.tick, rebuild_phase->leaf_count*sizeof(struct ds_RebuildLeaf), DS_CACHE_LINE);
+                        rebuild_phase->leaf_buf = ArenaPushAligned(pipeline->runtime->srv_frame, rebuild_phase->leaf_count*sizeof(struct ds_RebuildLeaf), DS_CACHE_LINE);
 
                         u32 li = 0;
                         for (u32 block = 0; block < leaf_usage->block_count; ++block)
@@ -1560,7 +1586,7 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
 
                         const struct ds_BitSet *internal_usage = &pipeline->dynamic_bvh.internal_set;
                         rebuild_phase->internal_count = pipeline->dynamic_bvh.bt.count - rebuild_phase->leaf_count;
-                        rebuild_phase->internal_buf = ArenaPushAligned(pipeline->runtime.tick, rebuild_phase->internal_count*sizeof(u32), DS_CACHE_LINE);
+                        rebuild_phase->internal_buf = ArenaPushAligned(pipeline->runtime->srv_frame, rebuild_phase->internal_count*sizeof(u32), DS_CACHE_LINE);
 
                         u32 ii = 0;
                         for (u32 block = 0; block < internal_usage->block_count; ++block)
@@ -1582,20 +1608,20 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
                     rebuild_phase->small_leaf_limit = 256;
                     rebuild_phase->pipeline = pipeline;
                     rebuild_phase->setup_job_length = g_scheduler->worker_count;
-                    rebuild_phase->setup_job = ArenaPushAlignedZero(pipeline->runtime.tick, rebuild_phase->setup_job_length*sizeof(struct ds_RebuildJob), DS_CACHE_LINE);
+                    rebuild_phase->setup_job = ArenaPushAlignedZero(pipeline->runtime->srv_frame, rebuild_phase->setup_job_length*sizeof(struct ds_RebuildJob), DS_CACHE_LINE);
                     AtomicStoreRlx32(&rebuild_phase->a_setup_completed, 0);
                     AtomicStoreRlx32(&rebuild_phase->a_leaves_completed, 0);
                     AtomicStoreRlx32(&rebuild_phase->a_internal_next, 0);
                     AtomicStoreRlx32(&rebuild_phase->a_range_seed_count, 0);
 
-                    rebuild_phase->setup_compute = ArenaPushAligned(pipeline->runtime.tick, rebuild_phase->setup_job_length*sizeof(struct ds_RebuildThreadCompute), DS_CACHE_LINE);
+                    rebuild_phase->setup_compute = ArenaPushAligned(pipeline->runtime->srv_frame, rebuild_phase->setup_job_length*sizeof(struct ds_RebuildThreadCompute), DS_CACHE_LINE);
                     for (u32 i = 0; i < rebuild_phase->setup_job_length; ++i)
                     {
                         AtomicStoreRlx32(&rebuild_phase->setup_job[i].a_range_ready, 0);
                         ds_RebuildThreadComputeInit(rebuild_phase->setup_compute + i);
                     }
 
-                    struct memArray range_arr = ArenaPushAlignedAll(pipeline->runtime.tick, sizeof(struct ds_RebuildJob), DS_CACHE_LINE);
+                    struct memArray range_arr = ArenaPushAlignedAll(pipeline->runtime->srv_frame, sizeof(struct ds_RebuildJob), DS_CACHE_LINE);
                     rebuild_phase->range_job = range_arr.addr;
                     rebuild_phase->range_job_length = (u32) range_arr.len;
 
@@ -1627,29 +1653,29 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
                      */
                     BVHPropagateBoundingBoxesFromLeaves(&pipeline->dynamic_bvh);
 
-                    ArenaPopRecord(pipeline->runtime.tick);
+                    ArenaPopRecord(pipeline->runtime->srv_frame);
 
                     ProfZoneEnd;
                 }
             } 
 
-            pipeline->runtime.profile->ns_rebuildphase_end = ds_TimeNs();
+            pipeline->runtime->profile->ns_rebuildphase_end = ds_TimeNs();
 
-            pipeline->runtime.profile->ns_removalphase_start = ds_TimeNs();
+            pipeline->runtime->profile->ns_removalphase_start = ds_TimeNs();
 
-            struct ds_RemovalJobPhase *removal_phase = pipeline->runtime.removal_phase;
+            struct ds_RemovalJobPhase *removal_phase = pipeline->runtime->removal_phase;
             {
             	ProfZoneNamed("JobPhase(ContactRemoval)");
 
-                ArenaPushRecord(pipeline->runtime.tick);
+                ArenaPushRecord(pipeline->runtime->srv_frame);
 
                 ds_JobPhaseBegin(&removal_phase->phase);
 
                 removal_phase->pipeline = pipeline;
-                removal_phase->pf = ds_ParallelForChainAlloc(pipeline->runtime.tick, 1); 
+                removal_phase->pf = ds_ParallelForChainAlloc(pipeline->runtime->srv_frame, 1); 
                 ds_ParallelForInit(removal_phase->pf.parallel_for, (u32) pipeline->shape_dirty_set.block_count, 1);
                 removal_phase->job_count = g_scheduler->worker_count;
-                removal_phase->job = ArenaPushAlignedZero(pipeline->runtime.tick, removal_phase->job_count*sizeof(struct ds_RemovalJob), DS_CACHE_LINE);
+                removal_phase->job = ArenaPushAlignedZero(pipeline->runtime->srv_frame, removal_phase->job_count*sizeof(struct ds_RemovalJob), DS_CACHE_LINE);
 
                 ds_JobPhaseReserve(&removal_phase->phase, REMOVAL_JOB, removal_phase->job_count);
                 for (u32 i = 0; i < removal_phase->job_count; ++i)
@@ -1690,7 +1716,7 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
                     ProfZoneEnd;
                 }
 
-                ArenaPopRecord(pipeline->runtime.tick);
+                ArenaPopRecord(pipeline->runtime->srv_frame);
 
                 ProfZoneEnd;
             } 
@@ -1704,7 +1730,7 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
                 }
             }
 
-            pipeline->runtime.profile->ns_removalphase_end = ds_TimeNs();
+            pipeline->runtime->profile->ns_removalphase_end = ds_TimeNs();
         }
     }
         
@@ -1854,7 +1880,7 @@ void ds_DynamicsSleepDisable(struct ds_Dynamics *pipeline)
 
 void ds_DynamicsSimulateFrame(struct ds_Dynamics *pipeline)
 {
-    pipeline->runtime.profile->ns_frame_start = ds_TimeNs();
+    pipeline->runtime->profile->ns_frame_start = ds_TimeNs();
 
 	/* broadphase => narrowphase => solve => integrate */
     CollisionDetection(pipeline);
@@ -1862,28 +1888,28 @@ void ds_DynamicsSimulateFrame(struct ds_Dynamics *pipeline)
 
     ds_DynamicsDrawFrameEnd(pipeline);
 
-    for (u32 i = 0; i < pipeline->runtime.worker_count; ++i)
+    for (u32 i = 0; i < pipeline->runtime->worker_count; ++i)
     {
-        ds_DynamicsMetricsAdd(&pipeline->runtime.metrics, &pipeline->runtime.worker[i].metrics);
+        ds_DynamicsMetricsAdd(&pipeline->runtime->metrics, &pipeline->runtime->worker[i].metrics);
     }
-    //ds_DynamicsMetricsPrint(stderr, &pipeline->runtime.metrics);
+    //ds_DynamicsMetricsPrint(stderr, &pipeline->runtime->metrics);
 
 	PHYSICS_PIPELINE_VALIDATE(pipeline);
 
-    pipeline->runtime.profile->ns_frame_end = ds_TimeNs();
+    pipeline->runtime->profile->ns_frame_end = ds_TimeNs();
 }
 
 static void ds_DynamicsProfileBegin(struct ds_Dynamics *pipeline)
 {
-    ds_Assert(PowerOfTwoCheck(pipeline->runtime.profile_length));
-    const u32 pi = (u32) (pipeline->runtime.profile_next & (pipeline->runtime.profile_length-1));
-    pipeline->runtime.profile = pipeline->runtime.profile_buf + pi;
-    pipeline->runtime.profile_next += 1;
+    ds_Assert(PowerOfTwoCheck(pipeline->runtime->profile_length));
+    const u32 pi = (u32) (pipeline->runtime->profile_next & (pipeline->runtime->profile_length-1));
+    pipeline->runtime->profile = pipeline->runtime->profile_buf + pi;
+    pipeline->runtime->profile_next += 1;
 }
 
 static void ds_DynamicsProfileEnd(struct ds_Dynamics *pipeline)
 {
-    struct ds_DynamicsProfile *p = pipeline->runtime.profile;
+    struct ds_DynamicsProfile *p = pipeline->runtime->profile;
 
     p->ns_frame_duration = p->ns_frame_end - p->ns_frame_start;
     p->ns_broadphase_duration = p->ns_broadphase_end - p->ns_broadphase_start;
@@ -1927,23 +1953,23 @@ void ds_DynamicsProfilePrint(FILE *file, const struct ds_DynamicsProfile *p)
 }
 
 
-void ds_DynamicsTick(struct arena *tick, struct ds_Dynamics *pipeline)
+void ds_DynamicsTick(struct arena *srv_frame, struct ds_Dynamics *pipeline)
 {
 	ProfZone;
 
     ds_Assert(g_dynamics_config == &pipeline->config);
-    ds_Assert(pipeline->runtime.tick == NULL);
-    pipeline->runtime.tick = tick;
-    ArenaPushRecord(tick);
-    for (u32 i = 0; i < pipeline->runtime.worker_count; ++i)
+    ds_Assert(pipeline->runtime->srv_frame == NULL);
+    pipeline->runtime->srv_frame = srv_frame;
+    ArenaPushRecord(srv_frame);
+    for (u32 i = 0; i < pipeline->runtime->worker_count; ++i)
     {
-        ds_CPoolFlush(pipeline->runtime.worker[i].draw.segment);
-        ds_CPoolFlush(pipeline->runtime.worker[i].draw.point);
-        ds_CPoolFlush(pipeline->runtime.worker[i].draw.force);
+        ds_CPoolFlush(pipeline->runtime->worker[i].draw.segment);
+        ds_CPoolFlush(pipeline->runtime->worker[i].draw.point);
+        ds_CPoolFlush(pipeline->runtime->worker[i].draw.force);
     }
-    ds_CPoolFlush(pipeline->runtime.draw.segment);
-    ds_CPoolFlush(pipeline->runtime.draw.point);
-    ds_CPoolFlush(pipeline->runtime.draw.force);
+    ds_CPoolFlush(pipeline->runtime->draw.segment);
+    ds_CPoolFlush(pipeline->runtime->draw.point);
+    ds_CPoolFlush(pipeline->runtime->draw.force);
 
 	if (pipeline->frames_completed)
 	{
@@ -1953,13 +1979,13 @@ void ds_DynamicsTick(struct arena *tick, struct ds_Dynamics *pipeline)
 	pipeline->frames_completed += 1;
 
     const u64 f = pipeline->frames_completed & 0x1;
-    for (u32 i = 0; i < pipeline->runtime.worker_count; ++i)
+    for (u32 i = 0; i < pipeline->runtime->worker_count; ++i)
     {
-        ArenaFlush(pipeline->runtime.worker[i].frame_arr + f);
-        pipeline->runtime.worker[i].frame = pipeline->runtime.worker[i].frame_arr + f;
-        ds_DynamicsMetricsFlush(&pipeline->runtime.worker[i].metrics);
+        ArenaFlush(pipeline->runtime->worker[i].frame_arr + f);
+        pipeline->runtime->worker[i].frame = pipeline->runtime->worker[i].frame_arr + f;
+        ds_DynamicsMetricsFlush(&pipeline->runtime->worker[i].metrics);
     }
-    ds_DynamicsMetricsFlush(&pipeline->runtime.metrics);
+    ds_DynamicsMetricsFlush(&pipeline->runtime->metrics);
 
     ds_DynamicsProfileBegin(pipeline);
     {
@@ -1967,8 +1993,8 @@ void ds_DynamicsTick(struct arena *tick, struct ds_Dynamics *pipeline)
     }
     ds_DynamicsProfileEnd(pipeline);
 
-    ArenaPopRecord(tick);
-    pipeline->runtime.tick = NULL;
+    ArenaPopRecord(srv_frame);
+    pipeline->runtime->srv_frame = NULL;
 	ProfZoneEnd;
 }
 

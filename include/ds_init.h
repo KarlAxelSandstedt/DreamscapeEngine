@@ -42,7 +42,7 @@ Description:
     as the defaults below; the config file then sets the fields it has valid lines for (an unreadable,
     empty or missing file sets none). Programs take key=value arguments (ds_ArgvParse, g_argv):
     ./Executable [config=path] [log=path] [record=path | replay=path] [hash=path] [headless].
-    Defaults: system rng_seed, 256 MiB persistent arena, thread_count 0 (logical cores - 2), 4 MiB frame and
+    Defaults: system rng_seed, 256 MiB persistent arena, thread_count 0 (logical cores - 2),
     5 x 1 MiB scratch arenas per thread, headless 0.
     Rules for the program:
     1. ds_Init and ds_Shutdown run once per process, on the same thread. That thread becomes thread
@@ -94,10 +94,11 @@ struct ds_RuntimeConfig
                                                cores - 2. Clamped to [1, min(logical cores,
                                                DS_THREAD_COUNT_MAX)]; on the web the core count is
                                                meant to be the pthread pool size (unverified)          */
-    u64             thread_framesize;       /* per-thread frame arena size (main thread and workers)    */
     u64             thread_scratchsize;     /* per-thread scratch arena size                            */
     u32             thread_scratch_count;   /* per-thread scratch arena count                           */
     u32             headless;               /* 1: don't start graphics (rule 5)                         */
+    u64             dynamics_worker_framesize; /* per dynamics worker: the pipeline's double-buffered frame arenas, bytes */
+    u64             server_framesize;       /* the server's frame arena: the arrivals and the ticks' scratch memory, bytes */
 };
 
 /* The config ds_Init ran with, defaults resolved (thread_count >= 1, rng_seed nonzero). NULL outside ds_Init..ds_Shutdown. */

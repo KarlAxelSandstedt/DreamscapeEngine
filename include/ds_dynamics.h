@@ -2083,16 +2083,17 @@ struct ds_DynamicsRuntime
     u64                             profile_length;         /* buffer length            */
     u64                             profile_next;           /* monotonically increasing */
 
-    struct arena *                  tick;
+    struct arena *                  srv_frame;
     u32                             heap_allocated;
 };
 
-void    ds_DynamicsRuntimeAlloc(struct arena *mem, struct ds_DynamicsRuntime *runtime, const u32 worker_count, const u64 worker_frame_size);
+void    ds_DynamicsRuntimeAlloc(struct arena *mem, struct ds_DynamicsRuntime *runtime);
+void    ds_DynamicsRuntimeFlush(struct ds_DynamicsRuntime *runtime);
 void    ds_DynamicsRuntimeDealloc(struct ds_DynamicsRuntime *runtime);
 
 struct ds_Dynamics 
 {
-    struct ds_DynamicsRuntime       runtime;
+    struct ds_DynamicsRuntime *     runtime;                /* externally owned, sized by the runtime config */
 
     struct ds_DynamicsConfig        config;                 /* what the ticks read (g_dynamics_config while pushed) */
     struct ds_DynamicsConfig        config_pending;         /* the host's edits, buffered until ds_DynamicsConfigUpdatePending applies them */
@@ -2143,25 +2144,25 @@ struct ds_Dynamics
 /**************** PHYISCS PIPELINE API ****************/
 
 /*
- * Initialize a new growable physics pipeline from config (derived first); ns_tick is the duration of a physics frame.
- * The runtime goes on mem, or on the heap if mem is NULL (ds_DynamicsRuntimeAlloc). The config is applied (as
- * ds_DynamicsConfigUpdatePending) and nothing is pushed.
+ * Initialize a new growable physics pipeline from config (derived first) on the given runtime (externally owned, one
+ * per pipeline); ns_tick is the duration of a physics frame. The config is applied (as ds_DynamicsConfigUpdatePending)
+ * and nothing is pushed.
  */
-struct ds_Dynamics ds_DynamicsAlloc(struct arena *mem, const struct ds_DynamicsConfig *config, const u64 ns_tick, const struct ds_DynamicsExternal *external, const u32 worker_count, const u64 worker_frame_size);
+struct ds_Dynamics ds_DynamicsAlloc(const struct ds_DynamicsConfig *config, const u64 ns_tick, const struct ds_DynamicsExternal *external, struct ds_DynamicsRuntime *runtime);
 /* ds_DynamicsAlloc with the default config but initial_size. */
-struct ds_Dynamics ds_DynamicsAllocDefault(struct arena *mem, const u32 initial_size, const u64 ns_tick, const struct ds_DynamicsExternal *external, const u32 worker_count, const u64 worker_frame_size);
-/* Free the pipeline's heap resources. */
+struct ds_Dynamics ds_DynamicsAllocDefault(const u32 initial_size, const u64 ns_tick, const struct ds_DynamicsExternal *external, struct ds_DynamicsRuntime *runtime);
+/* Free the pipeline's heap resources (the runtime stays its owner's). */
 void 			ds_DynamicsDealloc(struct ds_Dynamics *pipeline);
 /* Return the required size when serializing the pipeline. */
 u64             ds_DynamicsSerializeSize(const struct ds_Dynamics *pipeline);
 /* Serialize the pipeline. WARNING: Assumes pipeline fits in the stream. */
 void            ds_DynamicsSerialize(struct SS *ss, const struct ds_Dynamics *pipeline);
 /*
- * Returns 1 on success and 0 on failure. mem holds the runtime and the restored heap data; everything 
+ * Returns 1 on success and 0 on failure. The pipeline is restored on runtime (its frames flushed); mem holds the restored heap data; everything 
  * else is heap allocated, so always free the pipeline with ds_DynamicsDealloc. On failure the stream position and
  * mem are as before the call and the pipeline is zeroed.
  */
-u32             ds_DynamicsTryDeserialize(struct arena *mem, struct SS *ss, struct ds_Dynamics *pipeline, const struct ds_DynamicsExternal *external);
+u32             ds_DynamicsTryDeserialize(struct arena *mem, struct SS *ss, struct ds_Dynamics *pipeline, const struct ds_DynamicsExternal *external, struct ds_DynamicsRuntime *runtime);
 /*
  * Empty the pipeline: every body, shape, contact, island, joint, event, sleeping set and the frame memory go;
  * the frame count restarts and a flagged split is forgotten. Configuration and capacities stay.
@@ -2171,9 +2172,9 @@ void			ds_DynamicsFlush(struct ds_Dynamics *pipeline);
  * Simulate one physics frame of ns_tick: pending config, broadphase and narrowphase over the dirty shapes,
  * contact promotion/demotion, at most one island split, the solver, proxy updates (or a rebuild of the
  * dynamic BVH), contact removal, the sleep bookkeeping. The pipeline must be pushed (ds_DynamicsConfigPush).
- * tick is the frame's scratch memory: pushed on during the tick, left at its mark on return.
+ * srv_frame is the server's frame arena, the tick's scratch memory: pushed on during the tick, left at its mark on return.
  */
-void 			ds_DynamicsTick(struct arena *tick, struct ds_Dynamics *pipeline);
+void 			ds_DynamicsTick(struct arena *srv_frame, struct ds_Dynamics *pipeline);
 /* Hash bodies in order from low to high and return the final hash  */
 u64             ds_DynamicsHash(const struct ds_Dynamics *pipeline);
 /* validate and ds_Assert internal state of physics pipeline */

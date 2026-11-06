@@ -117,14 +117,12 @@ ds_JobId    ds_WSDequeTrySteal(struct ds_WSDeque *deque);
 /*
 ds_Worker
 =========
-A scheduler worker: its thread, and a_mem_frame_switch, set by ds_JobSchedulerFrameClear: the worker switches and
-flushes its frame arena before it next runs jobs.
+A scheduler worker: its thread.
 */
 
 struct ds_Align(DS_CACHE_LINE) ds_Worker
 {
 	ds_Thread *	    thr;
-	u32 		    a_mem_frame_switch;	/* atomic sync-point: if set, on next task run flush mem_frame. */
 };
 
 /* main loop for slave workers */
@@ -275,11 +273,9 @@ struct ds_Align(DS_CACHE_LINE) ds_JobScheduler
 extern struct ds_JobScheduler *g_scheduler;
 
 /* Init Scheduler and setup threads inside ds_WorkerMain: worker 0 is the caller, workers 1 .. thread_count - 1 are cloned in order; returns once all have started. Called by ds_PlatformApiInit. */
-void 	ds_JobSchedulerInit(struct arena *mem_persistent, const u32 thread_count, const u64 stacksize, const u64 framesize, const u64 scratchsize, const u32 scratch_count, const u64 initial_deque_size);
+void 	ds_JobSchedulerInit(struct arena *mem_persistent, const u32 thread_count, const u64 stacksize, const u64 scratchsize, const u32 scratch_count, const u64 initial_deque_size);
 /* Destroy resources: stop and join the workers, free the deques */
 void 	ds_JobSchedulerShutdown(void);
-/* Ask every worker to switch and flush its frame arena before it next runs jobs */
-void	ds_JobSchedulerFrameClear(void);
 
 /*
 ds_Spin

@@ -37,7 +37,7 @@ int main(int argc, char *argv[])
 {
 	ds_Init(argc, argv);
 
-	struct led *editor = led_Alloc(g_config->thread_count, g_config->thread_framesize, g_argv[ARGV_SIMULATION], g_argv[ARGV_RECORD], g_argv[ARGV_REPLAY], g_argv[ARGV_HASH]);
+	struct led *editor = led_Alloc(g_argv[ARGV_SIMULATION], g_argv[ARGV_RECORD], g_argv[ARGV_REPLAY], g_argv[ARGV_HASH]);
 
     ds_TestMainCorrectness();
 

@@ -89,9 +89,9 @@ ds_JointId ds_JointAdd(struct ds_Dynamics *pipeline, const enum ds_JointType typ
     /* the workers' breaking sets follow the pool's capacity */
     if (old_length != pipeline->joint_pool.length)
     {
-        for (u32 w = 0; w < pipeline->runtime.worker_count; ++w)
+        for (u32 w = 0; w < pipeline->runtime->worker_count; ++w)
         {
-            ds_BitSetIncreaseSize(&pipeline->runtime.worker[w].joint_breaking_set, pipeline->joint_pool.length, 0);
+            ds_BitSetIncreaseSize(&pipeline->runtime->worker[w].joint_breaking_set, pipeline->joint_pool.length, 0);
         }
     }
 

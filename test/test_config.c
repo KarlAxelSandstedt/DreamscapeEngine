@@ -20,7 +20,6 @@ static struct ds_RuntimeConfig ConfigTestBase(void)
     config.rng_seed[3] = 4;
     config.persistent_size = 1000;
     config.thread_count = 3;
-    config.thread_framesize = 2000;
     config.thread_scratchsize = 3000;
     config.thread_scratch_count = 4;
     config.headless = 0;
@@ -33,7 +32,6 @@ static u32 ConfigTestEqual(const struct ds_RuntimeConfig *a, const struct ds_Run
     return a->rng_seed[0] == b->rng_seed[0] && a->rng_seed[1] == b->rng_seed[1] && a->rng_seed[2] == b->rng_seed[2] && a->rng_seed[3] == b->rng_seed[3]
         && a->persistent_size == b->persistent_size
         && a->thread_count == b->thread_count
-        && a->thread_framesize == b->thread_framesize
         && a->thread_scratchsize == b->thread_scratchsize
         && a->thread_scratch_count == b->thread_scratch_count
         && a->headless == b->headless;
@@ -72,7 +70,6 @@ struct test_Output ConfigRoundTripTest(struct test_Environment *env)
         }
         config.persistent_size = (i == 1) ? U64_MAX : 1 + RngU64Range(0, U64_MAX - 1);
         config.thread_count = (u32) RngU64Range(0, U32_MAX);
-        config.thread_framesize = 1 + RngU64Range(0, 1u << 30);
         config.thread_scratchsize = 1 + RngU64Range(0, 1u << 30);
         config.thread_scratch_count = (u32) RngU64Range(1, U32_MAX);
         config.headless = (u32) RngU64Range(0, 1);
