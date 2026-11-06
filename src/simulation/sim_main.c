@@ -221,12 +221,16 @@ static void ds_SimSeed(struct ds_Sim *sim, const struct ds_SimConfig *config)
     ArenaPopScratch();
 }
 
-void ds_SimAlloc(struct arena *mem, struct ds_Sim *sim, const struct ds_SimConfig *config, struct c_ShapeDB *cshape_db, ds_SDB(ds_BodyPrefab) *prefab_db, const u32 worker_count, const u64 worker_frame_size)
+void ds_SimAlloc(struct arena *mem, struct ds_Sim *sim, const struct ds_SimConfig *config, struct c_ShapeDB *cshape_db, ds_SDB(ds_BodyPrefab) *prefab_db, ds_SDB(ds_ShapePrefab) *shape_prefab_db, const u32 worker_count, const u64 worker_frame_size)
 {
     ds_Assert(ds_SimConfigCheck(config));
+    ds_Assert(cshape_db && prefab_db && shape_prefab_db);
 
     *sim = (struct ds_Sim) { 0 };
     sim->config_seed = *config;
+    sim->body_prefab_db = prefab_db;
+    sim->shape_prefab_db = shape_prefab_db;
+    sim->entity_map = ds_HashMapAlloc(NULL, 1024, 1024, GROWABLE);
     for (u32 i = 0; i < SIM_SYSTEM_COUNT; ++i)
     {
         sim->us_system_tick[i] = config->us_system_tick[i];
@@ -241,11 +245,27 @@ void ds_SimAlloc(struct arena *mem, struct ds_Sim *sim, const struct ds_SimConfi
 void ds_SimDealloc(struct ds_Sim *sim)
 {
     ds_DynamicsFree(&sim->dynamics);
+    ds_HashMapDealloc(&sim->entity_map);
+}
+
+ds_BodyId ds_SimBodyByEntity(const struct ds_Sim *sim, const u32 entity)
+{
+    for (u32 i = ds_HashMapFirst(&sim->entity_map, entity); i != HASH_NULL; i = ds_HashMapNext(&sim->entity_map, i))
+    {
+        const struct ds_Body *body = sim->dynamics.body_pool.buf + i;
+        if (ds_PoolSlotAllocated(body) && body->entity == entity)
+        {
+            return body->id;
+        }
+    }
+
+    return ds_BodyIdNull();
 }
 
 void ds_SimFlush(struct ds_Sim *sim)
 {
     ds_DynamicsFlush(&sim->dynamics);
+    ds_HashMapFlush(&sim->entity_map);
     ds_SimScheduleInit(sim);
     sim->initialized = 0;
     ds_SimSeed(sim, &sim->config_seed);

@@ -2586,6 +2586,10 @@ static void led_EngineInit(struct led *led)
 	led->ns_physics_start = led->ns;
 	led->ns_engine_paused = 0;
 
+    /* the scene as the first frame's commands: bodies with their shapes, then the joints */
+    ds_CPool(ds_SimCmd) cmds;
+    ds_CPoolAlloc(NULL, cmds, 1024, GROWABLE);
+
     HII it; 
     HIIInit(it, led->node_hierarchy, LED_NODE_ROOT);
     HIIAdvance(it, led->node_hierarchy);
@@ -2595,8 +2599,8 @@ static void led_EngineInit(struct led *led)
         if (node->flags & LED_BODY_PREFAB)
         {
             const struct ds_BodyPrefab *body_prefab = led->body_prefab_db.pool.buf + node->body_prefab;
-	    	const ds_BodyId body = ds_BodyAdd(led->physics, body_prefab, &node->transform, it.at);
-            node->body = body;
+            const struct ds_SimCmd body_add = { .type = SIM_CMD_BODY_ADD, .body_add = { .prefab = body_prefab->id, .t_world = node->transform, .entity = it.at } };
+            ds_CPoolPushValue(cmds, body_add);
     
             //TODO mass properties should be calculated on AttachShape....
             struct ds_ShapePrefabInstance *instance = NULL;
@@ -2605,27 +2609,43 @@ static void led_EngineInit(struct led *led)
             {
                 instance = led->shape_prefab_instance_pool.buf + j;
                 shape_prefab = led->shape_prefab_db.pool.buf + instance->shape_prefab;
-                ds_ShapeAdd(led->physics, shape_prefab, &instance->t_local, body);
+                const struct ds_SimCmd shape_add = { .type = SIM_CMD_SHAPE_ADD, .shape_add = { .prefab = shape_prefab->id, .t_local = instance->t_local, .entity = it.at } };
+                ds_CPoolPushValue(cmds, shape_add);
             }
         }
         HIIAdvance(it, led->node_hierarchy);
 	}
 
-    fprintf(stderr, "BODIES: %u\n", led->physics->body_pool.count);
-
     for (u32 i = 0; i < led->joint_pool.count; ++i)
     {
         const struct led_Joint *joint = led->joint_pool.buf + i;
-        const struct led_Node *node0 = led_NodeLookup(led, joint->id[0]).address;
-        const struct led_Node *node1 = led_NodeLookup(led, joint->id[1]).address;
-        if (!node0 || !node1)
+        const struct slot node0 = led_NodeLookup(led, joint->id[0]);
+        const struct slot node1 = led_NodeLookup(led, joint->id[1]);
+        if (!node0.address || !node1.address)
         {
 		    LogString(T_LED, S_WARNING, "Failed to lookup joint attached node");
             continue;
         }
 
-        ds_DistanceJointAdd(led->physics, &joint->prefab, node0->body, joint->local_frame + 0, node1->body, joint->local_frame + 1);
+        const struct ds_DistanceJointPrefab *prefab = &joint->prefab;
+        struct ds_SimCmd joint_add = { .type = SIM_CMD_JOINT_ADD };
+        joint_add.joint_add = (struct ds_JointAddCmd)
+        {
+            .collide_connected = prefab->collide_connected,
+            .target = prefab->target,
+            .range = prefab->range,
+            .enable_spring = prefab->enable_spring,
+            .hertz = prefab->hertz,
+            .damping_ratio = prefab->damping_ratio,
+            .breakage = prefab->breakage,
+            .entity = { node0.index, node1.index },
+            .local_frame = { joint->local_frame[0], joint->local_frame[1] },
+        };
+        ds_CPoolPushValue(cmds, joint_add);
     }
+
+    ds_CPoolPushValue(led->srv.payload_pool, ds_SimCmdPayloadPushAll(&led->srv.frame, led->sim, &cmds));
+    ds_CPoolDealloc(cmds);
 }
 
 void led_Core(struct led *led)

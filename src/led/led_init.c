@@ -136,7 +136,7 @@ struct led *led_Alloc(const u32 thread_count, const u64 thread_framesize)
 	struct ds_SimConfig sim_config = ds_SimConfigDefault();
 	sim_config.dynamics.initial_size = 1024;
 	sim_config.dynamics.frame_memory = 16*1024*1024;
-	g_editor->sim = ds_SimHostAdd(&g_editor->srv, &g_editor->mem_persistent, &sim_config, SIM_MODE_NONE, NULL, 0, NULL, &g_editor->cs_db, &g_editor->body_prefab_db, thread_count, thread_framesize);
+	g_editor->sim = ds_SimHostAdd(&g_editor->srv, &g_editor->mem_persistent, &sim_config, SIM_MODE_NONE, NULL, 0, NULL, &g_editor->cs_db, &g_editor->body_prefab_db, &g_editor->shape_prefab_db, thread_count, thread_framesize);
 	struct ds_SimHost *host = ds_SimHostLookup(&g_editor->srv, g_editor->sim).address;
 	host->speed = 0.0;
 	g_editor->physics = &host->sim.dynamics;

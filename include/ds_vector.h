@@ -40,6 +40,7 @@ extern "C" {
 #endif
 
 #include <stdio.h>
+#include "ds_serialize.h"
 #include <inttypes.h>
 
 #include "ds_define.h"
@@ -210,6 +211,17 @@ static ds_ForceInline u32 V3ParallelCheck(const v3 a, const v3 b, const f32 eps)
 static ds_ForceInline void V3CreateBasis(v3 *n1, v3 *n2, const v3 n3);
 /* 1 if no component is NaN or Inf */
 static ds_ForceInline u32 V3FiniteCheck(const v3 v);
+static ds_ForceInline u32 V3F64FiniteCheck(const v3f64 v);
+
+/* Return the required size when serializing v. */
+static ds_ForceInline u64 V3SerializeSize(const v3 v);
+static ds_ForceInline u64 V3F64SerializeSize(const v3f64 v);
+/* Serialize v. WARNING: Assumes v fits in the stream. */
+static ds_ForceInline void V3Serialize(struct SS *ss, const v3 v);
+static ds_ForceInline void V3F64Serialize(struct SS *ss, const v3f64 v);
+/* Returns 1 on success. On failure return 0 (bad stream) and reset the stream position. */
+static ds_ForceInline u32 V3TryDeserialize(struct SS *ss, v3 *v);
+static ds_ForceInline u32 V3F64TryDeserialize(struct SS *ss, v3f64 *v);
 
 /************************************* printing *************************************/
 
@@ -742,6 +754,61 @@ static ds_ForceInline void V3CreateBasis(v3 *n1, v3 *n2, const v3 n3)
 static ds_ForceInline u32 V3FiniteCheck(const v3 v)
 {
 	return F32FiniteCheck(v.x) && F32FiniteCheck(v.y) && F32FiniteCheck(v.z);
+}
+
+static ds_ForceInline u32 V3F64FiniteCheck(const v3f64 v)
+{
+	return F64FiniteCheck(v.x) && F64FiniteCheck(v.y) && F64FiniteCheck(v.z);
+}
+
+static ds_ForceInline u64 V3SerializeSize(const v3 v)
+{
+	return 3*sizeof(f32);
+}
+
+static ds_ForceInline u64 V3F64SerializeSize(const v3f64 v)
+{
+	return 3*sizeof(f64);
+}
+
+static ds_ForceInline void V3Serialize(struct SS *ss, const v3 v)
+{
+	SSWriteU64Partial(ss, (b32) { .f = v.x }.u, 32);
+	SSWriteU64Partial(ss, (b32) { .f = v.y }.u, 32);
+	SSWriteU64Partial(ss, (b32) { .f = v.z }.u, 32);
+}
+
+static ds_ForceInline void V3F64Serialize(struct SS *ss, const v3f64 v)
+{
+	SSWriteU64Partial(ss, (b64) { .f = v.x }.u, 64);
+	SSWriteU64Partial(ss, (b64) { .f = v.y }.u, 64);
+	SSWriteU64Partial(ss, (b64) { .f = v.z }.u, 64);
+}
+
+static ds_ForceInline u32 V3TryDeserialize(struct SS *ss, v3 *v)
+{
+	if (SSBitsLeft(ss) < 8*V3SerializeSize(*v))
+	{
+		return 0;
+	}
+
+	v->x = (b32) { .u = (u32) SSReadU64Partial(ss, 32) }.f;
+	v->y = (b32) { .u = (u32) SSReadU64Partial(ss, 32) }.f;
+	v->z = (b32) { .u = (u32) SSReadU64Partial(ss, 32) }.f;
+	return 1;
+}
+
+static ds_ForceInline u32 V3F64TryDeserialize(struct SS *ss, v3f64 *v)
+{
+	if (SSBitsLeft(ss) < 8*V3F64SerializeSize(*v))
+	{
+		return 0;
+	}
+
+	v->x = (b64) { .u = SSReadU64Partial(ss, 64) }.f;
+	v->y = (b64) { .u = SSReadU64Partial(ss, 64) }.f;
+	v->z = (b64) { .u = SSReadU64Partial(ss, 64) }.f;
+	return 1;
 }
 
 /*************************** printing: inline definitions ***************************/

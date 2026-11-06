@@ -120,6 +120,7 @@ static ds_ForceInline u32 F32TestSubnormal(const f32 f);
 static ds_ForceInline enum ieee_type F32Classify(const f32 f);
 /* 1 if f is neither NaN nor Inf */
 static ds_ForceInline u32 F32FiniteCheck(const f32 f);
+static ds_ForceInline u32 F64FiniteCheck(const f64 f);
 
 /********************** sign, min, max, clamp, round ***********************/
 
@@ -282,6 +283,12 @@ static ds_ForceInline u32 F32FiniteCheck(const f32 f)
 {
 	const union ieee32 val = { .f = f };
 	return (val.bits & F32_EXPONENT_MASK) != F32_EXPONENT_MASK;
+}
+
+static ds_ForceInline u32 F64FiniteCheck(const f64 f)
+{
+	const b64 val = { .f = f };
+	return (val.u & 0x7ff0000000000000ull) != 0x7ff0000000000000ull;
 }
 
 /************** sign, min, max, clamp, round: inline definitions **************/

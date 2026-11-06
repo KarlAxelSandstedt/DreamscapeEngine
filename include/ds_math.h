@@ -83,6 +83,14 @@ typedef struct
 
 /* Return the identity pose */
 static inline ds_Transform ds_TransformIdentity(void);
+/* 1 if no component is NaN or Inf */
+static inline u32 ds_TransformFiniteCheck(const ds_Transform *transform);
+/* Return the required size when serializing the transform. */
+static inline u64 ds_TransformSerializeSize(const ds_Transform *transform);
+/* Serialize the transform. WARNING: Assumes transform fits in the stream. */
+static inline void ds_TransformSerialize(struct SS *ss, const ds_Transform *transform);
+/* Returns 1 on success. On failure return 0 (bad stream) and reset the stream position. */
+static inline u32 ds_TransformTryDeserialize(struct SS *ss, ds_Transform *transform);
 
 /*
  * Return target's pose in reference's frame (reference^-1 * target): rel maps points from target's frame
@@ -111,6 +119,14 @@ static inline v3 ds_TransformPointToLocal(const ds_Transform *reference, const v
 
 /* Return the identity world pose (at the world origin) */
 static inline ds_TransformWorld ds_TransformWorldIdentity(void);
+/* 1 if no component is NaN or Inf */
+static inline u32 ds_TransformWorldFiniteCheck(const ds_TransformWorld *transform);
+/* Return the required size when serializing the transform. */
+static inline u64 ds_TransformWorldSerializeSize(const ds_TransformWorld *transform);
+/* Serialize the transform. WARNING: Assumes transform fits in the stream. */
+static inline void ds_TransformWorldSerialize(struct SS *ss, const ds_TransformWorld *transform);
+/* Returns 1 on success. On failure return 0 (bad stream) and reset the stream position. */
+static inline u32 ds_TransformWorldTryDeserialize(struct SS *ss, ds_TransformWorld *transform);
 
 /* Return transform as a world pose (lossless) */
 static inline ds_TransformWorld ds_TransformPromote(const ds_Transform *transform);
@@ -150,6 +166,34 @@ static inline ds_Transform ds_TransformIdentity(void)
     return transform;
 }
 
+static inline u32 ds_TransformFiniteCheck(const ds_Transform *transform)
+{
+    return QFiniteCheck(transform->rotation) && V3FiniteCheck(transform->position);
+}
+
+static inline u64 ds_TransformSerializeSize(const ds_Transform *transform)
+{
+    return QSerializeSize(transform->rotation) + V3SerializeSize(transform->position);
+}
+
+static inline void ds_TransformSerialize(struct SS *ss, const ds_Transform *transform)
+{
+    QSerialize(ss, transform->rotation);
+    V3Serialize(ss, transform->position);
+}
+
+static inline u32 ds_TransformTryDeserialize(struct SS *ss, ds_Transform *transform)
+{
+    if (SSBitsLeft(ss) < 8*ds_TransformSerializeSize(transform))
+    {
+        return 0;
+    }
+
+    QTryDeserialize(ss, &transform->rotation);
+    V3TryDeserialize(ss, &transform->position);
+    return 1;
+}
+
 static inline ds_Transform ds_TransformRelative(const ds_Transform *reference, const ds_Transform *target)
 {
     const q inv = QConj(reference->rotation);
@@ -177,6 +221,34 @@ static inline ds_TransformWorld ds_TransformWorldIdentity(void)
         .position = V3F64(0.0, 0.0, 0.0),
     };
     return transform;
+}
+
+static inline u32 ds_TransformWorldFiniteCheck(const ds_TransformWorld *transform)
+{
+    return QFiniteCheck(transform->rotation) && V3F64FiniteCheck(transform->position);
+}
+
+static inline u64 ds_TransformWorldSerializeSize(const ds_TransformWorld *transform)
+{
+    return QSerializeSize(transform->rotation) + V3F64SerializeSize(transform->position);
+}
+
+static inline void ds_TransformWorldSerialize(struct SS *ss, const ds_TransformWorld *transform)
+{
+    QSerialize(ss, transform->rotation);
+    V3F64Serialize(ss, transform->position);
+}
+
+static inline u32 ds_TransformWorldTryDeserialize(struct SS *ss, ds_TransformWorld *transform)
+{
+    if (SSBitsLeft(ss) < 8*ds_TransformWorldSerializeSize(transform))
+    {
+        return 0;
+    }
+
+    QTryDeserialize(ss, &transform->rotation);
+    V3F64TryDeserialize(ss, &transform->position);
+    return 1;
 }
 
 static inline ds_TransformWorld ds_TransformPromote(const ds_Transform *transform)

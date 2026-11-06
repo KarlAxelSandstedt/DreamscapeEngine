@@ -88,6 +88,9 @@ TODO (we document later)
 enum ds_SimCmdType
 {
     SIM_CMD_CONFIG_LOAD,    /* Payload: serialized ds_SimConfig */
+    SIM_CMD_BODY_ADD,       /* a body from a body prefab (by id) at a world transform, named by its entity */
+    SIM_CMD_SHAPE_ADD,      /* a shape from a shape prefab (by id) on the entity's body, at a local transform */
+    SIM_CMD_JOINT_ADD,      /* a distance joint between two entities' bodies */
     SIM_CMD_COUNT
 };
 
@@ -100,6 +103,33 @@ struct ds_SimCmd
         {
             const struct ds_SimConfig *config; 
         } load_config;
+
+        struct ds_BodyAddCmd
+        {
+            utf8                prefab;     /* id in the body prefab database */
+            ds_TransformWorld   t_world;
+            u32                 entity;
+        } body_add;
+
+        struct ds_ShapeAddCmd
+        {
+            utf8                prefab;     /* id in the shape prefab database */
+            ds_Transform        t_local;
+            u32                 entity;
+        } shape_add;
+
+        struct ds_JointAddCmd
+        {
+            u32                 collide_connected;  /* a ds_DistanceJointPrefab's fields: rebuilt through its constructors */
+            f32                 target;
+            intv                range;
+            u32                 enable_spring;
+            f32                 hertz;
+            f32                 damping_ratio;
+            struct ds_BreakageOption breakage;
+            u32                 entity[2];
+            ds_Transform        local_frame[2];
+        } joint_add;
     };
 };
 DEFINE_CPOOL_STRUCT(ds_SimCmd);
@@ -182,6 +212,9 @@ struct ds_Sim
 
     struct ds_Dynamics      dynamics;
     //struct ds_Game          game;             /* TODO: ds_Game undefined */
+    ds_SDB(ds_BodyPrefab)  *body_prefab_db;     /* externally owned */
+    ds_SDB(ds_ShapePrefab) *shape_prefab_db;    /* externally owned */
+    struct ds_HashMap       entity_map;         /* entity -> body pool index, for the commands and the host */
 
     /* Scheduler: linear search for minimum on timestamped and system-tagged keys.  */
     u64                     us_system_tick[SIM_SYSTEM_COUNT];
@@ -194,7 +227,7 @@ struct ds_Sim
  * system ticks are one period in. The databases are externally owned and must outlive sim; worker_count and
  * worker_frame_size are passed on to ds_DynamicsAllocConfig.
  */
-void    ds_SimAlloc(struct arena *mem, struct ds_Sim *sim, const struct ds_SimConfig *config, struct c_ShapeDB *cshape_db, ds_SDB(ds_BodyPrefab) *prefab_db, const u32 worker_count, const u64 worker_frame_size);
+void    ds_SimAlloc(struct arena *mem, struct ds_Sim *sim, const struct ds_SimConfig *config, struct c_ShapeDB *cshape_db, ds_SDB(ds_BodyPrefab) *prefab_db, ds_SDB(ds_ShapePrefab) *shape_prefab_db, const u32 worker_count, const u64 worker_frame_size);
 //TODO
 //void    ds_SimAllocReplay(struct ds_Sim *sim, struct ds_SimReplay *replay);
 /* Free the simulation's heap resources. */
@@ -209,6 +242,8 @@ void    ds_SimFlush(struct ds_Sim *sim);
 void    ds_SimTick(struct ds_Sim *sim, ds_CPool(u64) *hash_pool, const ds_CPool(ds_SimCmd) *cmds, const u64 us_delta);
 /* Return the hash of the simulation's state (every system's state hash). */
 u64     ds_SimHash(const struct ds_Sim *sim);
+/* Return the body added for entity (SIM_CMD_BODY_ADD), or the null id. */
+ds_BodyId ds_SimBodyByEntity(const struct ds_Sim *sim, const u32 entity);
 
 //TODO Serialize API for sim 
 

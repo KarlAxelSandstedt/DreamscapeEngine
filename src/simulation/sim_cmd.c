@@ -124,86 +124,10 @@ Can this be used for Denial-of-Service (malicious payloads degrading performance
 
 /**************** ds_SimCmd ****************/
 
-u32 ds_SimCmdFormVerify(const struct ds_SimCmd *cmd)
+/* a prefab id: non-empty and within the database's buffer */
+static u32 ds_SimCmdPrefabIdCheck(const utf8 id)
 {
-    switch (cmd->type)
-    {
-        case SIM_CMD_CONFIG_LOAD:
-        {
-            return ds_SimConfigCheck(cmd->load_config.config);
-        }
-
-        default:
-        {
-            return 0;
-        }
-    }
-}
-
-/* Return 1 if the well-formed cmd is a valid command within sim's context, 0 otherwise.*/
-static u32 ds_SimCmdDataVerify(const struct ds_Sim *sim, const struct ds_SimCmd *cmd)
-{
-    ds_Assert(ds_SimCmdFormVerify(cmd));
-
-    switch (cmd->type)
-    {
-        case SIM_CMD_CONFIG_LOAD:
-        {
-            /* the seed is accepted as is; afterwards the alloc-time values are fixed */
-            if (!sim->initialized)
-            {
-                return 1;
-            }
-
-            const struct ds_SimConfig *config = cmd->load_config.config;
-            const struct ds_SimConfig *seed = &sim->config_seed;
-            u32 valid = config->dynamics.initial_size == seed->dynamics.initial_size
-                     && config->dynamics.frame_memory == seed->dynamics.frame_memory;
-            for (u32 i = 0; i < 4; ++i)
-            {
-                valid = valid && config->seed[i] == seed->seed[i];
-            }
-
-            for (u32 i = 0; i < SIM_SYSTEM_COUNT; ++i)
-            {
-                valid = valid && config->us_system_tick[i] == seed->us_system_tick[i];
-            }
-
-            return valid;
-        }
-
-        default:
-        {
-            return 0;
-        }
-    }
-}
-
-u32 ds_SimCmdTryExecute(struct ds_Sim *sim, const struct ds_SimCmd *cmd)
-{
-    if (!ds_SimCmdDataVerify(sim, cmd))
-    {
-        Log(T_SYSTEM, S_WARNING, "ds_SimCmdTryExecute: command of type %u rejected", (u32) cmd->type);
-        return 0;
-    }
-
-    switch (cmd->type)
-    {
-        case SIM_CMD_CONFIG_LOAD:
-        {
-            /* the dynamics (the game later) */
-            sim->dynamics.config_pending = cmd->load_config.config->dynamics;
-            ds_DynamicsConfigUpdatePending(&sim->dynamics);
-            sim->initialized = 1;
-        } break;
-
-        default:
-        {
-            ds_AssertString(0, "ds_SimCmdTryExecute: unknown command type");
-        } break;
-    }
-
-    return 1;
+    return id.size >= 1 && id.size < PREFAB_BUFSIZE;
 }
 
 /*
@@ -238,20 +162,364 @@ static void ds_SimCmdReadBytes(struct SS *ss, u8 *buf, const u64 size)
     }
 }
 
+/* a prefab id: 8 bits of size, then its bytes */
+#define DS_SIM_CMD_ID_BITS(id)      (8 + 8*(id).size)
+
+/* the id's bytes go on mem; 0 if the stream is short or mem is full */
+static u32 ds_SimCmdTryReadId(struct arena *mem, struct SS *ss, utf8 *id)
+{
+    if (SSBitsLeft(ss) < 8)
+    {
+        return 0;
+    }
+
+    const u32 size = (u32) SSReadU64Partial(ss, 8);
+    if (SSBitsLeft(ss) < 8*size)
+    {
+        return 0;
+    }
+
+    u8 *buf = ArenaPush(mem, (size) ? size : 1);
+    if (buf == NULL)
+    {
+        return 0;
+    }
+
+    for (u32 i = 0; i < size; ++i)
+    {
+        buf[i] = (u8) SSReadU64Partial(ss, 8);
+    }
+    *id = (utf8) { .buf = buf, .size = size, .len = size };
+    return 1;
+}
+#define DS_SIM_CMD_JOINT_ADD_BITS   (32 + 32 + 2*32 + 32 + 2*32 + 2*32 + 2*32 + 2*8*28)
+
+
+/******** ConfigLoad ********/
+
+static u32 ds_LoadConfigCmdFormVerify(const struct ds_LoadConfigCmd *cmd)
+{
+    return ds_SimConfigCheck(cmd->config);
+}
+
+/* the seed is accepted as is; afterwards the alloc-time values are fixed */
+static u32 ds_LoadConfigCmdDataVerify(const struct ds_Sim *sim, const struct ds_LoadConfigCmd *cmd)
+{
+    if (!sim->initialized)
+    {
+        return 1;
+    }
+
+    const struct ds_SimConfig *config = cmd->config;
+    const struct ds_SimConfig *seed = &sim->config_seed;
+    u32 valid = config->dynamics.initial_size == seed->dynamics.initial_size
+             && config->dynamics.frame_memory == seed->dynamics.frame_memory;
+    for (u32 i = 0; i < 4; ++i)
+    {
+        valid = valid && config->seed[i] == seed->seed[i];
+    }
+
+    for (u32 i = 0; i < SIM_SYSTEM_COUNT; ++i)
+    {
+        valid = valid && config->us_system_tick[i] == seed->us_system_tick[i];
+    }
+
+    return valid;
+}
+
+static u32 ds_LoadConfigCmdTryExecute(struct ds_Sim *sim, const struct ds_LoadConfigCmd *cmd)
+{
+    /* the dynamics (the game later) */
+    sim->dynamics.config_pending = cmd->config->dynamics;
+    ds_DynamicsConfigUpdatePending(&sim->dynamics);
+    sim->initialized = 1;
+    return 1;
+}
+
+static u64 ds_LoadConfigCmdSerializeBitsize(const struct ds_LoadConfigCmd *cmd)
+{
+    return DS_SIM_CMD_SIZE_BITS + 8*ds_SimConfigSerializeSize(cmd->config);
+}
+
+static void ds_LoadConfigCmdSerialize(struct SS *ss, const struct ds_LoadConfigCmd *cmd)
+{
+    struct arena *tmp = ArenaPushScratch();
+    const u64 size = ds_SimConfigSerializeSize(cmd->config);
+    struct SS body = SSAlloc(tmp, size);
+    ds_SimConfigSerialize(&body, cmd->config);
+
+    SSWriteU64Partial(ss, size, DS_SIM_CMD_SIZE_BITS);
+    ds_SimCmdWriteBytes(ss, body.buf, size);
+    ArenaPopScratch();
+}
+
+static u32 ds_LoadConfigCmdTryDeserialize(struct arena *mem, struct SS *ss, struct ds_LoadConfigCmd *cmd)
+{
+    if (SSBitsLeft(ss) < DS_SIM_CMD_SIZE_BITS)
+    {
+        return 0;
+    }
+
+    const u64 size = SSReadU64Partial(ss, DS_SIM_CMD_SIZE_BITS);
+    if (size > DS_SIM_CMD_BODY_SIZE_MAX || 8*size > SSBitsLeft(ss))
+    {
+        return 0;
+    }
+
+    struct ds_SimConfig *config = ArenaPush(mem, sizeof(struct ds_SimConfig));
+    if (config == NULL)
+    {
+        Log(T_SYSTEM, S_ERROR, "ds_LoadConfigCmdTryDeserialize: no room for a config (%lu bytes)", (u64) sizeof(struct ds_SimConfig));
+        return 0;
+    }
+
+    struct arena *tmp = ArenaPushScratch();
+    struct SS body = SSAlloc(tmp, size);
+    ds_SimCmdReadBytes(ss, body.buf, size);
+    /* the whole body must be the config: a short or a long body is malformed */
+    const u32 success = ds_SimConfigTryDeserialize(&body, config) && body.bit_index == 8*size;
+    ArenaPopScratch();
+
+    cmd->config = config;
+    return success;
+}
+
+/******** BodyAdd ********/
+
+static u32 ds_BodyAddCmdFormVerify(const struct ds_BodyAddCmd *cmd)
+{
+    return ds_SimCmdPrefabIdCheck(cmd->prefab) && ds_TransformWorldFiniteCheck(&cmd->t_world);
+}
+
+static u32 ds_BodyAddCmdDataVerify(const struct ds_Sim *sim, const struct ds_BodyAddCmd *cmd)
+{
+    return ds_SDBLookup(*sim->body_prefab_db, cmd->prefab).index != SDB_STUB
+        && ds_BodyIdNullCheck(ds_SimBodyByEntity(sim, cmd->entity));
+}
+
+static u32 ds_BodyAddCmdTryExecute(struct ds_Sim *sim, const struct ds_BodyAddCmd *cmd)
+{
+    const struct ds_BodyPrefab *prefab = ds_SDBLookup(*sim->body_prefab_db, cmd->prefab).address;
+    const ds_BodyId body = ds_BodyAdd(&sim->dynamics, prefab, &cmd->t_world, cmd->entity);
+    if (ds_BodyIdNullCheck(body))
+    {
+        Log(T_SYSTEM, S_ERROR, "ds_BodyAddCmdTryExecute: no body for entity %u", cmd->entity);
+        return 0;
+    }
+    ds_HashMapAdd(&sim->entity_map, cmd->entity, ds_BodyIdIndex(body));
+    return 1;
+}
+
+static u64 ds_BodyAddCmdSerializeBitsize(const struct ds_BodyAddCmd *cmd)
+{
+    return DS_SIM_CMD_ID_BITS(cmd->prefab) + 8*ds_TransformWorldSerializeSize(&cmd->t_world) + 32;
+}
+
+static void ds_BodyAddCmdSerialize(struct SS *ss, const struct ds_BodyAddCmd *cmd)
+{
+    SSWriteU64Partial(ss, cmd->prefab.size, 8);
+    for (u32 i = 0; i < cmd->prefab.size; ++i)
+    {
+        SSWriteU64Partial(ss, cmd->prefab.buf[i], 8);
+    }
+    ds_TransformWorldSerialize(ss, &cmd->t_world);
+    SSWriteU64Partial(ss, cmd->entity, 32);
+}
+
+static u32 ds_BodyAddCmdTryDeserialize(struct arena *mem, struct SS *ss, struct ds_BodyAddCmd *cmd)
+{
+    if (!ds_SimCmdTryReadId(mem, ss, &cmd->prefab) || !ds_TransformWorldTryDeserialize(ss, &cmd->t_world) || SSBitsLeft(ss) < 32)
+    {
+        return 0;
+    }
+
+    cmd->entity = (u32) SSReadU64Partial(ss, 32);
+    return 1;
+}
+
+/******** ShapeAdd ********/
+
+static u32 ds_ShapeAddCmdFormVerify(const struct ds_ShapeAddCmd *cmd)
+{
+    return ds_SimCmdPrefabIdCheck(cmd->prefab) && ds_TransformFiniteCheck(&cmd->t_local);
+}
+
+static u32 ds_ShapeAddCmdDataVerify(const struct ds_Sim *sim, const struct ds_ShapeAddCmd *cmd)
+{
+    return ds_SDBLookup(*sim->shape_prefab_db, cmd->prefab).index != SDB_STUB
+        && !ds_BodyIdNullCheck(ds_SimBodyByEntity(sim, cmd->entity));
+}
+
+static u32 ds_ShapeAddCmdTryExecute(struct ds_Sim *sim, const struct ds_ShapeAddCmd *cmd)
+{
+    const struct ds_ShapePrefab *prefab = ds_SDBLookup(*sim->shape_prefab_db, cmd->prefab).address;
+    ds_ShapeAdd(&sim->dynamics, prefab, &cmd->t_local, ds_SimBodyByEntity(sim, cmd->entity));
+    return 1;
+}
+
+static u64 ds_ShapeAddCmdSerializeBitsize(const struct ds_ShapeAddCmd *cmd)
+{
+    return DS_SIM_CMD_ID_BITS(cmd->prefab) + 8*ds_TransformSerializeSize(&cmd->t_local) + 32;
+}
+
+static void ds_ShapeAddCmdSerialize(struct SS *ss, const struct ds_ShapeAddCmd *cmd)
+{
+    SSWriteU64Partial(ss, cmd->prefab.size, 8);
+    for (u32 i = 0; i < cmd->prefab.size; ++i)
+    {
+        SSWriteU64Partial(ss, cmd->prefab.buf[i], 8);
+    }
+    ds_TransformSerialize(ss, &cmd->t_local);
+    SSWriteU64Partial(ss, cmd->entity, 32);
+}
+
+static u32 ds_ShapeAddCmdTryDeserialize(struct arena *mem, struct SS *ss, struct ds_ShapeAddCmd *cmd)
+{
+    if (!ds_SimCmdTryReadId(mem, ss, &cmd->prefab) || !ds_TransformTryDeserialize(ss, &cmd->t_local) || SSBitsLeft(ss) < 32)
+    {
+        return 0;
+    }
+
+    cmd->entity = (u32) SSReadU64Partial(ss, 32);
+    return 1;
+}
+
+/******** JointAdd ********/
+
+static u32 ds_JointAddCmdFormVerify(const struct ds_JointAddCmd *cmd)
+{
+    return F32FiniteCheck(cmd->target) && F32FiniteCheck(cmd->range.low) && F32FiniteCheck(cmd->range.high)
+        && F32FiniteCheck(cmd->hertz) && F32FiniteCheck(cmd->damping_ratio)
+        && !F32TestNan(cmd->breakage.force_threshold) && !F32TestNan(cmd->breakage.torque_threshold)   /* infinity: unbreakable */
+        && cmd->range.low <= cmd->target && cmd->target <= cmd->range.high && cmd->hertz >= 0.0f && cmd->damping_ratio >= 0.0f
+        && cmd->entity[0] != cmd->entity[1]
+        && ds_TransformFiniteCheck(cmd->local_frame + 0) && ds_TransformFiniteCheck(cmd->local_frame + 1);
+}
+
+static u32 ds_JointAddCmdDataVerify(const struct ds_Sim *sim, const struct ds_JointAddCmd *cmd)
+{
+    return !ds_BodyIdNullCheck(ds_SimBodyByEntity(sim, cmd->entity[0]))
+        && !ds_BodyIdNullCheck(ds_SimBodyByEntity(sim, cmd->entity[1]));
+}
+
+static u32 ds_JointAddCmdTryExecute(struct ds_Sim *sim, const struct ds_JointAddCmd *cmd)
+{
+    struct ds_DistanceJointPrefab prefab;
+    if (cmd->enable_spring)
+    {
+        ds_DistanceJointPrefabRangeSpring(&prefab, cmd->range, cmd->hertz, cmd->damping_ratio, cmd->breakage);
+    }
+    else
+    {
+        ds_DistanceJointPrefabRange(&prefab, cmd->range, cmd->breakage);
+    }
+    prefab.target = F32Clamp(cmd->target, prefab.range.low, prefab.range.high);
+    prefab.collide_connected = cmd->collide_connected;
+    ds_DistanceJointAdd(&sim->dynamics, &prefab, ds_SimBodyByEntity(sim, cmd->entity[0]), cmd->local_frame + 0, ds_SimBodyByEntity(sim, cmd->entity[1]), cmd->local_frame + 1);
+    return 1;
+}
+
+static u64 ds_JointAddCmdSerializeBitsize(const struct ds_JointAddCmd *cmd)
+{
+    return DS_SIM_CMD_JOINT_ADD_BITS;
+}
+
+static void ds_JointAddCmdSerialize(struct SS *ss, const struct ds_JointAddCmd *cmd)
+{
+    SSWriteU64Partial(ss, cmd->collide_connected, 32);
+    SSWriteU64Partial(ss, (b32) { .f = cmd->target }.u, 32);
+    SSWriteU64Partial(ss, (b32) { .f = cmd->range.low }.u, 32);
+    SSWriteU64Partial(ss, (b32) { .f = cmd->range.high }.u, 32);
+    SSWriteU64Partial(ss, cmd->enable_spring, 32);
+    SSWriteU64Partial(ss, (b32) { .f = cmd->hertz }.u, 32);
+    SSWriteU64Partial(ss, (b32) { .f = cmd->damping_ratio }.u, 32);
+    SSWriteU64Partial(ss, (b32) { .f = cmd->breakage.force_threshold }.u, 32);
+    SSWriteU64Partial(ss, (b32) { .f = cmd->breakage.torque_threshold }.u, 32);
+    SSWriteU64Partial(ss, cmd->entity[0], 32);
+    SSWriteU64Partial(ss, cmd->entity[1], 32);
+    ds_TransformSerialize(ss, cmd->local_frame + 0);
+    ds_TransformSerialize(ss, cmd->local_frame + 1);
+}
+
+static u32 ds_JointAddCmdTryDeserialize(struct SS *ss, struct ds_JointAddCmd *cmd)
+{
+    if (SSBitsLeft(ss) < DS_SIM_CMD_JOINT_ADD_BITS)
+    {
+        return 0;
+    }
+
+    cmd->collide_connected = (u32) SSReadU64Partial(ss, 32);
+    cmd->target = (b32) { .u = (u32) SSReadU64Partial(ss, 32) }.f;
+    cmd->range.low = (b32) { .u = (u32) SSReadU64Partial(ss, 32) }.f;
+    cmd->range.high = (b32) { .u = (u32) SSReadU64Partial(ss, 32) }.f;
+    cmd->enable_spring = (u32) SSReadU64Partial(ss, 32);
+    cmd->hertz = (b32) { .u = (u32) SSReadU64Partial(ss, 32) }.f;
+    cmd->damping_ratio = (b32) { .u = (u32) SSReadU64Partial(ss, 32) }.f;
+    cmd->breakage.force_threshold = (b32) { .u = (u32) SSReadU64Partial(ss, 32) }.f;
+    cmd->breakage.torque_threshold = (b32) { .u = (u32) SSReadU64Partial(ss, 32) }.f;
+    cmd->entity[0] = (u32) SSReadU64Partial(ss, 32);
+    cmd->entity[1] = (u32) SSReadU64Partial(ss, 32);
+    ds_TransformTryDeserialize(ss, cmd->local_frame + 0);
+    ds_TransformTryDeserialize(ss, cmd->local_frame + 1);
+    return 1;
+}
+
+/******** ds_SimCmd: the switches over the commands ********/
+
+u32 ds_SimCmdFormVerify(const struct ds_SimCmd *cmd)
+{
+    switch (cmd->type)
+    {
+        case SIM_CMD_CONFIG_LOAD:   { return ds_LoadConfigCmdFormVerify(&cmd->load_config); }
+        case SIM_CMD_BODY_ADD:      { return ds_BodyAddCmdFormVerify(&cmd->body_add); }
+        case SIM_CMD_SHAPE_ADD:     { return ds_ShapeAddCmdFormVerify(&cmd->shape_add); }
+        case SIM_CMD_JOINT_ADD:     { return ds_JointAddCmdFormVerify(&cmd->joint_add); }
+        default:                    { return 0; }
+    }
+}
+
+/* Return 1 if the well-formed cmd is a valid command within sim's context, 0 otherwise.*/
+static u32 ds_SimCmdDataVerify(const struct ds_Sim *sim, const struct ds_SimCmd *cmd)
+{
+    ds_Assert(ds_SimCmdFormVerify(cmd));
+
+    switch (cmd->type)
+    {
+        case SIM_CMD_CONFIG_LOAD:   { return ds_LoadConfigCmdDataVerify(sim, &cmd->load_config); }
+        case SIM_CMD_BODY_ADD:      { return ds_BodyAddCmdDataVerify(sim, &cmd->body_add); }
+        case SIM_CMD_SHAPE_ADD:     { return ds_ShapeAddCmdDataVerify(sim, &cmd->shape_add); }
+        case SIM_CMD_JOINT_ADD:     { return ds_JointAddCmdDataVerify(sim, &cmd->joint_add); }
+        default:                    { return 0; }
+    }
+}
+
+u32 ds_SimCmdTryExecute(struct ds_Sim *sim, const struct ds_SimCmd *cmd)
+{
+    if (!ds_SimCmdDataVerify(sim, cmd))
+    {
+        Log(T_SYSTEM, S_WARNING, "ds_SimCmdTryExecute: command of type %u rejected", (u32) cmd->type);
+        return 0;
+    }
+
+    switch (cmd->type)
+    {
+        case SIM_CMD_CONFIG_LOAD:   { return ds_LoadConfigCmdTryExecute(sim, &cmd->load_config); }
+        case SIM_CMD_BODY_ADD:      { return ds_BodyAddCmdTryExecute(sim, &cmd->body_add); }
+        case SIM_CMD_SHAPE_ADD:     { return ds_ShapeAddCmdTryExecute(sim, &cmd->shape_add); }
+        case SIM_CMD_JOINT_ADD:     { return ds_JointAddCmdTryExecute(sim, &cmd->joint_add); }
+        default:                    { ds_AssertString(0, "ds_SimCmdTryExecute: unknown command type"); return 0; }
+    }
+}
+
 static u64 ds_SimCmdSerializeBitsize(const struct ds_SimCmd *cmd)
 {
     switch (cmd->type)
     {
-        case SIM_CMD_CONFIG_LOAD:
-        {
-            return DS_SIM_CMD_TYPE_BITS + DS_SIM_CMD_SIZE_BITS + 8*ds_SimConfigSerializeSize(cmd->load_config.config);
-        }
-
-        default:
-        {
-            ds_AssertString(0, "ds_SimCmdSerializeBitsize: unknown command type");
-            return 0;
-        }
+        case SIM_CMD_CONFIG_LOAD:   { return DS_SIM_CMD_TYPE_BITS + ds_LoadConfigCmdSerializeBitsize(&cmd->load_config); }
+        case SIM_CMD_BODY_ADD:      { return DS_SIM_CMD_TYPE_BITS + ds_BodyAddCmdSerializeBitsize(&cmd->body_add); }
+        case SIM_CMD_SHAPE_ADD:     { return DS_SIM_CMD_TYPE_BITS + ds_ShapeAddCmdSerializeBitsize(&cmd->shape_add); }
+        case SIM_CMD_JOINT_ADD:     { return DS_SIM_CMD_TYPE_BITS + ds_JointAddCmdSerializeBitsize(&cmd->joint_add); }
+        default:                    { ds_AssertString(0, "ds_SimCmdSerializeBitsize: unknown command type"); return 0; }
     }
 }
 
@@ -262,22 +530,11 @@ static void ds_SimCmdSerialize(struct SS *ss, const struct ds_SimCmd *cmd)
     SSWriteU64Partial(ss, (u64) cmd->type, DS_SIM_CMD_TYPE_BITS);
     switch (cmd->type)
     {
-        case SIM_CMD_CONFIG_LOAD:
-        {
-            struct arena *tmp = ArenaPushScratch();
-            const u64 size = ds_SimConfigSerializeSize(cmd->load_config.config);
-            struct SS body = SSAlloc(tmp, size);
-            ds_SimConfigSerialize(&body, cmd->load_config.config);
-
-            SSWriteU64Partial(ss, size, DS_SIM_CMD_SIZE_BITS);
-            ds_SimCmdWriteBytes(ss, body.buf, size);
-            ArenaPopScratch();
-        } break;
-
-        default:
-        {
-            ds_AssertString(0, "ds_SimCmdSerialize: unknown command type");
-        } break;
+        case SIM_CMD_CONFIG_LOAD:   { ds_LoadConfigCmdSerialize(ss, &cmd->load_config); } break;
+        case SIM_CMD_BODY_ADD:      { ds_BodyAddCmdSerialize(ss, &cmd->body_add); } break;
+        case SIM_CMD_SHAPE_ADD:     { ds_ShapeAddCmdSerialize(ss, &cmd->shape_add); } break;
+        case SIM_CMD_JOINT_ADD:     { ds_JointAddCmdSerialize(ss, &cmd->joint_add); } break;
+        default:                    { ds_AssertString(0, "ds_SimCmdSerialize: unknown command type"); } break;
     }
 }
 
@@ -290,51 +547,19 @@ u32 ds_SimCmdTryDeserialize(struct arena *mem, struct SS *ss, struct ds_SimCmd *
     }
 
     const u64 type = SSReadU64Partial(&ss_mut, DS_SIM_CMD_TYPE_BITS);
-    if (type >= SIM_CMD_COUNT)
+    u32 success;
+    switch (type)
     {
-        return 0;
+        case SIM_CMD_CONFIG_LOAD:   { success = ds_LoadConfigCmdTryDeserialize(mem, &ss_mut, &cmd->load_config); } break;
+        case SIM_CMD_BODY_ADD:      { success = ds_BodyAddCmdTryDeserialize(mem, &ss_mut, &cmd->body_add); } break;
+        case SIM_CMD_SHAPE_ADD:     { success = ds_ShapeAddCmdTryDeserialize(mem, &ss_mut, &cmd->shape_add); } break;
+        case SIM_CMD_JOINT_ADD:     { success = ds_JointAddCmdTryDeserialize(&ss_mut, &cmd->joint_add); } break;
+        default:                    { success = 0; } break;
     }
 
-    switch ((enum ds_SimCmdType) type)
+    if (!success)
     {
-        case SIM_CMD_CONFIG_LOAD:
-        {
-            if (SSBitsLeft(&ss_mut) < DS_SIM_CMD_SIZE_BITS)
-            {
-                return 0;
-            }
-
-            const u64 size = SSReadU64Partial(&ss_mut, DS_SIM_CMD_SIZE_BITS);
-            if (size > DS_SIM_CMD_BODY_SIZE_MAX || 8*size > SSBitsLeft(&ss_mut))
-            {
-                return 0;
-            }
-
-            struct ds_SimConfig *config = ArenaPush(mem, sizeof(struct ds_SimConfig));
-            if (config == NULL)
-            {
-                Log(T_SYSTEM, S_ERROR, "ds_SimCmdTryDeserialize: no room for a ConfigLoad (%lu bytes)", (u64) sizeof(struct ds_SimConfig));
-                return 0;
-            }
-
-            struct arena *tmp = ArenaPushScratch();
-            struct SS body = SSAlloc(tmp, size);
-            ds_SimCmdReadBytes(&ss_mut, body.buf, size);
-            /* the whole body must be the config: a short or a long body is malformed */
-            const u32 success = ds_SimConfigTryDeserialize(&body, config) && body.bit_index == 8*size;
-            ArenaPopScratch();
-            if (!success)
-            {
-                return 0;
-            }
-
-            cmd->load_config.config = config;
-        } break;
-
-        default:
-        {
-            return 0;
-        }
+        return 0;
     }
 
     cmd->type = (enum ds_SimCmdType) type;

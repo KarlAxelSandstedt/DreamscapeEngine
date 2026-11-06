@@ -67,6 +67,14 @@ extern "C" {
 
 /* the rotation by 0: (0, 0, 0, 1) */
 static ds_ForceInline q QIdentity(void);
+/* 1 if no component is NaN or Inf */
+static ds_ForceInline u32 QFiniteCheck(const q a);
+/* Return the required size when serializing a. */
+static ds_ForceInline u64 QSerializeSize(const q a);
+/* Serialize a. WARNING: Assumes a fits in the stream. */
+static ds_ForceInline void QSerialize(struct SS *ss, const q a);
+/* Returns 1 on success. On failure return 0 (bad stream) and reset the stream position. */
+static ds_ForceInline u32 QTryDeserialize(struct SS *ss, q *a);
 /*
  * Return quaternion representing rotation around (non-normalized) axis with given angle (radians, right-hand rule);
  * a zero axis gives NaN. Uses the C library's sin/cos.
@@ -112,6 +120,38 @@ static ds_ForceInline v3 QYUnitRotate(const q a, const f32 y);
 static ds_ForceInline q QIdentity(void)
 {
 	return Q(0.0f, 0.0f, 0.0f, 1.0f);
+}
+
+static ds_ForceInline u32 QFiniteCheck(const q a)
+{
+	return F32FiniteCheck(a.x) && F32FiniteCheck(a.y) && F32FiniteCheck(a.z) && F32FiniteCheck(a.w);
+}
+
+static ds_ForceInline u64 QSerializeSize(const q a)
+{
+	return 4*sizeof(f32);
+}
+
+static ds_ForceInline void QSerialize(struct SS *ss, const q a)
+{
+	SSWriteU64Partial(ss, (b32) { .f = a.x }.u, 32);
+	SSWriteU64Partial(ss, (b32) { .f = a.y }.u, 32);
+	SSWriteU64Partial(ss, (b32) { .f = a.z }.u, 32);
+	SSWriteU64Partial(ss, (b32) { .f = a.w }.u, 32);
+}
+
+static ds_ForceInline u32 QTryDeserialize(struct SS *ss, q *a)
+{
+	if (SSBitsLeft(ss) < 8*QSerializeSize(*a))
+	{
+		return 0;
+	}
+
+	a->x = (b32) { .u = (u32) SSReadU64Partial(ss, 32) }.f;
+	a->y = (b32) { .u = (u32) SSReadU64Partial(ss, 32) }.f;
+	a->z = (b32) { .u = (u32) SSReadU64Partial(ss, 32) }.f;
+	a->w = (b32) { .u = (u32) SSReadU64Partial(ss, 32) }.f;
+	return 1;
 }
 
 static ds_ForceInline q QAxisAngle(const v3 axis, const f32 angle)
