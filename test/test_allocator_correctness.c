@@ -843,7 +843,7 @@ static void TPoolParallelJob(void *args)
     const u32 id = AtomicAddFetchRlx32(&t->a_next_id, 1);
     /* a job's draws depend on the seed and the job, not on the thread that happens to run it */
     struct rng rng;
-    RngLocalInit(&rng, g_config->seed[0] ^ ((u64) id << 32));
+    RngLocalInit(&rng, g_config->rng_seed[0] ^ ((u64) id << 32));
     u32 held[TPOOL_PARALLEL_HELD];
     u32 held_count = 0;
 

@@ -52,24 +52,22 @@ REM like a POSIX shell, so the profile path uses forward slashes.
 set "PROFILE_DIR=%CD:\=/%/browser_profile"
 set "WEB_RUN=emrun --timeout=900 --kill_exit --dump-out-directory=. --browser="%BROWSER%" --browser_args="--headless=new --use-angle=d3d11 --user-data-dir=%PROFILE_DIR% --no-first-run --no-default-browser-check" DreamscapeTest.html --"
 
-REM reference: serial, system seed (config/determinism.cfg); writes determinism.bin and the config it ran
-REM with, determinism.bin.cfg. Each replay uses that config with another thread_count (0: default).
-call %WEB_RUN% ../config/determinism.cfg --generate determinism.bin
+REM reference: serial (config/determinism.cfg); records the scene as commands (determinism.rec) and one hash per
+REM system tick (determinism.hash). Each replay runs the record with another thread_count (0: default).
+call %WEB_RUN% config=../config/determinism.cfg record=determinism.rec hash=determinism.hash
 REM 3 4 5 6 7 8
 for %%T in (0 1 2) do (
-    findstr /v /b /c:"thread_count:" determinism.bin.cfg > determinism_%%T.cfg
+    findstr /v /b /c:"thread_count:" ..\config\determinism.cfg > determinism_%%T.cfg
     >> determinism_%%T.cfg echo thread_count: %%T
-    call %WEB_RUN% determinism_%%T.cfg --load determinism.bin
+    call %WEB_RUN% config=determinism_%%T.cfg replay=determinism.rec hash=determinism.hash
 )
 
-REM far from the origin: the same seed, the scene built around (10 km, 10 km, 10 km) (f64 world positions);
-REM determinism_far.bin stores the origin, so the replays run there too.
-call %WEB_RUN% determinism.bin.cfg --generate determinism_far.bin --origin 10000 10000 10000
+REM far from the origin: the scene built around (10 km, 10 km, 10 km) (f64 world positions); the record holds
+REM the scene there, so the replays run there too.
+call %WEB_RUN% config=../config/determinism.cfg record=determinism_far.rec hash=determinism_far.hash origin=10000,10000,10000
 REM 3 4 5 6 7 8
 for %%T in (0 1 2) do (
-    findstr /v /b /c:"thread_count:" determinism_far.bin.cfg > determinism_far_%%T.cfg
-    >> determinism_far_%%T.cfg echo thread_count: %%T
-    call %WEB_RUN% determinism_far_%%T.cfg --load determinism_far.bin
+    call %WEB_RUN% config=determinism_%%T.cfg replay=determinism_far.rec hash=determinism_far.hash
 )
 
 cd ..

@@ -11,13 +11,13 @@ check that they change nothing. Files go to the working directory (test_config.t
 platform API has no delete).
 */
 
-static struct ds_Config ConfigTestBase(void)
+static struct ds_RuntimeConfig ConfigTestBase(void)
 {
-    struct ds_Config config = { 0 };
-    config.seed[0] = 1;
-    config.seed[1] = 2;
-    config.seed[2] = 3;
-    config.seed[3] = 4;
+    struct ds_RuntimeConfig config = { 0 };
+    config.rng_seed[0] = 1;
+    config.rng_seed[1] = 2;
+    config.rng_seed[2] = 3;
+    config.rng_seed[3] = 4;
     config.persistent_size = 1000;
     config.thread_count = 3;
     config.thread_framesize = 2000;
@@ -28,9 +28,9 @@ static struct ds_Config ConfigTestBase(void)
 }
 
 /* field by field: the struct has padding */
-static u32 ConfigTestEqual(const struct ds_Config *a, const struct ds_Config *b)
+static u32 ConfigTestEqual(const struct ds_RuntimeConfig *a, const struct ds_RuntimeConfig *b)
 {
-    return a->seed[0] == b->seed[0] && a->seed[1] == b->seed[1] && a->seed[2] == b->seed[2] && a->seed[3] == b->seed[3]
+    return a->rng_seed[0] == b->rng_seed[0] && a->rng_seed[1] == b->rng_seed[1] && a->rng_seed[2] == b->rng_seed[2] && a->rng_seed[3] == b->rng_seed[3]
         && a->persistent_size == b->persistent_size
         && a->thread_count == b->thread_count
         && a->thread_framesize == b->thread_framesize
@@ -40,7 +40,7 @@ static u32 ConfigTestEqual(const struct ds_Config *a, const struct ds_Config *b)
 }
 
 /* Write text as test_config.txt and read it onto config. */
-static u32 ConfigTestReadText(struct arena *tmp, struct ds_Config *config, const char *text)
+static u32 ConfigTestReadText(struct arena *tmp, struct ds_RuntimeConfig *config, const char *text)
 {
     u64 size = 0;
     while (text[size]) { size += 1; }
@@ -65,10 +65,10 @@ struct test_Output ConfigRoundTripTest(struct test_Environment *env)
 
     for (u32 i = 0; i < 200; ++i)
     {
-        struct ds_Config config = ConfigTestBase();
+        struct ds_RuntimeConfig config = ConfigTestBase();
         for (u32 k = 0; k < 4; ++k)
         {
-            config.seed[k] = (i == 0) ? U64_MAX : RngU64();
+            config.rng_seed[k] = (i == 0) ? U64_MAX : RngU64();
         }
         config.persistent_size = (i == 1) ? U64_MAX : 1 + RngU64Range(0, U64_MAX - 1);
         config.thread_count = (u32) RngU64Range(0, U32_MAX);
@@ -77,7 +77,7 @@ struct test_Output ConfigRoundTripTest(struct test_Environment *env)
         config.thread_scratch_count = (u32) RngU64Range(1, U32_MAX);
         config.headless = (u32) RngU64Range(0, 1);
 
-        struct ds_Config read = { 0 };
+        struct ds_RuntimeConfig read = { 0 };
         TEST_EQUAL(1, ds_ConfigTryWrite(env->mem_1, &config, "test_config.txt"));
         TEST_EQUAL(1, ds_ConfigTryRead(env->mem_1, &read, "test_config.txt"));
         TEST_EQUAL(1, ConfigTestEqual(&config, &read));
@@ -91,21 +91,21 @@ struct test_Output ConfigPartialTest(struct test_Environment *env)
 {
 	struct test_Output output = { .success = 1, .id = __func__ };
 
-    struct ds_Config config = ConfigTestBase();
+    struct ds_RuntimeConfig config = ConfigTestBase();
     TEST_EQUAL(1, ConfigTestReadText(env->mem_1, &config,
         "\xEF\xBB\xBF# comment line\r\n"                    /* a byte order mark before the first line */
         "\r\n"
         "   \t\n"
         "  thread_count \t:   7   # trailing comment\r\n"
-        "seed:5 6\t7  8\n"
+        "rng_seed:5 6\t7  8\n"
         "headless: 1"));
 
-    struct ds_Config expected = ConfigTestBase();
+    struct ds_RuntimeConfig expected = ConfigTestBase();
     expected.thread_count = 7;
-    expected.seed[0] = 5;
-    expected.seed[1] = 6;
-    expected.seed[2] = 7;
-    expected.seed[3] = 8;
+    expected.rng_seed[0] = 5;
+    expected.rng_seed[1] = 6;
+    expected.rng_seed[2] = 7;
+    expected.rng_seed[3] = 8;
     expected.headless = 1;
     TEST_EQUAL(1, ConfigTestEqual(&expected, &config));
 
@@ -117,7 +117,7 @@ struct test_Output ConfigBadLineTest(struct test_Environment *env)
 {
 	struct test_Output output = { .success = 1, .id = __func__ };
 
-    struct ds_Config config = ConfigTestBase();
+    struct ds_RuntimeConfig config = ConfigTestBase();
     TEST_EQUAL(1, ConfigTestReadText(env->mem_1, &config,
         "thread_count 5\n"                              /* no colon                 */
         "Thread_count: 5\n"                             /* unknown key (case)       */
@@ -129,15 +129,15 @@ struct test_Output ConfigBadLineTest(struct test_Environment *env)
         "persistent_size: 18446744073709551616\n"       /* > U64_MAX (overflow)     */
         "persistent_size: 0\n"                          /* below min                */
         "headless: 2\n"                                 /* above max                */
-        "seed: 1 2 3\n"                                 /* too few values           */
-        "seed: 1 2 3 4 5\n"                             /* too many values          */
+        "rng_seed: 1 2 3\n"                                 /* too few values           */
+        "rng_seed: 1 2 3 4 5\n"                             /* too many values          */
         "thread_count: 5 x\n"                           /* trailing garbage         */
         "thread_count: 1.5\n"                           /* not an integer           */
         "thread_count: \xc3\xa5\n"                      /* non-ASCII                */
         "thread_scratch_count: 9\n"                     /* valid                    */
         "thread_scratch_count: 10\n"));                 /* duplicate: last wins     */
 
-    struct ds_Config expected = ConfigTestBase();
+    struct ds_RuntimeConfig expected = ConfigTestBase();
     expected.thread_scratch_count = 10;
     TEST_EQUAL(1, ConfigTestEqual(&expected, &config));
 
@@ -149,14 +149,14 @@ struct test_Output ConfigFileTest(struct test_Environment *env)
 {
 	struct test_Output output = { .success = 1, .id = __func__ };
 
-    struct ds_Config long_config = ConfigTestBase();
-    long_config.seed[0] = U64_MAX;
+    struct ds_RuntimeConfig long_config = ConfigTestBase();
+    long_config.rng_seed[0] = U64_MAX;
     long_config.persistent_size = U64_MAX;
-    struct ds_Config config = ConfigTestBase();
+    struct ds_RuntimeConfig config = ConfigTestBase();
     TEST_EQUAL(1, ds_ConfigTryWrite(env->mem_1, &long_config, "test_config.txt"));
     TEST_EQUAL(1, ds_ConfigTryWrite(env->mem_1, &config, "test_config.txt"));
 
-    struct ds_Config read = { 0 };
+    struct ds_RuntimeConfig read = { 0 };
     TEST_EQUAL(1, ds_ConfigTryRead(env->mem_1, &read, "test_config.txt"));
     TEST_EQUAL(1, ConfigTestEqual(&config, &read));
 

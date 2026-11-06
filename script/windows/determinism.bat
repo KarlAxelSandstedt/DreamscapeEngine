@@ -33,25 +33,23 @@ cmake -S . -B build -DDS_TEST_DETERMINISM=ON -DDS_DEBUG=OFF -DDS_PROFILE=OFF -DD
 cd build
 cmake --build . --parallel || exit /b 1
 
-REM reference: serial, system seed (config/determinism.cfg); writes determinism.bin and the config it ran
-REM with, determinism.bin.cfg. Each replay uses that config with another thread_count (0: default).
-REM raddbg .\DreamscapeTest.exe ..\config\determinism.cfg --generate determinism.bin
-.\DreamscapeTest.exe ..\config\determinism.cfg --generate determinism.bin
+REM reference: serial (config/determinism.cfg); records the scene as commands (determinism.rec) and one hash per
+REM system tick (determinism.hash). Each replay runs the record with another thread_count (0: default).
+REM raddbg .\DreamscapeTest.exe config=..\config\determinism.cfg record=determinism.rec hash=determinism.hash
+.\DreamscapeTest.exe config=..\config\determinism.cfg record=determinism.rec hash=determinism.hash
 REM 3 4 5 6 7 8
 for %%T in (0 1 2) do (
-    findstr /v /b /c:"thread_count:" determinism.bin.cfg > determinism_%%T.cfg
+    findstr /v /b /c:"thread_count:" ..\config\determinism.cfg > determinism_%%T.cfg
     >> determinism_%%T.cfg echo thread_count: %%T
-    .\DreamscapeTest.exe determinism_%%T.cfg --load determinism.bin
+    .\DreamscapeTest.exe config=determinism_%%T.cfg replay=determinism.rec hash=determinism.hash
 )
 
-REM far from the origin: the same seed, the scene built around (10 km, 10 km, 10 km) (f64 world positions);
-REM determinism_far.bin stores the origin, so the replays run there too.
-.\DreamscapeTest.exe determinism.bin.cfg --generate determinism_far.bin --origin 10000 10000 10000
+REM far from the origin: the scene built around (10 km, 10 km, 10 km) (f64 world positions); the record holds
+REM the scene there, so the replays run there too.
+.\DreamscapeTest.exe config=..\config\determinism.cfg record=determinism_far.rec hash=determinism_far.hash origin=10000,10000,10000
 REM 3 4 5 6 7 8
 for %%T in (0 1 2) do (
-    findstr /v /b /c:"thread_count:" determinism_far.bin.cfg > determinism_far_%%T.cfg
-    >> determinism_far_%%T.cfg echo thread_count: %%T
-    .\DreamscapeTest.exe determinism_far_%%T.cfg --load determinism_far.bin
+    .\DreamscapeTest.exe config=determinism_%%T.cfg replay=determinism_far.rec hash=determinism_far.hash
 )
 
 cd ..

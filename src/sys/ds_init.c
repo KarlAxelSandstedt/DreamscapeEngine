@@ -29,17 +29,17 @@
 #include "ds_ui.h"
 #include "ds_random.h"
 
-static struct ds_Config g_config_storage;
-const struct ds_Config *g_config = NULL;
+static struct ds_RuntimeConfig g_config_storage;
+const struct ds_RuntimeConfig *g_config = NULL;
 
 utf8 g_argv[ARGV_COUNT];
 
 static struct arena g_init_persistent;
 static u32 g_init_called = 0;
 
-static struct ds_Config ds_ConfigDefault(void)
+static struct ds_RuntimeConfig ds_ConfigDefault(void)
 {
-    struct ds_Config config = { 0 };
+    struct ds_RuntimeConfig config = { 0 };
     config.persistent_size = 256*1024*1024;
     config.thread_count = 0;
     config.thread_framesize = 4*1024*1024;
@@ -67,9 +67,9 @@ static const char *g_config_issue_string[DS_CONFIG_ISSUE_COUNT] =
     "duplicate key (the last one wins)",
 };
 
-/* One entry per ds_Config field, in struct order: this table is the file format. */
+/* One entry per ds_RuntimeConfig field, in struct order: this table is the file format. */
 #define DS_CONFIG_FIELD(field, type, count, min, max, comment) \
-    { #field, sizeof(#field) - 1, offsetof(struct ds_Config, field), type, count, min, max, comment }
+    { #field, sizeof(#field) - 1, offsetof(struct ds_RuntimeConfig, field), type, count, min, max, comment }
 
 enum ds_ConfigFieldType
 {
@@ -89,7 +89,7 @@ static const struct
     const char *            comment;
 } g_config_field[] =
 {
-    DS_CONFIG_FIELD(seed,                 DS_CONFIG_FIELD_U64, 4, 0, U64_MAX, "Xoshiro256Init seed, 4 words; all 0: system entropy"),
+    DS_CONFIG_FIELD(rng_seed,                 DS_CONFIG_FIELD_U64, 4, 0, U64_MAX, "Xoshiro256Init seed, 4 words; all 0: system entropy"),
     DS_CONFIG_FIELD(persistent_size,      DS_CONFIG_FIELD_U64, 1, 1, U64_MAX, "engine persistent arena, bytes"),
     DS_CONFIG_FIELD(thread_count,         DS_CONFIG_FIELD_U32, 1, 0, U32_MAX, "workers including the main thread; 0: logical cores - 2"),
     DS_CONFIG_FIELD(thread_framesize,     DS_CONFIG_FIELD_U64, 1, 1, U64_MAX, "per-thread frame arena, bytes"),
@@ -156,7 +156,7 @@ static u32 ds_ConfigValuesTryParse(u64 value[], const u8 *v, const u64 n, const 
 }
 
 /* Apply the keys in text[0..size) onto config; report is reset first. */
-static void ds_ConfigParse(struct ds_Config *config, struct ds_ConfigReport *report, const u8 *text, const u64 size)
+static void ds_ConfigParse(struct ds_RuntimeConfig *config, struct ds_ConfigReport *report, const u8 *text, const u64 size)
 {
     report->count = 0;
     u32 seen[DS_CONFIG_FIELD_COUNT] = { 0 };
@@ -248,7 +248,7 @@ static void ds_ConfigParse(struct ds_Config *config, struct ds_ConfigReport *rep
     }
 }
 
-static utf8 ds_ConfigFormat(struct arena *mem, const struct ds_Config *config)
+static utf8 ds_ConfigFormat(struct arena *mem, const struct ds_RuntimeConfig *config)
 {
     u8 *buf = ArenaPush(mem, DS_CONFIG_TEXT_MAX);
     if (!buf)
@@ -305,7 +305,7 @@ static void ds_ConfigReportLog(const struct ds_ConfigReport *report, const char 
 }
 
 /* ds_ConfigTryRead without logging: report is unchanged if the file can't be read. */
-static u32 ds_ConfigTryReadReport(struct arena *tmp, struct ds_Config *config, struct ds_ConfigReport *report, const char *path)
+static u32 ds_ConfigTryReadReport(struct arena *tmp, struct ds_RuntimeConfig *config, struct ds_ConfigReport *report, const char *path)
 {
     ArenaPushRecord(tmp);
     const struct dsBuffer file = FileDumpAtCwd(tmp, path);
@@ -318,7 +318,7 @@ static u32 ds_ConfigTryReadReport(struct arena *tmp, struct ds_Config *config, s
     return read;
 }
 
-u32 ds_ConfigTryRead(struct arena *tmp, struct ds_Config *config, const char *path)
+u32 ds_ConfigTryRead(struct arena *tmp, struct ds_RuntimeConfig *config, const char *path)
 {
     struct ds_ConfigReport report = { .count = 0 };
     const u32 read = ds_ConfigTryReadReport(tmp, config, &report, path);
@@ -326,7 +326,7 @@ u32 ds_ConfigTryRead(struct arena *tmp, struct ds_Config *config, const char *pa
     return read;
 }
 
-u32 ds_ConfigTryWrite(struct arena *tmp, const struct ds_Config *config, const char *path)
+u32 ds_ConfigTryWrite(struct arena *tmp, const struct ds_RuntimeConfig *config, const char *path)
 {
     ArenaPushRecord(tmp);
     u32 written = 0;
@@ -365,10 +365,10 @@ u32 ds_ConfigTryWrite(struct arena *tmp, const struct ds_Config *config, const c
 //    replay, hash: Replay a record together with the record's hash file, and
 //                  compare all hashes to newly generated ones.
 
-static const char *g_argv_name[ARGV_COUNT] = { "log", "config", "simulation", "record", "replay", "hash", "headless" };
-static const u32 g_argv_flag[ARGV_COUNT] = { 0, 0, 0, 0, 0, 0, 1 };
+static const char *g_argv_name[ARGV_COUNT] = { "log", "config", "simulation", "record", "replay", "hash", "headless", "origin" };
+static const u32 g_argv_flag[ARGV_COUNT] = { 0, 0, 0, 0, 0, 0, 1, 0 };
 
-#define DS_ARGV_USAGE "usage: ./Executable [config=path] [log=path] [record=path | replay=path] [hash=path] [headless]"
+#define DS_ARGV_USAGE "usage: ./Executable [config=path] [log=path] [record=path | replay=path] [hash=path] [headless] [origin=x,y,z]"
 
 /* before the log: Log writes to stderr */
 static void ds_ArgvFatal(const char *problem, const char *argument)
@@ -473,7 +473,7 @@ void ds_Init(const int argc, char *argv[])
     ds_MemApiInit();
 
     /* before the persistent arena (its size is in the config) and the log: report logged below */
-    struct ds_Config *config = &g_config_storage;
+    struct ds_RuntimeConfig *config = &g_config_storage;
     *config = ds_ConfigDefault();
     struct ds_ConfigReport report = { .count = 0 };
     u32 config_read = 1;
@@ -504,11 +504,11 @@ void ds_Init(const int argc, char *argv[])
     ds_ThreadMasterInit(&g_init_persistent, config->thread_framesize, config->thread_scratchsize, config->thread_scratch_count);
 
     /* before ds_PlatformApiInit: workers derive their RNG streams from it when they start */
-    if (config->seed[0] == 0 && config->seed[1] == 0 && config->seed[2] == 0 && config->seed[3] == 0)
+    if (config->rng_seed[0] == 0 && config->rng_seed[1] == 0 && config->rng_seed[2] == 0 && config->rng_seed[3] == 0)
     {
-        RngSystem(config->seed, sizeof(config->seed));
+        RngSystem(config->rng_seed, sizeof(config->rng_seed));
     }
-    Xoshiro256Init(config->seed);
+    Xoshiro256Init(config->rng_seed);
 
     ds_TimeApiInit(&g_init_persistent);
 #ifdef DS_PERFORMANCE_MEASUREMENT_API
@@ -541,8 +541,8 @@ void ds_Init(const int argc, char *argv[])
     config->thread_count = (config->thread_count > DS_THREAD_COUNT_MAX) ? DS_THREAD_COUNT_MAX : config->thread_count;
     g_config = config;
 
-    Log(T_SYSTEM, S_NOTE, "ds_Init: seed (%lu, %lu, %lu, %lu), %u workers, persistent %lu B, thread frame %lu B, scratch %u x %lu B, headless %u",
-        config->seed[0], config->seed[1], config->seed[2], config->seed[3], config->thread_count,
+    Log(T_SYSTEM, S_NOTE, "ds_Init: rng_seed (%lu, %lu, %lu, %lu), %u workers, persistent %lu B, thread frame %lu B, scratch %u x %lu B, headless %u",
+        config->rng_seed[0], config->rng_seed[1], config->rng_seed[2], config->rng_seed[3], config->thread_count,
         config->persistent_size, config->thread_framesize, config->thread_scratch_count, config->thread_scratchsize,
         config->headless);
 

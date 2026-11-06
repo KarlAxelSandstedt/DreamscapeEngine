@@ -31,22 +31,15 @@
 #include "ds_led.h"
 #include "ds_job.h"
 
+/*
+ * The test beyond ds_Init's arguments: record= hash= generates the reference (the scene as commands, one hash per
+ * system tick), replay= hash= with another config checks it; origin=x,y,z (generate only) builds the scene there.
+ */
 struct ds_DeterminismTest
 {
-    utf8            file;
-    char *          file_cstr;
-    char *          config_cstr;    /* file.cfg: the config --generate ran with */
-
-    u32             generate;
-
-    /* file data */
-    u64             seed[4];    /* BE */
-    v3f64           origin;     /* BE; scene origin (--origin, default 0) */
-
-    ds_CPool(u64)   hash_pool;  /* BE */
+    u32     generate;
+    v3f64   origin;
 };
-
-#define DS_DETERMINISM_HEADER_SIZE  (4*sizeof(u64) + 3*sizeof(f64) + sizeof(u32))
 
 /* 1 if str is a decimal number ([+-]d[.d][(e|E)[+-]d], d: digits) with a finite value, written to *val */
 static u32 ds_DeterminismF64Parse(f64 *val, struct arena *tmp, const utf8 str)
@@ -91,144 +84,84 @@ static u32 ds_DeterminismF64Parse(f64 *val, struct arena *tmp, const utf8 str)
     return (*val - *val == 0.0);
 }
 
-static struct ds_DeterminismTest ds_DeterminismProcessArguments(struct arena *persistent, const utf8 *argument, const u32 argument_count)
+static void ds_DeterminismUsageAndExit(const char *problem)
 {
-    if (argument_count != 4 && argument_count != 8)
-    {
-        fprintf(stderr, "Usage: DreamscapeTest config_path --generate file [--origin x y z] | --load file, exiting.\n");
-        exit(1);
-    }
-    
-    const utf8 generate = Utf8Inline("--generate");
-    const utf8 load = Utf8Inline("--load");
-    const utf8 origin = Utf8Inline("--origin");
+    fprintf(stderr, "%s\nUsage: DreamscapeTest config=path record=file hash=file [origin=x,y,z] | config=path replay=file hash=file, exiting.\n", problem);
+    exit(1);
+}
 
-    struct ds_DeterminismTest test = 
-    { 
-        .file = argument[3],
-        .file_cstr = CstrUtf8(persistent, argument[3]),
-        .config_cstr = CstrUtf8(persistent, Utf8Format(persistent, "%k.cfg", &argument[3])),
-        .generate = 0,
-        .origin = V3F64(0.0, 0.0, 0.0),
-    };
-    
-    if (Utf8Equivalence(argument[2], generate))
+static struct ds_DeterminismTest ds_DeterminismProcessArguments(struct arena *persistent)
+{
+    struct ds_DeterminismTest test = { .generate = g_argv[ARGV_RECORD].size != 0, .origin = V3F64(0.0, 0.0, 0.0) };
+    if (!g_argv[ARGV_HASH].size || (g_argv[ARGV_RECORD].size == 0) == (g_argv[ARGV_REPLAY].size == 0))
     {
-        test.generate = 1;
-        test.seed[0] = g_config->seed[0];
-        test.seed[1] = g_config->seed[1];
-        test.seed[2] = g_config->seed[2];
-        test.seed[3] = g_config->seed[3];
-        if (argument_count == 8)
+        ds_DeterminismUsageAndExit("The test needs record= or replay=, and hash=.");
+    }
+
+    if (g_argv[ARGV_ORIGIN].size)
+    {
+        if (!test.generate)
         {
-            if (!Utf8Equivalence(argument[4], origin)
-                || !ds_DeterminismF64Parse(&test.origin.x, persistent, argument[5])
-                || !ds_DeterminismF64Parse(&test.origin.y, persistent, argument[6])
-                || !ds_DeterminismF64Parse(&test.origin.z, persistent, argument[7]))
+            ds_DeterminismUsageAndExit("origin= is for record= only: a replay builds the scene the record holds.");
+        }
+
+        /* three comma separated numbers */
+        const utf8 str = g_argv[ARGV_ORIGIN];
+        f64 *component[3] = { &test.origin.x, &test.origin.y, &test.origin.z };
+        u32 start = 0;
+        for (u32 c = 0; c < 3; ++c)
+        {
+            u32 end = start;
+            while (end < str.size && str.buf[end] != ',')
             {
-                fprintf(stderr, "Bad --origin: expected --origin x y z (finite decimal numbers), exiting.\n");
-                exit(1);
+                end += 1;
             }
+            const utf8 number = { .buf = str.buf + start, .size = end - start, .len = end - start };
+            if ((c < 2) != (end < str.size) || !ds_DeterminismF64Parse(component[c], persistent, number))
+            {
+                ds_DeterminismUsageAndExit("Bad origin: expected origin=x,y,z (finite decimal numbers).");
+            }
+            start = end + 1;
         }
-        ds_CPoolAlloc(NULL, test.hash_pool, 4096, GROWABLE);
-    }
-    else if (Utf8Equivalence(argument[2], load))
-    {
-        if (argument_count != 4)
-        {
-            fprintf(stderr, "--load replays at the origin stored in the file: --origin is for --generate only, exiting.\n");
-            exit(1);
-        }
-
-        struct dsBuffer buf = FileDumpAtCwd(persistent, test.file_cstr);
-        if (buf.size < DS_DETERMINISM_HEADER_SIZE)
-        {
-            fprintf(stderr, "Bad determinism test file size, exiting.\n");
-            exit(1);
-        }
-        
-        struct SS ss = SSBuffered(buf.data, buf.size);
-        test.seed[0] = SSReadU64Be(&ss);
-        test.seed[1] = SSReadU64Be(&ss);
-        test.seed[2] = SSReadU64Be(&ss);
-        test.seed[3] = SSReadU64Be(&ss);
-        test.origin.x = SSReadF64Be(&ss);
-        test.origin.y = SSReadF64Be(&ss);
-        test.origin.z = SSReadF64Be(&ss);
-        const u32 hash_count = SSReadU32Be(&ss);
-        if (buf.size - DS_DETERMINISM_HEADER_SIZE != hash_count*sizeof(u64))
-        {
-            fprintf(stderr, "Bad determinism test file size, exiting.\n");
-            exit(1);
-        }
-
-        ds_CPoolAlloc(persistent, test.hash_pool, hash_count, NOT_GROWABLE);
-        for (u32 i = 0; i < hash_count; ++i)
-        {
-           ds_CPoolPush(test.hash_pool);
-        }
-        SSReadU64BeN(&ss, test.hash_pool.buf, hash_count);
-
-        /* the RNG was seeded from the config in ds_Init */
-        if (test.seed[0] != g_config->seed[0] || test.seed[1] != g_config->seed[1] || test.seed[2] != g_config->seed[2] || test.seed[3] != g_config->seed[3])
-        {
-            fprintf(stderr, "The config's seed differs from the test file's: load with the config --generate wrote (%s), exiting.\n", test.config_cstr);
-            exit(1);
-        }
-    }
-    else
-    {
-        fprintf(stderr, "Bad operation provided to executable, exiting.\n");
-        exit(1);
     }
 
     return test;
 }
 
-static void ds_DeterminismGenerate(struct arena *persistent, struct ds_DeterminismTest *test)
+/*
+ * 1 while the run goes on. Generate: until every body sleeps. Replay: until the hash file is matched whole
+ * (success), or the comparison stopped short of that (the file ended early, or every body sleeps first: failure);
+ * a differing hash is fatal inside the server.
+ */
+static u32 ds_DeterminismRunning(const struct ds_DeterminismTest *test, const struct led *editor, u32 *success)
 {
-    struct file file = { .handle = FILE_HANDLE_INVALID };
-    const u32 truncate = 1;
-    if (FS_SUCCESS != FileTryCreateAtCwd(persistent, &file, test->file_cstr, truncate))
+    const u32 all_asleep = editor->physics->solver_set_pool.buf[SOLVER_SET_ACTIVE].body_sim_pool.count == 0;
+    if (test->generate)
     {
-        fprintf(stderr, "Failed to create file, exiting.\n");
-        exit(1);
+        return !all_asleep;
     }
 
-    const u64 bufsize = DS_DETERMINISM_HEADER_SIZE + (u64) test->hash_pool.count*sizeof(u64);
-    u8 *buf = ArenaPush(persistent, bufsize);
-    struct SS ss = SSBuffered(buf, bufsize);
-    SSWriteU64Be(&ss, test->seed[0]);
-    SSWriteU64Be(&ss, test->seed[1]);
-    SSWriteU64Be(&ss, test->seed[2]);
-    SSWriteU64Be(&ss, test->seed[3]);
-    SSWriteF64Be(&ss, test->origin.x);
-    SSWriteF64Be(&ss, test->origin.y);
-    SSWriteF64Be(&ss, test->origin.z);
-    SSWriteU32Be(&ss, test->hash_pool.count);
-    SSWriteU64BeN(&ss, test->hash_pool.buf, test->hash_pool.count);
-
-    const u64 bytes_written = FileWriteAppend(&file, buf, bufsize);
-    ds_Assert(bytes_written == bufsize);
-
-    FileClose(&file);
-
-    ds_CPoolDealloc(test->hash_pool);
-
-    if (!ds_ConfigTryWrite(persistent, g_config, test->config_cstr))
+    const struct ds_SimHost *host = ds_SimHostLookup(&editor->srv, editor->sim).address;
+    if (host->hash_success)
     {
-        fprintf(stderr, "Failed to write %s, exiting.\n", test->config_cstr);
-        exit(1);
+        return 0;
     }
+
+    if (!host->hash || all_asleep)
+    {
+        *success = 0;
+        return 0;
+    }
+
+    return 1;
 }
 
 /*
- *  ./DreamscapeTest config_path --generate file    run the scene, write its per-frame hashes to file and the
- *                                                  config it ran with (seed, thread_count) to file.cfg
- *  ./DreamscapeTest config_path --load file        replay with config_path (file.cfg, possibly with another
- *                                                  thread_count) and compare every frame's hash
- *  --generate ... --origin x y z                   build the scene around the world position (x, y, z) instead
- *                                                  of 0; stored in file, so --load replays it there
+ *  ./DreamscapeTest config=path record=file hash=file [origin=x,y,z]
+ *      run the scene (built around origin, default 0) on a recording host: file holds the scene as commands,
+ *      the hash file one hash per system tick; the run ends when every body sleeps
+ *  ./DreamscapeTest config=path replay=file hash=file
+ *      replay the record with config (another thread_count) and compare every tick's hash; exit 0 on success
  */
 int main(int argc, char *argv[])
 {
@@ -241,13 +174,7 @@ int main(int argc, char *argv[])
 		FatalCleanupAndExit();
 	}
 
-    const u32 argument_count = (u32) argc;
-    utf8 *argument = ArenaPush(&persistent, sizeof(utf8)*argument_count);
-    for (i32 i = 0; i < argc; ++i)
-    {
-        argument[i] = Utf8Cstr(&persistent, argv[i]);
-    }
-    struct ds_DeterminismTest test = ds_DeterminismProcessArguments(&persistent, argument, argument_count);
+    const struct ds_DeterminismTest test = ds_DeterminismProcessArguments(&persistent);
     fprintf(stderr, "scene origin: (%.17g, %.17g, %.17g)\n", test.origin.x, test.origin.y, test.origin.z);
 
 	struct led *editor = led_Alloc(g_config->thread_count, g_config->thread_framesize, g_argv[ARGV_SIMULATION], g_argv[ARGV_RECORD], g_argv[ARGV_REPLAY], g_argv[ARGV_HASH]);
@@ -257,42 +184,24 @@ int main(int argc, char *argv[])
 	r_Init(&persistent, NSEC_PER_SEC / renderer_framerate, 16*1024*1024, 1024, &editor->render_mesh_db);
 	
     u32 success = 1;
-    u64 frame = 0;
     while (editor->running)
     {
     	ProfFrameMark;
-    
+
 		ds_DeallocTaggedWindows();
 
         ds_JobSchedulerFrameClear();
-    
+
 		ds_ProcessEvents();
 
         led_Main(editor, editor->physics->ns_tick);
 		led_UiMain(editor);
 		r_EditorMain(editor);
 
-        const u64 hash = ds_DynamicsHash(editor->physics);
-        if (test.generate)
-        {
-            const u32 index = ds_CPoolPush(test.hash_pool).index;
-            test.hash_pool.buf[ index ] = hash;
-        }
-        else
-        {
-            fprintf(stderr, "checking index %" PRIu64 " of %u: (%" PRIu64 ", %" PRIu64 ")\n", frame, test.hash_pool.count, hash, ((frame >= test.hash_pool.count) ? U64_MAX : test.hash_pool.buf[ frame ]));
-            if (frame >= test.hash_pool.count || hash != test.hash_pool.buf[ frame ])
-            {
-                success = 0;
-            }
-        }
-
-        if (!success || editor->physics->solver_set_pool.buf[SOLVER_SET_ACTIVE].body_sim_pool.count == 0)
+        if (!ds_DeterminismRunning(&test, editor, &success))
         {
             editor->running = 0;
         }
-
-        frame += 1;
     }
 
     if (!test.generate)
@@ -301,14 +210,8 @@ int main(int argc, char *argv[])
             ? fprintf(stderr, "========================== SUCCESS ==========================\n")
             : fprintf(stderr, "========================== FAILURE ==========================\n");
     }
-	
+
 	led_Dealloc(editor);
-
-    if (test.generate)
-    {
-        ds_DeterminismGenerate(&persistent, &test);
-    }
-
 	ArenaFree(&persistent);
 	ds_Shutdown();
 
