@@ -44,7 +44,7 @@ call emcmake cmake -S . -B build ^
 cd build
 cmake --build . --parallel || exit /b 1
 
-call emrun --browser="%BROWSER%" DreamscapeTest.html ../config/default.cfg
+call emrun --browser="%BROWSER%" DreamscapeTest.html config=../config/default.cfg
 REM node engine_sandbox.js
 cd ..
 exit /b

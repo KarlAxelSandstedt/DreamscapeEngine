@@ -32,5 +32,5 @@ fi
 cmake -S . -B build -DDS_TEST_PHYSICS=ON -DDS_DEBUG=ON -DDS_ASAN=ON -DDS_OPTIMIZE=ON -DCMAKE_BUILD_TYPE=Debug -G $CMAKE_GENERATOR
 cd build
 cmake --build . --parallel
-./DreamscapeTest ../config/default.cfg
+./DreamscapeTest config=../config/default.cfg log=log.txt
 cd ..

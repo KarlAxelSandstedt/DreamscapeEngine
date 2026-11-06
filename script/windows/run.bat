@@ -35,7 +35,7 @@ cmake --build . --parallel || exit /b 1
 set "TRACY_PROFILER=..\lib\tracy\profiler\build\Release\tracy-profiler.exe"
 tasklist /fi "imagename eq tracy-profiler.exe" | find /i "tracy-profiler.exe" >nul || call :tracy
 
-.\DreamscapeTest.exe ..\config\default.cfg
+.\DreamscapeTest.exe config=..\config\default.cfg log=log.txt
 cd ..
 exit /b
 

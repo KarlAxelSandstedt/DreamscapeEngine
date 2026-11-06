@@ -31,7 +31,7 @@ if not "%BUILD_ID%"=="%BUILD_ID_CURRENT%" (
 cmake -S . -B build -DDS_TEST_PHYSICS=ON -DDS_DEBUG=ON -DDS_ASAN=ON -DDS_OPTIMIZE=ON -DCMAKE_BUILD_TYPE=Debug -G "%CMAKE_GENERATOR%" || exit /b 1
 cd build
 cmake --build . --parallel || exit /b 1
-.\DreamscapeTest.exe ..\config\default.cfg
+.\DreamscapeTest.exe config=..\config\default.cfg log=log.txt
 cd ..
 exit /b
 

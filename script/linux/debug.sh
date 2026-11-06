@@ -37,5 +37,5 @@ if [ -z $(pgrep -f "tracy-profiler")]; then
 	nohup "$TRACY_PROFILER" > /dev/null 2>&1 &
 fi
 
-gdb --args ./DreamscapeTest ../config/default.cfg
+gdb --args ./DreamscapeTest config=../config/default.cfg log=log.txt
 cd ..

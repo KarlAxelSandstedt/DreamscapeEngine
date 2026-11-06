@@ -40,6 +40,6 @@ emcmake cmake -S . -B build \
 cd build
 cmake --build . --parallel
 
-emrun --browser=/usr/bin/brave-browser DreamscapeTest.html ../config/default.cfg
+emrun --browser=/usr/bin/brave-browser DreamscapeTest.html config=../config/default.cfg
 #node engine_sandbox.js
 cd ..

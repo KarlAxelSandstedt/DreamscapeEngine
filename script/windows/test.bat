@@ -34,7 +34,7 @@ cd build
 cmake --build . --parallel || exit /b 1
 
 where raddbg >nul 2>&1 || (echo Error: raddbg is not installed. & exit /b 1)
-raddbg .\DreamscapeTest.exe ..\config\default.cfg
+raddbg .\DreamscapeTest.exe config=..\config\default.cfg log=log.txt
 cd ..
 exit /b
 

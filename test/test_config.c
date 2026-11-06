@@ -166,8 +166,42 @@ struct test_Output ConfigFileTest(struct test_Environment *env)
 	return output;
 }
 
+/* the valid command lines: every key once, in any order, a flag bare; the table holds argv's bytes; a rerun resets it */
+static struct test_Output ArgvParseTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    char *full[] = { "./DreamscapeTest", "record=run.rec", "hash=run.hash", "headless", "config=../config/default.cfg", "log=log.txt" };
+    ds_ArgvParse(6, full);
+    TEST_EQUAL(1, Utf8Equivalence(Utf8Inline("log.txt"), g_argv[ARGV_LOG]));
+    TEST_EQUAL(1, Utf8Equivalence(Utf8Inline("run.rec"), g_argv[ARGV_RECORD]));
+    TEST_EQUAL(1, Utf8Equivalence(Utf8Inline("run.hash"), g_argv[ARGV_HASH]));
+    TEST_EQUAL(1, Utf8Equivalence(Utf8Inline("1"), g_argv[ARGV_HEADLESS]));
+    TEST_EQUAL(1, Utf8Equivalence(Utf8Inline("../config/default.cfg"), g_argv[ARGV_CONFIG]));
+    TEST_EQUAL(0, g_argv[ARGV_REPLAY].size);
+    TEST_EQUAL(0, g_argv[ARGV_SIMULATION].size);
+    TEST_EQUAL((u8 *) full[1] + 7, g_argv[ARGV_RECORD].buf);
+    TEST_EQUAL(0, g_argv[ARGV_RECORD].buf[g_argv[ARGV_RECORD].size]);
+
+    char *replay[] = { "./DreamscapeTest", "replay=a=b.rec" };
+    ds_ArgvParse(2, replay);
+    TEST_EQUAL(1, Utf8Equivalence(Utf8Inline("a=b.rec"), g_argv[ARGV_REPLAY]));
+    TEST_EQUAL(0, g_argv[ARGV_RECORD].size);
+    TEST_EQUAL(0, g_argv[ARGV_HEADLESS].size);
+
+    char *none[] = { "./DreamscapeTest" };
+    ds_ArgvParse(1, none);
+    for (u32 k = 0; k < ARGV_COUNT; ++k)
+    {
+        TEST_EQUAL(0, g_argv[k].size);
+    }
+
+	return output;
+}
+
 static struct test_Output (*config_tests[])(struct test_Environment *) =
 {
+    ArgvParseTest,
     ConfigRoundTripTest,
     ConfigPartialTest,
     ConfigBadLineTest,

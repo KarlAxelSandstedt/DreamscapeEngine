@@ -7,8 +7,9 @@
  */
 Module['preRun'] = [].concat(Module['preRun'] || [], () =>
 {
-    for (const arg of Module['arguments'] || [])
+    for (const argument of Module['arguments'] || [])
     {
+        const arg = argument.includes('=') ? argument.slice(argument.indexOf('=') + 1) : argument;
         if (arg.startsWith('--') || FS.analyzePath(arg).exists)
         {
             continue;

@@ -70,7 +70,7 @@ static void ds_MainLoop(void)
 /* emrun DreamscapeTest.html [config_path] */
 int main(int argc, char *argv[])
 {
-	ds_Init((argc > 1) ? argv[1] : NULL, "log.txt");
+	ds_Init(argc, argv);
 
 	g_persistent = ArenaAlloc(NULL, 64*1024*1024);
 	if (!g_persistent.stack_ptr)

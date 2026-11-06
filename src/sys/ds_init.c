@@ -32,6 +32,8 @@
 static struct ds_Config g_config_storage;
 const struct ds_Config *g_config = NULL;
 
+utf8 g_argv[ARGV_COUNT];
+
 static struct arena g_init_persistent;
 static u32 g_init_called = 0;
 
@@ -339,10 +341,127 @@ u32 ds_ConfigTryWrite(struct arena *tmp, const struct ds_Config *config, const c
     return written;
 }
 
-void ds_Init(const char *config_path, const char *log_path)
+//TODO:
+//
+//  ./DreamscapeTest config="config.cfg" record="run.rec" replay="run.rec" hash="run.hash" simulation="run.sim" headless
+//
+//      config: general config file
+//  simulation: file with Initial simulation state
+//      record: file to record to
+//      replay: file to replay from
+//        hash: file to hash to, or compare hashes from
+//
+//  Optional, but can always be provided:
+//
+//      simulation: (Optional) initialize a serialized simulation
+//          config: (Optional) use external config
+//
+//  Optional combinations:
+//
+//          record: Record all external commands that affect simulation state
+//          replay: Replay a record (Should yield the exact same final state)
+//    record, hash: Record all external commands and record a state hash of the
+//                  simulation for each simulation system tick
+//    replay, hash: Replay a record together with the record's hash file, and
+//                  compare all hashes to newly generated ones.
+
+static const char *g_argv_name[ARGV_COUNT] = { "log", "config", "simulation", "record", "replay", "hash", "headless" };
+static const u32 g_argv_flag[ARGV_COUNT] = { 0, 0, 0, 0, 0, 0, 1 };
+
+#define DS_ARGV_USAGE "usage: ./Executable [config=path] [log=path] [record=path | replay=path] [hash=path] [headless]"
+
+/* before the log: Log writes to stderr */
+static void ds_ArgvFatal(const char *problem, const char *argument)
+{
+    Log(T_SYSTEM, S_FATAL, "command line: %s: %s\n%s", problem, argument, DS_ARGV_USAGE);
+    FatalCleanupAndExit();
+}
+
+/* a view of the null-terminated bytes at cstr */
+static utf8 ds_ArgvValue(char *cstr)
+{
+    utf8 value = { .buf = (u8 *) cstr, .size = (u32) strlen(cstr), .len = 0 };
+    for (u32 offset = 0; offset < value.size; value.len += 1)
+    {
+        Utf8ReadCodepoint(&offset, &value, offset);
+    }
+    return value;
+}
+
+void ds_ArgvParse(const int argc, char *argv[])
+{
+    for (u32 k = 0; k < ARGV_COUNT; ++k)
+    {
+        g_argv[k] = Utf8Empty();
+    }
+
+    for (int i = 1; i < argc; ++i)
+    {
+        char *argument = argv[i];
+        const u32 size = (u32) strlen(argument);
+        u32 key_size = 0;
+        while (key_size < size && argument[key_size] != '=')
+        {
+            key_size += 1;
+        }
+
+        if (key_size == 0 || key_size + 1 == size)
+        {
+            ds_ArgvFatal("empty key or value", argument);
+        }
+
+        u32 key = ARGV_COUNT;
+        for (u32 k = 0; k < ARGV_COUNT; ++k)
+        {
+            if (key_size == strlen(g_argv_name[k]) && memcmp(argument, g_argv_name[k], key_size) == 0)
+            {
+                key = k;
+                break;
+            }
+        }
+
+        if (key == ARGV_COUNT)
+        {
+            ds_ArgvFatal("unknown key", argument);
+        }
+
+        if (g_argv_flag[key] != (key_size == size))
+        {
+            ds_ArgvFatal((g_argv_flag[key]) ? "a flag takes no value" : "expected key=value", argument);
+        }
+
+        if (g_argv[key].size)
+        {
+            ds_ArgvFatal("repeated key", argument);
+        }
+
+        g_argv[key] = (g_argv_flag[key]) ? Utf8Inline("1") : ds_ArgvValue(argument + key_size + 1);
+    }
+
+    if (g_argv[ARGV_SIMULATION].size)
+    {
+        ds_ArgvFatal("not supported yet", "simulation");
+    }
+
+    if (g_argv[ARGV_HASH].size && !g_argv[ARGV_RECORD].size && !g_argv[ARGV_REPLAY].size)
+    {
+        ds_ArgvFatal("hash needs record or replay", "hash");
+    }
+
+    if (g_argv[ARGV_REPLAY].size && g_argv[ARGV_RECORD].size)
+    {
+        ds_ArgvFatal("replay with record is not supported yet", "record");
+    }
+}
+
+void ds_Init(const int argc, char *argv[])
 {
     ds_AssertString(!g_init_called, "ds_Init runs once per process");
     g_init_called = 1;
+
+    ds_ArgvParse(argc, argv);
+    const char *config_path = (g_argv[ARGV_CONFIG].size) ? (const char *) g_argv[ARGV_CONFIG].buf : NULL;
+    const char *log_path = (g_argv[ARGV_LOG].size) ? (const char *) g_argv[ARGV_LOG].buf : NULL;
 
     /* first: config parsing and arenas already run lzcnt/tzcnt (a missing LZCNT runs as bsr: wrong, no fault) */
     if (!ds_ArchBaselineCheck())
@@ -368,6 +487,11 @@ void ds_Init(const char *config_path, const char *log_path)
         }
     }
 
+    if (g_argv[ARGV_HEADLESS].size)
+    {
+        config->headless = 1;
+    }
+
     /* no log yet: Log writes to stderr */
     g_init_persistent = ArenaAlloc(NULL, config->persistent_size);
     if (!g_init_persistent.stack_ptr)
@@ -391,6 +515,11 @@ void ds_Init(const char *config_path, const char *log_path)
     ds_MeasureApiInit();
 #endif
     /* logged only now: the log's timestamps need ds_TimeApiInit */
+    for (int i = 0; i < argc; ++i)
+    {
+        Log(T_SYSTEM, S_NOTE, "ds_Init: argv[%u] %s", (u32) i, argv[i]);
+    }
+
     if (!config_read)
     {
         Log(T_SYSTEM, S_WARNING, "ds_Init: failed to read config %s, using the defaults", config_path);

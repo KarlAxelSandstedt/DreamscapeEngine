@@ -232,7 +232,7 @@ static void ds_DeterminismGenerate(struct arena *persistent, struct ds_Determini
  */
 int main(int argc, char *argv[])
 {
-    ds_Init((argc > 1) ? argv[1] : NULL, "log.txt");
+    ds_Init(argc, argv);
 
 	struct arena persistent = ArenaAlloc(NULL, 64*1024*1024);
 	if (!persistent.stack_ptr)

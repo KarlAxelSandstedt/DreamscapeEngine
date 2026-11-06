@@ -36,7 +36,7 @@ set "TRACY_PROFILER=..\lib\tracy\profiler\build\Release\tracy-profiler.exe"
 tasklist /fi "imagename eq tracy-profiler.exe" | find /i "tracy-profiler.exe" >nul || call :tracy
 
 where raddbg >nul 2>&1 || (echo Error: raddbg is not installed. & exit /b 1)
-raddbg .\DreamscapeTest.exe ..\config\default.cfg
+raddbg .\DreamscapeTest.exe config=..\config\default.cfg log=log.txt
 cd ..
 exit /b
 

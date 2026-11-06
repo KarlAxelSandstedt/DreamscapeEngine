@@ -37,9 +37,10 @@ wherever they are called from):
     thread_sanitize.sh - thread race detection with TSan
     undefined_behaviour_sanitize.sh - undefined behaviour detection with UBSan
 
-Every executable takes a config file as its first argument
-(./DreamscapeTest config/<name>.cfg; none: engine defaults). Configs live in
-config/; the format is documented in include/ds_init.h.
+Every executable takes key=value arguments (./DreamscapeTest
+config=config/<name>.cfg log=log.txt; no config: engine defaults; the keys
+are in include/ds_init.h). Configs live in config/; the format is documented
+in include/ds_init.h.
 
 All scripts share build/. For your own builds, use a separate directory
 (cmake -B build_agent ...) unless told otherwise. Configure your builds with

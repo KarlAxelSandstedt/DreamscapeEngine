@@ -35,7 +35,7 @@
 /* ./DreamscapeTest [config_path] */
 int main(int argc, char *argv[])
 {
-	ds_Init((argc > 1) ? argv[1] : NULL, "log.txt");
+	ds_Init(argc, argv);
 
 	struct led *editor = led_Alloc(g_config->thread_count, g_config->thread_framesize);
 

@@ -26,6 +26,7 @@ extern "C" {
 
 #include "ds_types.h"
 #include "ds_allocator.h"
+#include "ds_string.h"
 
 /*
 ds_init.h
@@ -38,8 +39,8 @@ Description:
     ds_Init starts the engine from a struct ds_Config and publishes it, resolved, as g_config;
     ds_Shutdown stops it in reverse order. The calls are the same on every platform. The config starts
     as the defaults below; the config file then sets the fields it has valid lines for (an unreadable,
-    empty or missing file sets none). Programs take the config path as their first argument:
-    ./Executable [config_path].
+    empty or missing file sets none). Programs take key=value arguments (ds_ArgvParse, g_argv):
+    ./Executable [config=path] [log=path] [record=path | replay=path] [hash=path] [headless].
     Defaults: system seed, 256 MiB persistent arena, thread_count 0 (logical cores - 2), 4 MiB frame and
     5 x 1 MiB scratch arenas per thread, headless 0.
     Rules for the program:
@@ -54,7 +55,7 @@ Description:
        UI or renderer calls. Assets are available.
 
 Usage:
-    ds_Init(argv[1], "log.txt");                (config NULL: defaults; log NULL: no log file)
+    ds_Init(argc, argv);                        (no config=: defaults; no log=: no log file)
     (program systems sized by g_config, e.g. led_Alloc, ds_DynamicsAlloc, r_Init; main loop)
     ds_Shutdown();
 
@@ -100,12 +101,36 @@ struct ds_Config
 /* The config ds_Init ran with, defaults resolved (thread_count >= 1, seed nonzero). NULL outside ds_Init..ds_Shutdown. */
 extern const struct ds_Config *g_config;
 
+/* The command line's keys: ./Executable key=value ... */
+enum ds_ArgvType
+{
+    ARGV_LOG,           /* the log file                                              */
+    ARGV_CONFIG,        /* the config file                                              */
+    ARGV_SIMULATION,    /* TODO a serialized simulation state + its config (allowed with record only; the recorder then
+                           seeds with a SimulationLoad instead of a ConfigLoad): rejected until it exists */
+    ARGV_RECORD,        /* the record file to write                                     */
+    ARGV_REPLAY,        /* the record file to replay                                    */
+    ARGV_HASH,          /* the hash file: written with record, compared with replay     */
+    ARGV_HEADLESS,      /* a flag (no value): no graphics, as the config's headless      */
+    ARGV_COUNT
+};
+
+/* The parsed command line: g_argv[key] is the key's value ("1" for a given flag), empty when not given. Valid after ds_ArgvParse. */
+extern utf8 g_argv[ARGV_COUNT];
+
 /*
- * Start the engine with the defaults overridden by the file at config_path (NULL: defaults only). Logs to
- * log_path (NULL: no log file; the web logs to the console only). Fatal: an unsupported CPU or a
- * persistent arena that can't be allocated.
+ * Parse argv[1..argc), key=value or a bare flag, into g_argv; a value's bytes are argv's (null-terminated in
+ * place). Fatal: a bare key that is not a flag, a flag with a value, an empty key or value, an unknown or repeated
+ * key, hash without record or replay, replay with record, simulation.
  */
-void 			ds_Init(const char *config_path, const char *log_path);
+void            ds_ArgvParse(const int argc, char *argv[]);
+
+/*
+ * Parse the command line (ds_ArgvParse) and start the engine with the defaults overridden by the config= file
+ * (none: defaults only) and headless. Logs to the log= file (none: no log file; the web logs to the console
+ * only). Fatal: a bad command line, an unsupported CPU or a persistent arena that can't be allocated.
+ */
+void 			ds_Init(const int argc, char *argv[]);
 /* Stop the engine in reverse order and free its memory. Web: may be called from the main loop callback. */
 void 			ds_Shutdown(void);
 
