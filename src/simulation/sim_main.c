@@ -243,6 +243,7 @@ void ds_SimAlloc(struct arena *mem, struct ds_Sim *sim, const struct ds_SimConfi
     sim->body_prefab_db = prefab_db;
     sim->shape_prefab_db = shape_prefab_db;
     sim->entity_map = ds_HashMapAlloc(NULL, 1024, 1024, GROWABLE);
+    sim->joint_entity_map = ds_HashMapAlloc(NULL, 64, 64, GROWABLE);
     for (u32 i = 0; i < SIM_SYSTEM_COUNT; ++i)
     {
         sim->us_system_tick[i] = config->us_system_tick[i];
@@ -258,6 +259,7 @@ void ds_SimDealloc(struct ds_Sim *sim)
 {
     ds_DynamicsFree(&sim->dynamics);
     ds_HashMapDealloc(&sim->entity_map);
+    ds_HashMapDealloc(&sim->joint_entity_map);
 }
 
 ds_BodyId ds_SimBodyByEntity(const struct ds_Sim *sim, const u32 entity)
@@ -274,10 +276,26 @@ ds_BodyId ds_SimBodyByEntity(const struct ds_Sim *sim, const u32 entity)
     return ds_BodyIdNull();
 }
 
+/* TODO(Remove/Refactor) a slot reused after a breakage is taken for the joint: the entity scheme is temporary */
+ds_JointId ds_SimJointByEntity(const struct ds_Sim *sim, const u32 joint_entity)
+{
+    for (u32 i = ds_HashMapFirst(&sim->joint_entity_map, joint_entity); i != HASH_NULL; i = ds_HashMapNext(&sim->joint_entity_map, i))
+    {
+        const struct ds_Joint *joint = sim->dynamics.joint_pool.buf + i;
+        if (ds_PoolSlotAllocated(joint))
+        {
+            return joint->id;
+        }
+    }
+
+    return ds_JointIdNull();
+}
+
 void ds_SimFlush(struct ds_Sim *sim)
 {
     ds_DynamicsFlush(&sim->dynamics);
     ds_HashMapFlush(&sim->entity_map);
+    ds_HashMapFlush(&sim->joint_entity_map);
     ds_SimScheduleInit(sim);
     sim->initialized = 0;
     ds_SimSeed(sim, &sim->config_seed);

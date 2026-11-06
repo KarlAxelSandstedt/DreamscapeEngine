@@ -325,6 +325,7 @@ static void led_UiTest(struct led *led, const struct ui_Visual *visual)
 #define LED_GRAB_TORQUE_SCALE   0.5f
 /* the target's lag behind the ray's point, seconds: a first order filter, a = dt / (dt + lag) per frame */
 #define LED_GRAB_LAG            0.1f
+#define LED_GRAB_ENTITY         0xFFFFFFF0u     /* TODO(Remove/Refactor) the editor's one hand's joint entity */
 
 /* the pick ray through a window pixel of the viewport */
 static struct rayWorld led_ViewportPickRay(const struct led *led, const struct ui_Node *viewport, const v2 pointer)
@@ -347,13 +348,10 @@ static void led_GrabBegin(struct led *led, const struct rayWorld *ray, const u32
 	}
 
 	const v3f64 target = V3F64Add(ray->origin, V3Promote(V3Scale(ray->dir, hit.f)));
-	const struct ds_BodySim *bsim = led->physics->solver_set_pool.buf[body->set].body_sim_pool.buf + body->sim;
-	ds_Transform local_frame = ds_TransformIdentity();
-	local_frame.position = ds_TransformWorldPointToLocal(&bsim->world, target);
-
-	struct ds_MouseJointPrefab prefab;
-	ds_MouseJointPrefabFromBody(&prefab, led->physics, body->id, target, LED_GRAB_HERTZ, LED_GRAB_DAMPING_RATIO, LED_GRAB_FORCE_SCALE, LED_GRAB_TORQUE_SCALE, ds_BreakageOptionNone());
-	led->grab.joint = ds_MouseJointAdd(led->physics, &prefab, body->id, &local_frame);
+	const struct ds_SimCmd cmd = { .type = SIM_CMD_MOUSE_JOINT_ADD, .mouse_joint_add = { .joint_entity = LED_GRAB_ENTITY, .entity = body->entity, .target = target, .hertz = LED_GRAB_HERTZ, .damping_ratio = LED_GRAB_DAMPING_RATIO, .force_scale = LED_GRAB_FORCE_SCALE, .torque_scale = LED_GRAB_TORQUE_SCALE } };
+	ds_CPoolPushValue(led->cmds, cmd);
+	led->grab.active = 1;
+	led->grab.pending = 1;
 	led->grab.distance = hit.f;
 	led->grab.target = target;
 }
@@ -361,23 +359,34 @@ static void led_GrabBegin(struct led *led, const struct rayWorld *ray, const u32
 /* while the left button is held the target follows the ray's point at the grab's distance, lagging; a release, or a joint that is gone, ends the grab */
 static void led_GrabUpdate(struct led *led, const struct rayWorld *ray)
 {
-	if (ds_JointIdNullCheck(led->grab.joint))
+	if (!led->grab.active)
 	{
 		return;
 	}
 
-	if (g_ui->inter.button_pressed[MOUSE_BUTTON_LEFT] && ds_JointLookup(led->physics, led->grab.joint).address)
+	const struct ds_SimHost *host = ds_SimHostLookup(&led->srv, led->sim).address;
+	const struct ds_Sim *sim = &host->sim;
+	const u32 exists = !ds_JointIdNullCheck(ds_SimJointByEntity(sim, LED_GRAB_ENTITY));
+	if (!g_ui->inter.button_pressed[MOUSE_BUTTON_LEFT] || (!exists && !led->grab.pending))
+	{
+		if (exists)
+		{
+			const struct ds_SimCmd cmd = { .type = SIM_CMD_JOINT_REMOVE, .joint_remove = { .joint_entity = LED_GRAB_ENTITY } };
+			ds_CPoolPushValue(led->cmds, cmd);
+		}
+		led->grab.active = 0;
+		return;
+	}
+
+	led->grab.pending = 0;
+	if (exists)
 	{
 		const v3f64 point = V3F64Add(ray->origin, V3Promote(V3Scale(ray->dir, led->grab.distance)));
 		const f32 dt = (f32) led->ns_delta / NSEC_PER_SEC;
 		const f32 a = dt / (dt + LED_GRAB_LAG);
 		led->grab.target = V3F64Add(led->grab.target, V3Promote(V3Scale(V3F64Demote(V3F64Sub(point, led->grab.target)), a)));
-		ds_MouseJointTargetSet(led->physics, led->grab.joint, led->grab.target);
-	}
-	else
-	{
-		ds_JointRemove(led->physics, led->grab.joint);
-		led->grab.joint = ds_JointIdNull();
+		const struct ds_SimCmd cmd = { .type = SIM_CMD_MOUSE_JOINT_TARGET_SET, .mouse_joint_target_set = { .joint_entity = LED_GRAB_ENTITY, .target = led->grab.target } };
+		ds_CPoolPushValue(led->cmds, cmd);
 	}
 }
 
@@ -590,7 +599,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 							ui_NodeAllocF(UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW | UI_DRAW_BORDER | UI_DRAW_BACKGROUND | UI_SKIP_HOVER_SEARCH, "%k##%u", &entity->id, body->entity);
 
 							/* the click that focuses the viewport only focuses: the pointer moves to the centre on the next frame */
-							if ((node->inter & UI_INTER_LEFT_CLICK) && !(node->inter & UI_INTER_FOCUS_IN) && ds_JointIdNullCheck(led->grab.joint))
+							if ((node->inter & UI_INTER_LEFT_CLICK) && !(node->inter & UI_INTER_FOCUS_IN) && !led->grab.active)
 							{
 								led_GrabBegin(led, &ray, hit);
 							}

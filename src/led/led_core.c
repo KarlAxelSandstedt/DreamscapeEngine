@@ -2549,7 +2549,7 @@ static void led_EngineFlush(struct led *led)
 {
 	ds_SimHostReset(&led->srv, led->sim);
 	ds_DynamicsConfigPush(led->physics);
-	led->grab.joint = ds_JointIdNull();
+	led->grab.active = 0;
 
     HII it; 
     HIIInit(it, led->node_hierarchy, LED_NODE_ROOT);
@@ -2688,6 +2688,11 @@ void led_Core(struct led *led)
 	struct ds_SimHost *host = ds_SimHostLookup(&led->srv, led->sim).address;
 	host->speed = (led->engine_running) ? 1.0 : 0.0;
 	const u64 physics_frames_before = led->physics->frames_completed;
+	if (led->cmds.count)
+	{
+		ds_CPoolPushValue(led->srv.payload_pool, ds_SimCmdPayloadPushAll(&led->srv.frame, led->sim, &led->cmds));
+		ds_CPoolFlush(led->cmds);
+	}
 	ds_ServerTick(&led->srv, led->ns_delta);
 	ds_DynamicsConfigPush(led->physics);    /* the tick popped it; the editor's queries until the next tick read it */
 	if (led->engine_running)

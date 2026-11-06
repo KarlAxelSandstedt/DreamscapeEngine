@@ -284,187 +284,7 @@ static u32 ds_LoadConfigCmdTryDeserialize(struct arena *mem, struct SS *ss, stru
     return success;
 }
 
-/******** BodyAdd ********/
-
-static u32 ds_BodyAddCmdFormVerify(const struct ds_BodyAddCmd *cmd)
-{
-    return ds_SimCmdPrefabIdCheck(cmd->prefab) && ds_TransformWorldFiniteCheck(&cmd->t_world);
-}
-
-static u32 ds_BodyAddCmdDataVerify(const struct ds_Sim *sim, const struct ds_BodyAddCmd *cmd)
-{
-    return ds_SDBLookup(*sim->body_prefab_db, cmd->prefab).index != SDB_STUB
-        && ds_BodyIdNullCheck(ds_SimBodyByEntity(sim, cmd->entity));
-}
-
-static u32 ds_BodyAddCmdTryExecute(struct ds_Sim *sim, const struct ds_BodyAddCmd *cmd)
-{
-    const struct ds_BodyPrefab *prefab = ds_SDBLookup(*sim->body_prefab_db, cmd->prefab).address;
-    const ds_BodyId body = ds_BodyAdd(&sim->dynamics, prefab, &cmd->t_world, cmd->entity);
-    if (ds_BodyIdNullCheck(body))
-    {
-        Log(T_SYSTEM, S_ERROR, "ds_BodyAddCmdTryExecute: no body for entity %u", cmd->entity);
-        return 0;
-    }
-    ds_HashMapAdd(&sim->entity_map, cmd->entity, ds_BodyIdIndex(body));
-    return 1;
-}
-
-static u64 ds_BodyAddCmdSerializeBitsize(const struct ds_BodyAddCmd *cmd)
-{
-    return DS_SIM_CMD_ID_BITS(cmd->prefab) + 8*ds_TransformWorldSerializeSize(&cmd->t_world) + 32;
-}
-
-static void ds_BodyAddCmdSerialize(struct SS *ss, const struct ds_BodyAddCmd *cmd)
-{
-    SSWriteU64Partial(ss, cmd->prefab.size, 8);
-    for (u32 i = 0; i < cmd->prefab.size; ++i)
-    {
-        SSWriteU64Partial(ss, cmd->prefab.buf[i], 8);
-    }
-    ds_TransformWorldSerialize(ss, &cmd->t_world);
-    SSWriteU64Partial(ss, cmd->entity, 32);
-}
-
-static u32 ds_BodyAddCmdTryDeserialize(struct arena *mem, struct SS *ss, struct ds_BodyAddCmd *cmd)
-{
-    if (!ds_SimCmdTryReadId(mem, ss, &cmd->prefab) || SSBitsLeft(ss) < 8*ds_TransformWorldSerializeSize(&cmd->t_world) + 32)
-    {
-        return 0;
-    }
-
-    ds_TransformWorldDeserialize(ss, &cmd->t_world);
-    cmd->entity = (u32) SSReadU64Partial(ss, 32);
-    return 1;
-}
-
-/******** ShapeAdd ********/
-
-static u32 ds_ShapeAddCmdFormVerify(const struct ds_ShapeAddCmd *cmd)
-{
-    return ds_SimCmdPrefabIdCheck(cmd->prefab) && ds_TransformFiniteCheck(&cmd->t_local);
-}
-
-static u32 ds_ShapeAddCmdDataVerify(const struct ds_Sim *sim, const struct ds_ShapeAddCmd *cmd)
-{
-    return ds_SDBLookup(*sim->shape_prefab_db, cmd->prefab).index != SDB_STUB
-        && !ds_BodyIdNullCheck(ds_SimBodyByEntity(sim, cmd->entity));
-}
-
-static u32 ds_ShapeAddCmdTryExecute(struct ds_Sim *sim, const struct ds_ShapeAddCmd *cmd)
-{
-    const struct ds_ShapePrefab *prefab = ds_SDBLookup(*sim->shape_prefab_db, cmd->prefab).address;
-    ds_ShapeAdd(&sim->dynamics, prefab, &cmd->t_local, ds_SimBodyByEntity(sim, cmd->entity));
-    return 1;
-}
-
-static u64 ds_ShapeAddCmdSerializeBitsize(const struct ds_ShapeAddCmd *cmd)
-{
-    return DS_SIM_CMD_ID_BITS(cmd->prefab) + 8*ds_TransformSerializeSize(&cmd->t_local) + 32;
-}
-
-static void ds_ShapeAddCmdSerialize(struct SS *ss, const struct ds_ShapeAddCmd *cmd)
-{
-    SSWriteU64Partial(ss, cmd->prefab.size, 8);
-    for (u32 i = 0; i < cmd->prefab.size; ++i)
-    {
-        SSWriteU64Partial(ss, cmd->prefab.buf[i], 8);
-    }
-    ds_TransformSerialize(ss, &cmd->t_local);
-    SSWriteU64Partial(ss, cmd->entity, 32);
-}
-
-static u32 ds_ShapeAddCmdTryDeserialize(struct arena *mem, struct SS *ss, struct ds_ShapeAddCmd *cmd)
-{
-    if (!ds_SimCmdTryReadId(mem, ss, &cmd->prefab) || SSBitsLeft(ss) < 8*ds_TransformSerializeSize(&cmd->t_local) + 32)
-    {
-        return 0;
-    }
-
-    ds_TransformDeserialize(ss, &cmd->t_local);
-    cmd->entity = (u32) SSReadU64Partial(ss, 32);
-    return 1;
-}
-
-/******** JointAdd ********/
-
-static u32 ds_JointAddCmdFormVerify(const struct ds_JointAddCmd *cmd)
-{
-    return F32FiniteCheck(cmd->target) && F32FiniteCheck(cmd->range.low) && F32FiniteCheck(cmd->range.high)
-        && F32FiniteCheck(cmd->hertz) && F32FiniteCheck(cmd->damping_ratio)
-        && !F32TestNan(cmd->breakage.force_threshold) && !F32TestNan(cmd->breakage.torque_threshold)   /* infinity: unbreakable */
-        && cmd->range.low <= cmd->target && cmd->target <= cmd->range.high && cmd->hertz >= 0.0f && cmd->damping_ratio >= 0.0f
-        && cmd->entity[0] != cmd->entity[1]
-        && ds_TransformFiniteCheck(cmd->local_frame + 0) && ds_TransformFiniteCheck(cmd->local_frame + 1);
-}
-
-static u32 ds_JointAddCmdDataVerify(const struct ds_Sim *sim, const struct ds_JointAddCmd *cmd)
-{
-    return !ds_BodyIdNullCheck(ds_SimBodyByEntity(sim, cmd->entity[0]))
-        && !ds_BodyIdNullCheck(ds_SimBodyByEntity(sim, cmd->entity[1]));
-}
-
-static u32 ds_JointAddCmdTryExecute(struct ds_Sim *sim, const struct ds_JointAddCmd *cmd)
-{
-    struct ds_DistanceJointPrefab prefab;
-    if (cmd->enable_spring)
-    {
-        ds_DistanceJointPrefabRangeSpring(&prefab, cmd->range, cmd->hertz, cmd->damping_ratio, cmd->breakage);
-    }
-    else
-    {
-        ds_DistanceJointPrefabRange(&prefab, cmd->range, cmd->breakage);
-    }
-    prefab.target = F32Clamp(cmd->target, prefab.range.low, prefab.range.high);
-    prefab.collide_connected = cmd->collide_connected;
-    ds_DistanceJointAdd(&sim->dynamics, &prefab, ds_SimBodyByEntity(sim, cmd->entity[0]), cmd->local_frame + 0, ds_SimBodyByEntity(sim, cmd->entity[1]), cmd->local_frame + 1);
-    return 1;
-}
-
-static u64 ds_JointAddCmdSerializeBitsize(const struct ds_JointAddCmd *cmd)
-{
-    return DS_SIM_CMD_JOINT_ADD_BITS;
-}
-
-static void ds_JointAddCmdSerialize(struct SS *ss, const struct ds_JointAddCmd *cmd)
-{
-    SSWriteU64Partial(ss, cmd->collide_connected, 32);
-    SSWriteU64Partial(ss, (b32) { .f = cmd->target }.u, 32);
-    SSWriteU64Partial(ss, (b32) { .f = cmd->range.low }.u, 32);
-    SSWriteU64Partial(ss, (b32) { .f = cmd->range.high }.u, 32);
-    SSWriteU64Partial(ss, cmd->enable_spring, 32);
-    SSWriteU64Partial(ss, (b32) { .f = cmd->hertz }.u, 32);
-    SSWriteU64Partial(ss, (b32) { .f = cmd->damping_ratio }.u, 32);
-    SSWriteU64Partial(ss, (b32) { .f = cmd->breakage.force_threshold }.u, 32);
-    SSWriteU64Partial(ss, (b32) { .f = cmd->breakage.torque_threshold }.u, 32);
-    SSWriteU64Partial(ss, cmd->entity[0], 32);
-    SSWriteU64Partial(ss, cmd->entity[1], 32);
-    ds_TransformSerialize(ss, cmd->local_frame + 0);
-    ds_TransformSerialize(ss, cmd->local_frame + 1);
-}
-
-static u32 ds_JointAddCmdTryDeserialize(struct SS *ss, struct ds_JointAddCmd *cmd)
-{
-    if (SSBitsLeft(ss) < DS_SIM_CMD_JOINT_ADD_BITS)
-    {
-        return 0;
-    }
-
-    cmd->collide_connected = (u32) SSReadU64Partial(ss, 32);
-    cmd->target = (b32) { .u = (u32) SSReadU64Partial(ss, 32) }.f;
-    cmd->range.low = (b32) { .u = (u32) SSReadU64Partial(ss, 32) }.f;
-    cmd->range.high = (b32) { .u = (u32) SSReadU64Partial(ss, 32) }.f;
-    cmd->enable_spring = (u32) SSReadU64Partial(ss, 32);
-    cmd->hertz = (b32) { .u = (u32) SSReadU64Partial(ss, 32) }.f;
-    cmd->damping_ratio = (b32) { .u = (u32) SSReadU64Partial(ss, 32) }.f;
-    cmd->breakage.force_threshold = (b32) { .u = (u32) SSReadU64Partial(ss, 32) }.f;
-    cmd->breakage.torque_threshold = (b32) { .u = (u32) SSReadU64Partial(ss, 32) }.f;
-    cmd->entity[0] = (u32) SSReadU64Partial(ss, 32);
-    cmd->entity[1] = (u32) SSReadU64Partial(ss, 32);
-    ds_TransformDeserialize(ss, cmd->local_frame + 0);
-    ds_TransformDeserialize(ss, cmd->local_frame + 1);
-    return 1;
-}
+#include "sim_cmd_tmp.c"
 
 /******** ds_SimCmd: the switches over the commands ********/
 
@@ -476,6 +296,9 @@ u32 ds_SimCmdFormVerify(const struct ds_SimCmd *cmd)
         case SIM_CMD_BODY_ADD:      { return ds_BodyAddCmdFormVerify(&cmd->body_add); }
         case SIM_CMD_SHAPE_ADD:     { return ds_ShapeAddCmdFormVerify(&cmd->shape_add); }
         case SIM_CMD_JOINT_ADD:     { return ds_JointAddCmdFormVerify(&cmd->joint_add); }
+        case SIM_CMD_MOUSE_JOINT_ADD: { return ds_MouseJointAddCmdFormVerify(&cmd->mouse_joint_add); }
+        case SIM_CMD_MOUSE_JOINT_TARGET_SET: { return ds_MouseJointTargetSetCmdFormVerify(&cmd->mouse_joint_target_set); }
+        case SIM_CMD_JOINT_REMOVE: { return ds_JointRemoveCmdFormVerify(&cmd->joint_remove); }
         default:                    { return 0; }
     }
 }
@@ -491,6 +314,9 @@ static u32 ds_SimCmdDataVerify(const struct ds_Sim *sim, const struct ds_SimCmd 
         case SIM_CMD_BODY_ADD:      { return ds_BodyAddCmdDataVerify(sim, &cmd->body_add); }
         case SIM_CMD_SHAPE_ADD:     { return ds_ShapeAddCmdDataVerify(sim, &cmd->shape_add); }
         case SIM_CMD_JOINT_ADD:     { return ds_JointAddCmdDataVerify(sim, &cmd->joint_add); }
+        case SIM_CMD_MOUSE_JOINT_ADD: { return ds_MouseJointAddCmdDataVerify(sim, &cmd->mouse_joint_add); }
+        case SIM_CMD_MOUSE_JOINT_TARGET_SET: { return ds_MouseJointTargetSetCmdDataVerify(sim, &cmd->mouse_joint_target_set); }
+        case SIM_CMD_JOINT_REMOVE: { return ds_JointRemoveCmdDataVerify(sim, &cmd->joint_remove); }
         default:                    { return 0; }
     }
 }
@@ -509,6 +335,9 @@ u32 ds_SimCmdTryExecute(struct ds_Sim *sim, const struct ds_SimCmd *cmd)
         case SIM_CMD_BODY_ADD:      { return ds_BodyAddCmdTryExecute(sim, &cmd->body_add); }
         case SIM_CMD_SHAPE_ADD:     { return ds_ShapeAddCmdTryExecute(sim, &cmd->shape_add); }
         case SIM_CMD_JOINT_ADD:     { return ds_JointAddCmdTryExecute(sim, &cmd->joint_add); }
+        case SIM_CMD_MOUSE_JOINT_ADD: { return ds_MouseJointAddCmdTryExecute(sim, &cmd->mouse_joint_add); }
+        case SIM_CMD_MOUSE_JOINT_TARGET_SET: { return ds_MouseJointTargetSetCmdTryExecute(sim, &cmd->mouse_joint_target_set); }
+        case SIM_CMD_JOINT_REMOVE: { return ds_JointRemoveCmdTryExecute(sim, &cmd->joint_remove); }
         default:                    { ds_AssertString(0, "ds_SimCmdTryExecute: unknown command type"); return 0; }
     }
 }
@@ -521,6 +350,9 @@ static u64 ds_SimCmdSerializeBitsize(const struct ds_SimCmd *cmd)
         case SIM_CMD_BODY_ADD:      { return DS_SIM_CMD_TYPE_BITS + ds_BodyAddCmdSerializeBitsize(&cmd->body_add); }
         case SIM_CMD_SHAPE_ADD:     { return DS_SIM_CMD_TYPE_BITS + ds_ShapeAddCmdSerializeBitsize(&cmd->shape_add); }
         case SIM_CMD_JOINT_ADD:     { return DS_SIM_CMD_TYPE_BITS + ds_JointAddCmdSerializeBitsize(&cmd->joint_add); }
+        case SIM_CMD_MOUSE_JOINT_ADD: { return DS_SIM_CMD_TYPE_BITS + ds_MouseJointAddCmdSerializeBitsize(&cmd->mouse_joint_add); }
+        case SIM_CMD_MOUSE_JOINT_TARGET_SET: { return DS_SIM_CMD_TYPE_BITS + ds_MouseJointTargetSetCmdSerializeBitsize(&cmd->mouse_joint_target_set); }
+        case SIM_CMD_JOINT_REMOVE: { return DS_SIM_CMD_TYPE_BITS + ds_JointRemoveCmdSerializeBitsize(&cmd->joint_remove); }
         default:                    { ds_AssertString(0, "ds_SimCmdSerializeBitsize: unknown command type"); return 0; }
     }
 }
@@ -536,6 +368,9 @@ static void ds_SimCmdSerialize(struct SS *ss, const struct ds_SimCmd *cmd)
         case SIM_CMD_BODY_ADD:      { ds_BodyAddCmdSerialize(ss, &cmd->body_add); } break;
         case SIM_CMD_SHAPE_ADD:     { ds_ShapeAddCmdSerialize(ss, &cmd->shape_add); } break;
         case SIM_CMD_JOINT_ADD:     { ds_JointAddCmdSerialize(ss, &cmd->joint_add); } break;
+        case SIM_CMD_MOUSE_JOINT_ADD: { ds_MouseJointAddCmdSerialize(ss, &cmd->mouse_joint_add); } break;
+        case SIM_CMD_MOUSE_JOINT_TARGET_SET: { ds_MouseJointTargetSetCmdSerialize(ss, &cmd->mouse_joint_target_set); } break;
+        case SIM_CMD_JOINT_REMOVE: { ds_JointRemoveCmdSerialize(ss, &cmd->joint_remove); } break;
         default:                    { ds_AssertString(0, "ds_SimCmdSerialize: unknown command type"); } break;
     }
 }
@@ -556,6 +391,9 @@ u32 ds_SimCmdTryDeserialize(struct arena *mem, struct SS *ss, struct ds_SimCmd *
         case SIM_CMD_BODY_ADD:      { success = ds_BodyAddCmdTryDeserialize(mem, &ss_mut, &cmd->body_add); } break;
         case SIM_CMD_SHAPE_ADD:     { success = ds_ShapeAddCmdTryDeserialize(mem, &ss_mut, &cmd->shape_add); } break;
         case SIM_CMD_JOINT_ADD:     { success = ds_JointAddCmdTryDeserialize(&ss_mut, &cmd->joint_add); } break;
+        case SIM_CMD_MOUSE_JOINT_ADD: { success = ds_MouseJointAddCmdTryDeserialize(&ss_mut, &cmd->mouse_joint_add); } break;
+        case SIM_CMD_MOUSE_JOINT_TARGET_SET: { success = ds_MouseJointTargetSetCmdTryDeserialize(&ss_mut, &cmd->mouse_joint_target_set); } break;
+        case SIM_CMD_JOINT_REMOVE: { success = ds_JointRemoveCmdTryDeserialize(&ss_mut, &cmd->joint_remove); } break;
         default:                    { success = 0; } break;
     }
 

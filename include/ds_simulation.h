@@ -93,6 +93,9 @@ enum ds_SimCmdType
     SIM_CMD_BODY_ADD,       /* a body from a body prefab (by id) at a world transform, named by its entity */
     SIM_CMD_SHAPE_ADD,      /* a shape from a shape prefab (by id) on the entity's body, at a local transform */
     SIM_CMD_JOINT_ADD,      /* a distance joint between two entities' bodies */
+    SIM_CMD_MOUSE_JOINT_ADD,        /* a mouse joint (joint entity) grabbing an entity's body at a world point */
+    SIM_CMD_MOUSE_JOINT_TARGET_SET, /* move a mouse joint's target */
+    SIM_CMD_JOINT_REMOVE,           /* remove a joint by its joint entity */
     SIM_CMD_COUNT
 };
 
@@ -132,6 +135,28 @@ struct ds_SimCmd
             u32                 entity[2];
             ds_Transform        local_frame[2];
         } joint_add;
+
+        struct ds_MouseJointAddCmd
+        {
+            u32                 joint_entity;
+            u32                 entity;         /* the grabbed body */
+            v3f64               target;         /* the grabbed point (world), the first target */
+            f32                 hertz;          /* ds_MouseJointPrefabFromBody's parameters */
+            f32                 damping_ratio;
+            f32                 force_scale;
+            f32                 torque_scale;
+        } mouse_joint_add;
+
+        struct ds_MouseJointTargetSetCmd
+        {
+            u32                 joint_entity;
+            v3f64               target;
+        } mouse_joint_target_set;
+
+        struct ds_JointRemoveCmd
+        {
+            u32                 joint_entity;
+        } joint_remove;
     };
 };
 DEFINE_CPOOL_STRUCT(ds_SimCmd);
@@ -216,7 +241,8 @@ struct ds_Sim
     //struct ds_Game          game;             /* TODO: ds_Game undefined */
     ds_SDB(ds_BodyPrefab)  *body_prefab_db;     /* externally owned */
     ds_SDB(ds_ShapePrefab) *shape_prefab_db;    /* externally owned */
-    struct ds_HashMap       entity_map;         /* entity -> body pool index, for the commands and the host */
+    struct ds_HashMap       entity_map;         /* TODO(Remove/Refactor) entity -> body pool index, for the commands and the host */
+    struct ds_HashMap       joint_entity_map;   /* TODO(Remove/Refactor) joint entity -> joint pool index */
 
     /* Scheduler: linear search for minimum on timestamped and system-tagged keys.  */
     u64                     us_system_tick[SIM_SYSTEM_COUNT];
@@ -244,8 +270,10 @@ void    ds_SimFlush(struct ds_Sim *sim);
 void    ds_SimTick(struct ds_Sim *sim, ds_CPool(u64) *hash_pool, const ds_CPool(ds_SimCmd) *cmds, const u64 us_delta);
 /* Return the hash of the simulation's state (every system's state hash). */
 u64     ds_SimHash(const struct ds_Sim *sim);
-/* Return the body added for entity (SIM_CMD_BODY_ADD), or the null id. */
+/* TODO(Remove/Refactor) Return the body added for entity (SIM_CMD_BODY_ADD), or the null id. */
 ds_BodyId ds_SimBodyByEntity(const struct ds_Sim *sim, const u32 entity);
+/* TODO(Remove/Refactor) Return the joint added for the joint entity (SIM_CMD_MOUSE_JOINT_ADD), or the null id. */
+ds_JointId ds_SimJointByEntity(const struct ds_Sim *sim, const u32 joint_entity);
 
 //TODO Serialize API for sim 
 

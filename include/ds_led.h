@@ -150,7 +150,8 @@ DEFINE_CPOOL_STRUCT(led_Joint);
  */
 struct led_Grab
 {
-    ds_JointId  joint;          /* the mouse joint, the null id when nothing is held     */
+    u32         active;         /* TODO(Remove/Refactor) a body is held: the joint is LED_GRAB_ENTITY's */
+    u32         pending;        /* TODO(Remove/Refactor) the add is in this frame's batch: no joint yet */
     f32         distance;       /* pick ray parameter of the hit at the press            */
     v3f64       target;         /* the joint's target, lagging behind the ray's point    */
 };
@@ -198,6 +199,7 @@ struct led
     //TODO tmp
     ds_CPool(led_Joint)     joint_pool;
     struct led_Grab         grab;
+    ds_CPool(ds_SimCmd)     cmds;                   /* TODO(Remove/Refactor) the frame's commands: a payload before the server tick */
 
 	/* TODO move stuff into led project/led_Core or something */
 	struct arena 		    frame;

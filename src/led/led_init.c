@@ -143,7 +143,8 @@ struct led *led_Alloc(const u32 thread_count, const u64 thread_framesize)
 	/* the editor's queries and prefab constructors between ticks read the pushed config */
 	ds_DynamicsConfigPush(g_editor->physics);
     ds_CPoolAlloc(NULL, g_editor->joint_pool, 256, GROWABLE);
-    g_editor->grab.joint = ds_JointIdNull();
+    ds_CPoolAlloc(NULL, g_editor->cmds, 64, GROWABLE);
+    g_editor->grab.active = 0;
 
 	g_editor->pending_engine_running = 0;
 	g_editor->pending_engine_initalized = 0;
