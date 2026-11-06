@@ -101,46 +101,28 @@ void ds_DynamicsConfigSerialize(struct SS *ss, const struct ds_DynamicsConfig *c
     ds_NumericsConfigSerialize(ss, &config->numerics);
 }
 
-void ds_DynamicsConfigDeserialize(struct SS *ss, struct ds_DynamicsConfig *config)
-{
-    const u32 version = SSReadU32Le(ss);
-    ds_Assert(version == DS_DYNAMICS_CONFIG_VERSION);
-    *config = (struct ds_DynamicsConfig) { 0 };
-    config->initial_size = SSReadU32Le(ss);
-    config->frame_memory = SSReadU64Le(ss);
-    ds_SolverConfigDeserialize(ss, &config->solver);
-    ds_NumericsConfigDeserialize(ss, &config->numerics);
-    *config = ds_DynamicsConfigDerive(config);
-}
-
 u32 ds_DynamicsConfigTryDeserialize(struct SS *ss, struct ds_DynamicsConfig *config)
 {
     const u64 bit_index = ss->bit_index;
-    u32 success = 0;
-
     if (ss->bit_index % 8 != 0 || SSBytesLeft(ss) < DS_DYNAMICS_CONFIG_FIXED_SIZE || SSReadU32Le(ss) != DS_DYNAMICS_CONFIG_VERSION)
     {
-        goto end;
+        ss->bit_index = bit_index;
+        *config = (struct ds_DynamicsConfig) { 0 };
+        return 0;
     }
 
     *config = (struct ds_DynamicsConfig) { 0 };
     config->initial_size = SSReadU32Le(ss);
     config->frame_memory = SSReadU64Le(ss);
-    success = ds_SolverConfigTryDeserialize(ss, &config->solver)
-           && ds_NumericsConfigTryDeserialize(ss, &config->numerics);
-    if (success)
-    {
-        *config = ds_DynamicsConfigDerive(config);
-    }
-
-end:
-    if (!success)
+    if (!ds_SolverConfigTryDeserialize(ss, &config->solver) || !ds_NumericsConfigTryDeserialize(ss, &config->numerics))
     {
         ss->bit_index = bit_index;
         *config = (struct ds_DynamicsConfig) { 0 };
+        return 0;
     }
 
-    return success;
+    *config = ds_DynamicsConfigDerive(config);
+    return 1;
 }
 
 void ds_DynamicsConfigUpdatePending(struct ds_Dynamics *pipeline)
@@ -1938,7 +1920,7 @@ void ds_DynamicsTick(struct ds_Dynamics *pipeline)
 {
 	ProfZone;
 
-    ds_Assert(g_dynamics_config == &pipeline->config);    /* the host pushed the pipeline (ds_DynamicsConfigPush) */
+    ds_Assert(g_dynamics_config == &pipeline->config);
     for (u32 i = 0; i < pipeline->worker_count; ++i)
     {
         ds_CPoolFlush(pipeline->worker[i].draw.segment);
@@ -1953,7 +1935,6 @@ void ds_DynamicsTick(struct ds_Dynamics *pipeline)
 	{
 		ds_DynamicsClearFrame(pipeline);
 	}
-    /* before the first tick too: the body pool may have grown since the alloc */
     ds_CGraphFramePrepare(pipeline);
 	pipeline->frames_completed += 1;
 

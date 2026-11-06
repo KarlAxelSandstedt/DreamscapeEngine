@@ -216,10 +216,16 @@ void ds_DynamicsDrawConfigSerialize(struct SS *ss, const struct ds_DynamicsDrawC
     SSWriteF32LeN(ss, config->color_mass_center.buf, 4);
 }
 
-void ds_DynamicsDrawConfigDeserialize(struct SS *ss, struct ds_DynamicsDrawConfig *config)
+u32 ds_DynamicsDrawConfigTryDeserialize(struct SS *ss, struct ds_DynamicsDrawConfig *config)
 {
-    const u32 version = SSReadU32Le(ss);
-    ds_Assert(version == DS_DYNAMICS_DRAW_CONFIG_VERSION);
+    const u64 bit_index = ss->bit_index;
+    if (ss->bit_index % 8 != 0 || SSBytesLeft(ss) < DS_DYNAMICS_DRAW_CONFIG_SIZE || SSReadU32Le(ss) != DS_DYNAMICS_DRAW_CONFIG_VERSION)
+    {
+        ss->bit_index = bit_index;
+        *config = (struct ds_DynamicsDrawConfig) { 0 };
+        return 0;
+    }
+
     *config = (struct ds_DynamicsDrawConfig) { 0 };
     config->draw_shapes = SSReadU32Le(ss);
     config->shape_color_mode = (enum ds_ShapeColorMode) SSReadU32Le(ss);
@@ -268,20 +274,6 @@ void ds_DynamicsDrawConfigDeserialize(struct SS *ss, struct ds_DynamicsDrawConfi
     SSReadF32LeN(ss, config->color_joint_break.buf, 4);
     SSReadF32LeN(ss, config->color_mass_center.buf, 4);
     *config = ds_DynamicsDrawConfigDerive(config);
-}
-
-u32 ds_DynamicsDrawConfigTryDeserialize(struct SS *ss, struct ds_DynamicsDrawConfig *config)
-{
-    const u64 bit_index = ss->bit_index;
-    if (ss->bit_index % 8 != 0 || SSBytesLeft(ss) < DS_DYNAMICS_DRAW_CONFIG_SIZE || SSReadU32Le(ss) != DS_DYNAMICS_DRAW_CONFIG_VERSION)
-    {
-        ss->bit_index = bit_index;
-        *config = (struct ds_DynamicsDrawConfig) { 0 };
-        return 0;
-    }
-
-    ss->bit_index = bit_index;
-    ds_DynamicsDrawConfigDeserialize(ss, config);
     return 1;
 }
 

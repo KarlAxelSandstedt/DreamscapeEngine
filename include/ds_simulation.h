@@ -76,8 +76,6 @@ void                    ds_SimConfigGenerateSeed(struct ds_SimConfig *config);
 u64                     ds_SimConfigSerializeSize(const struct ds_SimConfig *config);
 /* Serialize the config. WARNING: Assumes config fits in the stream. */
 void                    ds_SimConfigSerialize(struct SS *ss, const struct ds_SimConfig *config);
-/* Deserialize the config. WARNING: Assumes config fits in the stream and is of this version. */
-void                    ds_SimConfigDeserialize(struct SS *ss, struct ds_SimConfig *config);
 /* Returns 1 on success. On failure return 0 (bad stream or bad config) and reset the stream position. */
 u32                     ds_SimConfigTryDeserialize(struct SS *ss, struct ds_SimConfig *config);
 

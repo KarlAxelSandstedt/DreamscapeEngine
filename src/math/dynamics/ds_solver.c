@@ -126,10 +126,16 @@ void ds_SolverConfigSerialize(struct SS *ss, const struct ds_SolverConfig *confi
     SSWriteF32Le(ss, config->sleep_angular_velocity_sq_limit);
 }
 
-void ds_SolverConfigDeserialize(struct SS *ss, struct ds_SolverConfig *config)
+u32 ds_SolverConfigTryDeserialize(struct SS *ss, struct ds_SolverConfig *config)
 {
-    const u32 version = SSReadU32Le(ss);
-    ds_Assert(version == DS_SOLVER_CONFIG_VERSION);
+    const u64 bit_index = ss->bit_index;
+    if (ss->bit_index % 8 != 0 || SSBytesLeft(ss) < DS_SOLVER_CONFIG_SIZE || SSReadU32Le(ss) != DS_SOLVER_CONFIG_VERSION)
+    {
+        ss->bit_index = bit_index;
+        *config = (struct ds_SolverConfig) { 0 };
+        return 0;
+    }
+
     *config = (struct ds_SolverConfig) { 0 };
     config->pgs_iteration_count = SSReadU32Le(ss);
     config->ngs_iteration_count = SSReadU32Le(ss);
@@ -148,20 +154,6 @@ void ds_SolverConfigDeserialize(struct SS *ss, struct ds_SolverConfig *config)
     config->sleep_linear_velocity_sq_limit = SSReadF32Le(ss);
     config->sleep_angular_velocity_sq_limit = SSReadF32Le(ss);
     *config = ds_SolverConfigDerive(config);
-}
-
-u32 ds_SolverConfigTryDeserialize(struct SS *ss, struct ds_SolverConfig *config)
-{
-    const u64 bit_index = ss->bit_index;
-    if (ss->bit_index % 8 != 0 || SSBytesLeft(ss) < DS_SOLVER_CONFIG_SIZE || SSReadU32Le(ss) != DS_SOLVER_CONFIG_VERSION)
-    {
-        ss->bit_index = bit_index;
-        *config = (struct ds_SolverConfig) { 0 };
-        return 0;
-    }
-
-    ss->bit_index = bit_index;
-    ds_SolverConfigDeserialize(ss, config);
     return 1;
 }
 
