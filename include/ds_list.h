@@ -63,16 +63,16 @@ arguments may be evaluated more than once):
     // base[index].node = LL_SENTINEL.
     LLAppendEx(ll, base, index, last_field, node)
 
-    // Bytes LLSerialize writes: 12.
+    // Return the required size when serializing ll (the nodes go with their pool).
     LLSerializeSize(ll)
 
-    // Write ll (LE: u32 count, first, last; the nodes go with their pool). ss must have room.
+    // Serialize ll. WARNING: Assumes ll fits in the stream.
     LLSerialize(ss, ll)
 
-    // Read ll from ss. WARNING: Assumes ll fits in the stream.
+    // Deserialize ll. WARNING: Assumes ll fits in the stream.
     LLDeserialize(ss, ll)
 
-    // Read ll from ss. Returns 1, or 0 (ll empty, ss unchanged) if fewer than 12 bytes are left. The indices
+    // Returns 1 on success. On failure return 0 (bad stream; ll empty) and reset the stream position. The indices
     // are not checked against the pool.
     u32 LLTryDeserialize(ss, ll)
 */
@@ -182,16 +182,16 @@ field; arguments may be evaluated more than once):
     DLLPrependEx(dll, base, index, node, first_field)
     DLLRemoveEx(dll, base, index, prev_field, node, next_field)
 
-    // Bytes DLLSerialize writes: 12.
+    // Return the required size when serializing dll (the nodes go with their pool).
     DLLSerializeSize(dll)
 
-    // Write dll (LE: u32 count, first, last; the nodes go with their pool). ss must have room.
+    // Serialize dll. WARNING: Assumes dll fits in the stream.
     DLLSerialize(ss, dll)
 
-    // Read dll from ss. WARNING: Assumes dll fits in the stream.
+    // Deserialize dll. WARNING: Assumes dll fits in the stream.
     DLLDeserialize(ss, dll)
 
-    // Read dll from ss. Returns 1, or 0 (dll empty, ss unchanged) if fewer than 12 bytes are left. The
+    // Returns 1 on success. On failure return 0 (bad stream; dll empty) and reset the stream position. The
     // indices are not checked against the pool.
     u32 DLLTryDeserialize(ss, dll)
 */

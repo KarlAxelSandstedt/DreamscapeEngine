@@ -156,7 +156,6 @@ struct ds_DynamicsDrawConfig ds_DynamicsDrawConfigDefault(void)
 }
 
 #define DS_DYNAMICS_DRAW_CONFIG_VERSION 1u
-/* version + 15 u32 (flags, modes, refinement) + 8 f32 + 22 colours + the point palette */
 #define DS_DYNAMICS_DRAW_CONFIG_SIZE    (4 + 15*4 + 8*4 + (22 + DRAW_POINT_COLOR_COUNT)*16)
 
 u64 ds_DynamicsDrawConfigSerializeSize(const struct ds_DynamicsDrawConfig *config)
@@ -166,7 +165,6 @@ u64 ds_DynamicsDrawConfigSerializeSize(const struct ds_DynamicsDrawConfig *confi
 
 void ds_DynamicsDrawConfigSerialize(struct SS *ss, const struct ds_DynamicsDrawConfig *config)
 {
-    ds_Assert(ss->bit_index % 8 == 0);
     ds_Assert(ds_DynamicsDrawConfigSerializeSize(config) <= SSBytesLeft(ss));
 
     SSWriteU32Le(ss, DS_DYNAMICS_DRAW_CONFIG_VERSION);

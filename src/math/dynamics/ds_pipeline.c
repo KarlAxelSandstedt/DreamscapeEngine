@@ -92,7 +92,6 @@ u64 ds_DynamicsConfigSerializeSize(const struct ds_DynamicsConfig *config)
 
 void ds_DynamicsConfigSerialize(struct SS *ss, const struct ds_DynamicsConfig *config)
 {
-    ds_Assert(ss->bit_index % 8 == 0);
     ds_Assert(ds_DynamicsConfigSerializeSize(config) <= SSBytesLeft(ss));
 
     SSWriteU32Le(ss, DS_DYNAMICS_CONFIG_VERSION);

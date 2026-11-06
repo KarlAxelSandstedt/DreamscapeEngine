@@ -26,7 +26,8 @@ Serial streams (struct SS): a buffer read or written front to back, one value at
 Two kinds of access:
     Bytes       SSRead/Write{8,16,32,64}{Le,Be}[N]: whole values at a byte boundary (asserted), in the
                 stream's byte order Le or Be, independent of the machine's. N forms move an array.
-    Partial     SSRead/Write{U,I}{8,16,32,64}Partial: a value of bit_count (1-64) bits at any bit position.
+    Partial     SSRead/Write{U,I}{8,16,32,64}Partial: a value of bit_count bits at any bit position: 0-64 unsigned
+                (0: nothing read or written), 1-64 signed.
 Both kinds may be mixed in one stream; a byte access after partial ones needs bit_index % 8 == 0.
 
 Bit order: 
@@ -175,13 +176,13 @@ static ds_ForceInline void 	SSWrite64BeN(struct SS *ss, const b64 *buf, const u6
  * bit_count (both asserted); any bit_index. bit_index advances by bit_count.
  */
 
-/* return the next bit_count bits as an unsigned value (bits above bit_count are 0) */
+/* return the next bit_count bits as an unsigned value (bits above bit_count are 0); 0 bits: 0, nothing read */
 static ds_ForceInline u64	SSReadU64Partial(struct SS *ss, const u64 bit_count);
 /*
  * write the low bit_count bits of val (higher bits are dropped) and zero the rest of the 8 bytes from the byte
  * holding bit_index, within the buffer. The bits below bit_index in its byte come from ss->acc, which only
  * partial writes maintain: a partial write after reads or byte writes on the stream must start at a byte
- * boundary (writes go front to back anyway)
+ * boundary (writes go front to back anyway). 0 bits: nothing written.
  */
 static ds_ForceInline void	SSWriteU64Partial(struct SS *ss, const u64 val, const u64 bit_count);
 /*
@@ -761,7 +762,7 @@ static const u64 SSPartialMask[65] =
  */
 static ds_ForceInline u64 SSReadU64Partial(struct SS *ss, const u64 bit_count)
 {
-	ds_Assert(1 <= bit_count && bit_count <= 64);
+	ds_Assert(bit_count <= 64);
 	ds_Assert(ss->bit_index + bit_count <= ss->bit_count);
 
 	const u64 p = ss->bit_index >> 3;
@@ -796,7 +797,7 @@ static ds_ForceInline u64 SSReadU64Partial(struct SS *ss, const u64 bit_count)
  */
 static ds_ForceInline void SSWriteU64Partial(struct SS *ss, const u64 val, const u64 bit_count)
 {
-	ds_Assert(1 <= bit_count && bit_count <= 64);
+	ds_Assert(bit_count <= 64);
 	ds_Assert(ss->bit_index + bit_count <= ss->bit_count);
 
 	const u64 p = ss->bit_index >> 3;
@@ -832,6 +833,7 @@ static ds_ForceInline void SSWriteU64Partial(struct SS *ss, const u64 val, const
 
 static ds_ForceInline void SSWriteI64Partial(struct SS *ss, const i64 val, const u64 bit_count)
 {
+	ds_Assert(1 <= bit_count);
 	b64 trunc = { .i = val };
 	const u64 mask = 0x7fffffffffffffff >> (64 - bit_count);
 	trunc.u = (trunc.u & mask) | ((trunc.u & 0x8000000000000000) >> (64 - bit_count));
@@ -840,6 +842,7 @@ static ds_ForceInline void SSWriteI64Partial(struct SS *ss, const i64 val, const
 
 static ds_ForceInline i64 SSReadI64Partial(struct SS *ss, const u64 bit_count)
 {
+	ds_Assert(1 <= bit_count);
 	b64 trunc = { .u = SSReadU64Partial(ss, bit_count) };
 	const u64 sign = trunc.u >> (bit_count - 1);
 	trunc.u |= (0xffffffffffffffff * sign) << (bit_count - 1);

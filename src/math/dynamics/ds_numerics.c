@@ -77,7 +77,6 @@ void ds_NumericsConfigPop(void)
 }
 
 #define DS_NUMERICS_CONFIG_VERSION  1u
-/* version + 8 set values (the derived ones are recomputed on read) */
 #define DS_NUMERICS_CONFIG_SIZE     (4 + 8*4)
 
 u64 ds_NumericsConfigSerializeSize(const struct ds_NumericsConfig *config)
@@ -87,7 +86,6 @@ u64 ds_NumericsConfigSerializeSize(const struct ds_NumericsConfig *config)
 
 void ds_NumericsConfigSerialize(struct SS *ss, const struct ds_NumericsConfig *config)
 {
-    ds_Assert(ss->bit_index % 8 == 0);
     ds_Assert(ds_NumericsConfigSerializeSize(config) <= SSBytesLeft(ss));
 
     SSWriteU32Le(ss, DS_NUMERICS_CONFIG_VERSION);

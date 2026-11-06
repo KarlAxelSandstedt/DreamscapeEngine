@@ -290,6 +290,17 @@ static struct test_Output ss_randomized_partial(void)
 		}
 		bits_left -= bit_count;
 
+		/* a 0-bit write or read is nothing: the position stays, the bits around it are untouched */
+		if (RngU64Range(0, 3) == 0)
+		{
+			const u64 index_in = ss_in->bit_index;
+			const u64 index_out = ss_out->bit_index;
+			SSWriteU64Partial(ss_in, RngU64Range(0, U64_MAX), 0);
+			TEST_EQUAL(index_in, ss_in->bit_index);
+			TEST_EQUAL(0, SSReadU64Partial(ss_out, 0));
+			TEST_EQUAL(index_out, ss_out->bit_index);
+		}
+
 		switch (type)
 		{
 			case SS_WRITE8:
@@ -856,7 +867,7 @@ static struct test_Output ss_compact_size_fuzz(void)
 		{
 			const u64 size = ds_CompactSizeSerializeSize(decoded);
 			TEST_EQUAL(8*size, read.bit_index);
-			u8 again[16];
+			u8 again[16] = { 0 };
 			struct SS re = SSBuffered(again, 16);
 			ds_CompactSizeSerialize(&re, decoded);
 			for (u32 i = 0; i < size; ++i)
@@ -897,8 +908,202 @@ struct suite_Correctness m_serialize_suite =
 
 struct suite_Correctness *serialize_correctness_suite = &m_serialize_suite;
 
+/*
+TEMPORARY (2026-11-06): the CompactSize before the class arithmetic (branch chains + switch) against the current
+one, on one fixed-seed stream of mixed classes (40% 1 byte, 30% 3, 20% 5, 10% 9, shuffled). Checksums: the bytes
+written and the sum of the values read, printed when the test is freed; every variant must print the same.
+*/
+static u64 ss_compact_old_size(const u64 val)
+{
+    return (val < 253) ? 1 : (val <= U16_MAX) ? 3 : (val <= U32_MAX) ? 5 : 9;
+}
+
+static void ss_compact_old_serialize(struct SS *ss, const u64 val)
+{
+    if (val < 253)
+    {
+        SSWriteU8(ss, (u8) val);
+    }
+    else if (val <= U16_MAX)
+    {
+        SSWriteU8(ss, 0xFD);
+        SSWriteU16Le(ss, (u16) val);
+    }
+    else if (val <= U32_MAX)
+    {
+        SSWriteU8(ss, 0xFE);
+        SSWriteU32Le(ss, (u32) val);
+    }
+    else
+    {
+        SSWriteU8(ss, 0xFF);
+        SSWriteU64Le(ss, val);
+    }
+}
+
+static u32 ss_compact_old_try_deserialize(struct SS *ss, u64 *val)
+{
+    const u64 bit_index = ss->bit_index;
+    if (SSBytesLeft(ss) < 1)
+    {
+        return 0;
+    }
+
+    const u8 first = SSReadU8(ss);
+    const u64 size = (first < 253) ? 1 : (first == 0xFD) ? 3 : (first == 0xFE) ? 5 : 9;
+    if (SSBytesLeft(ss) < size - 1)
+    {
+        ss->bit_index = bit_index;
+        return 0;
+    }
+
+    switch (size)
+    {
+        case 1: { *val = first;             } break;
+        case 3: { *val = SSReadU16Le(ss);   } break;
+        case 5: { *val = SSReadU32Le(ss);   } break;
+        default: { *val = SSReadU64Le(ss);  } break;
+    }
+
+    if (ss_compact_old_size(*val) != size)
+    {
+        ss->bit_index = bit_index;
+        return 0;
+    }
+
+    return 1;
+}
+
+#define ss_compact_count    ((u64) 64*1024)
+
+struct ss_compact_input
+{
+    struct SS   ss;
+    u64 *       values;
+    u64         bytes;          /* the stream's encoded size */
+    u64         sum;            /* checksum of the last read */
+    const char *id;
+};
+
+static void *ss_compact_init(const char *id)
+{
+    struct ss_compact_input *in = malloc(sizeof(*in));
+    in->id = id;
+    in->sum = 0;
+    in->values = malloc(ss_compact_count*sizeof(u64));
+    struct rng rng;
+    RngLocalInit(&rng, 0x5eed);
+    in->bytes = 0;
+    for (u64 i = 0; i < ss_compact_count; ++i)
+    {
+        const u64 r = RngLocalU64Range(&rng, 0, 99);
+        const u64 v = (r < 40) ? RngLocalU64Range(&rng, 0, 252)
+                    : (r < 70) ? RngLocalU64Range(&rng, 253, U16_MAX)
+                    : (r < 90) ? RngLocalU64Range(&rng, (u64) U16_MAX + 1, U32_MAX)
+                    : RngLocalU64Range(&rng, (u64) U32_MAX + 1, U64_MAX);
+        in->values[i] = v;
+        in->bytes += ds_CompactSizeSerializeSize(v);
+    }
+    in->ss = SSAlloc(NULL, in->bytes);
+    for (u64 i = 0; i < ss_compact_count; ++i)
+    {
+        ds_CompactSizeSerialize(&in->ss, in->values[i]);
+    }
+    return in;
+}
+
+static void *ss_compact_init_old_write(void)  { return ss_compact_init("old write"); }
+static void *ss_compact_init_new_write(void)  { return ss_compact_init("new write"); }
+static void *ss_compact_init_old_read(void)   { return ss_compact_init("old read"); }
+static void *ss_compact_init_new_read(void)   { return ss_compact_init("new read"); }
+static void *ss_compact_init_new_deser(void)  { return ss_compact_init("new deserialize"); }
+
+static void ss_compact_reset(void *args)
+{
+    struct ss_compact_input *in = args;
+    in->ss.bit_index = 0;
+}
+
+static void ss_compact_free(void *args)
+{
+    struct ss_compact_input *in = args;
+    u64 bytes = 0;
+    for (u64 i = 0; i < in->ss.bit_index/8; ++i)
+    {
+        bytes += in->ss.buf[i];
+    }
+    fprintf(stdout, "	    checksum %s: bytes %lu (sum %lu), values %lu\n", in->id, in->ss.bit_index/8, bytes, in->sum);
+    SSDealloc(&in->ss);
+    free(in->values);
+    free(in);
+}
+
+static void ss_compact_old_write(void *args)
+{
+    struct ss_compact_input *in = args;
+    for (u64 i = 0; i < ss_compact_count; ++i)
+    {
+        ss_compact_old_serialize(&in->ss, in->values[i]);
+    }
+}
+
+static void ss_compact_new_write(void *args)
+{
+    struct ss_compact_input *in = args;
+    for (u64 i = 0; i < ss_compact_count; ++i)
+    {
+        ds_CompactSizeSerialize(&in->ss, in->values[i]);
+    }
+}
+
+static void ss_compact_old_read(void *args)
+{
+    struct ss_compact_input *in = args;
+    u64 sum = 0;
+    u64 v;
+    for (u64 i = 0; i < ss_compact_count; ++i)
+    {
+        sum += ss_compact_old_try_deserialize(&in->ss, &v) ? v : 0;
+    }
+    in->sum = sum;
+}
+
+static void ss_compact_new_read(void *args)
+{
+    struct ss_compact_input *in = args;
+    u64 sum = 0;
+    u64 v;
+    for (u64 i = 0; i < ss_compact_count; ++i)
+    {
+        sum += ds_CompactSizeTryDeserialize(&in->ss, &v) ? v : 0;
+    }
+    in->sum = sum;
+}
+
+static void ss_compact_new_deser(void *args)
+{
+    struct ss_compact_input *in = args;
+    u64 sum = 0;
+    u64 v;
+    for (u64 i = 0; i < ss_compact_count; ++i)
+    {
+        sum += ds_CompactSizeDeserialize(&in->ss, &v) ? v : 0;
+    }
+    in->sum = sum;
+}
+
 struct test_PerformanceSerial serialize_serial_test[] =
 {
+	/* TEMPORARY: CompactSize old vs new; each variant twice for the same-variant spread; bytes = the encoded stream (~4.5 B per value) */
+	{ .id = "compact_size_write_new", .size = ss_compact_count*9/2, .test = &ss_compact_new_write, .test_init = &ss_compact_init_new_write, .test_reset = &ss_compact_reset, .test_free = &ss_compact_free },
+	{ .id = "compact_size_write_old", .size = ss_compact_count*9/2, .test = &ss_compact_old_write, .test_init = &ss_compact_init_old_write, .test_reset = &ss_compact_reset, .test_free = &ss_compact_free },
+	{ .id = "compact_size_write_new_again", .size = ss_compact_count*9/2, .test = &ss_compact_new_write, .test_init = &ss_compact_init_new_write, .test_reset = &ss_compact_reset, .test_free = &ss_compact_free },
+	{ .id = "compact_size_write_old_again", .size = ss_compact_count*9/2, .test = &ss_compact_old_write, .test_init = &ss_compact_init_old_write, .test_reset = &ss_compact_reset, .test_free = &ss_compact_free },
+	{ .id = "compact_size_read_new", .size = ss_compact_count*9/2, .test = &ss_compact_new_read, .test_init = &ss_compact_init_new_read, .test_reset = &ss_compact_reset, .test_free = &ss_compact_free },
+	{ .id = "compact_size_read_old", .size = ss_compact_count*9/2, .test = &ss_compact_old_read, .test_init = &ss_compact_init_old_read, .test_reset = &ss_compact_reset, .test_free = &ss_compact_free },
+	{ .id = "compact_size_read_new_again", .size = ss_compact_count*9/2, .test = &ss_compact_new_read, .test_init = &ss_compact_init_new_read, .test_reset = &ss_compact_reset, .test_free = &ss_compact_free },
+	{ .id = "compact_size_read_old_again", .size = ss_compact_count*9/2, .test = &ss_compact_old_read, .test_init = &ss_compact_init_old_read, .test_reset = &ss_compact_reset, .test_free = &ss_compact_free },
+	{ .id = "compact_size_deserialize_new", .size = ss_compact_count*9/2, .test = &ss_compact_new_deser, .test_init = &ss_compact_init_new_deser, .test_reset = &ss_compact_reset, .test_free = &ss_compact_free },
 	{ .id = "ss_write_u32_partial_random", .size = ss_partial_size, .test = &ss_partial_write, .test_init = &ss_partial_init_random, .test_reset = &ss_partial_reset, .test_free = &ss_partial_free },
 	{ .id = "ss_read_u32_partial_random", .size = ss_partial_size, .test = &ss_partial_read, .test_init = &ss_partial_init_random, .test_reset = &ss_partial_reset, .test_free = &ss_partial_free },
 	{ .id = "ss_write_read_u32_partial", .size = ss_partial_size, .test = &ss_partial_write_read, .test_init = &ss_partial_init_random, .test_reset = &ss_partial_reset, .test_free = &ss_partial_free },

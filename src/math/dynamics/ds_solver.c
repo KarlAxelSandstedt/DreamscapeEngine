@@ -96,7 +96,6 @@ void ds_SolverConfigPop(void)
 }
 
 #define DS_SOLVER_CONFIG_VERSION    1u
-/* version + 4 u32 + gravity + 11 f32 (the derived inverses are recomputed on read) */
 #define DS_SOLVER_CONFIG_SIZE       (4 + 4*4 + 12 + 11*4)
 
 u64 ds_SolverConfigSerializeSize(const struct ds_SolverConfig *config)
@@ -106,7 +105,6 @@ u64 ds_SolverConfigSerializeSize(const struct ds_SolverConfig *config)
 
 void ds_SolverConfigSerialize(struct SS *ss, const struct ds_SolverConfig *config)
 {
-    ds_Assert(ss->bit_index % 8 == 0);
     ds_Assert(ds_SolverConfigSerializeSize(config) <= SSBytesLeft(ss));
 
     SSWriteU32Le(ss, DS_SOLVER_CONFIG_VERSION);

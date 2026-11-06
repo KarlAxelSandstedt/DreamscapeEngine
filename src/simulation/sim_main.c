@@ -118,7 +118,6 @@ u64 ds_SimConfigSerializeSize(const struct ds_SimConfig *config)
 
 void ds_SimConfigSerialize(struct SS *ss, const struct ds_SimConfig *config)
 {
-    ds_Assert(ss->bit_index % 8 == 0);
     ds_Assert(ds_SimConfigSerializeSize(config) <= SSBytesLeft(ss));
 
     SSWriteU32Le(ss, DS_SIM_CONFIG_VERSION);
