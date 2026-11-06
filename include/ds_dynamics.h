@@ -1602,7 +1602,6 @@ The pipeline's simulation parameters. Derive clamps every value into its range a
 struct ds_DynamicsConfig
 {
     u32     initial_size;                       /* alloc-time : the pools' initial capacity, a power of two */
-    u64     frame_memory;                       /* alloc-time : the frame arena (bytes) */
 
     struct ds_SolverConfig          solver;
     struct ds_NumericsConfig        numerics;
@@ -2051,36 +2050,59 @@ enum rigidBodyColorMode
 };
 
 /*
- * Physics Pipeline
- */
-struct ds_Dynamics 
+ds_DynamicsExternal
+===================
+*/
+struct ds_DynamicsExternal
 {
-	struct arena 	                frame;			        /* frame memory */
+    struct c_ShapeDB *  cshape_db;
+};
 
-    struct ds_DynamicsConfig        config;                 /* what the ticks read (g_dynamics_config while pushed) */
-    struct ds_DynamicsConfig        config_pending;         /* the host's edits, buffered until ds_DynamicsConfigUpdatePending applies them */
-    struct ds_DynamicsDrawConfig    draw_config;            /* debug drawing; not simulation state, the host edits it freely */
+/*
+ds_DynamicsRuntime
+==================
+Per-pipeline memory and non-physics state.
+*/
+struct ds_DynamicsRuntime
+{
+    struct ds_DynamicsWorker *      worker;
+    u32                             worker_count;
+
+    struct ds_BroadJobPhase *       broad_phase;
+    struct ds_NarrowJobPhase *      narrow_phase;
+    struct ds_SolverJobPhase *      solver_phase;
+    struct ds_RebuildJobPhase *     rebuild_phase;
+    struct ds_RemovalJobPhase *     removal_phase;
+
+    struct ds_DynamicsDraw          draw;                   /* debug drawing: what the serial phases push */
+    struct ds_DynamicsDrawConfig    draw_config;
+    struct ds_DynamicsMetrics       metrics;
 
     struct ds_DynamicsProfile *     profile;                /* current profile          */
     struct ds_DynamicsProfile *     profile_buf;            /* profile buffer           */
     u64                             profile_length;         /* buffer length            */
     u64                             profile_next;           /* monotonically increasing */
 
-    struct ds_DynamicsMetrics       metrics;
-    struct ds_DynamicsWorker *      worker;
-    struct ds_DynamicsDraw          draw;                   /* debug drawing: what the serial phases push */
-    u32                             worker_count;
+    struct arena *                  tick;
+    u32                             heap_allocated;
+};
 
+void    ds_DynamicsRuntimeAlloc(struct arena *mem, struct ds_DynamicsRuntime *runtime, const u32 worker_count, const u64 worker_frame_size);
+void    ds_DynamicsRuntimeDealloc(struct ds_DynamicsRuntime *runtime);
+
+struct ds_Dynamics 
+{
+    struct ds_DynamicsRuntime       runtime;
+
+    struct ds_DynamicsConfig        config;                 /* what the ticks read (g_dynamics_config while pushed) */
+    struct ds_DynamicsConfig        config_pending;         /* the host's edits, buffered until ds_DynamicsConfigUpdatePending applies them */
 
 	u64				                ns_tick;		        /* ns per game tick */
 	u64 			                frames_completed;	    /* number of completed physics frames */ 
 
     f32                             timestep;
-    f32                             spring_hertz_max;        /* 1 / (JOINT_OSCILLATION_TICKS_MIN * timestep): a joint spring's hertz is clamped to it at add.
-                                                               TODO: move somewhere suitable (the solver config is one global shared by every pipeline) */
 
-	struct c_ShapeDB *	            cshape_db;		        /* externally owned; constant during a tick */
-	ds_SDB(ds_BodyPrefab) *	        body_prefab_db;		    /* externally owned */
+	const struct ds_DynamicsExternal *  external;           /* externally owned; constant during a tick */
 
 	ds_Pool(ds_Body)              body_pool;
     struct ds_BitSet                body_usage_set;         /* Bodies in use */
@@ -2116,36 +2138,30 @@ struct ds_Dynamics
 	ds_Pool(ds_Island)            island_pool;	    
     struct ds_BitSet                island_high_energy_set;   /* High energy islands per-frame. */
 
-	//TODO temporary, move somewhere else.
-
-    struct ds_BroadJobPhase *       broad_phase;
-    struct ds_NarrowJobPhase *      narrow_phase;
-    struct ds_SolverJobPhase *      solver_phase;
-    struct ds_RebuildJobPhase *     rebuild_phase;
-    struct ds_RemovalJobPhase *     removal_phase;
 };
 
 /**************** PHYISCS PIPELINE API ****************/
 
 /*
  * Initialize a new growable physics pipeline from config (derived first); ns_tick is the duration of a physics frame.
- * The config is applied (as ds_DynamicsConfigUpdatePending) and nothing is pushed.
+ * The runtime goes on mem, or on the heap if mem is NULL (ds_DynamicsRuntimeAlloc). The config is applied (as
+ * ds_DynamicsConfigUpdatePending) and nothing is pushed.
  */
-struct ds_Dynamics ds_DynamicsAllocConfig(struct arena *mem, const struct ds_DynamicsConfig *config, const u64 ns_tick, struct c_ShapeDB *cshape_db, ds_SDB(ds_BodyPrefab) *prefab_db, const u32 worker_count, const u64 worker_frame_size);
-/* ds_DynamicsAllocConfig with the default config but initial_size and frame_memory. */
-struct ds_Dynamics ds_DynamicsAlloc(struct arena *mem, const u32 initial_size, const u64 ns_tick, const u64 frame_memory, struct c_ShapeDB *cshape_db, ds_SDB(ds_BodyPrefab) *prefab_db, const u32 worker_count, const u64 worker_frame_size);
-/* Free the pipeline's heap resources (the shell stays on its arena). */
-void 			ds_DynamicsFree(struct ds_Dynamics *pipeline);
+struct ds_Dynamics ds_DynamicsAlloc(struct arena *mem, const struct ds_DynamicsConfig *config, const u64 ns_tick, const struct ds_DynamicsExternal *external, const u32 worker_count, const u64 worker_frame_size);
+/* ds_DynamicsAlloc with the default config but initial_size. */
+struct ds_Dynamics ds_DynamicsAllocDefault(struct arena *mem, const u32 initial_size, const u64 ns_tick, const struct ds_DynamicsExternal *external, const u32 worker_count, const u64 worker_frame_size);
+/* Free the pipeline's heap resources. */
+void 			ds_DynamicsDealloc(struct ds_Dynamics *pipeline);
 /* Return the required size when serializing the pipeline. */
 u64             ds_DynamicsSerializeSize(const struct ds_Dynamics *pipeline);
 /* Serialize the pipeline. WARNING: Assumes pipeline fits in the stream. */
 void            ds_DynamicsSerialize(struct SS *ss, const struct ds_Dynamics *pipeline);
 /*
- * Returns 1 on success and 0 on failure. mem holds the pipeline shell (as in ds_DynamicsAlloc); everything 
- * else is heap allocated, so always free the pipeline with ds_DynamicsFree. On failure the stream position and
+ * Returns 1 on success and 0 on failure. mem holds the runtime and the restored heap data; everything 
+ * else is heap allocated, so always free the pipeline with ds_DynamicsDealloc. On failure the stream position and
  * mem are as before the call and the pipeline is zeroed.
  */
-u32             ds_DynamicsTryDeserialize(struct arena *mem, struct SS *ss, struct ds_Dynamics *pipeline, struct c_ShapeDB *cshape_db);
+u32             ds_DynamicsTryDeserialize(struct arena *mem, struct SS *ss, struct ds_Dynamics *pipeline, const struct ds_DynamicsExternal *external);
 /*
  * Empty the pipeline: every body, shape, contact, island, joint, event, sleeping set and the frame memory go;
  * the frame count restarts and a flagged split is forgotten. Configuration and capacities stay.
@@ -2154,9 +2170,10 @@ void			ds_DynamicsFlush(struct ds_Dynamics *pipeline);
 /*
  * Simulate one physics frame of ns_tick: pending config, broadphase and narrowphase over the dirty shapes,
  * contact promotion/demotion, at most one island split, the solver, proxy updates (or a rebuild of the
- * dynamic BVH), contact removal, the sleep bookkeeping. Sets the dynamics globals to this pipeline.
+ * dynamic BVH), contact removal, the sleep bookkeeping. The pipeline must be pushed (ds_DynamicsConfigPush).
+ * tick is the frame's scratch memory: pushed on during the tick, left at its mark on return.
  */
-void 			ds_DynamicsTick(struct ds_Dynamics *pipeline);
+void 			ds_DynamicsTick(struct arena *tick, struct ds_Dynamics *pipeline);
 /* Hash bodies in order from low to high and return the final hash  */
 u64             ds_DynamicsHash(const struct ds_Dynamics *pipeline);
 /* validate and ds_Assert internal state of physics pipeline */
@@ -2183,10 +2200,7 @@ void            ds_DynamicsPrintUsage(const struct ds_Dynamics *pipeline);
 
 /**************** PHYISCS PIPELINE INTERNAL API ****************/
 
-/* Upper bound of the arena bytes ds_DynamicsAllocShell (so ds_DynamicsAllocConfig) pushes on mem: the frame arena and the shell. */
-u64                         ds_DynamicsShellMemoryRequirement(const u32 worker_count, const u64 frame_memory);
-/* Internal: Allocate the pipeline without its simulation state (containers, gravity, numerics). */
-void                        ds_DynamicsAllocShell(struct arena *mem, struct ds_Dynamics *pipeline, const u64 ns_tick, const u64 frame_memory, struct c_ShapeDB *cshape_db, const u32 worker_count, const u64 worker_frame_size);
+
 /*
  * Internal: Read size bytes of frame data into a random worker frame (the next one if it is full) and set *dst.
  * Spreading the data leaves room in every worker frame, so a restore inside a tick doesn't starve a worker of

@@ -89,9 +89,9 @@ ds_JointId ds_JointAdd(struct ds_Dynamics *pipeline, const enum ds_JointType typ
     /* the workers' breaking sets follow the pool's capacity */
     if (old_length != pipeline->joint_pool.length)
     {
-        for (u32 w = 0; w < pipeline->worker_count; ++w)
+        for (u32 w = 0; w < pipeline->runtime.worker_count; ++w)
         {
-            ds_BitSetIncreaseSize(&pipeline->worker[w].joint_breaking_set, pipeline->joint_pool.length, 0);
+            ds_BitSetIncreaseSize(&pipeline->runtime.worker[w].joint_breaking_set, pipeline->joint_pool.length, 0);
         }
     }
 
@@ -416,13 +416,14 @@ struct slot ds_JointLookup(const struct ds_Dynamics *pipeline, const ds_JointId 
         : (struct slot) { .index = U32_MAX, .address = NULL };
 }
 
-/* a joint spring's hertz is bounded by the pipeline's tick (spring_hertz_max); every spring joint applies it at add and set */
+/* a joint spring's hertz is bounded by the pipeline's tick (1 / (JOINT_OSCILLATION_TICKS_MIN * timestep)); every spring joint applies it at add and set */
 static f32 ds_SpringHertzBound(const struct ds_Dynamics *pipeline, const f32 hertz)
 {
-    if (hertz > pipeline->spring_hertz_max)
+    const f32 spring_hertz_max = 1.0f / (JOINT_OSCILLATION_TICKS_MIN * pipeline->timestep);
+    if (hertz > spring_hertz_max)
     {
-        Log(T_PHYSICS, S_WARNING, "joint spring: hertz %f above spring_hertz_max %f, using the bound", hertz, pipeline->spring_hertz_max);
-        return pipeline->spring_hertz_max;
+        Log(T_PHYSICS, S_WARNING, "joint spring: hertz %f above spring_hertz_max %f, using the bound", hertz, spring_hertz_max);
+        return spring_hertz_max;
     }
     return hertz;
 }

@@ -230,7 +230,7 @@ static void ds_SimHostDealloc(struct ds_SimHost *host)
     ds_SimDealloc(&host->sim);
 }
 
-ds_SimId ds_SimHostAdd(struct ds_Server *srv, struct arena *mem, const struct ds_SimConfig *config, const enum ds_SimMode mode, const char *path, const u32 hash_wanted, const char *hash_path, struct c_ShapeDB *cshape_db, ds_SDB(ds_BodyPrefab) *prefab_db, ds_SDB(ds_ShapePrefab) *shape_prefab_db, const u32 worker_count, const u64 worker_frame_size)
+ds_SimId ds_SimHostAdd(struct ds_Server *srv, struct arena *mem, const struct ds_SimConfig *config, const enum ds_SimMode mode, const char *path, const u32 hash_wanted, const char *hash_path, const struct ds_DynamicsExternal *external, ds_SDB(ds_BodyPrefab) *prefab_db, ds_SDB(ds_ShapePrefab) *shape_prefab_db, const u32 worker_count, const u64 worker_frame_size)
 {
     const u32 hash = hash_wanted && mode != SIM_MODE_NONE;
 
@@ -314,7 +314,7 @@ ds_SimId ds_SimHostAdd(struct ds_Server *srv, struct arena *mem, const struct ds
     ds_CPoolAlloc(NULL, host->cmd_pool, 64, GROWABLE);
     host->frame_payload = ds_SimCmdPayloadEmpty(host->id);
 
-    ds_SimAlloc(mem, &host->sim, config, cshape_db, prefab_db, shape_prefab_db, worker_count, worker_frame_size);
+    ds_SimAlloc(mem, &host->sim, config, external, prefab_db, shape_prefab_db, worker_count, worker_frame_size);
     DLLAppend(srv->sim_list, srv->sim_pool.buf, slot.index, srv_sim);
 
     if (mode == SIM_MODE_RECORD)
@@ -519,7 +519,7 @@ void ds_ServerTick(struct ds_Server *srv, const u64 ns_delta)
                     break;
                 }
 
-                ds_SimTick(&host->sim, hash_pool, &host->cmd_pool, us_entry - host->sim.us_time);
+                ds_SimTick(&srv->frame, &host->sim, hash_pool, &host->cmd_pool, us_entry - host->sim.us_time);
                 if (!ds_SimHostReplayTryReadPayload(&host->record_stream, &host->us_previous_record, &srv->frame, &host->cmd_pool))
                 {
                     Log(T_SYSTEM, S_ERROR, "ds_ServerTick: simulation %lu's record is corrupt at %lu us, it runs on live", host->id.val, us_entry);
@@ -527,11 +527,11 @@ void ds_ServerTick(struct ds_Server *srv, const u64 ns_delta)
                     break;
                 }
 
-                ds_SimTick(&host->sim, hash_pool, &host->cmd_pool, 0);
+                ds_SimTick(&srv->frame, &host->sim, hash_pool, &host->cmd_pool, 0);
                 ds_CPoolFlush(host->cmd_pool);
             }
 
-            ds_SimTick(&host->sim, hash_pool, &host->cmd_pool, sim_us_time_final - host->sim.us_time);
+            ds_SimTick(&srv->frame, &host->sim, hash_pool, &host->cmd_pool, sim_us_time_final - host->sim.us_time);
             if (host->hash) { ds_SimHostReadAndCheckHashes(host); }
             ds_CPoolFlush(host->hash_pool);
             continue;
@@ -542,7 +542,7 @@ void ds_ServerTick(struct ds_Server *srv, const u64 ns_delta)
             ds_SimHostRecord(host, host->sim.us_time, &host->frame_payload);
         }
 
-        ds_SimTick(&host->sim, hash_pool, &host->cmd_pool, us_sim_delta);
+        ds_SimTick(&srv->frame, &host->sim, hash_pool, &host->cmd_pool, us_sim_delta);
         ds_CPoolFlush(host->cmd_pool);
         if (host->hash && host->record_mode == SIM_MODE_RECORD) { ds_SimHostWriteHashes(host); }
         if (host->hash && host->record_mode == SIM_MODE_REPLAY) { ds_SimHostReadAndCheckHashes(host); }

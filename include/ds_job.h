@@ -176,12 +176,15 @@ struct ds_Align(DS_CACHE_LINE) ds_JobPhase
 
     struct ds_PaddedCounter *   next;       /* next[type].a_counter == Where next job of given type is pushed to */
     u32                         next_len;
-    u8                          pad1[64 - 2*sizeof(void *) - sizeof(u32)];
+    u32                         heap_allocated; /* next from ds_Alloc (else from mem) */
+    u8                          pad1[64 - 2*sizeof(void *) - 2*sizeof(u32)];
     u32                         a_jobs_remaining;
 };
 
-/* Allocate and initialize phase resources (job_type_count index counters on mem) and set the dispatch function. */
+/* Allocate and initialize phase resources (job_type_count index counters on mem, or on the heap if mem is NULL) and set the dispatch function. */
 void    ds_JobPhaseAlloc(struct arena *mem, struct ds_JobPhase *phase, const u32 job_type_count, ds_JobDispatchFunction dispatch);
+/* Free the phase's heap resources; NO-OP if they are on an arena. */
+void    ds_JobPhaseDealloc(struct ds_JobPhase *phase);
 /* Reset phase resources and set the global ds_JobPhase in scheduler to phase. Precondition: no phase running. */
 void    ds_JobPhaseBegin(struct ds_JobPhase *phase);
 /* Block until all jobs in the phase are completed, and set the global ds_JobPhase in scheduler to NULL. */

@@ -101,23 +101,22 @@ void ds_NumericsConfigSerialize(struct SS *ss, const struct ds_NumericsConfig *c
 
 u32 ds_NumericsConfigTryDeserialize(struct SS *ss, struct ds_NumericsConfig *config)
 {
-    const u64 bit_index = ss->bit_index;
-    if (ss->bit_index % 8 != 0 || SSBytesLeft(ss) < DS_NUMERICS_CONFIG_SIZE || SSReadU32Le(ss) != DS_NUMERICS_CONFIG_VERSION)
+    struct SS ss_mut = *ss;
+    *config = (struct ds_NumericsConfig) { 0 };
+    if (ss_mut.bit_index % 8 != 0 || SSBytesLeft(&ss_mut) < DS_NUMERICS_CONFIG_SIZE || SSReadU32Le(&ss_mut) != DS_NUMERICS_CONFIG_VERSION)
     {
-        ss->bit_index = bit_index;
-        *config = (struct ds_NumericsConfig) { 0 };
         return 0;
     }
 
-    *config = (struct ds_NumericsConfig) { 0 };
-    config->dbvh_reinsert_threshold = SSReadF32Le(ss);
-    config->cache_count_max = SSReadU32Le(ss);
-    config->capsule_parallel_max_degrees = SSReadF32Le(ss);
-    config->face_parallel_max_degrees = SSReadF32Le(ss);
-    config->edge_parallel_max_degrees = SSReadF32Le(ss);
-    config->sat_face_bias = SSReadF32Le(ss);
-    config->sat_cache_tolerance = SSReadF32Le(ss);
-    config->gjk_max_iterations = SSReadU32Le(ss);
+    config->dbvh_reinsert_threshold = SSReadF32Le(&ss_mut);
+    config->cache_count_max = SSReadU32Le(&ss_mut);
+    config->capsule_parallel_max_degrees = SSReadF32Le(&ss_mut);
+    config->face_parallel_max_degrees = SSReadF32Le(&ss_mut);
+    config->edge_parallel_max_degrees = SSReadF32Le(&ss_mut);
+    config->sat_face_bias = SSReadF32Le(&ss_mut);
+    config->sat_cache_tolerance = SSReadF32Le(&ss_mut);
+    config->gjk_max_iterations = SSReadU32Le(&ss_mut);
     *config = ds_NumericsConfigDerive(config);
+    *ss = ss_mut;
     return 1;
 }

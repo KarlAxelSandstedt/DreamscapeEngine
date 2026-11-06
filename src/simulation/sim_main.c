@@ -136,32 +136,30 @@ void ds_SimConfigSerialize(struct SS *ss, const struct ds_SimConfig *config)
 
 u32 ds_SimConfigTryDeserialize(struct SS *ss, struct ds_SimConfig *config)
 {
-    const u64 bit_index = ss->bit_index;
-    if (ss->bit_index % 8 != 0 || SSBytesLeft(ss) < DS_SIM_CONFIG_FIXED_SIZE || SSReadU32Le(ss) != DS_SIM_CONFIG_VERSION)
+    struct SS ss_mut = *ss;
+    *config = (struct ds_SimConfig) { 0 };
+    if (ss_mut.bit_index % 8 != 0 || SSBytesLeft(&ss_mut) < DS_SIM_CONFIG_FIXED_SIZE || SSReadU32Le(&ss_mut) != DS_SIM_CONFIG_VERSION)
     {
-        ss->bit_index = bit_index;
-        *config = (struct ds_SimConfig) { 0 };
         return 0;
     }
 
-    *config = (struct ds_SimConfig) { 0 };
     for (u32 i = 0; i < 4; ++i)
     {
-        config->seed[i] = SSReadU64Le(ss);
+        config->seed[i] = SSReadU64Le(&ss_mut);
     }
 
     for (u32 i = 0; i < SIM_SYSTEM_COUNT; ++i)
     {
-        config->us_system_tick[i] = SSReadU64Le(ss);
+        config->us_system_tick[i] = SSReadU64Le(&ss_mut);
     }
 
-    if (!ds_DynamicsConfigTryDeserialize(ss, &config->dynamics) || !ds_SimConfigCheck(config))
+    if (!ds_DynamicsConfigTryDeserialize(&ss_mut, &config->dynamics) || !ds_SimConfigCheck(config))
     {
-        ss->bit_index = bit_index;
         *config = (struct ds_SimConfig) { 0 };
         return 0;
     }
 
+    *ss = ss_mut;
     return 1;
 }
 
@@ -190,15 +188,15 @@ static void ds_SimSeed(struct ds_Sim *sim, const struct ds_SimConfig *config)
     ds_CPool(ds_SimCmd) cmds;
     ds_CPoolAlloc(tmp, cmds, 1, NOT_GROWABLE);
     ds_CPoolPushValue(cmds, seed);
-    ds_SimTick(sim, NULL, &cmds, 0);
+    ds_SimTick(tmp, sim, NULL, &cmds, 0);
 
     ArenaPopScratch();
 }
 
-void ds_SimAlloc(struct arena *mem, struct ds_Sim *sim, const struct ds_SimConfig *config, struct c_ShapeDB *cshape_db, ds_SDB(ds_BodyPrefab) *prefab_db, ds_SDB(ds_ShapePrefab) *shape_prefab_db, const u32 worker_count, const u64 worker_frame_size)
+void ds_SimAlloc(struct arena *mem, struct ds_Sim *sim, const struct ds_SimConfig *config, const struct ds_DynamicsExternal *external, ds_SDB(ds_BodyPrefab) *prefab_db, ds_SDB(ds_ShapePrefab) *shape_prefab_db, const u32 worker_count, const u64 worker_frame_size)
 {
     ds_Assert(ds_SimConfigCheck(config));
-    ds_Assert(cshape_db && prefab_db && shape_prefab_db);
+    ds_Assert(external && prefab_db && shape_prefab_db);
 
     *sim = (struct ds_Sim) { 0 };
     sim->config_seed = *config;
@@ -211,7 +209,7 @@ void ds_SimAlloc(struct arena *mem, struct ds_Sim *sim, const struct ds_SimConfi
         sim->us_system_tick[i] = config->us_system_tick[i];
     }
 
-    sim->dynamics = ds_DynamicsAllocConfig(mem, &config->dynamics, 1000 * config->us_system_tick[SIM_SYSTEM_DYNAMICS], cshape_db, prefab_db, worker_count, worker_frame_size);
+    sim->dynamics = ds_DynamicsAlloc(mem, &config->dynamics, 1000 * config->us_system_tick[SIM_SYSTEM_DYNAMICS], external, worker_count, worker_frame_size);
 
     ds_SimScheduleInit(sim);
     ds_SimSeed(sim, &sim->config_seed);
@@ -219,7 +217,7 @@ void ds_SimAlloc(struct arena *mem, struct ds_Sim *sim, const struct ds_SimConfi
 
 void ds_SimDealloc(struct ds_Sim *sim)
 {
-    ds_DynamicsFree(&sim->dynamics);
+    ds_DynamicsDealloc(&sim->dynamics);
     ds_HashMapDealloc(&sim->entity_map);
     ds_HashMapDealloc(&sim->joint_entity_map);
 }
@@ -279,7 +277,7 @@ u64 ds_SimHash(const struct ds_Sim *sim)
     return XXH3_64bits(words, sizeof(words));
 }
 
-void ds_SimTick(struct ds_Sim *sim, ds_CPool(u64) *hash_pool, const ds_CPool(ds_SimCmd) *cmds, const u64 us_delta)
+void ds_SimTick(struct arena *tick, struct ds_Sim *sim, ds_CPool(u64) *hash_pool, const ds_CPool(ds_SimCmd) *cmds, const u64 us_delta)
 {
     ds_DynamicsConfigPush(&sim->dynamics); 
 
@@ -306,11 +304,12 @@ void ds_SimTick(struct ds_Sim *sim, ds_CPool(u64) *hash_pool, const ds_CPool(ds_
 
         sim->sys_schedule[sys] = ds_SimKeyInit(us + sim->us_system_tick[sys], sys);
 
+        ArenaPushRecord(tick);
         switch (sys)
         {
             case SIM_SYSTEM_DYNAMICS:
             {
-                ds_DynamicsTick(&sim->dynamics);
+                ds_DynamicsTick(tick, &sim->dynamics);
             } break;
 
             case SIM_SYSTEM_GAME:
@@ -323,6 +322,7 @@ void ds_SimTick(struct ds_Sim *sim, ds_CPool(u64) *hash_pool, const ds_CPool(ds_
                 ds_AssertString(0, "Invalid system in ds_SimKey");
             } break;
         }
+        ArenaPopRecord(tick);
 
         if (hash_pool)
         {

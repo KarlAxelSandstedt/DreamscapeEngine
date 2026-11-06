@@ -184,7 +184,6 @@ static struct test_Output DynamicsConfigSerializeTest(struct test_Environment *e
     struct ds_DynamicsConfig changed = def;
     changed.solver.gravity = V3(0.5f, -1.0f, 2.0f);
     changed.initial_size = 64;
-    changed.frame_memory = 1024;
     changed.solver.pgs_iteration_count = 2;
     changed.solver.ngs_iteration_count = 1;
     changed.solver.warmup_solver = 0;
@@ -228,8 +227,8 @@ static struct test_Output DynamicsConfigSerializeTest(struct test_Environment *e
         const u64 version_offset[3] =
         {
             0,
-            4 + 4 + 8,
-            4 + 4 + 8 + ds_SolverConfigSerializeSize(&valid[c].solver),
+            4 + 4,
+            4 + 4 + ds_SolverConfigSerializeSize(&valid[c].solver),
         };
         for (u32 v = 0; v < 3; ++v)
         {
@@ -320,6 +319,7 @@ static struct test_Output SimTickTest(struct test_Environment *env)
 
     struct c_ShapeDB cshape_db = { 0 };
     c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
     ds_SDB(ds_ShapePrefab) shape_prefab_db = { 0 };
@@ -329,10 +329,8 @@ static struct test_Output SimTickTest(struct test_Environment *env)
     config.dynamics.initial_size = 32;
     const u64 period = config.us_system_tick[SIM_SYSTEM_DYNAMICS];
 
-    struct arena mem = ArenaAlloc(NULL, ds_DynamicsShellMemoryRequirement(g_config->thread_count, config.dynamics.frame_memory));
     struct ds_Sim sim;
-    ds_SimAlloc(&mem, &sim, &config, &cshape_db, &prefab_db, &shape_prefab_db, g_config->thread_count, g_config->thread_framesize);
-    TEST_TRUE(mem.mem_left < mem.mem_size);
+    ds_SimAlloc(NULL, &sim, &config, &external, &prefab_db, &shape_prefab_db, g_config->thread_count, g_config->thread_framesize);
     TEST_EQUAL(0, sim.us_time);
     TEST_EQUAL(1000 * period, sim.dynamics.ns_tick);
     /* the seed batch ran inside ds_SimAlloc: time still 0, the first dynamics tick a period out */
@@ -343,21 +341,21 @@ static struct test_Output SimTickTest(struct test_Environment *env)
     ds_CPoolAlloc(env->mem_1, none, 1, NOT_GROWABLE);
 
     /* no time: no tick */
-    ds_SimTick(&sim, NULL, &none, 0);
+    ds_SimTick(env->mem_2, &sim, NULL, &none, 0);
     TEST_EQUAL(0, sim.us_time);
     TEST_EQUAL(0, sim.dynamics.frames_completed);
 
     /* no physics tick before its period */
-    ds_SimTick(&sim, NULL, &none, 1);
+    ds_SimTick(env->mem_2, &sim, NULL, &none, 1);
     TEST_EQUAL(1, sim.us_delta);
     TEST_EQUAL(1, sim.us_time);
     TEST_EQUAL(0, sim.dynamics.frames_completed);
 
     /* one period: the first physics tick; two periods: two */
-    ds_SimTick(&sim, NULL, &none, period - 1);
+    ds_SimTick(env->mem_2, &sim, NULL, &none, period - 1);
     TEST_EQUAL(period, sim.us_time);
     TEST_EQUAL(1, sim.dynamics.frames_completed);
-    ds_SimTick(&sim, NULL, &none, 2 * period);
+    ds_SimTick(env->mem_2, &sim, NULL, &none, 2 * period);
     TEST_EQUAL(3 * period, sim.us_time);
     TEST_EQUAL(3, sim.dynamics.frames_completed);
 
@@ -367,7 +365,6 @@ static struct test_Output SimTickTest(struct test_Environment *env)
     TEST_EQUAL(0, sim.dynamics.frames_completed);
 
     ds_SimDealloc(&sim);
-    ArenaFree(&mem);
     ds_SDBDealloc(prefab_db);
     ds_SDBDealloc(shape_prefab_db);
     c_ShapeDBDealloc(&cshape_db);
@@ -707,7 +704,9 @@ static struct test_Output SimCmdSerializeTest(struct test_Environment *env)
 /* Run a zero-delta frame with the pool as the frame's commands. */
 static void SimTestBatch(struct ds_Sim *sim, const ds_CPool(ds_SimCmd) *pool)
 {
-    ds_SimTick(sim, NULL, pool, 0);
+    struct arena *tick = ArenaPushScratch();
+    ds_SimTick(tick, sim, NULL, pool, 0);
+    ArenaPopScratch();
 }
 
 /*
@@ -722,6 +721,7 @@ static struct test_Output SimConfigLoadTest(struct test_Environment *env)
 
     struct c_ShapeDB cshape_db = { 0 };
     c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
     ds_SDB(ds_ShapePrefab) shape_prefab_db = { 0 };
@@ -730,9 +730,8 @@ static struct test_Output SimConfigLoadTest(struct test_Environment *env)
     struct ds_SimConfig config = ds_SimConfigDefault();
     config.dynamics.initial_size = 32;
     const u32 iterations = config.dynamics.solver.pgs_iteration_count;
-    struct arena mem = ArenaAlloc(NULL, ds_DynamicsShellMemoryRequirement(g_config->thread_count, config.dynamics.frame_memory));
     struct ds_Sim sim;
-    ds_SimAlloc(&mem, &sim, &config, &cshape_db, &prefab_db, &shape_prefab_db, g_config->thread_count, g_config->thread_framesize);
+    ds_SimAlloc(NULL, &sim, &config, &external, &prefab_db, &shape_prefab_db, g_config->thread_count, g_config->thread_framesize);
     TEST_EQUAL(1, sim.initialized);     /* the seed batch ran */
     TEST_EQUAL(iterations, sim.dynamics.config.solver.pgs_iteration_count);
 
@@ -777,7 +776,6 @@ static struct test_Output SimConfigLoadTest(struct test_Environment *env)
     TEST_EQUAL(iterations, sim.dynamics.config.solver.pgs_iteration_count);
 
     ds_SimDealloc(&sim);
-    ArenaFree(&mem);
     ds_SDBDealloc(prefab_db);
     ds_SDBDealloc(shape_prefab_db);
     c_ShapeDBDealloc(&cshape_db);
@@ -795,6 +793,7 @@ static struct test_Output ServerClockTest(struct test_Environment *env)
 
     struct c_ShapeDB cshape_db = { 0 };
     c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
     ds_SDB(ds_ShapePrefab) shape_prefab_db = { 0 };
@@ -803,11 +802,11 @@ static struct test_Output ServerClockTest(struct test_Environment *env)
     struct ds_SimConfig config = ds_SimConfigDefault();
     config.dynamics.initial_size = 32;
     const u64 period = config.us_system_tick[SIM_SYSTEM_DYNAMICS];
-    struct arena mem = ArenaAlloc(NULL, ds_DynamicsShellMemoryRequirement(g_config->thread_count, config.dynamics.frame_memory));
+    struct arena mem = ArenaAlloc(NULL, 2*1024*1024);
 
     struct ds_Server srv;
-    ds_ServerAlloc(&srv, 1 << 20, 2);
-    const ds_SimId id = ds_SimHostAdd(&srv, &mem, &config, SIM_MODE_NONE, NULL, 0, NULL, &cshape_db, &prefab_db, &shape_prefab_db, g_config->thread_count, g_config->thread_framesize);
+    ds_ServerAlloc(&srv, 16*1024*1024, 2);
+    const ds_SimId id = ds_SimHostAdd(&srv, &mem, &config, SIM_MODE_NONE, NULL, 0, NULL, &external, &prefab_db, &shape_prefab_db, g_config->thread_count, g_config->thread_framesize);
     struct ds_SimHost *host = ds_SimHostLookup(&srv, id).address;
     struct ds_Sim *sim = &host->sim;
     TEST_TRUE(host != NULL && host->record_mode == SIM_MODE_NONE && host->speed == 1.0 && sim->initialized);
@@ -863,6 +862,7 @@ static struct test_Output ServerDoorTest(struct test_Environment *env)
 
     struct c_ShapeDB cshape_db = { 0 };
     c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
     ds_SDB(ds_ShapePrefab) shape_prefab_db = { 0 };
@@ -871,11 +871,11 @@ static struct test_Output ServerDoorTest(struct test_Environment *env)
     struct ds_SimConfig config = ds_SimConfigDefault();
     config.dynamics.initial_size = 32;
     const u32 iterations = config.dynamics.solver.pgs_iteration_count;
-    struct arena mem = ArenaAlloc(NULL, ds_DynamicsShellMemoryRequirement(g_config->thread_count, config.dynamics.frame_memory));
+    struct arena mem = ArenaAlloc(NULL, 2*1024*1024);
 
     struct ds_Server srv;
-    ds_ServerAlloc(&srv, 1 << 20, 2);
-    const ds_SimId id = ds_SimHostAdd(&srv, &mem, &config, SIM_MODE_NONE, NULL, 0, NULL, &cshape_db, &prefab_db, &shape_prefab_db, g_config->thread_count, g_config->thread_framesize);
+    ds_ServerAlloc(&srv, 16*1024*1024, 2);
+    const ds_SimId id = ds_SimHostAdd(&srv, &mem, &config, SIM_MODE_NONE, NULL, 0, NULL, &external, &prefab_db, &shape_prefab_db, g_config->thread_count, g_config->thread_framesize);
     struct ds_SimHost *host = ds_SimHostLookup(&srv, id).address;
     struct ds_Sim *sim = &host->sim;
     TEST_EQUAL(NULL, ds_SimHostLookup(&srv, ds_SimIdInit(1, 0)).address);
@@ -979,6 +979,7 @@ static struct test_Output ServerRecordTest(struct test_Environment *env)
 
     struct c_ShapeDB cshape_db = { 0 };
     c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
     ds_SDB(ds_ShapePrefab) shape_prefab_db = { 0 };
@@ -989,11 +990,11 @@ static struct test_Output ServerRecordTest(struct test_Environment *env)
     const u32 iterations = config.dynamics.solver.pgs_iteration_count;
     const u64 period = config.us_system_tick[SIM_SYSTEM_DYNAMICS];
     const u64 cmd_bits = 8 + 32 + 8*ds_SimConfigSerializeSize(&config);
-    struct arena mem = ArenaAlloc(NULL, ds_DynamicsShellMemoryRequirement(g_config->thread_count, config.dynamics.frame_memory) + 1024);
+    struct arena mem = ArenaAlloc(NULL, 2*1024*1024);
 
     struct ds_Server srv;
-    ds_ServerAlloc(&srv, 1 << 20, 2);
-    const ds_SimId id = ds_SimHostAdd(&srv, &mem, &config, SIM_MODE_RECORD, "agent_test_record.bin", 0, NULL, &cshape_db, &prefab_db, &shape_prefab_db, g_config->thread_count, g_config->thread_framesize);
+    ds_ServerAlloc(&srv, 16*1024*1024, 2);
+    const ds_SimId id = ds_SimHostAdd(&srv, &mem, &config, SIM_MODE_RECORD, "agent_test_record.bin", 0, NULL, &external, &prefab_db, &shape_prefab_db, g_config->thread_count, g_config->thread_framesize);
     TEST_EQUAL(0, ds_SimIdNullCheck(id));
     struct ds_SimHost *host = ds_SimHostLookup(&srv, id).address;
     TEST_EQUAL(SIM_MODE_RECORD, host->record_mode);
@@ -1070,6 +1071,7 @@ static struct test_Output ServerReplayTest(struct test_Environment *env)
 
     struct c_ShapeDB cshape_db = { 0 };
     c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
     ds_SDB(ds_ShapePrefab) shape_prefab_db = { 0 };
@@ -1094,11 +1096,11 @@ static struct test_Output ServerReplayTest(struct test_Environment *env)
     ds_CPoolAlloc(env->mem_1, pool, 1, NOT_GROWABLE);
 
     struct ds_Server srv;
-    ds_ServerAlloc(&srv, 1 << 20, 2);
+    ds_ServerAlloc(&srv, 16*1024*1024, 2);
 
     /* record: 8 frames of half a period */
-    struct arena mem = ArenaAlloc(NULL, ds_DynamicsShellMemoryRequirement(g_config->thread_count, config.dynamics.frame_memory) + 1024);
-    const ds_SimId id = ds_SimHostAdd(&srv, &mem, &config, SIM_MODE_RECORD, "agent_test_replay.bin", 1, "agent_test_hash.bin", &cshape_db, &prefab_db, &shape_prefab_db, g_config->thread_count, g_config->thread_framesize);
+    struct arena mem = ArenaAlloc(NULL, 2*1024*1024);
+    const ds_SimId id = ds_SimHostAdd(&srv, &mem, &config, SIM_MODE_RECORD, "agent_test_replay.bin", 1, "agent_test_hash.bin", &external, &prefab_db, &shape_prefab_db, g_config->thread_count, g_config->thread_framesize);
     struct ds_SimHost *host = ds_SimHostLookup(&srv, id).address;
     for (u32 frame = 0, l = 0; frame < 8; ++frame)
     {
@@ -1122,8 +1124,8 @@ static struct test_Output ServerReplayTest(struct test_Environment *env)
     ds_SimHostRemove(&srv, id);
 
     /* replay: frames of 12499 us, then the rest */
-    struct arena mem_replay = ArenaAlloc(NULL, ds_DynamicsShellMemoryRequirement(g_config->thread_count, config.dynamics.frame_memory) + 1024);
-    const ds_SimId id_replay = ds_SimHostAdd(&srv, &mem_replay, NULL, SIM_MODE_REPLAY, "agent_test_replay.bin", 1, "agent_test_hash.bin", &cshape_db, &prefab_db, &shape_prefab_db, g_config->thread_count, g_config->thread_framesize);
+    struct arena mem_replay = ArenaAlloc(NULL, 2*1024*1024);
+    const ds_SimId id_replay = ds_SimHostAdd(&srv, &mem_replay, NULL, SIM_MODE_REPLAY, "agent_test_replay.bin", 1, "agent_test_hash.bin", &external, &prefab_db, &shape_prefab_db, g_config->thread_count, g_config->thread_framesize);
     TEST_EQUAL(0, ds_SimIdNullCheck(id_replay));
     struct ds_SimHost *replay = ds_SimHostLookup(&srv, id_replay).address;
     TEST_EQUAL(SIM_MODE_REPLAY, replay->record_mode);
@@ -1180,8 +1182,8 @@ static struct test_Output ServerReplayTest(struct test_Environment *env)
     ds_SimHostRemove(&srv, id_replay);
 
     /* hashing pairs with recording: a bare run's hash request is dropped */
-    struct arena mem_bare = ArenaAlloc(NULL, ds_DynamicsShellMemoryRequirement(g_config->thread_count, config.dynamics.frame_memory) + 1024);
-    const ds_SimId id_bare = ds_SimHostAdd(&srv, &mem_bare, &config, SIM_MODE_NONE, NULL, 1, "agent_test_hash.bin", &cshape_db, &prefab_db, &shape_prefab_db, g_config->thread_count, g_config->thread_framesize);
+    struct arena mem_bare = ArenaAlloc(NULL, 2*1024*1024);
+    const ds_SimId id_bare = ds_SimHostAdd(&srv, &mem_bare, &config, SIM_MODE_NONE, NULL, 1, "agent_test_hash.bin", &external, &prefab_db, &shape_prefab_db, g_config->thread_count, g_config->thread_framesize);
     TEST_EQUAL(0, ((struct ds_SimHost *) ds_SimHostLookup(&srv, id_bare).address)->hash);
     ds_SimHostRemove(&srv, id_bare);
 
@@ -1208,6 +1210,7 @@ static struct test_Output ServerSceneTest(struct test_Environment *env)
     /* the databases: a slab and a unit box hull, a shape prefab for each, a static and a dynamic body prefab */
     struct c_ShapeDB cshape_db = { 0 };
     c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
     const struct c_Shape slab_hull = { .type = C_SHAPE_CONVEX_HULL, .hull = DcelBox(env->mem_1, V3(10.0f, 0.5f, 10.0f)) };
     const struct c_Shape box_hull = { .type = C_SHAPE_CONVEX_HULL, .hull = DcelBox(env->mem_1, V3(0.5f, 0.5f, 0.5f)) };
     const struct slot slab_shape = c_ShapeDBAdd(&cshape_db, Utf8Inline("slab"), &slab_hull);
@@ -1255,9 +1258,9 @@ static struct test_Output ServerSceneTest(struct test_Environment *env)
 
     /* record */
     struct ds_Server srv;
-    ds_ServerAlloc(&srv, 1 << 20, 2);
-    struct arena mem = ArenaAlloc(NULL, ds_DynamicsShellMemoryRequirement(g_config->thread_count, config.dynamics.frame_memory) + 1024);
-    const ds_SimId id = ds_SimHostAdd(&srv, &mem, &config, SIM_MODE_RECORD, "agent_test_scene.bin", 1, "agent_test_scene_hash.bin", &cshape_db, &prefab_db, &shape_prefab_db, g_config->thread_count, g_config->thread_framesize);
+    ds_ServerAlloc(&srv, 16*1024*1024, 2);
+    struct arena mem = ArenaAlloc(NULL, 2*1024*1024);
+    const ds_SimId id = ds_SimHostAdd(&srv, &mem, &config, SIM_MODE_RECORD, "agent_test_scene.bin", 1, "agent_test_scene_hash.bin", &external, &prefab_db, &shape_prefab_db, g_config->thread_count, g_config->thread_framesize);
     struct ds_SimHost *host = ds_SimHostLookup(&srv, id).address;
     const u32 bodies_before = host->sim.dynamics.body_pool.count;    /* the mouse anchor */
     ds_CPoolPushValue(srv.payload_pool, ds_SimCmdPayloadPushAll(&srv.frame, id, &cmds));
@@ -1282,8 +1285,8 @@ static struct test_Output ServerSceneTest(struct test_Environment *env)
     ds_SimHostRemove(&srv, id);
 
     /* replay */
-    struct arena mem_replay = ArenaAlloc(NULL, ds_DynamicsShellMemoryRequirement(g_config->thread_count, config.dynamics.frame_memory) + 1024);
-    const ds_SimId id_replay = ds_SimHostAdd(&srv, &mem_replay, NULL, SIM_MODE_REPLAY, "agent_test_scene.bin", 1, "agent_test_scene_hash.bin", &cshape_db, &prefab_db, &shape_prefab_db, g_config->thread_count, g_config->thread_framesize);
+    struct arena mem_replay = ArenaAlloc(NULL, 2*1024*1024);
+    const ds_SimId id_replay = ds_SimHostAdd(&srv, &mem_replay, NULL, SIM_MODE_REPLAY, "agent_test_scene.bin", 1, "agent_test_scene_hash.bin", &external, &prefab_db, &shape_prefab_db, g_config->thread_count, g_config->thread_framesize);
     struct ds_SimHost *replay = ds_SimHostLookup(&srv, id_replay).address;
     while (replay->sim.us_time < us_end)
     {
@@ -1315,6 +1318,7 @@ static struct test_Output ServerGrabTest(struct test_Environment *env)
 
     struct c_ShapeDB cshape_db = { 0 };
     c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
     const struct c_Shape slab_hull = { .type = C_SHAPE_CONVEX_HULL, .hull = DcelBox(env->mem_1, V3(10.0f, 0.5f, 10.0f)) };
     const struct c_Shape box_hull = { .type = C_SHAPE_CONVEX_HULL, .hull = DcelBox(env->mem_1, V3(0.5f, 0.5f, 0.5f)) };
     const struct slot slab_shape = c_ShapeDBAdd(&cshape_db, Utf8Inline("slab"), &slab_hull);
@@ -1347,9 +1351,9 @@ static struct test_Output ServerGrabTest(struct test_Environment *env)
         { .type = SIM_CMD_SHAPE_ADD, .shape_add = { .prefab = Utf8Inline("box_shape"), .t_local = identity, .entity = 2 } },
     };
     struct ds_Server srv;
-    ds_ServerAlloc(&srv, 1 << 20, 2);
-    struct arena mem = ArenaAlloc(NULL, ds_DynamicsShellMemoryRequirement(g_config->thread_count, config.dynamics.frame_memory) + 1024);
-    const ds_SimId id = ds_SimHostAdd(&srv, &mem, &config, SIM_MODE_RECORD, "agent_test_grab.bin", 1, "agent_test_grab_hash.bin", &cshape_db, &prefab_db, &shape_prefab_db, g_config->thread_count, g_config->thread_framesize);
+    ds_ServerAlloc(&srv, 16*1024*1024, 2);
+    struct arena mem = ArenaAlloc(NULL, 2*1024*1024);
+    const ds_SimId id = ds_SimHostAdd(&srv, &mem, &config, SIM_MODE_RECORD, "agent_test_grab.bin", 1, "agent_test_grab_hash.bin", &external, &prefab_db, &shape_prefab_db, g_config->thread_count, g_config->thread_framesize);
     struct ds_SimHost *host = ds_SimHostLookup(&srv, id).address;
     for (u32 i = 0; i < sizeof(scene) / sizeof(scene[0]); ++i)
     {
@@ -1423,8 +1427,8 @@ static struct test_Output ServerGrabTest(struct test_Environment *env)
     const u64 hash_count = host->hash_count;
     ds_SimHostRemove(&srv, id);
 
-    struct arena mem_replay = ArenaAlloc(NULL, ds_DynamicsShellMemoryRequirement(g_config->thread_count, config.dynamics.frame_memory) + 1024);
-    const ds_SimId id_replay = ds_SimHostAdd(&srv, &mem_replay, NULL, SIM_MODE_REPLAY, "agent_test_grab.bin", 1, "agent_test_grab_hash.bin", &cshape_db, &prefab_db, &shape_prefab_db, g_config->thread_count, g_config->thread_framesize);
+    struct arena mem_replay = ArenaAlloc(NULL, 2*1024*1024);
+    const ds_SimId id_replay = ds_SimHostAdd(&srv, &mem_replay, NULL, SIM_MODE_REPLAY, "agent_test_grab.bin", 1, "agent_test_grab_hash.bin", &external, &prefab_db, &shape_prefab_db, g_config->thread_count, g_config->thread_framesize);
     struct ds_SimHost *replay = ds_SimHostLookup(&srv, id_replay).address;
     while (replay->sim.us_time < us_end)
     {
@@ -1459,6 +1463,7 @@ static struct test_Output SimCmdFuzzTest(struct test_Environment *env)
 
     struct c_ShapeDB cshape_db = { 0 };
     c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
     ds_SDB(ds_ShapePrefab) shape_prefab_db = { 0 };
@@ -1467,10 +1472,10 @@ static struct test_Output SimCmdFuzzTest(struct test_Environment *env)
     struct ds_SimConfig config = ds_SimConfigDefault();
     config.dynamics.initial_size = 32;
     const u32 iterations = config.dynamics.solver.pgs_iteration_count;
-    struct arena mem = ArenaAlloc(NULL, ds_DynamicsShellMemoryRequirement(g_config->thread_count, config.dynamics.frame_memory) + 1024);
+    struct arena mem = ArenaAlloc(NULL, 2*1024*1024);
     struct ds_Server srv;
-    ds_ServerAlloc(&srv, 1 << 20, 2);
-    const ds_SimId id = ds_SimHostAdd(&srv, &mem, &config, SIM_MODE_NONE, NULL, 0, NULL, &cshape_db, &prefab_db, &shape_prefab_db, g_config->thread_count, g_config->thread_framesize);
+    ds_ServerAlloc(&srv, 16*1024*1024, 2);
+    const ds_SimId id = ds_SimHostAdd(&srv, &mem, &config, SIM_MODE_NONE, NULL, 0, NULL, &external, &prefab_db, &shape_prefab_db, g_config->thread_count, g_config->thread_framesize);
     struct ds_SimHost *host = ds_SimHostLookup(&srv, id).address;
 
     /* the base: three ConfigLoads with distinct iteration counts, serialized as a payload for the hosted simulation */
@@ -1607,6 +1612,7 @@ static struct test_Output ServerReplayCorruptTest(struct test_Environment *env)
 
     struct c_ShapeDB cshape_db = { 0 };
     c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
     ds_SDB(ds_ShapePrefab) shape_prefab_db = { 0 };
@@ -1617,11 +1623,11 @@ static struct test_Output ServerReplayCorruptTest(struct test_Environment *env)
     const u32 iterations = config.dynamics.solver.pgs_iteration_count;
     const u64 period = config.us_system_tick[SIM_SYSTEM_DYNAMICS];
     struct ds_Server srv;
-    ds_ServerAlloc(&srv, 1 << 20, 2);
+    ds_ServerAlloc(&srv, 16*1024*1024, 2);
 
     /* the record: a ConfigLoad per frame, three frames */
-    struct arena mem = ArenaAlloc(NULL, ds_DynamicsShellMemoryRequirement(g_config->thread_count, config.dynamics.frame_memory) + 1024);
-    const ds_SimId id = ds_SimHostAdd(&srv, &mem, &config, SIM_MODE_RECORD, "agent_test_corrupt.bin", 0, NULL, &cshape_db, &prefab_db, &shape_prefab_db, g_config->thread_count, g_config->thread_framesize);
+    struct arena mem = ArenaAlloc(NULL, 2*1024*1024);
+    const ds_SimId id = ds_SimHostAdd(&srv, &mem, &config, SIM_MODE_RECORD, "agent_test_corrupt.bin", 0, NULL, &external, &prefab_db, &shape_prefab_db, g_config->thread_count, g_config->thread_framesize);
     struct ds_SimConfig load = config;
     ds_CPool(ds_SimCmd) pool;
     ds_CPoolAlloc(env->mem_1, pool, 1, NOT_GROWABLE);
@@ -1664,8 +1670,8 @@ static struct test_Output ServerReplayCorruptTest(struct test_Environment *env)
         TEST_EQUAL(size, FileWriteAppend(&file, bytes, size));
         FileClose(&file);
 
-        struct arena mem_replay = ArenaAlloc(NULL, ds_DynamicsShellMemoryRequirement(g_config->thread_count, config.dynamics.frame_memory) + 1024);
-        const ds_SimId id_replay = ds_SimHostAdd(&srv, &mem_replay, NULL, SIM_MODE_REPLAY, "agent_test_corrupt_variant.bin", 0, NULL, &cshape_db, &prefab_db, &shape_prefab_db, g_config->thread_count, g_config->thread_framesize);
+        struct arena mem_replay = ArenaAlloc(NULL, 2*1024*1024);
+        const ds_SimId id_replay = ds_SimHostAdd(&srv, &mem_replay, NULL, SIM_MODE_REPLAY, "agent_test_corrupt_variant.bin", 0, NULL, &external, &prefab_db, &shape_prefab_db, g_config->thread_count, g_config->thread_framesize);
         if (!ds_SimIdNullCheck(id_replay))
         {
             struct ds_SimHost *replay = ds_SimHostLookup(&srv, id_replay).address;

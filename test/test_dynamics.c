@@ -6,6 +6,17 @@
 #include "ds_collision.h"
 #include "ds_geometry.h"
 
+/* the ticks' scratch memory: one arena for every direct tick of the suite (a server's frame arena takes that role elsewhere) */
+static struct arena *DynamicsTestTickArena(void)
+{
+    static struct arena tick = { 0 };
+    if (!tick.stack_ptr)
+    {
+        tick = ArenaAlloc(NULL, 16*1024*1024);
+    }
+    return &tick;
+}
+
 /*
 Dynamics tests
 ==============
@@ -254,7 +265,8 @@ static void DynamicsTestRun(struct dynamics_TestResult *result, const struct dyn
     c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
-    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
+    struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&mem, 64, NSEC_PER_SEC / 60, &external, g_config->thread_count, g_config->thread_framesize);
     ds_DynamicsConfigPush(&pipeline);
     pipeline.config_pending.solver.sleep_enabled = 0;
     ds_DynamicsConfigUpdatePending(&pipeline);
@@ -272,7 +284,7 @@ static void DynamicsTestRun(struct dynamics_TestResult *result, const struct dyn
     result->jitter_sq = 0.0;
     for (u32 t = 0; t < DYNAMICS_TEST_SETTLE_TICKS + DYNAMICS_TEST_MEASURE_TICKS; ++t)
     {
-        ds_DynamicsTick(&pipeline);
+        ds_DynamicsTick(DynamicsTestTickArena(), &pipeline);
         ds_PoolFlush(pipeline.event_pool);
         DLLFlush(pipeline.event_list);
 
@@ -313,7 +325,7 @@ static void DynamicsTestRun(struct dynamics_TestResult *result, const struct dyn
     pipeline.config_pending.solver.sleep_enabled = 1;
     ds_DynamicsConfigUpdatePending(&pipeline);
     ds_DynamicsConfigPop(&pipeline);
-    ds_DynamicsFree(&pipeline);
+    ds_DynamicsDealloc(&pipeline);
     ds_SDBDealloc(prefab_db);
     c_ShapeDBDealloc(&cshape_db);
     ArenaFree(&mem);
@@ -479,7 +491,7 @@ static u32 SnapshotTestScene(struct dynamics_TestBox box[SNAPSHOT_TEST_BOX_MAX])
 static void SnapshotTestTick(struct ds_Dynamics *pipeline)
 {
     ds_DynamicsConfigPush(pipeline);
-    ds_DynamicsTick(pipeline);
+    ds_DynamicsTick(DynamicsTestTickArena(), pipeline);
     ds_PoolFlush(pipeline->event_pool);
     DLLFlush(pipeline->event_list);
 }
@@ -599,10 +611,10 @@ static u32 SnapshotTestCheck(struct arena *mem, struct ds_Dynamics *original, st
         view.bit_count = 8*cut;
         const u64 mem_left = mem->mem_left;
         struct ds_Dynamics copy;
-        const u32 restored = ds_DynamicsTryDeserialize(mem, &view, &copy, cshape_db);
+        const u32 restored = ds_DynamicsTryDeserialize(mem, &view, &copy, original->external);
         if (restored)
         {
-            ds_DynamicsFree(&copy);
+            ds_DynamicsDealloc(&copy);
         }
         if (restored || view.bit_index != 0 || mem->mem_left != mem_left)
         {
@@ -620,7 +632,7 @@ static u32 SnapshotTestCheck(struct arena *mem, struct ds_Dynamics *original, st
     for (u32 c = 0; c < SNAPSHOT_TEST_COPIES; ++c)
     {
         snap.bit_index = 0;
-        if (!ds_DynamicsTryDeserialize(mem, &snap, copy + copy_count, cshape_db))
+        if (!ds_DynamicsTryDeserialize(mem, &snap, copy + copy_count, original->external))
         {
             fprintf(stdout, "    frame %llu: restore %u failed\n", frame, c);
             success = 0;
@@ -680,7 +692,7 @@ static u32 SnapshotTestCheck(struct arena *mem, struct ds_Dynamics *original, st
 
     for (u32 c = 0; c < copy_count; ++c)
     {
-        ds_DynamicsFree(copy + c);
+        ds_DynamicsDealloc(copy + c);
     }
     ArenaPopRecord(mem);
     ds_DynamicsConfigPush(original);    /* the copies' wakes and ticks pushed their own (SnapshotTestWakeAll, SnapshotTestTick) */
@@ -698,7 +710,8 @@ static u32 SnapshotTestRun(void)
     c_ShapeDBAlloc(NULL, &cshape_db, 64, GROWABLE);
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
-    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
+    struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&mem, 64, NSEC_PER_SEC / 60, &external, g_config->thread_count, g_config->thread_framesize);
     ds_DynamicsConfigPush(&pipeline);
     pipeline.config_pending.solver.sleep_enabled = 1;
     ds_DynamicsConfigUpdatePending(&pipeline);
@@ -733,7 +746,7 @@ static u32 SnapshotTestRun(void)
     }
 
     ds_DynamicsConfigPop(&pipeline);
-    ds_DynamicsFree(&pipeline);
+    ds_DynamicsDealloc(&pipeline);
     ds_SDBDealloc(prefab_db);
     c_ShapeDBDealloc(&cshape_db);
     ArenaFree(&mem);
@@ -775,7 +788,8 @@ static struct test_Output DynamicsShapeTest(struct test_Environment *env)
     c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
-    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
+    struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&mem, 64, NSEC_PER_SEC / 60, &external, g_config->thread_count, g_config->thread_framesize);
     ds_DynamicsConfigPush(&pipeline);
 
     /* three collision shapes */
@@ -911,7 +925,7 @@ static struct test_Output DynamicsShapeTest(struct test_Environment *env)
     TEST_NOT_ZERO(pipeline.shape_pool.count == 0 && ds_ShapeLookup(&pipeline, reused).address == NULL);
 
     ds_DynamicsConfigPop(&pipeline);
-    ds_DynamicsFree(&pipeline);
+    ds_DynamicsDealloc(&pipeline);
     c_ShapeDBDealloc(&cshape_db);
     ds_SDBDealloc(prefab_db);
     ArenaFree(&mem);
@@ -940,7 +954,8 @@ static struct test_Output DynamicsBodyTest(struct test_Environment *env)
     c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
-    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
+    struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&mem, 64, NSEC_PER_SEC / 60, &external, g_config->thread_count, g_config->thread_framesize);
     ds_DynamicsConfigPush(&pipeline);
 
     const f32 r = 0.5f;
@@ -1021,7 +1036,7 @@ static struct test_Output DynamicsBodyTest(struct test_Environment *env)
     TEST_NOT_ZERO(pipeline.body_pool.count == 1 && ds_BodyLookup(&pipeline, DS_BODY_MOUSE_ANCHOR_ID).address != NULL);
 
     ds_DynamicsConfigPop(&pipeline);
-    ds_DynamicsFree(&pipeline);
+    ds_DynamicsDealloc(&pipeline);
     c_ShapeDBDealloc(&cshape_db);
     ds_SDBDealloc(prefab_db);
     ArenaFree(&mem);
@@ -1045,7 +1060,8 @@ static struct test_Output DynamicsContactTest(struct test_Environment *env)
     c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
-    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
+    struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&mem, 64, NSEC_PER_SEC / 60, &external, g_config->thread_count, g_config->thread_framesize);
     ds_DynamicsConfigPush(&pipeline);
     pipeline.config_pending.solver.sleep_enabled = 0;
     ds_DynamicsConfigUpdatePending(&pipeline);
@@ -1062,7 +1078,7 @@ static struct test_Output DynamicsContactTest(struct test_Environment *env)
     {
         body[i] = DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, box + i, (v3f64) { 0 }, i);
     }
-    ds_DynamicsTick(&pipeline);
+    ds_DynamicsTick(DynamicsTestTickArena(), &pipeline);
     ds_PoolFlush(pipeline.event_pool);
     DLLFlush(pipeline.event_list);
     ds_ContactValidateAll(&pipeline);
@@ -1095,14 +1111,14 @@ static struct test_Output DynamicsContactTest(struct test_Environment *env)
     ds_ContactValidateAll(&pipeline);
     TEST_NOT_ZERO(ds_ContactLookup(&pipeline, contact_id).address == NULL && ds_ContactKeyLookup(&pipeline, key).address == NULL);
     TEST_NOT_ZERO(shape1->contact_list.count == 1 && pipeline.contact_pool.count == 1);
-    ds_DynamicsTick(&pipeline);
+    ds_DynamicsTick(DynamicsTestTickArena(), &pipeline);
     ds_PoolFlush(pipeline.event_pool);
     DLLFlush(pipeline.event_list);
     ds_ContactValidateAll(&pipeline);
     TEST_NOT_ZERO(pipeline.contact_pool.count == 1 && ds_BodyLookup(&pipeline, body[1]).address != NULL);
 
     ds_DynamicsConfigPop(&pipeline);
-    ds_DynamicsFree(&pipeline);
+    ds_DynamicsDealloc(&pipeline);
     c_ShapeDBDealloc(&cshape_db);
     ds_SDBDealloc(prefab_db);
     ArenaFree(&mem);
@@ -1126,7 +1142,8 @@ static struct test_Output DynamicsIslandTest(struct test_Environment *env)
     c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
-    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
+    struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&mem, 64, NSEC_PER_SEC / 60, &external, g_config->thread_count, g_config->thread_framesize);
     ds_DynamicsConfigPush(&pipeline);
     pipeline.config_pending.solver.sleep_enabled = 0;
     ds_DynamicsConfigUpdatePending(&pipeline);
@@ -1167,7 +1184,7 @@ static struct test_Output DynamicsIslandTest(struct test_Environment *env)
     {
         body[i] = DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, row + i, (v3f64) { 0 }, 2 + i);
     }
-    ds_DynamicsTick(&pipeline);
+    ds_DynamicsTick(DynamicsTestTickArena(), &pipeline);
     ds_PoolFlush(pipeline.event_pool);
     DLLFlush(pipeline.event_list);
     ds_IslandValidateAll(&pipeline);
@@ -1181,7 +1198,7 @@ static struct test_Output DynamicsIslandTest(struct test_Environment *env)
     /* the pipeline splits a flagged island once its bodies have rested for the sleep time threshold: let them settle */
     for (u32 t = 0; t < 600 && pipeline.island_pool.count < 2; ++t)
     {
-        ds_DynamicsTick(&pipeline);
+        ds_DynamicsTick(DynamicsTestTickArena(), &pipeline);
         ds_PoolFlush(pipeline.event_pool);
         DLLFlush(pipeline.event_list);
         ds_IslandValidateAll(&pipeline);
@@ -1191,7 +1208,7 @@ static struct test_Output DynamicsIslandTest(struct test_Environment *env)
     TEST_NOT_ZERO(pipeline.island_pool.buf[left->island].contact_list.count == 1 && pipeline.island_pool.buf[right->island].contact_list.count == 1);
 
     ds_DynamicsConfigPop(&pipeline);
-    ds_DynamicsFree(&pipeline);
+    ds_DynamicsDealloc(&pipeline);
     c_ShapeDBDealloc(&cshape_db);
     ds_SDBDealloc(prefab_db);
     ArenaFree(&mem);
@@ -1208,7 +1225,8 @@ static struct test_Output DynamicsSleepTest(struct test_Environment *env)
     c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
-    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
+    struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&mem, 64, NSEC_PER_SEC / 60, &external, g_config->thread_count, g_config->thread_framesize);
     ds_DynamicsConfigPush(&pipeline);
     pipeline.config_pending.solver.sleep_enabled = 1;
     ds_DynamicsConfigUpdatePending(&pipeline);
@@ -1301,7 +1319,7 @@ static struct test_Output DynamicsSleepTest(struct test_Environment *env)
     ds_IslandValidateAll(&pipeline);
 
     ds_DynamicsConfigPop(&pipeline);
-    ds_DynamicsFree(&pipeline);
+    ds_DynamicsDealloc(&pipeline);
     c_ShapeDBDealloc(&cshape_db);
     ds_SDBDealloc(prefab_db);
     ArenaFree(&mem);
@@ -1323,7 +1341,8 @@ static struct test_Output DynamicsWakeByContactTest(struct test_Environment *env
     c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
-    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
+    struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&mem, 64, NSEC_PER_SEC / 60, &external, g_config->thread_count, g_config->thread_framesize);
     ds_DynamicsConfigPush(&pipeline);
     pipeline.config_pending.solver.sleep_enabled = 1;
     ds_DynamicsConfigUpdatePending(&pipeline);
@@ -1391,7 +1410,7 @@ static struct test_Output DynamicsWakeByContactTest(struct test_Environment *env
     ds_IslandValidateAll(&pipeline);
 
     ds_DynamicsConfigPop(&pipeline);
-    ds_DynamicsFree(&pipeline);
+    ds_DynamicsDealloc(&pipeline);
     c_ShapeDBDealloc(&cshape_db);
     ds_SDBDealloc(prefab_db);
     ArenaFree(&mem);
@@ -1460,7 +1479,8 @@ static struct test_Output DynamicsGraphTest(struct test_Environment *env)
     c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
-    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
+    struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&mem, 64, NSEC_PER_SEC / 60, &external, g_config->thread_count, g_config->thread_framesize);
     ds_DynamicsConfigPush(&pipeline);
     pipeline.config_pending.solver.sleep_enabled = 0;
     ds_DynamicsConfigUpdatePending(&pipeline);
@@ -1534,7 +1554,7 @@ static struct test_Output DynamicsGraphTest(struct test_Environment *env)
     TEST_NOT_ZERO(dynamic_contacts == 2 && pipeline.cgraph.color[CG_SERIAL_COLOR].contact_pool.count == 0);
 
     ds_DynamicsConfigPop(&pipeline);
-    ds_DynamicsFree(&pipeline);
+    ds_DynamicsDealloc(&pipeline);
     c_ShapeDBDealloc(&cshape_db);
     ds_SDBDealloc(prefab_db);
     ArenaFree(&mem);
@@ -1556,7 +1576,8 @@ static struct test_Output DynamicsJointTest(struct test_Environment *env)
     c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
-    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
+    struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&mem, 64, NSEC_PER_SEC / 60, &external, g_config->thread_count, g_config->thread_framesize);
     ds_DynamicsConfigPush(&pipeline);
     pipeline.config_pending.solver.sleep_enabled = 0;
     ds_DynamicsConfigUpdatePending(&pipeline);
@@ -1628,7 +1649,7 @@ static struct test_Output DynamicsJointTest(struct test_Environment *env)
     }
 
     ds_DynamicsConfigPop(&pipeline);
-    ds_DynamicsFree(&pipeline);
+    ds_DynamicsDealloc(&pipeline);
     c_ShapeDBDealloc(&cshape_db);
     ds_SDBDealloc(prefab_db);
     ArenaFree(&mem);
@@ -1644,7 +1665,8 @@ static struct test_Output DynamicsJointIslandTest(struct test_Environment *env)
     c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
-    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
+    struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&mem, 64, NSEC_PER_SEC / 60, &external, g_config->thread_count, g_config->thread_framesize);
     ds_DynamicsConfigPush(&pipeline);
     pipeline.config_pending.solver.sleep_enabled = 0;
     ds_DynamicsConfigUpdatePending(&pipeline);
@@ -1768,7 +1790,7 @@ static struct test_Output DynamicsJointIslandTest(struct test_Environment *env)
     ds_DynamicsValidate(&pipeline);
 
     ds_DynamicsConfigPop(&pipeline);
-    ds_DynamicsFree(&pipeline);
+    ds_DynamicsDealloc(&pipeline);
     c_ShapeDBDealloc(&cshape_db);
     ds_SDBDealloc(prefab_db);
     ArenaFree(&mem);
@@ -1791,7 +1813,8 @@ static struct test_Output DynamicsJointCollisionTest(struct test_Environment *en
     c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
-    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
+    struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&mem, 64, NSEC_PER_SEC / 60, &external, g_config->thread_count, g_config->thread_framesize);
     ds_DynamicsConfigPush(&pipeline);
     pipeline.config_pending.solver.sleep_enabled = 0;
     ds_DynamicsConfigUpdatePending(&pipeline);
@@ -1871,7 +1894,7 @@ static struct test_Output DynamicsJointCollisionTest(struct test_Environment *en
     ds_DynamicsValidate(&pipeline);
 
     ds_DynamicsConfigPop(&pipeline);
-    ds_DynamicsFree(&pipeline);
+    ds_DynamicsDealloc(&pipeline);
     c_ShapeDBDealloc(&cshape_db);
     ds_SDBDealloc(prefab_db);
     ArenaFree(&mem);
@@ -1896,7 +1919,8 @@ static struct test_Output DynamicsPendulumTest(struct test_Environment *env)
     c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
-    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
+    struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&mem, 64, NSEC_PER_SEC / 60, &external, g_config->thread_count, g_config->thread_framesize);
     ds_DynamicsConfigPush(&pipeline);
     pipeline.config_pending.solver.sleep_enabled = 0;
     ds_DynamicsConfigUpdatePending(&pipeline);
@@ -1990,7 +2014,7 @@ static struct test_Output DynamicsPendulumTest(struct test_Environment *env)
     TEST_NOT_ZERO(ok);
 
     ds_DynamicsConfigPop(&pipeline);
-    ds_DynamicsFree(&pipeline);
+    ds_DynamicsDealloc(&pipeline);
     c_ShapeDBDealloc(&cshape_db);
     ds_SDBDealloc(prefab_db);
     ArenaFree(&mem);
@@ -2007,7 +2031,8 @@ static struct test_Output DynamicsSlackRopeTest(struct test_Environment *env)
     c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
-    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
+    struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&mem, 64, NSEC_PER_SEC / 60, &external, g_config->thread_count, g_config->thread_framesize);
     ds_DynamicsConfigPush(&pipeline);
     pipeline.config_pending.solver.sleep_enabled = 0;
     ds_DynamicsConfigUpdatePending(&pipeline);
@@ -2092,7 +2117,7 @@ static struct test_Output DynamicsSlackRopeTest(struct test_Environment *env)
     TEST_NOT_ZERO(ok);
 
     ds_DynamicsConfigPop(&pipeline);
-    ds_DynamicsFree(&pipeline);
+    ds_DynamicsDealloc(&pipeline);
     c_ShapeDBDealloc(&cshape_db);
     ds_SDBDealloc(prefab_db);
     ArenaFree(&mem);
@@ -2194,7 +2219,8 @@ static struct dynamics_SpringRun DynamicsSpringRun(f32 *distance, const u32 tick
     c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
-    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
+    struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&mem, 64, NSEC_PER_SEC / 60, &external, g_config->thread_count, g_config->thread_framesize);
     ds_DynamicsConfigPush(&pipeline);
     pipeline.config_pending.solver.sleep_enabled = 0;
     ds_DynamicsConfigUpdatePending(&pipeline);
@@ -2230,7 +2256,7 @@ static struct dynamics_SpringRun DynamicsSpringRun(f32 *distance, const u32 tick
     }
 
     ds_DynamicsConfigPop(&pipeline);
-    ds_DynamicsFree(&pipeline);
+    ds_DynamicsDealloc(&pipeline);
     c_ShapeDBDealloc(&cshape_db);
     ds_SDBDealloc(prefab_db);
     ArenaFree(&mem);
@@ -2381,7 +2407,8 @@ static struct test_Output DynamicsCoincidentAnchorsTest(struct test_Environment 
     c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
-    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
+    struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&mem, 64, NSEC_PER_SEC / 60, &external, g_config->thread_count, g_config->thread_framesize);
     ds_DynamicsConfigPush(&pipeline);
     pipeline.config_pending.solver.sleep_enabled = 0;
     ds_DynamicsConfigUpdatePending(&pipeline);
@@ -2515,7 +2542,7 @@ static struct test_Output DynamicsCoincidentAnchorsTest(struct test_Environment 
     }
 
     ds_DynamicsConfigPop(&pipeline);
-    ds_DynamicsFree(&pipeline);
+    ds_DynamicsDealloc(&pipeline);
     c_ShapeDBDealloc(&cshape_db);
     ds_SDBDealloc(prefab_db);
     ArenaFree(&mem);
@@ -2542,7 +2569,8 @@ static struct test_Output DynamicsJointSleepTest(struct test_Environment *env)
     c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
-    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
+    struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&mem, 64, NSEC_PER_SEC / 60, &external, g_config->thread_count, g_config->thread_framesize);
     ds_DynamicsConfigPush(&pipeline);
     pipeline.config_pending.solver.sleep_enabled = 1;
     ds_DynamicsConfigUpdatePending(&pipeline);
@@ -2700,7 +2728,7 @@ static struct test_Output DynamicsJointSleepTest(struct test_Environment *env)
     ds_DynamicsValidate(&pipeline);
 
     ds_DynamicsConfigPop(&pipeline);
-    ds_DynamicsFree(&pipeline);
+    ds_DynamicsDealloc(&pipeline);
     c_ShapeDBDealloc(&cshape_db);
     ds_SDBDealloc(prefab_db);
     ArenaFree(&mem);
@@ -2712,6 +2740,7 @@ struct dynamics_MouseRig
 {
     struct arena mem;
     struct c_ShapeDB cshape_db;
+    struct ds_DynamicsExternal external;
     ds_SDB(ds_BodyPrefab) prefab_db;
     struct ds_Dynamics pipeline;
     ds_BodyId box;
@@ -2724,7 +2753,8 @@ static struct dynamics_MouseRig DynamicsMouseRigAlloc(const v3 position, const u
     rig.mem = ArenaAlloc(NULL, 64*1024*1024);
     c_ShapeDBAlloc(NULL, &rig.cshape_db, 32, GROWABLE);
     ds_SDBAlloc(NULL, rig.prefab_db, 32, GROWABLE);
-    rig.pipeline = ds_DynamicsAlloc(&rig.mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &rig.cshape_db, &rig.prefab_db, g_config->thread_count, g_config->thread_framesize);
+    rig.external = (struct ds_DynamicsExternal) { .cshape_db = &rig.cshape_db };
+    rig.pipeline = ds_DynamicsAllocDefault(&rig.mem, 64, NSEC_PER_SEC / 60, &rig.external, g_config->thread_count, g_config->thread_framesize);
     ds_DynamicsConfigPush(&rig.pipeline);
     rig.pipeline.config_pending.solver.sleep_enabled = sleep_enabled;
     ds_DynamicsConfigUpdatePending(&rig.pipeline);
@@ -2737,7 +2767,7 @@ static struct dynamics_MouseRig DynamicsMouseRigAlloc(const v3 position, const u
 
 static void DynamicsMouseRigFree(struct dynamics_MouseRig *rig)
 {
-    ds_DynamicsFree(&rig->pipeline);
+    ds_DynamicsDealloc(&rig->pipeline);
     c_ShapeDBDealloc(&rig->cshape_db);
     ds_SDBDealloc(rig->prefab_db);
     ArenaFree(&rig->mem);
@@ -3009,7 +3039,8 @@ static struct test_Output DynamicsSlideTest(struct test_Environment *env)
     c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
-    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
+    struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&mem, 64, NSEC_PER_SEC / 60, &external, g_config->thread_count, g_config->thread_framesize);
     ds_DynamicsConfigPush(&pipeline);
     pipeline.config_pending.solver.sleep_enabled = 0;
     ds_DynamicsConfigUpdatePending(&pipeline);
@@ -3052,7 +3083,7 @@ static struct test_Output DynamicsSlideTest(struct test_Environment *env)
     TEST_NOT_ZERO(V3Length(w) <= 0.01f);
 
     ds_DynamicsConfigPop(&pipeline);
-    ds_DynamicsFree(&pipeline);
+    ds_DynamicsDealloc(&pipeline);
     c_ShapeDBDealloc(&cshape_db);
     ds_SDBDealloc(prefab_db);
     ArenaFree(&mem);
@@ -3069,7 +3100,8 @@ static struct test_Output DynamicsBounceTest(struct test_Environment *env)
     c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
-    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
+    struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&mem, 64, NSEC_PER_SEC / 60, &external, g_config->thread_count, g_config->thread_framesize);
     ds_DynamicsConfigPush(&pipeline);
     pipeline.config_pending.solver.sleep_enabled = 0;
     ds_DynamicsConfigUpdatePending(&pipeline);
@@ -3118,7 +3150,7 @@ static struct test_Output DynamicsBounceTest(struct test_Environment *env)
     }
 
     ds_DynamicsConfigPop(&pipeline);
-    ds_DynamicsFree(&pipeline);
+    ds_DynamicsDealloc(&pipeline);
     c_ShapeDBDealloc(&cshape_db);
     ds_SDBDealloc(prefab_db);
     ArenaFree(&mem);
@@ -3135,7 +3167,8 @@ static struct test_Output DynamicsFirstTickTest(struct test_Environment *env)
     c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
-    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
+    struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&mem, 64, NSEC_PER_SEC / 60, &external, g_config->thread_count, g_config->thread_framesize);
     ds_DynamicsConfigPush(&pipeline);
     pipeline.config_pending.solver.sleep_enabled = 0;
     ds_DynamicsConfigUpdatePending(&pipeline);
@@ -3160,7 +3193,7 @@ static struct test_Output DynamicsFirstTickTest(struct test_Environment *env)
     }
 
     ds_DynamicsConfigPop(&pipeline);
-    ds_DynamicsFree(&pipeline);
+    ds_DynamicsDealloc(&pipeline);
     c_ShapeDBDealloc(&cshape_db);
     ds_SDBDealloc(prefab_db);
     ArenaFree(&mem);
@@ -3177,7 +3210,8 @@ static struct test_Output DynamicsFlushTest(struct test_Environment *env)
     c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
-    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
+    struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&mem, 64, NSEC_PER_SEC / 60, &external, g_config->thread_count, g_config->thread_framesize);
     ds_DynamicsConfigPush(&pipeline);
     pipeline.config_pending.solver.sleep_enabled = 0;
     ds_DynamicsConfigUpdatePending(&pipeline);
@@ -3231,7 +3265,7 @@ static struct test_Output DynamicsFlushTest(struct test_Environment *env)
     TEST_NOT_ZERO(pipeline.island_pool.count == 3 && GraphTestCheck(&pipeline) == 3);
 
     ds_DynamicsConfigPop(&pipeline);
-    ds_DynamicsFree(&pipeline);
+    ds_DynamicsDealloc(&pipeline);
     c_ShapeDBDealloc(&cshape_db);
     ds_SDBDealloc(prefab_db);
     ArenaFree(&mem);
@@ -3331,7 +3365,8 @@ static void DynamicsWarmSceneRun(struct ds_DynamicsMetrics *sum, const struct dy
     c_ShapeDBAlloc(NULL, &cshape_db, 128, GROWABLE);
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
-    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 128, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
+    struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&mem, 128, NSEC_PER_SEC / 60, &external, g_config->thread_count, g_config->thread_framesize);
     ds_DynamicsConfigPush(&pipeline);
     pipeline.config_pending.solver.sleep_enabled = 0;
     ds_DynamicsConfigUpdatePending(&pipeline);
@@ -3346,12 +3381,12 @@ static void DynamicsWarmSceneRun(struct ds_DynamicsMetrics *sum, const struct dy
     u32 manifolds = 0;
     for (u32 t = 0; t < settle_ticks + measure_ticks; ++t)
     {
-        ds_DynamicsTick(&pipeline);
+        ds_DynamicsTick(DynamicsTestTickArena(), &pipeline);
         ds_PoolFlush(pipeline.event_pool);
         DLLFlush(pipeline.event_list);
         if (settle_ticks <= t)
         {
-            ds_DynamicsMetricsAdd(sum, &pipeline.metrics);
+            ds_DynamicsMetricsAdd(sum, &pipeline.runtime.metrics);
         }
 
         /* ids unique within every manifold */
@@ -3392,7 +3427,7 @@ static void DynamicsWarmSceneRun(struct ds_DynamicsMetrics *sum, const struct dy
     pipeline.config_pending.solver.sleep_enabled = 1;
     ds_DynamicsConfigUpdatePending(&pipeline);
     ds_DynamicsConfigPop(&pipeline);
-    ds_DynamicsFree(&pipeline);
+    ds_DynamicsDealloc(&pipeline);
     ds_SDBDealloc(prefab_db);
     c_ShapeDBDealloc(&cshape_db);
     ArenaFree(&mem);
@@ -3522,7 +3557,8 @@ static struct test_Output DynamicsSlideWarmTest(struct test_Environment *env)
     c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
-    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
+    struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&mem, 64, NSEC_PER_SEC / 60, &external, g_config->thread_count, g_config->thread_framesize);
     ds_DynamicsConfigPush(&pipeline);
     pipeline.config_pending.solver.sleep_enabled = 0;
     ds_DynamicsConfigUpdatePending(&pipeline);
@@ -3556,7 +3592,7 @@ static struct test_Output DynamicsSlideWarmTest(struct test_Environment *env)
     const f32 damp = 1.0f / (1.0f + pipeline.config.solver.linear_dampening * pipeline.timestep);
     for (u32 t = 0; t < ticks; ++t)
     {
-        ds_DynamicsTick(&pipeline);
+        ds_DynamicsTick(DynamicsTestTickArena(), &pipeline);
         ds_PoolFlush(pipeline.event_pool);
         DLLFlush(pipeline.event_list);
         coulomb = (coulomb + (g_t - mu * g_n) * pipeline.timestep) * damp;
@@ -3593,7 +3629,7 @@ static struct test_Output DynamicsSlideWarmTest(struct test_Environment *env)
     }
 
     ds_DynamicsConfigPop(&pipeline);
-    ds_DynamicsFree(&pipeline);
+    ds_DynamicsDealloc(&pipeline);
     c_ShapeDBDealloc(&cshape_db);
     ds_SDBDealloc(prefab_db);
     ArenaFree(&mem);
@@ -3613,7 +3649,8 @@ static struct test_Output DynamicsMassRejectTest(struct test_Environment *env)
     c_ShapeDBAlloc(NULL, &cshape_db, 8, GROWABLE);
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 8, GROWABLE);
-    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 16, NSEC_PER_SEC / 60, 4*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
+    struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&mem, 16, NSEC_PER_SEC / 60, &external, g_config->thread_count, g_config->thread_framesize);
     ds_DynamicsConfigPush(&pipeline);
 
     const utf8 id = Utf8Inline("mass_box");
@@ -3654,7 +3691,7 @@ static struct test_Output DynamicsMassRejectTest(struct test_Environment *env)
     TEST_NOT_ZERO(!ds_JointIdNullCheck(ds_MouseJointAdd(&pipeline, &mouse_prefab, dynamic, &t_local)));
 
     ds_DynamicsConfigPop(&pipeline);
-    ds_DynamicsFree(&pipeline);
+    ds_DynamicsDealloc(&pipeline);
     c_ShapeDBDealloc(&cshape_db);
     ds_SDBDealloc(prefab_db);
     ArenaFree(&mem);
@@ -3675,7 +3712,8 @@ static struct test_Output DynamicsIslandSplitTest(struct test_Environment *env)
     c_ShapeDBAlloc(NULL, &cshape_db, 8, GROWABLE);
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 8, GROWABLE);
-    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 16, NSEC_PER_SEC / 60, 4*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
+    struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&mem, 16, NSEC_PER_SEC / 60, &external, g_config->thread_count, g_config->thread_framesize);
     ds_DynamicsConfigPush(&pipeline);
     pipeline.config_pending.solver.sleep_enabled = 1;
     ds_DynamicsConfigUpdatePending(&pipeline);
@@ -3726,7 +3764,7 @@ static struct test_Output DynamicsIslandSplitTest(struct test_Environment *env)
     }
 
     ds_DynamicsConfigPop(&pipeline);
-    ds_DynamicsFree(&pipeline);
+    ds_DynamicsDealloc(&pipeline);
     c_ShapeDBDealloc(&cshape_db);
     ds_SDBDealloc(prefab_db);
     ArenaFree(&mem);
@@ -3747,7 +3785,8 @@ static struct test_Output DynamicsJointBreakingTest(struct test_Environment *env
     c_ShapeDBAlloc(NULL, &cshape_db, 8, GROWABLE);
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 8, GROWABLE);
-    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 16, NSEC_PER_SEC / 60, 4*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
+    struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&mem, 16, NSEC_PER_SEC / 60, &external, g_config->thread_count, g_config->thread_framesize);
     ds_DynamicsConfigPush(&pipeline);
     pipeline.config_pending.solver.sleep_enabled = 0;
     ds_DynamicsConfigUpdatePending(&pipeline);
@@ -3783,7 +3822,7 @@ static struct test_Output DynamicsJointBreakingTest(struct test_Environment *env
     u32 event_weak_count = 0;
     for (u32 t = 0; t < 60; ++t)
     {
-        ds_DynamicsTick(&pipeline);
+        ds_DynamicsTick(DynamicsTestTickArena(), &pipeline);
         for (i32 ei = pipeline.event_list.first; ei != DLL_SENTINEL; ei = pipeline.event_pool.buf[ei].node.next)
         {
             const struct ds_PhysicsEvent *event = pipeline.event_pool.buf + ei;
@@ -3807,7 +3846,7 @@ static struct test_Output DynamicsJointBreakingTest(struct test_Environment *env
     event_count = 0;
     for (u32 t = 0; t < 30; ++t)
     {
-        ds_DynamicsTick(&pipeline);
+        ds_DynamicsTick(DynamicsTestTickArena(), &pipeline);
         for (i32 ei = pipeline.event_list.first; ei != DLL_SENTINEL; ei = pipeline.event_pool.buf[ei].node.next)
         {
             event_count += (pipeline.event_pool.buf[ei].type == PHYSICS_EVENT_JOINT_BREAKING);
@@ -3824,7 +3863,7 @@ static struct test_Output DynamicsJointBreakingTest(struct test_Environment *env
     }
 
     ds_DynamicsConfigPop(&pipeline);
-    ds_DynamicsFree(&pipeline);
+    ds_DynamicsDealloc(&pipeline);
     c_ShapeDBDealloc(&cshape_db);
     ds_SDBDealloc(prefab_db);
     ArenaFree(&mem);
@@ -3832,7 +3871,7 @@ static struct test_Output DynamicsJointBreakingTest(struct test_Environment *env
 }
 
 /*
- * ds_DynamicsAllocConfig applies every group of the config: the pools' capacity, gravity in the pipeline and the
+ * ds_DynamicsAlloc applies every group of the config: the pools' capacity, gravity in the pipeline and the
  * solver, the solver's values in g_solver_config (a velocity limit of 0 giving inverse 0), the numerics pending
  * values resolved, the draw config. The default config is applied again afterwards, since the solver config is
  * process state the later tests read.
@@ -3860,7 +3899,8 @@ static struct test_Output DynamicsAllocConfigTest(struct test_Environment *env)
     config.numerics.gjk_max_iterations = 9;
     config.numerics.capsule_parallel_max_degrees = 10.0f;
 
-    struct ds_Dynamics pipeline = ds_DynamicsAllocConfig(&mem, &config, NSEC_PER_SEC / 60, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
+    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, &config, NSEC_PER_SEC / 60, &external, g_config->thread_count, g_config->thread_framesize);
 
     TEST_EQUAL(32u, pipeline.body_pool.length);
     TEST_EQUAL(32u, pipeline.shape_pool.length);
@@ -3875,18 +3915,18 @@ static struct test_Output DynamicsAllocConfigTest(struct test_Environment *env)
     TEST_TRUE(pipeline.config.solver.linear_slop == 0.002f);
     TEST_EQUAL(9u, pipeline.config.numerics.gjk_max_iterations);
     TEST_TRUE(pipeline.config.numerics.capsule_parallel_max_degrees == 10.0f);
-    TEST_EQUAL(1u, pipeline.draw_config.draw_shapes);     /* the draw config is the default, outside the simulation config */
+    TEST_EQUAL(1u, pipeline.runtime.draw_config.draw_shapes);     /* the draw config is the default, outside the simulation config */
 
-    ds_DynamicsFree(&pipeline);
+    ds_DynamicsDealloc(&pipeline);
 
     /* the defaults back into the process-global solver config */
     const struct ds_DynamicsConfig def = ds_DynamicsConfigDefault();
-    pipeline = ds_DynamicsAllocConfig(&mem, &def, NSEC_PER_SEC / 60, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    pipeline = ds_DynamicsAlloc(&mem, &def, NSEC_PER_SEC / 60, &external, g_config->thread_count, g_config->thread_framesize);
     TEST_EQUAL(def.solver.pgs_iteration_count, pipeline.config.solver.pgs_iteration_count);
     TEST_EQUAL(def.solver.sleep_enabled, pipeline.config.solver.sleep_enabled);
     TEST_TRUE(JointTestV3Equal(def.solver.gravity, pipeline.config.solver.gravity));
     TEST_EQUAL(def.initial_size, pipeline.body_pool.length);
-    ds_DynamicsFree(&pipeline);
+    ds_DynamicsDealloc(&pipeline);
 
     ds_SDBDealloc(prefab_db);
     c_ShapeDBDealloc(&cshape_db);
@@ -3958,6 +3998,7 @@ struct dynamics_PerfPrep
 {
     struct arena            mem;
     struct c_ShapeDB        cshape_db;
+    struct ds_DynamicsExternal external;
     ds_SDB(ds_BodyPrefab)   prefab_db;
     struct ds_Dynamics      pipeline;
     struct arena *          frame;          /* the main thread's worker frame */
@@ -3974,7 +4015,8 @@ static void *DynamicsPerfPrepInit(void)
     in->mem = ArenaAlloc(NULL, 64*1024*1024);
     c_ShapeDBAlloc(NULL, &in->cshape_db, 256, GROWABLE);
     ds_SDBAlloc(NULL, in->prefab_db, 32, GROWABLE);
-    in->pipeline = ds_DynamicsAlloc(&in->mem, 256, NSEC_PER_SEC / 60, 16*1024*1024, &in->cshape_db, &in->prefab_db, g_config->thread_count, g_config->thread_framesize);
+    in->external = (struct ds_DynamicsExternal) { .cshape_db = &in->cshape_db };
+    in->pipeline = ds_DynamicsAllocDefault(&in->mem, 256, NSEC_PER_SEC / 60, &in->external, g_config->thread_count, g_config->thread_framesize);
     ds_DynamicsConfigPush(&in->pipeline);
     in->pipeline.config_pending.solver.sleep_enabled = 0;
     ds_DynamicsConfigUpdatePending(&in->pipeline);
@@ -3999,7 +4041,7 @@ static void *DynamicsPerfPrepInit(void)
 
     for (u32 t = 0; t < DYNAMICS_PERF_SETTLE_TICKS; ++t)
     {
-        ds_DynamicsTick(&in->pipeline);
+        ds_DynamicsTick(DynamicsTestTickArena(), &in->pipeline);
         ds_PoolFlush(in->pipeline.event_pool);
         DLLFlush(in->pipeline.event_list);
     }
@@ -4024,7 +4066,7 @@ static void *DynamicsPerfPrepInit(void)
             (u32) sizeof(struct ds_ContactConstraint), (u32) sizeof(struct ds_ContactConstraintPoint),
             (u32) sizeof(struct ds_BodySim), (u32) sizeof(struct ds_BodyCompute), (u32) sizeof(struct ds_Shape));
 
-    in->frame = in->pipeline.worker[ds_ThreadSelfIndex()].frame;
+    in->frame = in->pipeline.runtime.worker[ds_ThreadSelfIndex()].frame;
     ArenaPushRecord(in->frame);
     return in;
 }
@@ -4069,7 +4111,7 @@ static void DynamicsPerfPrepFree(void *args)
     ArenaPopRecord(in->frame);
     in->pipeline.config_pending.solver.sleep_enabled = 1;
     ds_DynamicsConfigUpdatePending(&in->pipeline);
-    ds_DynamicsFree(&in->pipeline);
+    ds_DynamicsDealloc(&in->pipeline);
     ds_SDBDealloc(in->prefab_db);
     c_ShapeDBDealloc(&in->cshape_db);
     ArenaFree(&in->mem);
@@ -4129,6 +4171,7 @@ struct dynamics_PerfSnapshot
 {
     struct arena            mem;
     struct c_ShapeDB        cshape_db;
+    struct ds_DynamicsExternal external;
     ds_SDB(ds_BodyPrefab)   prefab_db;
     struct SS               ss;
     u32                     built;
@@ -4149,7 +4192,8 @@ static void DynamicsPerfSnapshotBuild(const enum dynamics_PerfScene scene)
     ds_SDBAlloc(NULL, snap->prefab_db, 32, GROWABLE);
 
     struct arena mem = ArenaAlloc(NULL, 64*1024*1024);
-    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 256, NSEC_PER_SEC / 60, 16*1024*1024, &snap->cshape_db, &snap->prefab_db, g_config->thread_count, g_config->thread_framesize);
+    snap->external = (struct ds_DynamicsExternal) { .cshape_db = &snap->cshape_db };
+    struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&mem, 256, NSEC_PER_SEC / 60, &snap->external, g_config->thread_count, g_config->thread_framesize);
     ds_DynamicsConfigPush(&pipeline);
     pipeline.config_pending.solver.sleep_enabled = 0;
     ds_DynamicsConfigUpdatePending(&pipeline);
@@ -4204,7 +4248,7 @@ static void DynamicsPerfSnapshotBuild(const enum dynamics_PerfScene scene)
 
     for (u32 t = 0; t < DYNAMICS_PERF_SETTLE_TICKS; ++t)
     {
-        ds_DynamicsTick(&pipeline);
+        ds_DynamicsTick(DynamicsTestTickArena(), &pipeline);
         ds_PoolFlush(pipeline.event_pool);
         DLLFlush(pipeline.event_list);
     }
@@ -4219,7 +4263,7 @@ static void DynamicsPerfSnapshotBuild(const enum dynamics_PerfScene scene)
     pipeline.config_pending.solver.sleep_enabled = 1;
     ds_DynamicsConfigUpdatePending(&pipeline);
     ds_DynamicsConfigPop(&pipeline);
-    ds_DynamicsFree(&pipeline);
+    ds_DynamicsDealloc(&pipeline);
     ArenaFree(&mem);
 }
 
@@ -4283,7 +4327,7 @@ static void *DynamicsPerfSolveInit(const enum dynamics_PerfScene scene, const en
 
     struct SS view = snap->ss;
     view.bit_index = 0;
-    const u32 restored = ds_DynamicsTryDeserialize(&in->mem, &view, &in->pipeline, &snap->cshape_db);
+    const u32 restored = ds_DynamicsTryDeserialize(&in->mem, &view, &in->pipeline, &snap->external);
     ds_Assert(restored);
     if (!restored)
     {
@@ -4295,7 +4339,7 @@ static void *DynamicsPerfSolveInit(const enum dynamics_PerfScene scene, const en
     ds_DynamicsConfigUpdatePending(pipeline);
     ds_DynamicsConfigPush(pipeline);
     ds_CGraphFramePrepare(pipeline);
-    in->frame = pipeline->worker[ds_ThreadSelfIndex()].frame;
+    in->frame = pipeline->runtime.worker[ds_ThreadSelfIndex()].frame;
     ArenaPushRecord(in->frame);
 
     /* the tick's stages up to the measured one, every colour's full range on this thread */
@@ -4416,7 +4460,7 @@ static void DynamicsPerfSolveFree(void *args)
     ds_DynamicsConfigPop(&in->pipeline);
     in->pipeline.config_pending.solver.sleep_enabled = 1;
     ds_DynamicsConfigUpdatePending(&in->pipeline);
-    ds_DynamicsFree(&in->pipeline);
+    ds_DynamicsDealloc(&in->pipeline);
     ArenaFree(&in->mem);
     free(in);
 }

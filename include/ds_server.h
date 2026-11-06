@@ -205,7 +205,7 @@ void    ds_ServerTick(struct ds_Server *srv, const u64 ns_delta);
  * at hash_path and appends every system tick's hash, REPLAY maps it and compares; ignored for NONE. config NULL is the
  * default config. If a file fails, nothing is added (logged) and the null id is returned.
  */
-ds_SimId    ds_SimHostAdd(struct ds_Server *srv, struct arena *mem, const struct ds_SimConfig *config, const enum ds_SimMode record_mode, const char *record_path, const u32 hash, const char *hash_path, struct c_ShapeDB *cshape_db, ds_SDB(ds_BodyPrefab) *prefab_db, ds_SDB(ds_ShapePrefab) *shape_prefab_db, const u32 worker_count, const u64 worker_frame_size);
+ds_SimId    ds_SimHostAdd(struct ds_Server *srv, struct arena *mem, const struct ds_SimConfig *config, const enum ds_SimMode record_mode, const char *record_path, const u32 hash, const char *hash_path, const struct ds_DynamicsExternal *external, ds_SDB(ds_BodyPrefab) *prefab_db, ds_SDB(ds_ShapePrefab) *shape_prefab_db, const u32 worker_count, const u64 worker_frame_size);
 /* Remove the hosted simulation with the given id (ds_SimDealloc, the record closed); an unknown id is logged. */
 void        ds_SimHostRemove(struct ds_Server *srv, const ds_SimId id);
 /* Reset the hosted simulation to time 0 (ds_SimFlush); RECORD truncates the record and writes the seed entry again, REPLAY rewinds it; the hash file likewise. An unknown id is logged. */

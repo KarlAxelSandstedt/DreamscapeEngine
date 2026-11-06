@@ -212,8 +212,7 @@ static u32 ds_LoadConfigCmdDataVerify(const struct ds_Sim *sim, const struct ds_
 
     const struct ds_SimConfig *config = cmd->config;
     const struct ds_SimConfig *seed = &sim->config_seed;
-    u32 valid = config->dynamics.initial_size == seed->dynamics.initial_size
-             && config->dynamics.frame_memory == seed->dynamics.frame_memory;
+    u32 valid = config->dynamics.initial_size == seed->dynamics.initial_size;
     for (u32 i = 0; i < 4; ++i)
     {
         valid = valid && config->seed[i] == seed->seed[i];

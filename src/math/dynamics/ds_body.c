@@ -239,7 +239,7 @@ void ds_BodyUpdateMassProperties(struct ds_Dynamics *pipeline, const ds_BodyId i
 	{
 		shape = pipeline->shape_pool.buf + s;
 		s = shape->body_shape.next;
-		const struct c_Shape *cshape = c_ShapeDBShape(pipeline->cshape_db, shape->cshape_handle);
+		const struct c_Shape *cshape = c_ShapeDBShape(pipeline->external->cshape_db, shape->cshape_handle);
 
 		mass[i] = shape->density * cshape->volume;
 		body->mass += mass[i];

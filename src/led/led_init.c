@@ -135,15 +135,15 @@ struct led *led_Alloc(const u32 thread_count, const u64 thread_framesize, const 
 	ds_SDBAlloc(NULL, g_editor->body_prefab_db, 32, GROWABLE);
 	c_ShapeDBAlloc(NULL, &g_editor->cs_db, 32, GROWABLE);
 	DLLFlush(g_editor->cs_shape_list);
-	ds_ServerAlloc(&g_editor->srv, 1 << 20, 1);
+	ds_ServerAlloc(&g_editor->srv, 32*1024*1024, 1);     /* the arrivals and the ticks' scratch memory */
 	struct ds_SimConfig sim_config = ds_SimConfigDefault();
 	sim_config.dynamics.initial_size = 1024;
-	sim_config.dynamics.frame_memory = 16*1024*1024;
 	const enum ds_SimMode mode = (record_path.size) ? SIM_MODE_RECORD : (replay_path.size) ? SIM_MODE_REPLAY : SIM_MODE_NONE;
 	const char *record_cstr = (mode == SIM_MODE_RECORD) ? CstrUtf8(&g_editor->mem_persistent, record_path)
 	                        : (mode == SIM_MODE_REPLAY) ? CstrUtf8(&g_editor->mem_persistent, replay_path) : NULL;
 	const char *hash_cstr = (hash_path.size) ? CstrUtf8(&g_editor->mem_persistent, hash_path) : NULL;
-	g_editor->sim = ds_SimHostAdd(&g_editor->srv, &g_editor->mem_persistent, (mode == SIM_MODE_REPLAY) ? NULL : &sim_config, mode, record_cstr, hash_cstr != NULL, hash_cstr, &g_editor->cs_db, &g_editor->body_prefab_db, &g_editor->shape_prefab_db, thread_count, thread_framesize);
+	g_editor->dynamics_external = (struct ds_DynamicsExternal) { .cshape_db = &g_editor->cs_db };
+	g_editor->sim = ds_SimHostAdd(&g_editor->srv, &g_editor->mem_persistent, (mode == SIM_MODE_REPLAY) ? NULL : &sim_config, mode, record_cstr, hash_cstr != NULL, hash_cstr, &g_editor->dynamics_external, &g_editor->body_prefab_db, &g_editor->shape_prefab_db, thread_count, thread_framesize);
 	struct ds_SimHost *host = ds_SimHostLookup(&g_editor->srv, g_editor->sim).address;
 	host->speed = 0.0;
 	g_editor->physics = &host->sim.dynamics;

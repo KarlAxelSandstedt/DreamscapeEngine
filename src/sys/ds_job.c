@@ -493,9 +493,22 @@ void ds_JobSchedulerFrameClear(void)
 void ds_JobPhaseAlloc(struct arena *mem, struct ds_JobPhase *phase, const u32 job_type_count, ds_JobDispatchFunction dispatch)
 {
     AtomicStoreRlx32(&phase->a_jobs_remaining, 0);
-    phase->next = ArenaPushAligned(mem, job_type_count * sizeof(struct ds_PaddedCounter), DS_CACHE_LINE);
+    phase->heap_allocated = (mem == NULL);
+    phase->next = (mem)
+        ? ArenaPushAligned(mem, job_type_count * sizeof(struct ds_PaddedCounter), DS_CACHE_LINE)
+        : ds_Alloc(job_type_count * sizeof(struct ds_PaddedCounter), DS_CACHE_LINE);
     phase->next_len = job_type_count;
     phase->dispatch = dispatch;
+}
+
+void ds_JobPhaseDealloc(struct ds_JobPhase *phase)
+{
+    if (phase->heap_allocated)
+    {
+        ds_Free(phase->next);
+        phase->next = NULL;
+        phase->heap_allocated = 0;
+    }
 }
 
 void ds_JobPhaseBegin(struct ds_JobPhase *phase)

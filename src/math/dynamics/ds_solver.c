@@ -128,32 +128,31 @@ void ds_SolverConfigSerialize(struct SS *ss, const struct ds_SolverConfig *confi
 
 u32 ds_SolverConfigTryDeserialize(struct SS *ss, struct ds_SolverConfig *config)
 {
-    const u64 bit_index = ss->bit_index;
-    if (ss->bit_index % 8 != 0 || SSBytesLeft(ss) < DS_SOLVER_CONFIG_SIZE || SSReadU32Le(ss) != DS_SOLVER_CONFIG_VERSION)
+    struct SS ss_mut = *ss;
+    *config = (struct ds_SolverConfig) { 0 };
+    if (ss_mut.bit_index % 8 != 0 || SSBytesLeft(&ss_mut) < DS_SOLVER_CONFIG_SIZE || SSReadU32Le(&ss_mut) != DS_SOLVER_CONFIG_VERSION)
     {
-        ss->bit_index = bit_index;
-        *config = (struct ds_SolverConfig) { 0 };
         return 0;
     }
 
-    *config = (struct ds_SolverConfig) { 0 };
-    config->pgs_iteration_count = SSReadU32Le(ss);
-    config->ngs_iteration_count = SSReadU32Le(ss);
-    config->warmup_solver = SSReadU32Le(ss);
-    SSReadF32LeN(ss, config->gravity.buf, 3);
-    config->baumgarte_constant = SSReadF32Le(ss);
-    config->max_linear_correction = SSReadF32Le(ss);
-    config->max_linear_velocity_magnitude = SSReadF32Le(ss);
-    config->max_angular_velocity_magnitude = SSReadF32Le(ss);
-    config->linear_dampening = SSReadF32Le(ss);
-    config->angular_dampening = SSReadF32Le(ss);
-    config->linear_slop = SSReadF32Le(ss);
-    config->restitution_threshold = SSReadF32Le(ss);
-    config->sleep_enabled = SSReadU32Le(ss);
-    config->sleep_time_threshold = SSReadF32Le(ss);
-    config->sleep_linear_velocity_sq_limit = SSReadF32Le(ss);
-    config->sleep_angular_velocity_sq_limit = SSReadF32Le(ss);
+    config->pgs_iteration_count = SSReadU32Le(&ss_mut);
+    config->ngs_iteration_count = SSReadU32Le(&ss_mut);
+    config->warmup_solver = SSReadU32Le(&ss_mut);
+    SSReadF32LeN(&ss_mut, config->gravity.buf, 3);
+    config->baumgarte_constant = SSReadF32Le(&ss_mut);
+    config->max_linear_correction = SSReadF32Le(&ss_mut);
+    config->max_linear_velocity_magnitude = SSReadF32Le(&ss_mut);
+    config->max_angular_velocity_magnitude = SSReadF32Le(&ss_mut);
+    config->linear_dampening = SSReadF32Le(&ss_mut);
+    config->angular_dampening = SSReadF32Le(&ss_mut);
+    config->linear_slop = SSReadF32Le(&ss_mut);
+    config->restitution_threshold = SSReadF32Le(&ss_mut);
+    config->sleep_enabled = SSReadU32Le(&ss_mut);
+    config->sleep_time_threshold = SSReadF32Le(&ss_mut);
+    config->sleep_linear_velocity_sq_limit = SSReadF32Le(&ss_mut);
+    config->sleep_angular_velocity_sq_limit = SSReadF32Le(&ss_mut);
     *config = ds_SolverConfigDerive(config);
+    *ss = ss_mut;
     return 1;
 }
 
@@ -265,7 +264,7 @@ void ds_BodyUpdateOrientationRange(struct ds_Dynamics *pipeline, struct ds_Proxy
 {
     ProfZone;
 
-    struct arena *frame = pipeline->worker[ds_ThreadSelfIndex()].frame;
+    struct arena *frame = pipeline->runtime.worker[ds_ThreadSelfIndex()].frame;
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
     struct ds_Shape *shape = NULL;
 
@@ -333,7 +332,7 @@ void ds_BodyUpdateOrientationRange(struct ds_Dynamics *pipeline, struct ds_Proxy
 
     ArenaPopPacked(frame, sizeof(struct ds_ProxyDirty)*(arr.len - proxy_range->count));
 
-    if (pipeline->draw_config.draw_body_axes)
+    if (pipeline->runtime.draw_config.draw_body_axes)
     {
         ds_BodyDrawRange(pipeline, low, high);
     }
@@ -347,7 +346,7 @@ void ds_ContactConstraintInitRange(struct ds_Dynamics *pipeline, const u32 color
 
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
     struct ds_CGraph *cg = &pipeline->cgraph;
-    struct arena *frame = pipeline->worker[ds_ThreadSelfIndex()].frame;
+    struct arena *frame = pipeline->runtime.worker[ds_ThreadSelfIndex()].frame;
 
     struct ds_CGraphColor *color = cg->color + color_index;
     for (u32 ci = low; ci < high; ++ci)
@@ -754,10 +753,10 @@ void ds_PositionConstraintInitAndCacheImpulsesRange(struct ds_Dynamics *pipeline
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
     struct ds_CGraph *cg = &pipeline->cgraph;
     struct ds_CGraphColor *color = cg->color + color_index;
-    struct arena *frame = pipeline->worker[ds_ThreadSelfIndex()].frame;
+    struct arena *frame = pipeline->runtime.worker[ds_ThreadSelfIndex()].frame;
 
     /* the levers leave world axes below */
-    if (pipeline->draw_config.draw_constraint_points || pipeline->draw_config.draw_contact_forces)
+    if (pipeline->runtime.draw_config.draw_constraint_points || pipeline->runtime.draw_config.draw_contact_forces)
     {
         ds_ContactDrawRange(pipeline, color_index, low, high);
     }
