@@ -314,7 +314,7 @@ ds_SimId ds_SimHostAdd(struct ds_Server *srv, struct arena *mem, const struct ds
     ds_CPoolAlloc(NULL, host->cmd_pool, 64, GROWABLE);
     host->frame_payload = ds_SimCmdPayloadEmpty(host->id);
 
-    ds_SimAlloc(mem, &host->sim, config, external, prefab_db, shape_prefab_db);
+    ds_SimAlloc(&host->sim, config, external, prefab_db, shape_prefab_db);
     DLLAppend(srv->sim_list, srv->sim_pool.buf, slot.index, srv_sim);
 
     if (mode == SIM_MODE_RECORD)

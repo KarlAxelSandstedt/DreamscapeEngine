@@ -2061,7 +2061,7 @@ struct ds_DynamicsExternal
 /*
 ds_DynamicsRuntime
 ==================
-Per-pipeline memory and non-physics state.
+State depending on the runtime config.
 */
 struct ds_DynamicsRuntime
 {
@@ -2088,12 +2088,11 @@ struct ds_DynamicsRuntime
 };
 
 void    ds_DynamicsRuntimeAlloc(struct arena *mem, struct ds_DynamicsRuntime *runtime);
-void    ds_DynamicsRuntimeFlush(struct ds_DynamicsRuntime *runtime);
 void    ds_DynamicsRuntimeDealloc(struct ds_DynamicsRuntime *runtime);
 
 struct ds_Dynamics 
 {
-    struct ds_DynamicsRuntime *     runtime;                /* externally owned, sized by the runtime config */
+    struct ds_DynamicsRuntime       runtime;
 
     struct ds_DynamicsConfig        config;                 /* what the ticks read (g_dynamics_config while pushed) */
     struct ds_DynamicsConfig        config_pending;         /* the host's edits, buffered until ds_DynamicsConfigUpdatePending applies them */
@@ -2143,26 +2142,22 @@ struct ds_Dynamics
 
 /**************** PHYISCS PIPELINE API ****************/
 
-/*
- * Initialize a new growable physics pipeline from config (derived first) on the given runtime (externally owned, one
- * per pipeline); ns_tick is the duration of a physics frame. The config is applied (as ds_DynamicsConfigUpdatePending)
- * and nothing is pushed.
- */
-struct ds_Dynamics ds_DynamicsAlloc(const struct ds_DynamicsConfig *config, const u64 ns_tick, const struct ds_DynamicsExternal *external, struct ds_DynamicsRuntime *runtime);
-/* ds_DynamicsAlloc with the default config but initial_size. */
-struct ds_Dynamics ds_DynamicsAllocDefault(const u32 initial_size, const u64 ns_tick, const struct ds_DynamicsExternal *external, struct ds_DynamicsRuntime *runtime);
-/* Free the pipeline's heap resources (the runtime stays its owner's). */
+/* Allocate physics pipeline with default config  */
+struct ds_Dynamics ds_DynamicsAllocDefault(const struct ds_DynamicsExternal *external, const u64 ns_tick);
+/* Allocate physics pipeline with custom config  */
+struct ds_Dynamics ds_DynamicsAlloc(const struct ds_DynamicsConfig *config, const struct ds_DynamicsExternal *external, const u64 ns_tick);
+/* Free the pipeline's heap resources. */
 void 			ds_DynamicsDealloc(struct ds_Dynamics *pipeline);
 /* Return the required size when serializing the pipeline. */
 u64             ds_DynamicsSerializeSize(const struct ds_Dynamics *pipeline);
 /* Serialize the pipeline. WARNING: Assumes pipeline fits in the stream. */
 void            ds_DynamicsSerialize(struct SS *ss, const struct ds_Dynamics *pipeline);
 /*
- * Returns 1 on success and 0 on failure. The pipeline is restored on runtime (its frames flushed); mem holds the restored heap data; everything 
+ * Returns 1 on success and 0 on failure. mem holds the runtime's arena part and the restored heap data; everything 
  * else is heap allocated, so always free the pipeline with ds_DynamicsDealloc. On failure the stream position and
  * mem are as before the call and the pipeline is zeroed.
  */
-u32             ds_DynamicsTryDeserialize(struct arena *mem, struct SS *ss, struct ds_Dynamics *pipeline, const struct ds_DynamicsExternal *external, struct ds_DynamicsRuntime *runtime);
+u32             ds_DynamicsTryDeserialize(struct arena *mem, struct SS *ss, struct ds_Dynamics *pipeline, const struct ds_DynamicsExternal *external);
 /*
  * Empty the pipeline: every body, shape, contact, island, joint, event, sleeping set and the frame memory go;
  * the frame count restarts and a flagged split is forgotten. Configuration and capacities stay.

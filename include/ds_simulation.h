@@ -235,7 +235,6 @@ struct ds_Sim
     u64                     us_time;            /* Simulation time                          */
     u64                     us_delta;           /* Simulation time delta                    */
 
-    struct ds_DynamicsRuntime dynamics_runtime;
     struct ds_Dynamics      dynamics;
     //struct ds_Game          game;             /* TODO: ds_Game undefined */
     ds_SDB(ds_BodyPrefab)  *body_prefab_db;     /* externally owned */
@@ -249,11 +248,10 @@ struct ds_Sim
 };
 
 /*
- * Allocate a new simulation from config (ds_SimConfigCheck asserted) at time 0: the systems' runtimes go on mem (NULL:
- * the heap), the seed batch is the first external command and the first system ticks are one period in. The databases
- * are externally owned and must outlive sim.
+ * Allocate a new simulation from config (ds_SimConfigCheck asserted) at time 0: the seed batch is the first external
+ * command and the first system ticks are one period in. The databases are externally owned and must outlive sim.
  */
-void    ds_SimAlloc(struct arena *mem, struct ds_Sim *sim, const struct ds_SimConfig *config, const struct ds_DynamicsExternal *external, ds_SDB(ds_BodyPrefab) *prefab_db, ds_SDB(ds_ShapePrefab) *shape_prefab_db);
+void    ds_SimAlloc(struct ds_Sim *sim, const struct ds_SimConfig *config, const struct ds_DynamicsExternal *external, ds_SDB(ds_BodyPrefab) *prefab_db, ds_SDB(ds_ShapePrefab) *shape_prefab_db);
 //TODO
 //void    ds_SimAllocReplay(struct ds_Sim *sim, struct ds_SimReplay *replay);
 /* Free the simulation's heap resources. */

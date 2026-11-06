@@ -163,7 +163,7 @@ void ds_SolverSetWakeUp(struct ds_Dynamics *pipeline, const u32 index)
 
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
     struct ds_SolverSet *set = pipeline->solver_set_pool.buf + index;
-    struct arena *frame = pipeline->runtime->worker[ds_ThreadSelfIndex()].frame;
+    struct arena *frame = pipeline->runtime.worker[ds_ThreadSelfIndex()].frame;
     ds_Assert(ds_PoolSlotAllocated(set));
     ds_Assert(set->island_pool.count == 1);
 

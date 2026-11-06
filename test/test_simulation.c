@@ -330,7 +330,7 @@ static struct test_Output SimTickTest(struct test_Environment *env)
     const u64 period = config.us_system_tick[SIM_SYSTEM_DYNAMICS];
 
     struct ds_Sim sim;
-    ds_SimAlloc(NULL, &sim, &config, &external, &prefab_db, &shape_prefab_db);
+    ds_SimAlloc(&sim, &config, &external, &prefab_db, &shape_prefab_db);
     TEST_EQUAL(0, sim.us_time);
     TEST_EQUAL(1000 * period, sim.dynamics.ns_tick);
     /* the seed batch ran inside ds_SimAlloc: time still 0, the first dynamics tick a period out */
@@ -731,7 +731,7 @@ static struct test_Output SimConfigLoadTest(struct test_Environment *env)
     config.dynamics.initial_size = 32;
     const u32 iterations = config.dynamics.solver.pgs_iteration_count;
     struct ds_Sim sim;
-    ds_SimAlloc(NULL, &sim, &config, &external, &prefab_db, &shape_prefab_db);
+    ds_SimAlloc(&sim, &config, &external, &prefab_db, &shape_prefab_db);
     TEST_EQUAL(1, sim.initialized);     /* the seed batch ran */
     TEST_EQUAL(iterations, sim.dynamics.config.solver.pgs_iteration_count);
 

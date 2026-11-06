@@ -321,7 +321,7 @@ static v3f64 JointAnchorEnd(const struct ds_BodySim *sim, const struct ds_JointS
 void ds_ContactDrawRange(struct ds_Dynamics *pipeline, const u32 color_index, const u32 low, const u32 high)
 {
     struct ds_DynamicsDraw *draw = &g_dynamics_worker[ds_ThreadSelfIndex()].draw;
-    const struct ds_DynamicsDrawConfig *config = &pipeline->runtime->draw_config;
+    const struct ds_DynamicsDrawConfig *config = &pipeline->runtime.draw_config;
     const struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
     const struct ds_CGraphColor *color = pipeline->cgraph.color + color_index;
     const f32 timestep_inv = 1.0f / pipeline->timestep;
@@ -362,8 +362,8 @@ void ds_ContactDrawRange(struct ds_Dynamics *pipeline, const u32 color_index, co
 /* the segment between the end anchors: color_joint inside the range, blending to color_joint_error at joint_error_max outside it */
 static void ds_DistanceJointDraw(struct ds_Dynamics *pipeline, const struct ds_JointSim *jsim, const v4 point_color)
 {
-    struct ds_DynamicsDraw *draw = &pipeline->runtime->draw;
-    const struct ds_DynamicsDrawConfig *config = &pipeline->runtime->draw_config;
+    struct ds_DynamicsDraw *draw = &pipeline->runtime.draw;
+    const struct ds_DynamicsDrawConfig *config = &pipeline->runtime.draw_config;
     const struct ds_DistanceJoint *dj = &jsim->distance;
     const struct ds_BodySim *sim[2] = { JointBodySim(pipeline, jsim, 0), JointBodySim(pipeline, jsim, 1) };
     /* the force on body 1; body 0 gets the opposite */
@@ -406,8 +406,8 @@ static void ds_DistanceJointDraw(struct ds_Dynamics *pipeline, const struct ds_J
 /* body 1 is the shapeless mouse anchor: no point there; the segment body anchor to target in color_mouse_joint */
 static void ds_MouseJointDraw(struct ds_Dynamics *pipeline, const struct ds_JointSim *jsim, const v4 point_color)
 {
-    struct ds_DynamicsDraw *draw = &pipeline->runtime->draw;
-    const struct ds_DynamicsDrawConfig *config = &pipeline->runtime->draw_config;
+    struct ds_DynamicsDraw *draw = &pipeline->runtime.draw;
+    const struct ds_DynamicsDrawConfig *config = &pipeline->runtime.draw_config;
     const struct ds_BodySim *sim = JointBodySim(pipeline, jsim, 0);
     const v3f64 anchor_start = JointAnchorStart(sim, jsim, 0);
     /* the solver applies -impulse to body 0 */
@@ -440,7 +440,7 @@ static void ds_MouseJointDraw(struct ds_Dynamics *pipeline, const struct ds_Join
 
 static void ds_JointDrawAll(struct ds_Dynamics *pipeline)
 {
-    const struct ds_DynamicsDrawConfig *config = &pipeline->runtime->draw_config;
+    const struct ds_DynamicsDrawConfig *config = &pipeline->runtime.draw_config;
 
     for (u32 color_index = 0; color_index < CG_COLOR_COUNT; ++color_index)
     {
@@ -462,7 +462,7 @@ static void ds_JointDrawAll(struct ds_Dynamics *pipeline)
 void ds_BodyDrawRange(struct ds_Dynamics *pipeline, const u32 low, const u32 high)
 {
     struct ds_DynamicsDraw *draw = &g_dynamics_worker[ds_ThreadSelfIndex()].draw;
-    const struct ds_DynamicsDrawConfig *config = &pipeline->runtime->draw_config;
+    const struct ds_DynamicsDrawConfig *config = &pipeline->runtime.draw_config;
     const struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
     const v4 axis_color[3] = { V4(1.0f, 0.0f, 0.0f, 1.0f), V4(0.0f, 1.0f, 0.0f, 1.0f), V4(0.0f, 0.0f, 1.0f, 1.0f) };
     const v3 axis[3] = { V3(1.0f, 0.0f, 0.0f), V3(0.0f, 1.0f, 0.0f), V3(0.0f, 0.0f, 1.0f) };
@@ -490,7 +490,7 @@ void ds_BodyDrawRange(struct ds_Dynamics *pipeline, const u32 low, const u32 hig
 
 void ds_DynamicsDrawFrameEnd(struct ds_Dynamics *pipeline)
 {
-    const struct ds_DynamicsDrawConfig *config = &pipeline->runtime->draw_config;
+    const struct ds_DynamicsDrawConfig *config = &pipeline->runtime.draw_config;
     if (config->draw_constraint_points || config->draw_joint_forces || config->draw_joints)
     {
         ds_JointDrawAll(pipeline);

@@ -946,7 +946,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 				ui_Parent(ui_NodeAllocNonHashed(UI_DRAW_BACKGROUND).index)
 				ui_Flags(UI_DRAW_ROUNDED_CORNERS | UI_TEXT_ALLOW_OVERFLOW)
 				{
-					if (ui_DropdownMenuF(&led->shape_color_mode_menu, "%s###%p_shape_color_mode", shape_color_mode_str[led->physics->runtime->draw_config.shape_color_mode], &led->shape_color_mode_menu))
+					if (ui_DropdownMenuF(&led->shape_color_mode_menu, "%s###%p_shape_color_mode", shape_color_mode_str[led->physics->runtime.draw_config.shape_color_mode], &led->shape_color_mode_menu))
 					{
 						ui_DropdownMenuPush(&led->shape_color_mode_menu);
 
@@ -960,7 +960,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 									i).address;
 							if (drop->inter & UI_INTER_SELECT)
 							{
-								led->physics->runtime->draw_config.shape_color_mode = i;
+								led->physics->runtime.draw_config.shape_color_mode = i;
 							}
 						}
 
@@ -969,7 +969,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 
 					ui_Pad();
 
-					if (ui_DropdownMenuF(&led->point_color_mode_menu, "%s###%p_point_color_mode", point_color_mode_str[led->physics->runtime->draw_config.point_color_mode], &led->point_color_mode_menu))
+					if (ui_DropdownMenuF(&led->point_color_mode_menu, "%s###%p_point_color_mode", point_color_mode_str[led->physics->runtime.draw_config.point_color_mode], &led->point_color_mode_menu))
 					{
 						ui_DropdownMenuPush(&led->point_color_mode_menu);
 
@@ -983,7 +983,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 									i).address;
 							if (drop->inter & UI_INTER_SELECT)
 							{
-								led->physics->runtime->draw_config.point_color_mode = i;
+								led->physics->runtime.draw_config.point_color_mode = i;
 							}
 						}
 
@@ -1016,10 +1016,10 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 									ui_NodeAllocF(UI_DRAW_TEXT, "draw DBVT");
 									if (node->inter & UI_INTER_LEFT_CLICK)
 									{
-										led->physics->runtime->draw_config.draw_dbvh = !led->physics->runtime->draw_config.draw_dbvh;
+										led->physics->runtime.draw_config.draw_dbvh = !led->physics->runtime.draw_config.draw_dbvh;
 									}
 
-									if (led->physics->runtime->draw_config.draw_dbvh)
+									if (led->physics->runtime.draw_config.draw_dbvh)
 									{
 										node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
 									}
@@ -1039,10 +1039,10 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 									ui_NodeAllocF(UI_DRAW_TEXT, "draw SBVT");
 									if (node->inter & UI_INTER_LEFT_CLICK)
 									{
-										led->physics->runtime->draw_config.draw_sbvh = !led->physics->runtime->draw_config.draw_sbvh;
+										led->physics->runtime.draw_config.draw_sbvh = !led->physics->runtime.draw_config.draw_sbvh;
 									}
 
-									if (led->physics->runtime->draw_config.draw_sbvh)
+									if (led->physics->runtime.draw_config.draw_sbvh)
 									{
 										node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
 									}
@@ -1062,10 +1062,10 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 									ui_NodeAllocF(UI_DRAW_TEXT, "draw bounding boxes");
 									if (node->inter & UI_INTER_LEFT_CLICK)
 									{
-										led->physics->runtime->draw_config.draw_bounds = !led->physics->runtime->draw_config.draw_bounds;
+										led->physics->runtime.draw_config.draw_bounds = !led->physics->runtime.draw_config.draw_bounds;
 									}
 
-									if (led->physics->runtime->draw_config.draw_bounds)
+									if (led->physics->runtime.draw_config.draw_bounds)
 									{
 										node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
 									}
@@ -1085,10 +1085,10 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 									ui_NodeAllocF(UI_DRAW_TEXT, "draw shapes");
 									if (node->inter & UI_INTER_LEFT_CLICK)
 									{
-										led->physics->runtime->draw_config.draw_shapes = !led->physics->runtime->draw_config.draw_shapes;
+										led->physics->runtime.draw_config.draw_shapes = !led->physics->runtime.draw_config.draw_shapes;
 									}
 
-									if (led->physics->runtime->draw_config.draw_shapes)
+									if (led->physics->runtime.draw_config.draw_shapes)
 									{
 										node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
 									}
@@ -1108,10 +1108,10 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 									ui_NodeAllocF(UI_DRAW_TEXT, "draw mesh BVHs");
 									if (node->inter & UI_INTER_LEFT_CLICK)
 									{
-										led->physics->runtime->draw_config.draw_mesh_bvh = !led->physics->runtime->draw_config.draw_mesh_bvh;
+										led->physics->runtime.draw_config.draw_mesh_bvh = !led->physics->runtime.draw_config.draw_mesh_bvh;
 									}
 
-									if (led->physics->runtime->draw_config.draw_mesh_bvh)
+									if (led->physics->runtime.draw_config.draw_mesh_bvh)
 									{
 										node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
 									}
@@ -1140,10 +1140,10 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 									ui_NodeAllocF(UI_DRAW_TEXT, "draw contact forces");
 									if (node->inter & UI_INTER_LEFT_CLICK)
 									{
-										led->physics->runtime->draw_config.draw_contact_forces = !led->physics->runtime->draw_config.draw_contact_forces;
+										led->physics->runtime.draw_config.draw_contact_forces = !led->physics->runtime.draw_config.draw_contact_forces;
 									}
 
-									if (led->physics->runtime->draw_config.draw_contact_forces)
+									if (led->physics->runtime.draw_config.draw_contact_forces)
 									{
 										node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
 									}
@@ -1163,10 +1163,10 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 									ui_NodeAllocF(UI_DRAW_TEXT, "draw joint forces");
 									if (node->inter & UI_INTER_LEFT_CLICK)
 									{
-										led->physics->runtime->draw_config.draw_joint_forces = !led->physics->runtime->draw_config.draw_joint_forces;
+										led->physics->runtime.draw_config.draw_joint_forces = !led->physics->runtime.draw_config.draw_joint_forces;
 									}
 
-									if (led->physics->runtime->draw_config.draw_joint_forces)
+									if (led->physics->runtime.draw_config.draw_joint_forces)
 									{
 										node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
 									}
@@ -1186,10 +1186,10 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 									ui_NodeAllocF(UI_DRAW_TEXT, "draw constraint points");
 									if (node->inter & UI_INTER_LEFT_CLICK)
 									{
-										led->physics->runtime->draw_config.draw_constraint_points = !led->physics->runtime->draw_config.draw_constraint_points;
+										led->physics->runtime.draw_config.draw_constraint_points = !led->physics->runtime.draw_config.draw_constraint_points;
 									}
 
-									if (led->physics->runtime->draw_config.draw_constraint_points)
+									if (led->physics->runtime.draw_config.draw_constraint_points)
 									{
 										node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
 									}
@@ -1209,10 +1209,10 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 									ui_NodeAllocF(UI_DRAW_TEXT, "draw on top");
 									if (node->inter & UI_INTER_LEFT_CLICK)
 									{
-										led->physics->runtime->draw_config.draw_on_top = !led->physics->runtime->draw_config.draw_on_top;
+										led->physics->runtime.draw_config.draw_on_top = !led->physics->runtime.draw_config.draw_on_top;
 									}
 
-									if (led->physics->runtime->draw_config.draw_on_top)
+									if (led->physics->runtime.draw_config.draw_on_top)
 									{
 										node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
 									}
@@ -1232,10 +1232,10 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 									ui_NodeAllocF(UI_DRAW_TEXT, "draw body axes");
 									if (node->inter & UI_INTER_LEFT_CLICK)
 									{
-										led->physics->runtime->draw_config.draw_body_axes = !led->physics->runtime->draw_config.draw_body_axes;
+										led->physics->runtime.draw_config.draw_body_axes = !led->physics->runtime.draw_config.draw_body_axes;
 									}
 
-									if (led->physics->runtime->draw_config.draw_body_axes)
+									if (led->physics->runtime.draw_config.draw_body_axes)
 									{
 										node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
 									}
@@ -1255,10 +1255,10 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 									ui_NodeAllocF(UI_DRAW_TEXT, "draw joints");
 									if (node->inter & UI_INTER_LEFT_CLICK)
 									{
-										led->physics->runtime->draw_config.draw_joints = !led->physics->runtime->draw_config.draw_joints;
+										led->physics->runtime.draw_config.draw_joints = !led->physics->runtime.draw_config.draw_joints;
 									}
 
-									if (led->physics->runtime->draw_config.draw_joints)
+									if (led->physics->runtime.draw_config.draw_joints)
 									{
 										node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
 									}
@@ -1287,10 +1287,10 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 									ui_NodeAllocF(UI_DRAW_TEXT, "draw joint breakage");
 									if (node->inter & UI_INTER_LEFT_CLICK)
 									{
-										led->physics->runtime->draw_config.draw_joint_breakage = !led->physics->runtime->draw_config.draw_joint_breakage;
+										led->physics->runtime.draw_config.draw_joint_breakage = !led->physics->runtime.draw_config.draw_joint_breakage;
 									}
 
-									if (led->physics->runtime->draw_config.draw_joint_breakage)
+									if (led->physics->runtime.draw_config.draw_joint_breakage)
 									{
 										node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
 									}
@@ -1312,7 +1312,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 					{
 						ui_Pad();
 						ui_Width(ui_SizePixel(80.0f, 1.0f))
-						led->physics->runtime->draw_config.force_scale = ui_FieldF32F(led->physics->runtime->draw_config.force_scale, Intv(0.0001f, 100.0f), "%f###force_scale_in", led->physics->runtime->draw_config.force_scale);
+						led->physics->runtime.draw_config.force_scale = ui_FieldF32F(led->physics->runtime.draw_config.force_scale, Intv(0.0001f, 100.0f), "%f###force_scale_in", led->physics->runtime.draw_config.force_scale);
 						ui_Pad();
 						ui_NodeAllocF(UI_DRAW_TEXT, "force scale (m/N)");
 					}
