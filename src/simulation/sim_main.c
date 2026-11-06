@@ -17,25 +17,6 @@
 ==========================================================================
 */
 
-/*
-Todo-List (not complete, need to fill in as we get more questions)
-
-() mode=Record 
-    () record serialization
-    () record deserialization and validation
-() mode=Replay 
-    () ds_AllocReplay
-    () generalize simulation loop to handle replay binaries
-() Commands
-    () ds_SimConfigLoad         (always at time 0)
-    () ds_DynamicsConfigUpdate  (Applies pending config updates)
-    () ... port all old intput handling to commands
-() CVars/CmdLine
-    () need proper way of handling terminal inputs (modes, files, ...)
-
-() Port determinism / teests / all main functions to provide config_path=null,path + mode=replay,record,none.
- */
-
 #include "ds_base.h"
 #include "ds_platform.h"
 #include "ds_simulation.h"

@@ -115,6 +115,7 @@ enum ds_ArgvType
     ARGV_HASH,          /* the hash file: written with record, compared with replay     */
     ARGV_HEADLESS,      /* a flag (no value): no graphics, as the config's headless      */
     ARGV_ORIGIN,        /* x,y,z: the determinism test's scene origin (parsed by its main) */
+    ARGV_HELP,          /* a flag: print the usage and exit */
     ARGV_COUNT
 };
 
@@ -123,8 +124,9 @@ extern utf8 g_argv[ARGV_COUNT];
 
 /*
  * Parse argv[1..argc), key=value or a bare flag, into g_argv; a value's bytes are argv's (null-terminated in
- * place). Fatal: a bare key that is not a flag, a flag with a value, an empty key or value, an unknown or repeated
- * key, hash without record or replay, replay with record, simulation.
+ * place). help prints the usage and exits. Fatal, with the usage: a bare key that is not a flag, a flag with a
+ * value, an empty key or value, an unknown or repeated key, hash without record or replay, replay with record,
+ * simulation.
  */
 void            ds_ArgvParse(const int argc, char *argv[]);
 

@@ -341,39 +341,31 @@ u32 ds_ConfigTryWrite(struct arena *tmp, const struct ds_RuntimeConfig *config, 
     return written;
 }
 
-//TODO:
-//
-//  ./DreamscapeTest config="config.cfg" record="run.rec" replay="run.rec" hash="run.hash" simulation="run.sim" headless
-//
-//      config: general config file
-//  simulation: file with Initial simulation state
-//      record: file to record to
-//      replay: file to replay from
-//        hash: file to hash to, or compare hashes from
-//
-//  Optional, but can always be provided:
-//
-//      simulation: (Optional) initialize a serialized simulation
-//          config: (Optional) use external config
-//
-//  Optional combinations:
-//
-//          record: Record all external commands that affect simulation state
-//          replay: Replay a record (Should yield the exact same final state)
-//    record, hash: Record all external commands and record a state hash of the
-//                  simulation for each simulation system tick
-//    replay, hash: Replay a record together with the record's hash file, and
-//                  compare all hashes to newly generated ones.
+static const char *g_argv_name[ARGV_COUNT] = { "log", "config", "simulation", "record", "replay", "hash", "headless", "origin", "help" };
+static const u32 g_argv_flag[ARGV_COUNT] = { 0, 0, 0, 0, 0, 0, 1, 0, 1 };
 
-static const char *g_argv_name[ARGV_COUNT] = { "log", "config", "simulation", "record", "replay", "hash", "headless", "origin" };
-static const u32 g_argv_flag[ARGV_COUNT] = { 0, 0, 0, 0, 0, 0, 1, 0 };
-
-#define DS_ARGV_USAGE "usage: ./Executable [config=path] [log=path] [record=path | replay=path] [hash=path] [headless] [origin=x,y,z]"
+static const char *g_argv_usage =
+    "usage: ./DreamscapeTest [key=value ...] [flags]\n"
+    "\n"
+    "  config=path       the runtime config file (none: engine defaults)\n"
+    "  log=path          the log file, created (none: no log file)\n"
+    "  record=path       record every external command of the simulation to path\n"
+    "  replay=path       replay a record to the same final state (no commands are accepted until it ends)\n"
+    "  hash=path         with record: write a state hash per simulation system tick to path\n"
+    "                    with replay: compare every tick's hash to path (a difference is fatal)\n"
+    "  simulation=path   (reserved) an initial simulation state; not supported yet\n"
+    "  origin=x,y,z      determinism test, with record: build the scene around (x, y, z)\n"
+    "  headless          no graphics\n"
+    "  help              print this and exit\n"
+    "\n"
+    "combinations: record | replay | record hash | replay hash. hash alone, replay with record and simulation are\n"
+    "refused. Any unknown or repeated key, a key without a value or a flag with one, exits with this text.\n";
 
 /* before the log: Log writes to stderr */
 static void ds_ArgvFatal(const char *problem, const char *argument)
 {
-    Log(T_SYSTEM, S_FATAL, "command line: %s: %s\n%s", problem, argument, DS_ARGV_USAGE);
+    fprintf(stderr, "%s\n", g_argv_usage);
+    Log(T_SYSTEM, S_FATAL, "command line: %s: %s", problem, argument);
     FatalCleanupAndExit();
 }
 
@@ -436,6 +428,12 @@ void ds_ArgvParse(const int argc, char *argv[])
         }
 
         g_argv[key] = (g_argv_flag[key]) ? Utf8Inline("1") : ds_ArgvValue(argument + key_size + 1);
+    }
+
+    if (g_argv[ARGV_HELP].size)
+    {
+        fprintf(stdout, "%s", g_argv_usage);
+        exit(0);
     }
 
     if (g_argv[ARGV_SIMULATION].size)

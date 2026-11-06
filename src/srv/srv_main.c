@@ -51,7 +51,6 @@ void ds_ServerAlloc(struct ds_Server *srv, const u64 frame_size, const u32 initi
     ds_CPoolAlloc(NULL, srv->payload_pool, 64, GROWABLE);
 }
 
-/* Append the entry (us_timestamp, payload) to the host's record file, staged on its record stream. */
 /*
  * Record entry: timestamp delta from the previous entry, cmd_count and the command bit count as CompactSize, then
  * the command bytes (the last byte's unused bits zero). No destination: the file is the simulation's.
@@ -395,17 +394,7 @@ void ds_ServerTick(struct ds_Server *srv, const u64 ns_delta)
 {
     /************** Payload Deserialization and Aliasing **************/
 
-    /* TODO receive payloads (network, local), route by dst. */
-
     /************************* Payload Fusing *************************/
-
-    /*
-     * At this point, we have a CPool of valid payloads which
-     * we may not store and use beyond this fuse code (payload
-     * memory will be managed by multiple remote systems). All
-     * ops on payloads will stem from our frame-lifetime fused
-     * payloads.
-     */
 
     for (i32 i = srv->sim_list.first; i != DLL_SENTINEL; i = srv->sim_pool.buf[i].srv_sim.next)
     {
