@@ -253,8 +253,13 @@ extern u32	cmd_led_run;
 extern u32	cmd_led_pause;
 extern u32	cmd_led_stop;
 
-/* Allocate initial led resources */
-struct led *led_Alloc(const u32 thread_count, const u64 thread_framesize);
+/*
+ * Allocate initial led resources. The paths are the command line's (g_argv): empty when not given. A record
+ * path runs the editor's simulation in RECORD mode, a replay path in REPLAY mode (its scene and grab come from
+ * the record, the editor pushes no commands until it ends), neither in NONE; a hash path writes (RECORD) or
+ * compares (REPLAY) the tick hashes. simulation_path: TODO (an initial simulation state), unused.
+ */
+struct led *led_Alloc(const u32 thread_count, const u64 thread_framesize, const utf8 simulation_path, const utf8 record_path, const utf8 replay_path, const utf8 hash_path);
 /* deallocate led resources */
 void		led_Dealloc(struct led *led);
 

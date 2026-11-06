@@ -47,7 +47,7 @@ int main(int argc, char *argv[])
 		FatalCleanupAndExit();
 	}
 
-	struct led *editor = led_Alloc(g_config->thread_count, g_config->thread_framesize);
+	struct led *editor = led_Alloc(g_config->thread_count, g_config->thread_framesize, g_argv[ARGV_SIMULATION], g_argv[ARGV_RECORD], g_argv[ARGV_REPLAY], g_argv[ARGV_HASH]);
 
 	const u64 renderer_framerate = 144;	
 	r_Init(&g_persistent, NSEC_PER_SEC / renderer_framerate, 16*1024*1024, 1024, &editor->render_mesh_db);

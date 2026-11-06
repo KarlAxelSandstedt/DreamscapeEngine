@@ -66,8 +66,11 @@ const char *point_color_mode_str_buf[DRAW_POINT_COLOR_MODE_COUNT] =
 const char **point_color_mode_str = point_color_mode_str_buf;
 
 
-struct led *led_Alloc(const u32 thread_count, const u64 thread_framesize)
+struct led *led_Alloc(const u32 thread_count, const u64 thread_framesize, const utf8 simulation_path, const utf8 record_path, const utf8 replay_path, const utf8 hash_path)
 {
+	ds_Assert(!(record_path.size && replay_path.size));
+	ds_Assert(!simulation_path.size);     /* TODO an initial simulation state, with record only */
+
 	led_CoreInitCommands();
 	g_editor->mem_persistent = ArenaAlloc(NULL,64*1024*1024);
 
@@ -136,7 +139,11 @@ struct led *led_Alloc(const u32 thread_count, const u64 thread_framesize)
 	struct ds_SimConfig sim_config = ds_SimConfigDefault();
 	sim_config.dynamics.initial_size = 1024;
 	sim_config.dynamics.frame_memory = 16*1024*1024;
-	g_editor->sim = ds_SimHostAdd(&g_editor->srv, &g_editor->mem_persistent, &sim_config, SIM_MODE_NONE, NULL, 0, NULL, &g_editor->cs_db, &g_editor->body_prefab_db, &g_editor->shape_prefab_db, thread_count, thread_framesize);
+	const enum ds_SimMode mode = (record_path.size) ? SIM_MODE_RECORD : (replay_path.size) ? SIM_MODE_REPLAY : SIM_MODE_NONE;
+	const char *record_cstr = (mode == SIM_MODE_RECORD) ? CstrUtf8(&g_editor->mem_persistent, record_path)
+	                        : (mode == SIM_MODE_REPLAY) ? CstrUtf8(&g_editor->mem_persistent, replay_path) : NULL;
+	const char *hash_cstr = (hash_path.size) ? CstrUtf8(&g_editor->mem_persistent, hash_path) : NULL;
+	g_editor->sim = ds_SimHostAdd(&g_editor->srv, &g_editor->mem_persistent, (mode == SIM_MODE_REPLAY) ? NULL : &sim_config, mode, record_cstr, hash_cstr != NULL, hash_cstr, &g_editor->cs_db, &g_editor->body_prefab_db, &g_editor->shape_prefab_db, thread_count, thread_framesize);
 	struct ds_SimHost *host = ds_SimHostLookup(&g_editor->srv, g_editor->sim).address;
 	host->speed = 0.0;
 	g_editor->physics = &host->sim.dynamics;

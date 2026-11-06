@@ -2644,7 +2644,11 @@ static void led_EngineInit(struct led *led)
         ds_CPoolPushValue(cmds, joint_add);
     }
 
-    ds_CPoolPushValue(led->srv.payload_pool, ds_SimCmdPayloadPushAll(&led->srv.frame, led->sim, &cmds));
+    const struct ds_SimHost *host = ds_SimHostLookup(&led->srv, led->sim).address;
+    if (host->record_mode != SIM_MODE_REPLAY)
+    {
+        ds_CPoolPushValue(led->srv.payload_pool, ds_SimCmdPayloadPushAll(&led->srv.frame, led->sim, &cmds));
+    }
     ds_CPoolDealloc(cmds);
 }
 

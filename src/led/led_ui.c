@@ -342,7 +342,8 @@ static void led_GrabBegin(struct led *led, const struct rayWorld *ray, const u32
 {
 	const struct ds_Shape *shape = led->physics->shape_pool.buf + hit.u;
 	const struct ds_Body *body = led->physics->body_pool.buf + shape->body;
-	if (!ds_BodyDynamicCheck(body))
+	const struct ds_SimHost *host = ds_SimHostLookup(&led->srv, led->sim).address;
+	if (!ds_BodyDynamicCheck(body) || host->record_mode == SIM_MODE_REPLAY)
 	{
 		return;
 	}

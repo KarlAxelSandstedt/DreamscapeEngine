@@ -250,7 +250,7 @@ int main(int argc, char *argv[])
     struct ds_DeterminismTest test = ds_DeterminismProcessArguments(&persistent, argument, argument_count);
     fprintf(stderr, "scene origin: (%.17g, %.17g, %.17g)\n", test.origin.x, test.origin.y, test.origin.z);
 
-	struct led *editor = led_Alloc(g_config->thread_count, g_config->thread_framesize);
+	struct led *editor = led_Alloc(g_config->thread_count, g_config->thread_framesize, g_argv[ARGV_SIMULATION], g_argv[ARGV_RECORD], g_argv[ARGV_REPLAY], g_argv[ARGV_HASH]);
     editor->scene_origin = test.origin;
 
 	const u64 renderer_framerate = 144;	
