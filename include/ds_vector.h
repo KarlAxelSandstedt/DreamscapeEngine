@@ -219,6 +219,9 @@ static ds_ForceInline u64 V3F64SerializeSize(const v3f64 v);
 /* Serialize v. WARNING: Assumes v fits in the stream. */
 static ds_ForceInline void V3Serialize(struct SS *ss, const v3 v);
 static ds_ForceInline void V3F64Serialize(struct SS *ss, const v3f64 v);
+/* Deserialize v. WARNING: Assumes v fits in the stream. */
+static ds_ForceInline void V3Deserialize(struct SS *ss, v3 *v);
+static ds_ForceInline void V3F64Deserialize(struct SS *ss, v3f64 *v);
 /* Returns 1 on success. On failure return 0 (bad stream) and reset the stream position. */
 static ds_ForceInline u32 V3TryDeserialize(struct SS *ss, v3 *v);
 static ds_ForceInline u32 V3F64TryDeserialize(struct SS *ss, v3f64 *v);
@@ -785,6 +788,20 @@ static ds_ForceInline void V3F64Serialize(struct SS *ss, const v3f64 v)
 	SSWriteU64Partial(ss, (b64) { .f = v.z }.u, 64);
 }
 
+static ds_ForceInline void V3Deserialize(struct SS *ss, v3 *v)
+{
+	v->x = (b32) { .u = (u32) SSReadU64Partial(ss, 32) }.f;
+	v->y = (b32) { .u = (u32) SSReadU64Partial(ss, 32) }.f;
+	v->z = (b32) { .u = (u32) SSReadU64Partial(ss, 32) }.f;
+}
+
+static ds_ForceInline void V3F64Deserialize(struct SS *ss, v3f64 *v)
+{
+	v->x = (b64) { .u = SSReadU64Partial(ss, 64) }.f;
+	v->y = (b64) { .u = SSReadU64Partial(ss, 64) }.f;
+	v->z = (b64) { .u = SSReadU64Partial(ss, 64) }.f;
+}
+
 static ds_ForceInline u32 V3TryDeserialize(struct SS *ss, v3 *v)
 {
 	if (SSBitsLeft(ss) < 8*V3SerializeSize(*v))
@@ -792,9 +809,7 @@ static ds_ForceInline u32 V3TryDeserialize(struct SS *ss, v3 *v)
 		return 0;
 	}
 
-	v->x = (b32) { .u = (u32) SSReadU64Partial(ss, 32) }.f;
-	v->y = (b32) { .u = (u32) SSReadU64Partial(ss, 32) }.f;
-	v->z = (b32) { .u = (u32) SSReadU64Partial(ss, 32) }.f;
+	V3Deserialize(ss, v);
 	return 1;
 }
 
@@ -805,9 +820,7 @@ static ds_ForceInline u32 V3F64TryDeserialize(struct SS *ss, v3f64 *v)
 		return 0;
 	}
 
-	v->x = (b64) { .u = SSReadU64Partial(ss, 64) }.f;
-	v->y = (b64) { .u = SSReadU64Partial(ss, 64) }.f;
-	v->z = (b64) { .u = SSReadU64Partial(ss, 64) }.f;
+	V3F64Deserialize(ss, v);
 	return 1;
 }
 

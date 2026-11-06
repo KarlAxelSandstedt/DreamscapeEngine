@@ -69,6 +69,9 @@ arguments may be evaluated more than once):
     // Write ll (LE: u32 count, first, last; the nodes go with their pool). ss must have room.
     LLSerialize(ss, ll)
 
+    // Read ll from ss. WARNING: Assumes ll fits in the stream.
+    LLDeserialize(ss, ll)
+
     // Read ll from ss. Returns 1, or 0 (ll empty, ss unchanged) if fewer than 12 bytes are left. The indices
     // are not checked against the pool.
     u32 LLTryDeserialize(ss, ll)
@@ -139,12 +142,15 @@ do                                                                              
     SSWriteU32Le((_ss_), (u32) (_ll_).last);                                                           \
 } while (0)
 
+#define LLDeserialize(_ss_, _ll_)                                                                       \
+    ((_ll_).count = SSReadU32Le(_ss_),                                                                 \
+     (_ll_).first = (i32) SSReadU32Le(_ss_),                                                           \
+     (_ll_).last = (i32) SSReadU32Le(_ss_))
+
 #define LLTryDeserialize(_ss_, _ll_)                                                                    \
     ((SSBytesLeft(_ss_) < LLSerializeSize(_ll_))                                                       \
         ? ((_ll_).count = 0, (_ll_).first = LL_SENTINEL, (_ll_).last = LL_SENTINEL, 0u)                 \
-        : ((_ll_).count = SSReadU32Le(_ss_),                                                           \
-           (_ll_).first = (i32) SSReadU32Le(_ss_),                                                     \
-           (_ll_).last = (i32) SSReadU32Le(_ss_), 1u))
+        : (LLDeserialize(_ss_, _ll_), 1u))
 
 /*
 DLL
@@ -181,6 +187,9 @@ field; arguments may be evaluated more than once):
 
     // Write dll (LE: u32 count, first, last; the nodes go with their pool). ss must have room.
     DLLSerialize(ss, dll)
+
+    // Read dll from ss. WARNING: Assumes dll fits in the stream.
+    DLLDeserialize(ss, dll)
 
     // Read dll from ss. Returns 1, or 0 (dll empty, ss unchanged) if fewer than 12 bytes are left. The
     // indices are not checked against the pool.
@@ -282,12 +291,15 @@ do                                                                              
     SSWriteU32Le((_ss_), (u32) (_dll_).last);                                                          \
 } while (0)
 
+#define DLLDeserialize(_ss_, _dll_)                                                                     \
+    ((_dll_).count = SSReadU32Le(_ss_),                                                                \
+     (_dll_).first = (i32) SSReadU32Le(_ss_),                                                          \
+     (_dll_).last = (i32) SSReadU32Le(_ss_))
+
 #define DLLTryDeserialize(_ss_, _dll_)                                                                  \
     ((SSBytesLeft(_ss_) < DLLSerializeSize(_dll_))                                                     \
         ? ((_dll_).count = 0, (_dll_).first = DLL_SENTINEL, (_dll_).last = DLL_SENTINEL, 0u)            \
-        : ((_dll_).count = SSReadU32Le(_ss_),                                                          \
-           (_dll_).first = (i32) SSReadU32Le(_ss_),                                                    \
-           (_dll_).last = (i32) SSReadU32Le(_ss_), 1u))
+        : (DLLDeserialize(_ss_, _dll_), 1u))
 
 #ifdef __cplusplus
 } 

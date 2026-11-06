@@ -73,6 +73,8 @@ static ds_ForceInline u32 QFiniteCheck(const q a);
 static ds_ForceInline u64 QSerializeSize(const q a);
 /* Serialize a. WARNING: Assumes a fits in the stream. */
 static ds_ForceInline void QSerialize(struct SS *ss, const q a);
+/* Deserialize a. WARNING: Assumes a fits in the stream. */
+static ds_ForceInline void QDeserialize(struct SS *ss, q *a);
 /* Returns 1 on success. On failure return 0 (bad stream) and reset the stream position. */
 static ds_ForceInline u32 QTryDeserialize(struct SS *ss, q *a);
 /*
@@ -140,6 +142,14 @@ static ds_ForceInline void QSerialize(struct SS *ss, const q a)
 	SSWriteU64Partial(ss, (b32) { .f = a.w }.u, 32);
 }
 
+static ds_ForceInline void QDeserialize(struct SS *ss, q *a)
+{
+	a->x = (b32) { .u = (u32) SSReadU64Partial(ss, 32) }.f;
+	a->y = (b32) { .u = (u32) SSReadU64Partial(ss, 32) }.f;
+	a->z = (b32) { .u = (u32) SSReadU64Partial(ss, 32) }.f;
+	a->w = (b32) { .u = (u32) SSReadU64Partial(ss, 32) }.f;
+}
+
 static ds_ForceInline u32 QTryDeserialize(struct SS *ss, q *a)
 {
 	if (SSBitsLeft(ss) < 8*QSerializeSize(*a))
@@ -147,10 +157,7 @@ static ds_ForceInline u32 QTryDeserialize(struct SS *ss, q *a)
 		return 0;
 	}
 
-	a->x = (b32) { .u = (u32) SSReadU64Partial(ss, 32) }.f;
-	a->y = (b32) { .u = (u32) SSReadU64Partial(ss, 32) }.f;
-	a->z = (b32) { .u = (u32) SSReadU64Partial(ss, 32) }.f;
-	a->w = (b32) { .u = (u32) SSReadU64Partial(ss, 32) }.f;
+	QDeserialize(ss, a);
 	return 1;
 }
 

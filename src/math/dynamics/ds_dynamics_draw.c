@@ -218,21 +218,10 @@ void ds_DynamicsDrawConfigSerialize(struct SS *ss, const struct ds_DynamicsDrawC
     SSWriteF32LeN(ss, config->color_mass_center.buf, 4);
 }
 
-u32 ds_DynamicsDrawConfigTryDeserialize(struct SS *ss, struct ds_DynamicsDrawConfig *config)
+void ds_DynamicsDrawConfigDeserialize(struct SS *ss, struct ds_DynamicsDrawConfig *config)
 {
-    const u64 bit_index = ss->bit_index;
-    u32 success = 0;
-
-    if (ss->bit_index % 8 != 0 || SSBytesLeft(ss) < DS_DYNAMICS_DRAW_CONFIG_SIZE)
-    {
-        goto end;
-    }
-
-    if (SSReadU32Le(ss) != DS_DYNAMICS_DRAW_CONFIG_VERSION)
-    {
-        goto end;
-    }
-
+    const u32 version = SSReadU32Le(ss);
+    ds_Assert(version == DS_DYNAMICS_DRAW_CONFIG_VERSION);
     *config = (struct ds_DynamicsDrawConfig) { 0 };
     config->draw_shapes = SSReadU32Le(ss);
     config->shape_color_mode = (enum ds_ShapeColorMode) SSReadU32Le(ss);
@@ -281,16 +270,21 @@ u32 ds_DynamicsDrawConfigTryDeserialize(struct SS *ss, struct ds_DynamicsDrawCon
     SSReadF32LeN(ss, config->color_joint_break.buf, 4);
     SSReadF32LeN(ss, config->color_mass_center.buf, 4);
     *config = ds_DynamicsDrawConfigDerive(config);
-    success = 1;
+}
 
-end:
-    if (!success)
+u32 ds_DynamicsDrawConfigTryDeserialize(struct SS *ss, struct ds_DynamicsDrawConfig *config)
+{
+    const u64 bit_index = ss->bit_index;
+    if (ss->bit_index % 8 != 0 || SSBytesLeft(ss) < DS_DYNAMICS_DRAW_CONFIG_SIZE || SSReadU32Le(ss) != DS_DYNAMICS_DRAW_CONFIG_VERSION)
     {
         ss->bit_index = bit_index;
         *config = (struct ds_DynamicsDrawConfig) { 0 };
+        return 0;
     }
 
-    return success;
+    ss->bit_index = bit_index;
+    ds_DynamicsDrawConfigDeserialize(ss, config);
+    return 1;
 }
 
 /* color mixed towards color_joint_break by the larger of force / force_threshold and torque / torque_threshold (0 for F32_INFINITY) */

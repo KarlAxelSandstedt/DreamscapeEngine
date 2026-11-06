@@ -328,11 +328,12 @@ static void ds_BodyAddCmdSerialize(struct SS *ss, const struct ds_BodyAddCmd *cm
 
 static u32 ds_BodyAddCmdTryDeserialize(struct arena *mem, struct SS *ss, struct ds_BodyAddCmd *cmd)
 {
-    if (!ds_SimCmdTryReadId(mem, ss, &cmd->prefab) || !ds_TransformWorldTryDeserialize(ss, &cmd->t_world) || SSBitsLeft(ss) < 32)
+    if (!ds_SimCmdTryReadId(mem, ss, &cmd->prefab) || SSBitsLeft(ss) < 8*ds_TransformWorldSerializeSize(&cmd->t_world) + 32)
     {
         return 0;
     }
 
+    ds_TransformWorldDeserialize(ss, &cmd->t_world);
     cmd->entity = (u32) SSReadU64Partial(ss, 32);
     return 1;
 }
@@ -375,11 +376,12 @@ static void ds_ShapeAddCmdSerialize(struct SS *ss, const struct ds_ShapeAddCmd *
 
 static u32 ds_ShapeAddCmdTryDeserialize(struct arena *mem, struct SS *ss, struct ds_ShapeAddCmd *cmd)
 {
-    if (!ds_SimCmdTryReadId(mem, ss, &cmd->prefab) || !ds_TransformTryDeserialize(ss, &cmd->t_local) || SSBitsLeft(ss) < 32)
+    if (!ds_SimCmdTryReadId(mem, ss, &cmd->prefab) || SSBitsLeft(ss) < 8*ds_TransformSerializeSize(&cmd->t_local) + 32)
     {
         return 0;
     }
 
+    ds_TransformDeserialize(ss, &cmd->t_local);
     cmd->entity = (u32) SSReadU64Partial(ss, 32);
     return 1;
 }
@@ -459,8 +461,8 @@ static u32 ds_JointAddCmdTryDeserialize(struct SS *ss, struct ds_JointAddCmd *cm
     cmd->breakage.torque_threshold = (b32) { .u = (u32) SSReadU64Partial(ss, 32) }.f;
     cmd->entity[0] = (u32) SSReadU64Partial(ss, 32);
     cmd->entity[1] = (u32) SSReadU64Partial(ss, 32);
-    ds_TransformTryDeserialize(ss, cmd->local_frame + 0);
-    ds_TransformTryDeserialize(ss, cmd->local_frame + 1);
+    ds_TransformDeserialize(ss, cmd->local_frame + 0);
+    ds_TransformDeserialize(ss, cmd->local_frame + 1);
     return 1;
 }
 

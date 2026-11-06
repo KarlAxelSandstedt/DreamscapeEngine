@@ -102,17 +102,24 @@ void ds_DynamicsConfigSerialize(struct SS *ss, const struct ds_DynamicsConfig *c
     ds_NumericsConfigSerialize(ss, &config->numerics);
 }
 
+void ds_DynamicsConfigDeserialize(struct SS *ss, struct ds_DynamicsConfig *config)
+{
+    const u32 version = SSReadU32Le(ss);
+    ds_Assert(version == DS_DYNAMICS_CONFIG_VERSION);
+    *config = (struct ds_DynamicsConfig) { 0 };
+    config->initial_size = SSReadU32Le(ss);
+    config->frame_memory = SSReadU64Le(ss);
+    ds_SolverConfigDeserialize(ss, &config->solver);
+    ds_NumericsConfigDeserialize(ss, &config->numerics);
+    *config = ds_DynamicsConfigDerive(config);
+}
+
 u32 ds_DynamicsConfigTryDeserialize(struct SS *ss, struct ds_DynamicsConfig *config)
 {
     const u64 bit_index = ss->bit_index;
     u32 success = 0;
 
-    if (ss->bit_index % 8 != 0 || SSBytesLeft(ss) < DS_DYNAMICS_CONFIG_FIXED_SIZE)
-    {
-        goto end;
-    }
-
-    if (SSReadU32Le(ss) != DS_DYNAMICS_CONFIG_VERSION)
+    if (ss->bit_index % 8 != 0 || SSBytesLeft(ss) < DS_DYNAMICS_CONFIG_FIXED_SIZE || SSReadU32Le(ss) != DS_DYNAMICS_CONFIG_VERSION)
     {
         goto end;
     }

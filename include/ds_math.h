@@ -89,6 +89,8 @@ static inline u32 ds_TransformFiniteCheck(const ds_Transform *transform);
 static inline u64 ds_TransformSerializeSize(const ds_Transform *transform);
 /* Serialize the transform. WARNING: Assumes transform fits in the stream. */
 static inline void ds_TransformSerialize(struct SS *ss, const ds_Transform *transform);
+/* Deserialize the transform. WARNING: Assumes transform fits in the stream. */
+static inline void ds_TransformDeserialize(struct SS *ss, ds_Transform *transform);
 /* Returns 1 on success. On failure return 0 (bad stream) and reset the stream position. */
 static inline u32 ds_TransformTryDeserialize(struct SS *ss, ds_Transform *transform);
 
@@ -125,6 +127,8 @@ static inline u32 ds_TransformWorldFiniteCheck(const ds_TransformWorld *transfor
 static inline u64 ds_TransformWorldSerializeSize(const ds_TransformWorld *transform);
 /* Serialize the transform. WARNING: Assumes transform fits in the stream. */
 static inline void ds_TransformWorldSerialize(struct SS *ss, const ds_TransformWorld *transform);
+/* Deserialize the transform. WARNING: Assumes transform fits in the stream. */
+static inline void ds_TransformWorldDeserialize(struct SS *ss, ds_TransformWorld *transform);
 /* Returns 1 on success. On failure return 0 (bad stream) and reset the stream position. */
 static inline u32 ds_TransformWorldTryDeserialize(struct SS *ss, ds_TransformWorld *transform);
 
@@ -182,6 +186,12 @@ static inline void ds_TransformSerialize(struct SS *ss, const ds_Transform *tran
     V3Serialize(ss, transform->position);
 }
 
+static inline void ds_TransformDeserialize(struct SS *ss, ds_Transform *transform)
+{
+    QDeserialize(ss, &transform->rotation);
+    V3Deserialize(ss, &transform->position);
+}
+
 static inline u32 ds_TransformTryDeserialize(struct SS *ss, ds_Transform *transform)
 {
     if (SSBitsLeft(ss) < 8*ds_TransformSerializeSize(transform))
@@ -189,8 +199,7 @@ static inline u32 ds_TransformTryDeserialize(struct SS *ss, ds_Transform *transf
         return 0;
     }
 
-    QTryDeserialize(ss, &transform->rotation);
-    V3TryDeserialize(ss, &transform->position);
+    ds_TransformDeserialize(ss, transform);
     return 1;
 }
 
@@ -239,6 +248,12 @@ static inline void ds_TransformWorldSerialize(struct SS *ss, const ds_TransformW
     V3F64Serialize(ss, transform->position);
 }
 
+static inline void ds_TransformWorldDeserialize(struct SS *ss, ds_TransformWorld *transform)
+{
+    QDeserialize(ss, &transform->rotation);
+    V3F64Deserialize(ss, &transform->position);
+}
+
 static inline u32 ds_TransformWorldTryDeserialize(struct SS *ss, ds_TransformWorld *transform)
 {
     if (SSBitsLeft(ss) < 8*ds_TransformWorldSerializeSize(transform))
@@ -246,8 +261,7 @@ static inline u32 ds_TransformWorldTryDeserialize(struct SS *ss, ds_TransformWor
         return 0;
     }
 
-    QTryDeserialize(ss, &transform->rotation);
-    V3F64TryDeserialize(ss, &transform->position);
+    ds_TransformWorldDeserialize(ss, transform);
     return 1;
 }
 

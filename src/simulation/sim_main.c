@@ -154,17 +154,29 @@ void ds_SimConfigSerialize(struct SS *ss, const struct ds_SimConfig *config)
     ds_DynamicsConfigSerialize(ss, &config->dynamics);
 }
 
+void ds_SimConfigDeserialize(struct SS *ss, struct ds_SimConfig *config)
+{
+    const u32 version = SSReadU32Le(ss);
+    ds_Assert(version == DS_SIM_CONFIG_VERSION);
+    for (u32 i = 0; i < 4; ++i)
+    {
+        config->seed[i] = SSReadU64Le(ss);
+    }
+
+    for (u32 i = 0; i < SIM_SYSTEM_COUNT; ++i)
+    {
+        config->us_system_tick[i] = SSReadU64Le(ss);
+    }
+
+    ds_DynamicsConfigDeserialize(ss, &config->dynamics);
+}
+
 u32 ds_SimConfigTryDeserialize(struct SS *ss, struct ds_SimConfig *config)
 {
     const u64 bit_index = ss->bit_index;
     u32 success = 0;
 
-    if (ss->bit_index % 8 != 0 || SSBytesLeft(ss) < DS_SIM_CONFIG_FIXED_SIZE)
-    {
-        goto end;
-    }
-
-    if (SSReadU32Le(ss) != DS_SIM_CONFIG_VERSION)
+    if (ss->bit_index % 8 != 0 || SSBytesLeft(ss) < DS_SIM_CONFIG_FIXED_SIZE || SSReadU32Le(ss) != DS_SIM_CONFIG_VERSION)
     {
         goto end;
     }

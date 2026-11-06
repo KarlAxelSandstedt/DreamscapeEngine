@@ -101,21 +101,10 @@ void ds_NumericsConfigSerialize(struct SS *ss, const struct ds_NumericsConfig *c
     SSWriteU32Le(ss, config->gjk_max_iterations);
 }
 
-u32 ds_NumericsConfigTryDeserialize(struct SS *ss, struct ds_NumericsConfig *config)
+void ds_NumericsConfigDeserialize(struct SS *ss, struct ds_NumericsConfig *config)
 {
-    const u64 bit_index = ss->bit_index;
-    u32 success = 0;
-
-    if (ss->bit_index % 8 != 0 || SSBytesLeft(ss) < DS_NUMERICS_CONFIG_SIZE)
-    {
-        goto end;
-    }
-
-    if (SSReadU32Le(ss) != DS_NUMERICS_CONFIG_VERSION)
-    {
-        goto end;
-    }
-
+    const u32 version = SSReadU32Le(ss);
+    ds_Assert(version == DS_NUMERICS_CONFIG_VERSION);
     *config = (struct ds_NumericsConfig) { 0 };
     config->dbvh_reinsert_threshold = SSReadF32Le(ss);
     config->cache_count_max = SSReadU32Le(ss);
@@ -126,14 +115,19 @@ u32 ds_NumericsConfigTryDeserialize(struct SS *ss, struct ds_NumericsConfig *con
     config->sat_cache_tolerance = SSReadF32Le(ss);
     config->gjk_max_iterations = SSReadU32Le(ss);
     *config = ds_NumericsConfigDerive(config);
-    success = 1;
+}
 
-end:
-    if (!success)
+u32 ds_NumericsConfigTryDeserialize(struct SS *ss, struct ds_NumericsConfig *config)
+{
+    const u64 bit_index = ss->bit_index;
+    if (ss->bit_index % 8 != 0 || SSBytesLeft(ss) < DS_NUMERICS_CONFIG_SIZE || SSReadU32Le(ss) != DS_NUMERICS_CONFIG_VERSION)
     {
         ss->bit_index = bit_index;
         *config = (struct ds_NumericsConfig) { 0 };
+        return 0;
     }
 
-    return success;
+    ss->bit_index = bit_index;
+    ds_NumericsConfigDeserialize(ss, config);
+    return 1;
 }

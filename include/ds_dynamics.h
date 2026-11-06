@@ -113,6 +113,8 @@ void                        ds_NumericsConfigPop(void);
 u64                         ds_NumericsConfigSerializeSize(const struct ds_NumericsConfig *config);
 /* Serialize the config. WARNING: Assumes config fits in the stream. */
 void                        ds_NumericsConfigSerialize(struct SS *ss, const struct ds_NumericsConfig *config);
+/* Deserialize the config. WARNING: Assumes config fits in the stream and is of this version. */
+void                        ds_NumericsConfigDeserialize(struct SS *ss, struct ds_NumericsConfig *config);
 /* Returns 1 on success and 0 on failure (a short stream, another version): the stream position is as before the call and config is zeroed. */
 u32                         ds_NumericsConfigTryDeserialize(struct SS *ss, struct ds_NumericsConfig *config);
 
@@ -1406,6 +1408,8 @@ void                        ds_SolverConfigPop(void);
 u64                         ds_SolverConfigSerializeSize(const struct ds_SolverConfig *config);
 /* Serialize the config. WARNING: Assumes config fits in the stream. */
 void                        ds_SolverConfigSerialize(struct SS *ss, const struct ds_SolverConfig *config);
+/* Deserialize the config. WARNING: Assumes config fits in the stream and is of this version. */
+void                        ds_SolverConfigDeserialize(struct SS *ss, struct ds_SolverConfig *config);
 /* Returns 1 on success and 0 on failure (a short stream, another version): the stream position is as before the call and config is zeroed. */
 u32                         ds_SolverConfigTryDeserialize(struct SS *ss, struct ds_SolverConfig *config);
 
@@ -1591,6 +1595,8 @@ struct ds_DynamicsDrawConfig    ds_DynamicsDrawConfigDerive(const struct ds_Dyna
 u64                             ds_DynamicsDrawConfigSerializeSize(const struct ds_DynamicsDrawConfig *config);
 /* Serialize the config. WARNING: Assumes config fits in the stream. */
 void                            ds_DynamicsDrawConfigSerialize(struct SS *ss, const struct ds_DynamicsDrawConfig *config);
+/* Deserialize the config. WARNING: Assumes config fits in the stream and is of this version. */
+void                            ds_DynamicsDrawConfigDeserialize(struct SS *ss, struct ds_DynamicsDrawConfig *config);
 /* Returns 1 on success and 0 on failure (a short stream, another version): the stream position is as before the call and config is zeroed. */
 u32                             ds_DynamicsDrawConfigTryDeserialize(struct SS *ss, struct ds_DynamicsDrawConfig *config);
 
@@ -1623,6 +1629,8 @@ void                        ds_DynamicsConfigUpdatePending(struct ds_Dynamics *p
 u64                         ds_DynamicsConfigSerializeSize(const struct ds_DynamicsConfig *config);
 /* Serialize the config. WARNING: Assumes config fits in the stream. */
 void                        ds_DynamicsConfigSerialize(struct SS *ss, const struct ds_DynamicsConfig *config);
+/* Deserialize the config. WARNING: Assumes config fits in the stream and is of this version. */
+void                        ds_DynamicsConfigDeserialize(struct SS *ss, struct ds_DynamicsConfig *config);
 /* Returns 1 on success and 0 on failure (a short stream, another version): the stream position is as before the call and config is zeroed. */
 u32                         ds_DynamicsConfigTryDeserialize(struct SS *ss, struct ds_DynamicsConfig *config);
 
