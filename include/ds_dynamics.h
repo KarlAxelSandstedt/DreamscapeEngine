@@ -2052,6 +2052,7 @@ enum rigidBodyColorMode
 /*
 ds_DynamicsExternal
 ===================
+Pointer to external (shared) dynamics data such as prefabs.
 */
 struct ds_DynamicsExternal
 {
@@ -2061,7 +2062,9 @@ struct ds_DynamicsExternal
 /*
 ds_DynamicsRuntime
 ==================
-State depending on the runtime config.
+State depending on the runtime config. Every ds_Dynamics own a runtime, at on ds_DynamicsTick,
+srv_frame is set to the server's frame arena, and can safely be used for storing tick-lifetimed
+memory. 
 */
 struct ds_DynamicsRuntime
 {
@@ -2087,9 +2090,17 @@ struct ds_DynamicsRuntime
     u32                             heap_allocated;
 };
 
+/* Allocate runtime resources (Optional: on the arena). */
 void    ds_DynamicsRuntimeAlloc(struct arena *mem, struct ds_DynamicsRuntime *runtime);
+/* Deallocate runtime resources (NO-OP if allocated with arena) */
 void    ds_DynamicsRuntimeDealloc(struct ds_DynamicsRuntime *runtime);
 
+
+/*
+ds_Dynamics
+===========
+TODO
+*/
 struct ds_Dynamics 
 {
     struct ds_DynamicsRuntime       runtime;
@@ -2142,38 +2153,28 @@ struct ds_Dynamics
 
 /**************** PHYISCS PIPELINE API ****************/
 
-/* Allocate physics pipeline with default config  */
+/* Allocate pipeline with default config. */
 struct ds_Dynamics ds_DynamicsAllocDefault(const struct ds_DynamicsExternal *external, const u64 ns_tick);
-/* Allocate physics pipeline with custom config  */
+/* Allocate pipeline with custom config. */
 struct ds_Dynamics ds_DynamicsAlloc(const struct ds_DynamicsConfig *config, const struct ds_DynamicsExternal *external, const u64 ns_tick);
-/* Free the pipeline's heap resources. */
+/* Deallocate pipeline resources. */
 void 			ds_DynamicsDealloc(struct ds_Dynamics *pipeline);
 /* Return the required size when serializing the pipeline. */
 u64             ds_DynamicsSerializeSize(const struct ds_Dynamics *pipeline);
 /* Serialize the pipeline. WARNING: Assumes pipeline fits in the stream. */
 void            ds_DynamicsSerialize(struct SS *ss, const struct ds_Dynamics *pipeline);
 /*
- * Returns 1 on success and 0 on failure. mem holds the runtime's arena part and the restored heap data; everything 
- * else is heap allocated, so always free the pipeline with ds_DynamicsDealloc. On failure the stream position and
- * mem are as before the call and the pipeline is zeroed.
+ * Deserialize a pipeline from stream and allocate resources on the heap. (Optional: runtime allocated
+ * on mem if != NULL). Return 1 on success, or 0 on failure. On failure, stream and mem is restored. 
  */
 u32             ds_DynamicsTryDeserialize(struct arena *mem, struct SS *ss, struct ds_Dynamics *pipeline, const struct ds_DynamicsExternal *external);
-/*
- * Empty the pipeline: every body, shape, contact, island, joint, event, sleeping set and the frame memory go;
- * the frame count restarts and a flagged split is forgotten. Configuration and capacities stay.
- */
+/* Flush pipeline resources, and reset frame counter. */
 void			ds_DynamicsFlush(struct ds_Dynamics *pipeline);
-/*
- * Simulate one physics frame of ns_tick: pending config, broadphase and narrowphase over the dirty shapes,
- * contact promotion/demotion, at most one island split, the solver, proxy updates (or a rebuild of the
- * dynamic BVH), contact removal, the sleep bookkeeping. The pipeline must be pushed (ds_DynamicsConfigPush).
- * srv_frame is the server's frame arena, the tick's scratch memory: pushed on during the tick, left at its mark on return.
- * ns_tick is the frame's duration: the pipeline's ns_tick and timestep are set from it.
- */
-void 			ds_DynamicsTick(struct arena *srv_frame, struct ds_Dynamics *pipeline, const u64 ns_tick);
+/* Simulate one frame of ns_tick. ds_DynamicsConfig must be pushed.  */
+void 			ds_DynamicsTick(struct arena *tmp, struct ds_Dynamics *pipeline, const u64 ns_tick);
 /* Hash bodies in order from low to high and return the final hash  */
 u64             ds_DynamicsHash(const struct ds_Dynamics *pipeline);
-/* validate and ds_Assert internal state of physics pipeline */
+/* Validate and ds_Assert internal state of physics pipeline */
 void			ds_DynamicsValidate(const struct ds_Dynamics *pipeline);
 /*
  * Return (shape index, t) of the first surface hit over all shapes (see ds_ShapeRaycastParameter), or

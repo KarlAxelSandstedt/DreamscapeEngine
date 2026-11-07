@@ -220,7 +220,7 @@ u32 ds_DynamicsDrawConfigTryDeserialize(struct SS *ss, struct ds_DynamicsDrawCon
 {
     struct SS ss_mut = *ss;
     *config = (struct ds_DynamicsDrawConfig) { 0 };
-    if (ss_mut.bit_index % 8 != 0 || SSBytesLeft(&ss_mut) < DS_DYNAMICS_DRAW_CONFIG_SIZE || SSReadU32Le(&ss_mut) != DS_DYNAMICS_DRAW_CONFIG_VERSION)
+    if (SSBytesLeft(&ss_mut) < DS_DYNAMICS_DRAW_CONFIG_SIZE || SSReadU32Le(&ss_mut) != DS_DYNAMICS_DRAW_CONFIG_VERSION)
     {
         return 0;
     }

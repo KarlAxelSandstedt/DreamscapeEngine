@@ -461,7 +461,6 @@ u64 ds_SimCmdPayloadSerializeSize(const struct ds_SimCmdPayload *payload)
 
 void ds_SimCmdPayloadSerialize(struct SS *ss, const struct ds_SimCmdPayload *payload)
 {
-    ds_Assert(ss->bit_index % 8 == 0);
     ds_Assert(payload->stream.bit_index <= U32_MAX);
     ds_Assert(ds_SimCmdPayloadSerializeSize(payload) <= SSBytesLeft(ss));
 
@@ -477,7 +476,7 @@ u32 ds_SimCmdPayloadTryDeserializeAndAlias(struct SS *ss, struct ds_SimCmdPayloa
     *payload = ds_SimCmdPayloadEmpty(ds_SimIdNull());
     struct ds_SimCmdPayload payload_mut = *payload;
 
-    if ((ss_mut.bit_index % 8) || SSBytesLeft(&ss_mut) < DS_SIM_CMD_PAYLOAD_FIXED_SIZE)
+    if (SSBytesLeft(&ss_mut) < DS_SIM_CMD_PAYLOAD_FIXED_SIZE)
     {
         return 0;
     }

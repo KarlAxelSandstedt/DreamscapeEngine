@@ -103,7 +103,7 @@ u32 ds_DynamicsConfigTryDeserialize(struct SS *ss, struct ds_DynamicsConfig *con
 {
     struct SS ss_mut = *ss;
     *config = (struct ds_DynamicsConfig) { 0 };
-    if (ss_mut.bit_index % 8 != 0 || SSBytesLeft(&ss_mut) < DS_DYNAMICS_CONFIG_FIXED_SIZE || SSReadU32Le(&ss_mut) != DS_DYNAMICS_CONFIG_VERSION)
+    if (SSBytesLeft(&ss_mut) < DS_DYNAMICS_CONFIG_FIXED_SIZE || SSReadU32Le(&ss_mut) != DS_DYNAMICS_CONFIG_VERSION)
     {
         return 0;
     }
@@ -336,6 +336,21 @@ void ds_DynamicsDealloc(struct ds_Dynamics *pipeline)
 
 static void ds_DynamicsClearFrame(struct ds_Dynamics *pipeline)
 {
+    struct ds_DynamicsRuntime *runtime = &pipeline->runtime;
+    const u64 f = pipeline->frames_completed & 0x1;
+    for (u32 i = 0; i < runtime->worker_count; ++i)
+    {
+        ArenaFlush(runtime->worker[i].frame_arr + f);
+        runtime->worker[i].frame = runtime->worker[i].frame_arr + f;
+        ds_DynamicsMetricsFlush(&runtime->worker[i].metrics);
+        ds_CPoolFlush(runtime->worker[i].draw.segment);
+        ds_CPoolFlush(runtime->worker[i].draw.point);
+        ds_CPoolFlush(runtime->worker[i].draw.force);
+    }
+    ds_DynamicsMetricsFlush(&runtime->metrics);
+    ds_CPoolFlush(runtime->draw.segment);
+    ds_CPoolFlush(runtime->draw.point);
+    ds_CPoolFlush(runtime->draw.force);
     ds_BitSetClear(&pipeline->island_high_energy_set, 0);
 }
 
@@ -1930,41 +1945,19 @@ void ds_DynamicsProfilePrint(FILE *file, const struct ds_DynamicsProfile *p)
 }
 
 
-void ds_DynamicsTick(struct arena *srv_frame, struct ds_Dynamics *pipeline, const u64 ns_tick)
+void ds_DynamicsTick(struct arena *tmp, struct ds_Dynamics *pipeline, const u64 ns_tick)
 {
 	ProfZone;
 
     ds_Assert(g_dynamics_config == &pipeline->config);
     pipeline->ns_tick = ns_tick;
     pipeline->timestep = (f32) ns_tick / NSEC_PER_SEC;
-    ds_Assert(pipeline->runtime.srv_frame == NULL);
-    pipeline->runtime.srv_frame = srv_frame;
-    ArenaPushRecord(srv_frame);
-    for (u32 i = 0; i < pipeline->runtime.worker_count; ++i)
-    {
-        ds_CPoolFlush(pipeline->runtime.worker[i].draw.segment);
-        ds_CPoolFlush(pipeline->runtime.worker[i].draw.point);
-        ds_CPoolFlush(pipeline->runtime.worker[i].draw.force);
-    }
-    ds_CPoolFlush(pipeline->runtime.draw.segment);
-    ds_CPoolFlush(pipeline->runtime.draw.point);
-    ds_CPoolFlush(pipeline->runtime.draw.force);
-
-	if (pipeline->frames_completed)
-	{
-		ds_DynamicsClearFrame(pipeline);
-	}
-    ds_CGraphFramePrepare(pipeline);
+    ds_Assert(pipeline->runtime.tmp == NULL);
+    pipeline->runtime.tmp = tmp;
+    ArenaPushRecord(tmp);
 	pipeline->frames_completed += 1;
-
-    const u64 f = pipeline->frames_completed & 0x1;
-    for (u32 i = 0; i < pipeline->runtime.worker_count; ++i)
-    {
-        ArenaFlush(pipeline->runtime.worker[i].frame_arr + f);
-        pipeline->runtime.worker[i].frame = pipeline->runtime.worker[i].frame_arr + f;
-        ds_DynamicsMetricsFlush(&pipeline->runtime.worker[i].metrics);
-    }
-    ds_DynamicsMetricsFlush(&pipeline->runtime.metrics);
+    ds_DynamicsClearFrame(pipeline);
+    ds_CGraphFramePrepare(pipeline);
 
     ds_DynamicsProfileBegin(pipeline);
     {
@@ -1972,8 +1965,8 @@ void ds_DynamicsTick(struct arena *srv_frame, struct ds_Dynamics *pipeline, cons
     }
     ds_DynamicsProfileEnd(pipeline);
 
-    ArenaPopRecord(srv_frame);
-    pipeline->runtime.srv_frame = NULL;
+    ArenaPopRecord(tmp);
+    pipeline->runtime.tmp = NULL;
 	ProfZoneEnd;
 }
 

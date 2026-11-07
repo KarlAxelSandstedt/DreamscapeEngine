@@ -41,7 +41,10 @@ Example (repetition testing):
             snap.bit_index = 0;                                 // rewind
             ds_DynamicsTryDeserialize(mem, &snap, &copy, pipeline->external);  // restore (setup, not measured)
             ds_DynamicsConfigPush(&copy);
-            ds_DynamicsTick(srv_frame, &copy, copy.ns_tick);    // zone of interest
+            copy.runtime.srv_frame = srv_frame;                 // a stage driven directly: the setups push on it
+            {
+                Dynamics code zone being measured...
+            }
             ds_DynamicsDealloc(&copy);                             // worker frames are heap allocated
             ArenaPopRecord(mem);
         }
@@ -147,7 +150,6 @@ u64 ds_DynamicsSerializeSize(const struct ds_Dynamics *pipeline)
 
 void ds_DynamicsSerialize(struct SS *ss, const struct ds_Dynamics *pipeline)
 {
-	ds_Assert(ss->bit_index % 8 == 0);
 	ds_Assert(ds_DynamicsSerializeSize(pipeline) <= SSBytesLeft(ss));
 
 #ifdef DS_ASSERT_DEBUG
@@ -201,10 +203,8 @@ void ds_DynamicsSerialize(struct SS *ss, const struct ds_Dynamics *pipeline)
 
 u32 ds_DynamicsTryDeserialize(struct arena *mem, struct SS *ss, struct ds_Dynamics *pipeline, const struct ds_DynamicsExternal *external)
 {
-	ds_Assert(mem && ss->bit_index % 8 == 0);
-
 	const u64 bit_index = ss->bit_index;
-	const u64 mem_left = mem->mem_left;
+	const u64 mem_left = (mem) ? mem->mem_left : 0;
 	*pipeline = (struct ds_Dynamics) { 0 };
 	if (SSBytesLeft(ss) < DS_SNAPSHOT_HEADER_FIXED_SIZE)
 	{
@@ -288,7 +288,10 @@ u32 ds_DynamicsTryDeserialize(struct arena *mem, struct SS *ss, struct ds_Dynami
 
 failure:
 	ds_DynamicsDealloc(pipeline);
-	ArenaPopPacked(mem, mem_left - mem->mem_left);
+	if (mem)
+	{
+		ArenaPopPacked(mem, mem_left - mem->mem_left);
+	}
 	*pipeline = (struct ds_Dynamics) { 0 };
 	ss->bit_index = bit_index;
 	return 0;

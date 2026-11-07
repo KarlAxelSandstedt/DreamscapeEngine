@@ -221,7 +221,6 @@ u32 ds_CPoolAllocInternal(struct arena *mem, void **buf, u32 *length, u32 *count
 
 void ds_CPoolSerializeInternal(struct SS *ss, const void *buf, const u32 length, const u32 count, const u64 slot_size)
 {
-	ds_Assert(ss->bit_index % 8 == 0);
 	ds_Assert(2*sizeof(u32) + count*slot_size <= SSBytesLeft(ss));
 
 	SSWriteU32Le(ss, length);
@@ -231,8 +230,6 @@ void ds_CPoolSerializeInternal(struct SS *ss, const void *buf, const u32 length,
 
 u32 ds_CPoolTryDeserializeInternal(struct arena *mem, struct SS *ss, void **buf, u32 *length, u32 *count, u32 *growable, u32 *heap_allocated, const u64 slot_size, const u32 alloc_growable)
 {
-	ds_Assert(ss->bit_index % 8 == 0);
-
 	*buf = NULL;
 	*length = 0;
 	*count = 0;
@@ -262,7 +259,6 @@ u32 ds_CPoolTryDeserializeInternal(struct arena *mem, struct SS *ss, void **buf,
 
 void ds_PoolSerializeInternal(struct SS *ss, const void *buf, const u32 length, const u32 count, const u32 count_max, const u32 next_free, const u64 slot_size, const u64 pool_slot_offset)
 {
-	ds_Assert(ss->bit_index % 8 == 0);
 	ds_Assert(3*sizeof(u32) + (u64) (count_max - count)*sizeof(u32) + (u64) count*slot_size <= SSBytesLeft(ss));
 
 	const u8 *base = buf;
@@ -462,8 +458,6 @@ void ds_TPoolGrowInternal(struct ds_TPoolState *state, void **block, const u32 i
 
 u32 ds_PoolTryDeserializeInternal(struct arena *mem, struct SS *ss, u32 *heap_allocated, void **buf, u32 *length, u32 *count, u32 *count_max, u32 *next_free, u32 *growable, const u64 slot_size, const u64 pool_slot_offset, const u32 alloc_growable)
 {
-	ds_Assert(ss->bit_index % 8 == 0);
-
 	const u64 bit_index = ss->bit_index;
 	const u64 mem_left = (mem) ? mem->mem_left : 0;
 	*heap_allocated = 0;

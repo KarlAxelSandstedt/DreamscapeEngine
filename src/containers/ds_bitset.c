@@ -109,7 +109,6 @@ u64 ds_BitSetSerializeSize(const struct ds_BitSet *set)
 
 void ds_BitSetSerialize(struct SS *ss, const struct ds_BitSet *set)
 {
-	ds_Assert(ss->bit_index % 8 == 0);
 	ds_Assert(ds_BitSetSerializeSize(set) <= SSBytesLeft(ss));
 
 	SSWriteU64Le(ss, set->block_count);
@@ -118,8 +117,6 @@ void ds_BitSetSerialize(struct SS *ss, const struct ds_BitSet *set)
 
 u32 ds_BitSetTryDeserialize(struct arena *mem, struct SS *ss, struct ds_BitSet *set, const u32 growable)
 {
-	ds_Assert(ss->bit_index % 8 == 0);
-
 	*set = (struct ds_BitSet) { 0 };
 	if (SSBytesLeft(ss) < sizeof(u64))
 	{

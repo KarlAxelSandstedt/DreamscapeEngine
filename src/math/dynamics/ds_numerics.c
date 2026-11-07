@@ -103,7 +103,7 @@ u32 ds_NumericsConfigTryDeserialize(struct SS *ss, struct ds_NumericsConfig *con
 {
     struct SS ss_mut = *ss;
     *config = (struct ds_NumericsConfig) { 0 };
-    if (ss_mut.bit_index % 8 != 0 || SSBytesLeft(&ss_mut) < DS_NUMERICS_CONFIG_SIZE || SSReadU32Le(&ss_mut) != DS_NUMERICS_CONFIG_VERSION)
+    if (SSBytesLeft(&ss_mut) < DS_NUMERICS_CONFIG_SIZE || SSReadU32Le(&ss_mut) != DS_NUMERICS_CONFIG_VERSION)
     {
         return 0;
     }

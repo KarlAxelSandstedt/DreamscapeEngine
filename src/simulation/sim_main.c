@@ -138,7 +138,7 @@ u32 ds_SimConfigTryDeserialize(struct SS *ss, struct ds_SimConfig *config)
 {
     struct SS ss_mut = *ss;
     *config = (struct ds_SimConfig) { 0 };
-    if (ss_mut.bit_index % 8 != 0 || SSBytesLeft(&ss_mut) < DS_SIM_CONFIG_FIXED_SIZE || SSReadU32Le(&ss_mut) != DS_SIM_CONFIG_VERSION)
+    if (SSBytesLeft(&ss_mut) < DS_SIM_CONFIG_FIXED_SIZE || SSReadU32Le(&ss_mut) != DS_SIM_CONFIG_VERSION)
     {
         return 0;
     }

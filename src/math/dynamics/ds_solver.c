@@ -130,7 +130,7 @@ u32 ds_SolverConfigTryDeserialize(struct SS *ss, struct ds_SolverConfig *config)
 {
     struct SS ss_mut = *ss;
     *config = (struct ds_SolverConfig) { 0 };
-    if (ss_mut.bit_index % 8 != 0 || SSBytesLeft(&ss_mut) < DS_SOLVER_CONFIG_SIZE || SSReadU32Le(&ss_mut) != DS_SOLVER_CONFIG_VERSION)
+    if (SSBytesLeft(&ss_mut) < DS_SOLVER_CONFIG_SIZE || SSReadU32Le(&ss_mut) != DS_SOLVER_CONFIG_VERSION)
     {
         return 0;
     }

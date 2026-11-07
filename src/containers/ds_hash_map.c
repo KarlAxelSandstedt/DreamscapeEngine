@@ -113,7 +113,6 @@ u64 ds_HashMapSerializeSize(const struct ds_HashMap *map)
 
 void ds_HashMapSerialize(struct SS *ss, const struct ds_HashMap *map)
 {
-	ds_Assert(ss->bit_index % 8 == 0);
 	ds_Assert(ds_HashMapSerializeSize(map) <= SSBytesLeft(ss));
 
 	SSWriteU32Le(ss, map->hash_len);
@@ -124,8 +123,6 @@ void ds_HashMapSerialize(struct SS *ss, const struct ds_HashMap *map)
 
 u32 ds_HashMapTryDeserialize(struct arena *mem, struct SS *ss, struct ds_HashMap *map, const u32 growable)
 {
-	ds_Assert(ss->bit_index % 8 == 0);
-
 	*map = (struct ds_HashMap) { .growable = growable };
 	if (SSBytesLeft(ss) < 2*sizeof(u32))
 	{
@@ -270,7 +267,6 @@ void ds_THashMapFlushInternal(struct ds_THashState *state)
 
 void ds_THashMapSerializeInternal(struct SS *ss, const struct ds_THashState *state)
 {
-	ds_Assert(ss->bit_index % 8 == 0);
 	ds_Assert(sizeof(u32) + (u64) state->hash_len*sizeof(u64) <= SSBytesLeft(ss));
 
 	SSWriteU32Le(ss, state->hash_len);
@@ -279,8 +275,6 @@ void ds_THashMapSerializeInternal(struct SS *ss, const struct ds_THashState *sta
 
 u32 ds_THashMapTryDeserializeInternal(struct arena *mem, struct SS *ss, struct ds_THashState *state)
 {
-	ds_Assert(ss->bit_index % 8 == 0);
-
 	*state = (struct ds_THashState) { 0 };
 	if (SSBytesLeft(ss) < sizeof(u32))
 	{
