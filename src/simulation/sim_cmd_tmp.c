@@ -7,6 +7,12 @@ bodies and joints by author-chosen entities (ds_Sim.entity_map, joint_entity_map
 
 /******** BodyAdd ********/
 
+/* a prefab id: non-empty and within the database's buffer */
+static u32 ds_SimCmdPrefabIdCheck(const utf8 id)
+{
+    return id.size >= 1 && id.size < PREFAB_BUFSIZE;
+}
+
 static u32 ds_BodyAddCmdFormVerify(const struct ds_BodyAddCmd *cmd)
 {
     return ds_SimCmdPrefabIdCheck(cmd->prefab) && ds_TransformWorldFiniteCheck(&cmd->t_world);
@@ -14,13 +20,13 @@ static u32 ds_BodyAddCmdFormVerify(const struct ds_BodyAddCmd *cmd)
 
 static u32 ds_BodyAddCmdDataVerify(const struct ds_Sim *sim, const struct ds_BodyAddCmd *cmd)
 {
-    return ds_SDBLookup(*sim->body_prefab_db, cmd->prefab).index != SDB_STUB
+    return ds_SDBLookup(*sim->dynamics.external->body_prefab_db, cmd->prefab).index != SDB_STUB
         && ds_BodyIdNullCheck(ds_SimBodyByEntity(sim, cmd->entity));
 }
 
 static u32 ds_BodyAddCmdTryExecute(struct ds_Sim *sim, const struct ds_BodyAddCmd *cmd)
 {
-    const struct ds_BodyPrefab *prefab = ds_SDBLookup(*sim->body_prefab_db, cmd->prefab).address;
+    const struct ds_BodyPrefab *prefab = ds_SDBLookup(*sim->dynamics.external->body_prefab_db, cmd->prefab).address;
     const ds_BodyId body = ds_BodyAdd(&sim->dynamics, prefab, &cmd->t_world, cmd->entity);
     if (ds_BodyIdNullCheck(body))
     {
@@ -68,13 +74,13 @@ static u32 ds_ShapeAddCmdFormVerify(const struct ds_ShapeAddCmd *cmd)
 
 static u32 ds_ShapeAddCmdDataVerify(const struct ds_Sim *sim, const struct ds_ShapeAddCmd *cmd)
 {
-    return ds_SDBLookup(*sim->shape_prefab_db, cmd->prefab).index != SDB_STUB
+    return ds_SDBLookup(*sim->dynamics.external->shape_prefab_db, cmd->prefab).index != SDB_STUB
         && !ds_BodyIdNullCheck(ds_SimBodyByEntity(sim, cmd->entity));
 }
 
 static u32 ds_ShapeAddCmdTryExecute(struct ds_Sim *sim, const struct ds_ShapeAddCmd *cmd)
 {
-    const struct ds_ShapePrefab *prefab = ds_SDBLookup(*sim->shape_prefab_db, cmd->prefab).address;
+    const struct ds_ShapePrefab *prefab = ds_SDBLookup(*sim->dynamics.external->shape_prefab_db, cmd->prefab).address;
     ds_ShapeAdd(&sim->dynamics, prefab, &cmd->t_local, ds_SimBodyByEntity(sim, cmd->entity));
     return 1;
 }

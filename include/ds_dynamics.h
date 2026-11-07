@@ -2056,15 +2056,16 @@ Pointer to external (shared) dynamics data such as prefabs.
 */
 struct ds_DynamicsExternal
 {
-    struct c_ShapeDB *  cshape_db;
+    struct c_ShapeDB *      cshape_db;
+    ds_SDB(ds_BodyPrefab) * body_prefab_db;
+    ds_SDB(ds_ShapePrefab) *shape_prefab_db;
 };
 
 /*
 ds_DynamicsRuntime
 ==================
-State depending on the runtime config. Every ds_Dynamics own a runtime, at on ds_DynamicsTick,
-srv_frame is set to the server's frame arena, and can safely be used for storing tick-lifetimed
-memory. 
+State depending on the runtime config. Every ds_Dynamics owns a runtime; on ds_DynamicsTick,
+mem_tick is set, a record pushed and popped on ds_DynamicsTick() entry and exit, respectively.
 */
 struct ds_DynamicsRuntime
 {
@@ -2086,7 +2087,7 @@ struct ds_DynamicsRuntime
     u64                             profile_length;         /* buffer length            */
     u64                             profile_next;           /* monotonically increasing */
 
-    struct arena *                  srv_frame;
+    struct arena *                  mem_tick;
     u32                             heap_allocated;
 };
 

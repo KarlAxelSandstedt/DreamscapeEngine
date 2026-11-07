@@ -585,14 +585,14 @@ static void CollisionDetection(struct ds_Dynamics *pipeline)
 
         ds_JobPhaseBegin(&broad_phase->phase);
 
-        broad_phase->pf = ds_ParallelForChainAlloc(pipeline->runtime.srv_frame, 1); 
+        broad_phase->pf = ds_ParallelForChainAlloc(pipeline->runtime.mem_tick, 1); 
         
         //TODO: this range size is random hardcoded value, change
         ds_ParallelForInit(broad_phase->pf.parallel_for, (u32) pipeline->shape_dirty_set.block_count, 1);
 
         broad_phase->pipeline = pipeline;
         broad_phase->job_count = g_scheduler->worker_count;
-        broad_phase->job = ArenaPushZero(pipeline->runtime.srv_frame, broad_phase->job_count*sizeof(struct ds_BroadJob));
+        broad_phase->job = ArenaPushZero(pipeline->runtime.mem_tick, broad_phase->job_count*sizeof(struct ds_BroadJob));
         ds_JobPhaseReserve(&broad_phase->phase, BROAD_JOB_SEED, broad_phase->job_count);
 
         for (u32 i = 0; i < broad_phase->job_count; ++i)
@@ -658,7 +658,7 @@ static void CollisionDetection(struct ds_Dynamics *pipeline)
 
         for (u32 i = 0; i < CG_COLOR_COUNT + 1; ++i)
         {
-            narrow_phase->pf[i] = ds_ParallelForChainAlloc(pipeline->runtime.srv_frame, 1); 
+            narrow_phase->pf[i] = ds_ParallelForChainAlloc(pipeline->runtime.mem_tick, 1); 
         }
 
         struct ds_ParallelFor *pf;
@@ -676,7 +676,7 @@ static void CollisionDetection(struct ds_Dynamics *pipeline)
 
         narrow_phase->pipeline = pipeline;
         narrow_phase->job_count = g_scheduler->worker_count;
-        narrow_phase->job = ArenaPushZero(pipeline->runtime.srv_frame, narrow_phase->job_count*sizeof(struct ds_NarrowJob));
+        narrow_phase->job = ArenaPushZero(pipeline->runtime.mem_tick, narrow_phase->job_count*sizeof(struct ds_NarrowJob));
         ds_JobPhaseReserve(&narrow_phase->phase, NARROW_JOB_SEED, narrow_phase->job_count);
 
         for (u32 i = 0; i < narrow_phase->job_count; ++i)
@@ -1392,16 +1392,16 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
 
         ds_JobPhaseBegin(&solver_phase->phase);
 
-        solver_phase->pf_body_update = ds_ParallelForChainAlloc(pipeline->runtime.srv_frame, 1);
-        solver_phase->pf_contact_init = ds_ParallelForChainAlloc(pipeline->runtime.srv_frame, CG_COLOR_COUNT);
-        solver_phase->pf_joint_init = ds_ParallelForChainAlloc(pipeline->runtime.srv_frame, CG_COLOR_COUNT);
-        solver_phase->pf_contact_warmup = ds_ParallelForChainAlloc(pipeline->runtime.srv_frame, CG_COLOR_COUNT);
-        solver_phase->pf_joint_warmup = ds_ParallelForChainAlloc(pipeline->runtime.srv_frame, CG_COLOR_COUNT);
-        solver_phase->pf_velocity_solve = ds_ParallelForChainAlloc(pipeline->runtime.srv_frame, 2*g_solver_config->pgs_iteration_count*CG_COLOR_COUNT);
-        solver_phase->pf_integrate = ds_ParallelForChainAlloc(pipeline->runtime.srv_frame, 1);
-        solver_phase->pf_cache_impulse_and_position_init = ds_ParallelForChainAlloc(pipeline->runtime.srv_frame, CG_COLOR_COUNT);
-        solver_phase->pf_position_solve = ds_ParallelForChainAlloc(pipeline->runtime.srv_frame, 2*g_solver_config->ngs_iteration_count*CG_COLOR_COUNT);
-        solver_phase->pf_orientation = ds_ParallelForChainAlloc(pipeline->runtime.srv_frame, 1);
+        solver_phase->pf_body_update = ds_ParallelForChainAlloc(pipeline->runtime.mem_tick, 1);
+        solver_phase->pf_contact_init = ds_ParallelForChainAlloc(pipeline->runtime.mem_tick, CG_COLOR_COUNT);
+        solver_phase->pf_joint_init = ds_ParallelForChainAlloc(pipeline->runtime.mem_tick, CG_COLOR_COUNT);
+        solver_phase->pf_contact_warmup = ds_ParallelForChainAlloc(pipeline->runtime.mem_tick, CG_COLOR_COUNT);
+        solver_phase->pf_joint_warmup = ds_ParallelForChainAlloc(pipeline->runtime.mem_tick, CG_COLOR_COUNT);
+        solver_phase->pf_velocity_solve = ds_ParallelForChainAlloc(pipeline->runtime.mem_tick, 2*g_solver_config->pgs_iteration_count*CG_COLOR_COUNT);
+        solver_phase->pf_integrate = ds_ParallelForChainAlloc(pipeline->runtime.mem_tick, 1);
+        solver_phase->pf_cache_impulse_and_position_init = ds_ParallelForChainAlloc(pipeline->runtime.mem_tick, CG_COLOR_COUNT);
+        solver_phase->pf_position_solve = ds_ParallelForChainAlloc(pipeline->runtime.mem_tick, 2*g_solver_config->ngs_iteration_count*CG_COLOR_COUNT);
+        solver_phase->pf_orientation = ds_ParallelForChainAlloc(pipeline->runtime.mem_tick, 1);
 
         struct ds_ParallelFor *pfb = solver_phase->pf_body_update.parallel_for;
         struct ds_ParallelFor *pfin = solver_phase->pf_integrate.parallel_for;
@@ -1410,7 +1410,7 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
         ds_ParallelForInit(pfb + 0, pipeline->solver_set_pool.buf[SOLVER_SET_ACTIVE].body_compute_pool.count, 32);
         ds_ParallelForInit(pfin + 0, pipeline->solver_set_pool.buf[SOLVER_SET_ACTIVE].body_compute_pool.count, 32);
         ds_ParallelForInit(pfo + 0, pipeline->solver_set_pool.buf[SOLVER_SET_ACTIVE].body_compute_pool.count, 32);
-        solver_phase->proxy_range = ArenaPush(pipeline->runtime.srv_frame, pfo->range_count*sizeof(struct ds_ProxyRange));
+        solver_phase->proxy_range = ArenaPush(pipeline->runtime.mem_tick, pfo->range_count*sizeof(struct ds_ProxyRange));
 
         struct ds_ParallelFor *pfci = solver_phase->pf_contact_init.parallel_for;
         struct ds_ParallelFor *pfji = solver_phase->pf_joint_init.parallel_for;
@@ -1456,7 +1456,7 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
 
         solver_phase->pipeline = pipeline;
         solver_phase->job_count = g_scheduler->worker_count;
-        solver_phase->job = ArenaPushZero(pipeline->runtime.srv_frame, solver_phase->job_count*sizeof(struct ds_SolverJob));
+        solver_phase->job = ArenaPushZero(pipeline->runtime.mem_tick, solver_phase->job_count*sizeof(struct ds_SolverJob));
         ds_JobPhaseReserve(&solver_phase->phase, SOLVER_JOB_SEED, solver_phase->job_count);
 
         for (u32 i = 0; i < solver_phase->job_count; ++i)
@@ -1548,17 +1548,17 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
                 {
                 	ProfZoneNamed("JobPhase(Rebuild)");
 
-                    ArenaPushRecord(pipeline->runtime.srv_frame);
+                    ArenaPushRecord(pipeline->runtime.mem_tick);
 
                     ds_JobPhaseBegin(&rebuild_phase->phase);
 
-                    rebuild_phase->pf_proxy_update = ds_ParallelForChainAlloc(pipeline->runtime.srv_frame, 1); 
+                    rebuild_phase->pf_proxy_update = ds_ParallelForChainAlloc(pipeline->runtime.mem_tick, 1); 
                     {
                         ProfZoneNamed("LeafArray Ordering");
 
                         const struct ds_BitSet *leaf_usage = &pipeline->dynamic_bvh.leaf_set;
                         rebuild_phase->leaf_count = BTLeafCount(pipeline->dynamic_bvh.bt);
-                        rebuild_phase->leaf_buf = ArenaPushAligned(pipeline->runtime.srv_frame, rebuild_phase->leaf_count*sizeof(struct ds_RebuildLeaf), DS_CACHE_LINE);
+                        rebuild_phase->leaf_buf = ArenaPushAligned(pipeline->runtime.mem_tick, rebuild_phase->leaf_count*sizeof(struct ds_RebuildLeaf), DS_CACHE_LINE);
 
                         u32 li = 0;
                         for (u32 block = 0; block < leaf_usage->block_count; ++block)
@@ -1578,7 +1578,7 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
 
                         const struct ds_BitSet *internal_usage = &pipeline->dynamic_bvh.internal_set;
                         rebuild_phase->internal_count = pipeline->dynamic_bvh.bt.count - rebuild_phase->leaf_count;
-                        rebuild_phase->internal_buf = ArenaPushAligned(pipeline->runtime.srv_frame, rebuild_phase->internal_count*sizeof(u32), DS_CACHE_LINE);
+                        rebuild_phase->internal_buf = ArenaPushAligned(pipeline->runtime.mem_tick, rebuild_phase->internal_count*sizeof(u32), DS_CACHE_LINE);
 
                         u32 ii = 0;
                         for (u32 block = 0; block < internal_usage->block_count; ++block)
@@ -1600,20 +1600,20 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
                     rebuild_phase->small_leaf_limit = 256;
                     rebuild_phase->pipeline = pipeline;
                     rebuild_phase->setup_job_length = g_scheduler->worker_count;
-                    rebuild_phase->setup_job = ArenaPushAlignedZero(pipeline->runtime.srv_frame, rebuild_phase->setup_job_length*sizeof(struct ds_RebuildJob), DS_CACHE_LINE);
+                    rebuild_phase->setup_job = ArenaPushAlignedZero(pipeline->runtime.mem_tick, rebuild_phase->setup_job_length*sizeof(struct ds_RebuildJob), DS_CACHE_LINE);
                     AtomicStoreRlx32(&rebuild_phase->a_setup_completed, 0);
                     AtomicStoreRlx32(&rebuild_phase->a_leaves_completed, 0);
                     AtomicStoreRlx32(&rebuild_phase->a_internal_next, 0);
                     AtomicStoreRlx32(&rebuild_phase->a_range_seed_count, 0);
 
-                    rebuild_phase->setup_compute = ArenaPushAligned(pipeline->runtime.srv_frame, rebuild_phase->setup_job_length*sizeof(struct ds_RebuildThreadCompute), DS_CACHE_LINE);
+                    rebuild_phase->setup_compute = ArenaPushAligned(pipeline->runtime.mem_tick, rebuild_phase->setup_job_length*sizeof(struct ds_RebuildThreadCompute), DS_CACHE_LINE);
                     for (u32 i = 0; i < rebuild_phase->setup_job_length; ++i)
                     {
                         AtomicStoreRlx32(&rebuild_phase->setup_job[i].a_range_ready, 0);
                         ds_RebuildThreadComputeInit(rebuild_phase->setup_compute + i);
                     }
 
-                    struct memArray range_arr = ArenaPushAlignedAll(pipeline->runtime.srv_frame, sizeof(struct ds_RebuildJob), DS_CACHE_LINE);
+                    struct memArray range_arr = ArenaPushAlignedAll(pipeline->runtime.mem_tick, sizeof(struct ds_RebuildJob), DS_CACHE_LINE);
                     rebuild_phase->range_job = range_arr.addr;
                     rebuild_phase->range_job_length = (u32) range_arr.len;
 
@@ -1645,7 +1645,7 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
                      */
                     BVHPropagateBoundingBoxesFromLeaves(&pipeline->dynamic_bvh);
 
-                    ArenaPopRecord(pipeline->runtime.srv_frame);
+                    ArenaPopRecord(pipeline->runtime.mem_tick);
 
                     ProfZoneEnd;
                 }
@@ -1659,15 +1659,15 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
             {
             	ProfZoneNamed("JobPhase(ContactRemoval)");
 
-                ArenaPushRecord(pipeline->runtime.srv_frame);
+                ArenaPushRecord(pipeline->runtime.mem_tick);
 
                 ds_JobPhaseBegin(&removal_phase->phase);
 
                 removal_phase->pipeline = pipeline;
-                removal_phase->pf = ds_ParallelForChainAlloc(pipeline->runtime.srv_frame, 1); 
+                removal_phase->pf = ds_ParallelForChainAlloc(pipeline->runtime.mem_tick, 1); 
                 ds_ParallelForInit(removal_phase->pf.parallel_for, (u32) pipeline->shape_dirty_set.block_count, 1);
                 removal_phase->job_count = g_scheduler->worker_count;
-                removal_phase->job = ArenaPushAlignedZero(pipeline->runtime.srv_frame, removal_phase->job_count*sizeof(struct ds_RemovalJob), DS_CACHE_LINE);
+                removal_phase->job = ArenaPushAlignedZero(pipeline->runtime.mem_tick, removal_phase->job_count*sizeof(struct ds_RemovalJob), DS_CACHE_LINE);
 
                 ds_JobPhaseReserve(&removal_phase->phase, REMOVAL_JOB, removal_phase->job_count);
                 for (u32 i = 0; i < removal_phase->job_count; ++i)
@@ -1708,7 +1708,7 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
                     ProfZoneEnd;
                 }
 
-                ArenaPopRecord(pipeline->runtime.srv_frame);
+                ArenaPopRecord(pipeline->runtime.mem_tick);
 
                 ProfZoneEnd;
             } 
@@ -1952,8 +1952,8 @@ void ds_DynamicsTick(struct arena *tmp, struct ds_Dynamics *pipeline, const u64 
     ds_Assert(g_dynamics_config == &pipeline->config);
     pipeline->ns_tick = ns_tick;
     pipeline->timestep = (f32) ns_tick / NSEC_PER_SEC;
-    ds_Assert(pipeline->runtime.tmp == NULL);
-    pipeline->runtime.tmp = tmp;
+    ds_Assert(pipeline->runtime.mem_tick == NULL);
+    pipeline->runtime.mem_tick = tmp;
     ArenaPushRecord(tmp);
 	pipeline->frames_completed += 1;
     ds_DynamicsClearFrame(pipeline);
@@ -1966,7 +1966,7 @@ void ds_DynamicsTick(struct arena *tmp, struct ds_Dynamics *pipeline, const u64 
     ds_DynamicsProfileEnd(pipeline);
 
     ArenaPopRecord(tmp);
-    pipeline->runtime.tmp = NULL;
+    pipeline->runtime.mem_tick = NULL;
 	ProfZoneEnd;
 }
 

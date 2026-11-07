@@ -1,0 +1,299 @@
+================ Determinism, Command Layer and Replays ===============
+
+Problems
+--------
+
+We begin by discussing the high-level problems we wish to solve:
+
+    (1) Canonical ordering of state-changing operations. All state-changing operations such
+        as system frames, system event ops originating from frames, or user-generated ops
+        get a canonical ordering on the engine tick-timeline.
+
+    (2) Replayability: Store and Load all external state-changing commands, and any external
+        data. External data are, among other things, initial configs and seeds.
+
+Assuming determinism is working on a system level, solving (1) and (2) makes the replay
+reproduce the final state.
+
+
+High-Level Architecture
+-----------------------
+
+
+                        User0           UserN
+                        -----------     -----------
+                        | Command | ... | Command |
+                        -----------     -----------
+   ENGINE/SERVER             |               |
+ ---------------------------------------------------------------------------
+ |                           |   _________   |                             |
+ |         +-----------------+---| Batch |---+                             |
+ |         |                     ---------                                 |
+ |         |                         |                                     |
+ |         |                         V                                     |
+ |         |                ---------------------                          |
+ |         |                | Timestamp Layer   |                          |
+ |         |                ---------------------                          |
+ |         |                |    Record Layer   |-----+                    |
+ |         |                ---------------------     |                    |
+ |         |                         |                |                    |
+ |         |                         |                |                    |
+ |         |                         V                |                    |
+ |         |                ---------------------     |                    |
+ |         |    +----+----->|  Timeline Layer   |     |                    |
+ |         |    |    |      ---------------------     |                    |
+ |         |    |    |      |   Execute Layer   |     |                    |
+ |         |    |    |      ---------------------     |                    |
+ |         |    |    |               |                |                    |
+ |         |    |    |               |                |                    |
+ |         |    |    |      STATE    V                |                    |
+ |         |    |    |      ------------------------  |                    |
+ |         |    |    +----- | Game | Physics | ... |  |                    |
+ |         |    |           ------------------------  |                    |
+ |         |    |                                     |                    |
+ |---------|----|-----------------------------------------------------------
+           |    |                                     |
+           |    |                                     |
+           |    |                                     V
+           |    | ----------------------       ++++++++++++++++++
+           |    +-| ConfigLoad Command |<------| cmd_record.bin |   Batch0, Batch1, ...
+           |      ----------------------       ++++++++++++++++++
+           |
+           |      ----------------------       ++++++++++++++++++
+           +------| ConfigLoad Command |<------|   config.bin   |
+                  ----------------------       ++++++++++++++++++
+
+Record/Replay Mode:
+    The engine begins running in either replay mode or record mode.
+
+    If record mode is set, the simulation is seeded by a ConfigLoad of the host's
+    config, which initializes all simulation state. That seed batch is the first
+    entry of the record file, at time 0, so any replay stores the initial config.
+    No more commands are recorded by the engine itself; only subsequent external
+    commands can change the trajectory of the simulation's state. Each server frame
+    records the newly arrived external commands as a single batch, timestamped
+    with the simulation's current time.
+
+    If replay mode is set, the host takes its config from the record's seed entry
+    and is fed the command batches in record order; past the record's end it runs
+    live. With a hash file, record mode writes a hash per system tick and replay
+    mode compares against it.
+
+Simulation Clock Time (SCT):
+
+    SCT is a monotonically increasing integer in microseconds, and is updated
+    according to the engine's wall-clock delta, scaled by the game speed. However,
+    in the case when the engine falls behind schedule, in order to avoid falling
+    into the death spiral of an ever growing queue of scheduled work; the engine may
+    throttle the speed at which simulation time passes.
+
+SCT-based-CommandQueue:
+
+    The engine executes timestamped commands in their Simulation Clock Time (SCT)
+    ordering, with specific tie-breaker rules.
+
+    Internal commands are commands produced by the engine's different simulation
+    systems and run on a deterministic schedule according to their tick-rates, and
+    continuously keep the SCT-queue fed with one tick per system. Tie-breakers in
+    the SCT-Queue are determined by a canonical execution order:
+
+        (T,System1) > (T,System2) > ... > (T,SystemN)
+
+    External commands (and the seed command) are batched together per server frame
+    in arrival order. A non-empty batch is timestamped with the simulation's
+    current time, recorded (a zero delta when no simulation time passed since the
+    previous entry), and executed first, at that time, before any system tick that
+    is due in the frame. External commands are therefore not in the queue: the
+    queue holds one pending tick per system.
+
+    The Queue itself works as a minimum queue, and we get a key of the form:
+
+        [ TIMESTAMP(64-N) | SYSTEM(N) ]        N = DS_SIM_KEY_SYSTEM_BITS = 4
+
+    with the system ordering (lower wins on a tie):
+
+        Dynamics: 0b0000
+            Game: 0b0001
+            ...
+
+External sources and dispatch:
+
+    Every external source of input that affects the simulation state is generalized
+    behind the ds_SimCmd API. By serializing all such commands, in order, to a file
+    we gain the ability to fully replay any simulation. However, such APIs can quickly
+    become cumbersome to use, so we discuss the issues and try to land on something
+    reasonable.
+
+    Judging from the words "external source" we can imagine these commands, in
+    serialized forms, being sent over networks, read from files, and so on. This seems
+    like things that should be fully abstracted away and be part of the generalized
+    command pipeline; every command arrives to the engine/server fully serialized, in
+    a payload:
+
+              File => Payload(serialized(cmd)) ---> serialized(cmd) ---+
+                                                                       |
+           Network => Payload(serialized(cmd)) ---> serialized(cmd) ---+---> ValidateAndExecute()
+                                                                       |
+        LocalInput => Payload(serialized(cmd)) ---> serialized(cmd) ---+
+
+    The more complex question is how the external sources dispatch commands to the
+    command queue. As in the previous case, this is preferably fully general, and as
+    easy-to-use as possible.
+
+    We begin by acknowledging that any external command's destination is a specific
+    simulation's command queue. This seems to be the correct abstraction level when
+    specifying a command's destination; presuming that a server generates a unique
+    identifier (ds_SimId) per simulation, whenever we want to send a command(s) to a
+    given simulation, we simply have to send an identifier with our command set:
+
+        Network:       Payload(sim_id, serialized(cmd[]))
+        File:          Payload(sim_id, serialized(cmd[]))
+        LocalInput:    Payload(sim_id, serialized(cmd[]))
+
+    The server's door takes the frame's payloads, drops those whose destination is
+    unknown or replaying, decodes each (form-verified) once and fuses them per
+    simulation into that frame's batch. The replay file is the one source that
+    bypasses the door: its entries are decoded by the host itself.
+
+RecordLoop:
+
+    Below is the high-level program-flow of the server's record loop (ds_ServerTick).
+
+    while (running)
+    {
+        ns_delta = NS() - ns;
+        ns += ns_delta;
+
+        door();                                             // payloads -> per-simulation batch
+        for sim in simulations
+        {
+            ns_wanted    = sim.ns_remainder + ns_delta*sim.speed;
+            ns_sim_delta = Min(ns_wanted, sim.ns_budget);   // the throttle: at most one tick of every system
+            sim.ns_remainder = ns_sim_delta % 1000;
+            us_delta = ns_sim_delta / 1000;
+
+            if (RECORD && batch.count)
+                record(sim.us_time, batch);
+            SimTick(sim, batch, us_delta);                  // batch first, at us_time; then every due system tick
+            write or check hashes;
+        }
+        Draw();
+    }
+
+    In replay mode the loop instead advances to each record entry whose time falls in
+    the frame (an empty tick up to the entry's time, then the entry's commands in a
+    zero-delta tick) and finishes the frame with an empty tick.
+
+API
+---
+
+Since the whole point of all of this is make our lives easier to deal with deterministic
+and replayable simulations of multiple systems, we should probably have a simulation struct
+which stores all simulation state, and where external commands come from:
+
+    struct ds_Simulation
+    {
+        /* host state: how the timeline is driven; not in a snapshot, may differ between record and replay */
+        enum ds_SimulationMode  mode;               // NONE, RECORD, REPLAY
+        FILE                    record;             // Null, Writable or Readable depending on mode
+
+        f64                     speed;              // Simulation speed (scales wall-clock)
+
+        u64                     us_delta;           // Simulation time delta
+        u64                     ns_remainder;       // Unaccounted time from previous frame
+        u64                     ns_budget;          // Simulation time-budget, us_time is never incremented
+                                                       by more than:
+                                                            1000*ns_budget = 1000*sum_i system_i.us_budget
+
+        ds_CPool(ds_Cmd)        external_cmd_buf;   // external command batch, not yet stamped
+
+        /* timeline state: what a snapshot copies, a hash covers and a replay reproduces */
+        u64                     us_time;            // Simulation time
+        struct SCTQueue         cmd_queue;          // simulation timestamp + tag-based command queue
+
+        struct ds_Dynamics      dynamics;
+        struct ds_Game          game;
+    }
+
+
+sources of inpsiration (For agent to look into)
+-----------------------------------------------
+
+* Quake3 command layer / net layer; I believe this command queue takes network,
+  user inputs, (and other things???), and transform them into commands executing
+  procedures in the engine?
+    
+
+
+Networking: server-authoritative, clients interpolate (agent discussion 2026-11-01)
+----------------------------------------------------------------------------------
+
+The model imagined: the server runs the timeline (physics + game), users send inputs,
+the server applies a stamping rule and puts them into the canonical command queue,
+which is recorded. The server is deterministic and replayable; clients interpolate
+received state for rendering and need no determinism. Quake 3 is this model, minus
+the replayable server. Single player = server + client in one process over a
+loopback (Quake 3 does this), so the local game and the networked game share code,
+with zero latency locally.
+
+Where things live:
+
+    * timeline: on the server, reads commands only, runs the ticks.
+    * replication: after the tick, reads timeline state only, never writes it. Its
+      per-client state (delta histories, priorities, send rates) is output state and
+      is not part of the replay.
+    * client: frame layer + interpolation buffer + renderer. Produces commands.
+
+Sending as little as possible (known techniques, roughly by leverage):
+
+    * Relevance: each client only gets bodies it can see or soon will (Quake 3: map
+      visibility sets; open worlds: distance + per-object priority growing with
+      velocity and recent interaction). Bandwidth scales with what is near the
+      player, not with the world.
+    * Rest is free: a body unchanged since the last acknowledged snapshot is not
+      sent. Sleeping bodies cost nothing in steady state.
+    * Delta against the last acknowledged snapshot: client acks snapshot N, server
+      sends the diff vs N and keeps a short history of what it sent each client. A
+      lost packet only means a bigger next delta. Needs unreliable, latest-wins
+      delivery.
+    * Quantization + bit packing: positions on a fixed grid, orientations as the
+      smallest three quaternion components (~10 bits each), velocities quantized or
+      dropped when interpolating. Delta + quantization is worth about two orders of
+      magnitude over raw floats.
+    * Snapshot rate below tick rate: the client interpolates between the last two
+      snapshots with a render delay of one or two snapshot intervals. Interpolate,
+      don't extrapolate: extrapolated bodies look wrong the moment they collide.
+    * Per-packet byte budget: a per-client priority accumulator fills each packet
+      with the highest-priority bodies up to a cap and resets them, so the stream
+      stays flat when a pile collapses instead of bursting.
+    * Two channels: state unreliable; creation/destruction and anything that must
+      not be missed on a reliable, acknowledged sequence. Static geometry and
+      assets are never sent; the client has the level and receives ids + prefab
+      references.
+
+The player experience problem is the local player: interpolation hides remote
+bodies but the player's own input shows up after a round trip plus the render
+delay. Two ways out; the choice decides whether the client needs physics at all:
+
+    (1) Accept the delay. Fine for slow things: strategy views, vehicles with
+        inertia, anything where a short lag reads as weight.
+    (2) Predict the player only: the client runs the player's movement with its
+        own inputs immediately, the server sends the authoritative player state,
+        the client re-applies its unacknowledged inputs on top. Cheap and needs no
+        determinism when the player is a kinematic character controller (Quake 3's
+        pmove). Becomes hard when the player is a dynamic body pushing other bodies:
+        predicting it means simulating the world around it, and corrections mean
+        resimulating it (snapshot restore + rerun of buffered inputs, which our
+        determinism makes exact but not free).
+
+Settle early: what is the player? A character controller keeps the client thin and
+the server the only place physics runs. A physics-driven player pulls the timeline
+onto the client as well.
+
+Not locked in: the requirements (tick-keyed command stream as the sole mutator,
+snapshot/restore at tick boundaries, per-tick hashes) are the shared foundation of
+this model, deterministic lockstep (commands only, every peer simulates, waits for
+all inputs per tick, fixed input delay) and rollback (lockstep without the wait:
+predict missing inputs, restore + resimulate when they arrive). The model can be
+chosen when the game's facts are known: how much world each client must simulate
+and how much input delay the game tolerates.

@@ -41,7 +41,7 @@ Example (repetition testing):
             snap.bit_index = 0;                                 // rewind
             ds_DynamicsTryDeserialize(mem, &snap, &copy, pipeline->external);  // restore (setup, not measured)
             ds_DynamicsConfigPush(&copy);
-            copy.runtime.srv_frame = srv_frame;                 // a stage driven directly: the setups push on it
+            copy.runtime.mem_tick = tmp;                        // a stage driven directly: the setups push on it
             {
                 Dynamics code zone being measured...
             }

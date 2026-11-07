@@ -48,7 +48,6 @@ static enum ds_SimSystem ds_SimKeySystem(const ds_SimKey key)
 
 /**************** ds_SimConfig ****************/
 
-/* seed nonzero, system ticks in [1, DS_SIM_TICK_US_MAX] */
 static u32 ds_SimConfigCheck(const struct ds_SimConfig *config)
 {
     if ((config->seed[0] | config->seed[1] | config->seed[2] | config->seed[3]) == 0)
@@ -108,7 +107,6 @@ void ds_SimConfigGenerateSeed(struct ds_SimConfig *config)
 }
 
 #define DS_SIM_CONFIG_VERSION       3u
-/* version + seed + ticks */
 #define DS_SIM_CONFIG_FIXED_SIZE    (4 + 4*8 + SIM_SYSTEM_COUNT*8)
 
 u64 ds_SimConfigSerializeSize(const struct ds_SimConfig *config)
@@ -176,10 +174,6 @@ static void ds_SimScheduleInit(struct ds_Sim *sim)
     }
 }
 
-/*
- * Seed the simulation at time 0: the config, as a ConfigLoad batch, goes through an ordinary frame so that live and
- * replay apply (and record) it the same way. Everything here lives within the call.
- */
 static void ds_SimSeed(struct ds_Sim *sim, const struct ds_SimConfig *config)
 {
     struct arena *tmp = ArenaPushScratch();
@@ -193,15 +187,13 @@ static void ds_SimSeed(struct ds_Sim *sim, const struct ds_SimConfig *config)
     ArenaPopScratch();
 }
 
-void ds_SimAlloc(struct ds_Sim *sim, const struct ds_SimConfig *config, const struct ds_DynamicsExternal *external, ds_SDB(ds_BodyPrefab) *prefab_db, ds_SDB(ds_ShapePrefab) *shape_prefab_db)
+void ds_SimAlloc(struct ds_Sim *sim, const struct ds_SimConfig *config, const struct ds_DynamicsExternal *external)
 {
     ds_Assert(ds_SimConfigCheck(config));
-    ds_Assert(external && prefab_db && shape_prefab_db);
+    ds_Assert(external && external->cshape_db && external->body_prefab_db && external->shape_prefab_db);
 
     *sim = (struct ds_Sim) { 0 };
     sim->config_seed = *config;
-    sim->body_prefab_db = prefab_db;
-    sim->shape_prefab_db = shape_prefab_db;
     sim->entity_map = ds_HashMapAlloc(NULL, 1024, 1024, GROWABLE);
     sim->joint_entity_map = ds_HashMapAlloc(NULL, 64, 64, GROWABLE);
     for (u32 i = 0; i < SIM_SYSTEM_COUNT; ++i)
@@ -222,6 +214,7 @@ void ds_SimDealloc(struct ds_Sim *sim)
     ds_HashMapDealloc(&sim->joint_entity_map);
 }
 
+/* TODO(Remove/Refactor) */
 ds_BodyId ds_SimBodyByEntity(const struct ds_Sim *sim, const u32 entity)
 {
     for (u32 i = ds_HashMapFirst(&sim->entity_map, entity); i != HASH_NULL; i = ds_HashMapNext(&sim->entity_map, i))
@@ -236,7 +229,7 @@ ds_BodyId ds_SimBodyByEntity(const struct ds_Sim *sim, const u32 entity)
     return ds_BodyIdNull();
 }
 
-/* TODO(Remove/Refactor) a slot reused after a breakage is taken for the joint: the entity scheme is temporary */
+/* TODO(Remove/Refactor) */
 ds_JointId ds_SimJointByEntity(const struct ds_Sim *sim, const u32 joint_entity)
 {
     for (u32 i = ds_HashMapFirst(&sim->joint_entity_map, joint_entity); i != HASH_NULL; i = ds_HashMapNext(&sim->joint_entity_map, i))
@@ -277,7 +270,7 @@ u64 ds_SimHash(const struct ds_Sim *sim)
     return XXH3_64bits(words, sizeof(words));
 }
 
-void ds_SimTick(struct arena *srv_frame, struct ds_Sim *sim, ds_CPool(u64) *hash_pool, const ds_CPool(ds_SimCmd) *cmds, const u64 us_delta)
+void ds_SimTick(struct arena *tmp, struct ds_Sim *sim, ds_CPool(u64) *hash_pool, const ds_CPool(ds_SimCmd) *cmds, const u64 us_delta)
 {
     ds_DynamicsConfigPush(&sim->dynamics); 
 
@@ -304,12 +297,12 @@ void ds_SimTick(struct arena *srv_frame, struct ds_Sim *sim, ds_CPool(u64) *hash
 
         sim->sys_schedule[sys] = ds_SimKeyInit(us + sim->us_system_tick[sys], sys);
 
-        ArenaPushRecord(srv_frame);
+        ArenaPushRecord(tmp);
         switch (sys)
         {
             case SIM_SYSTEM_DYNAMICS:
             {
-                ds_DynamicsTick(srv_frame, &sim->dynamics, 1000 * sim->us_system_tick[SIM_SYSTEM_DYNAMICS]);
+                ds_DynamicsTick(tmp, &sim->dynamics, 1000 * sim->us_system_tick[SIM_SYSTEM_DYNAMICS]);
             } break;
 
             case SIM_SYSTEM_GAME:
@@ -322,7 +315,7 @@ void ds_SimTick(struct arena *srv_frame, struct ds_Sim *sim, ds_CPool(u64) *hash
                 ds_AssertString(0, "Invalid system in ds_SimKey");
             } break;
         }
-        ArenaPopRecord(srv_frame);
+        ArenaPopRecord(tmp);
 
         if (hash_pool)
         {

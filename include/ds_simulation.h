@@ -20,9 +20,15 @@
 /*
 ds_simulation.h
 ===============
-The deterministic, replayable simulation: a timeline of system ticks and external command
-batches ordered by Simulation Clock Time (SCT), recorded to and replayed from a command file.
+Deterministic, replayable simulation: a timeline of system ticks and external 
+command batches ordered by Simulation Clock Time (SCT), recordable to and 
+replayable from command files.
+
 Design: notes/replays.txt.
+
+Every external input reaches the server as serialized commands in a payload addressed to
+a ds_SimId; the server decodes and routes it to that simulation (sources and dispatch: the
+note's "External sources and dispatch").
 */
 
 #ifndef __DS_SIMULATION_H__
@@ -40,7 +46,7 @@ extern "C" {
 struct ds_Sim;
 
 
-/* Ordered by priority; on tie-breakers, dynamics precedes game ... */
+/* Ordered by priority; on tie-breakers, lower enum value wins (Dynamics before Game before ...). */
 enum ds_SimSystem
 {
     SIM_SYSTEM_DYNAMICS,
@@ -48,18 +54,20 @@ enum ds_SimSystem
     SIM_SYSTEM_COUNT
 };
 
-#define DS_SIM_KEY_SYSTEM_BITS  4
-#define DS_SIM_TICK_US_MAX      1000000     /* slowest system: 1 Hz */
+#define DS_SIM_KEY_SYSTEM_BITS  4           /* lower bits in key representing system    */
+#define DS_SIM_TICK_US_MAX      1000000     /* slowest system: 1 Hz                     */
+
 
 /*
 ds_SimConfig
 ============
-ds_SimConfig stores all necessary data in order to set up a simulation with a proper,
-initial state.
+ds_SimConfig stores all config values needed for initializing a proper, empty simulation.
+NOTE: It does not store runtime config values, such as number of workers and so on, which
+are required to make the simulation executable.
 */
 struct ds_SimConfig
 {
-    u64 seed[4];    /* simulation seed */
+    u64 seed[4];                            /* simulation seed */
     
     u64 us_system_tick[SIM_SYSTEM_COUNT];
 
@@ -83,11 +91,13 @@ u32                     ds_SimConfigTryDeserialize(struct SS *ss, struct ds_SimC
 /*
 ds_SimCmd
 =========
-TODO (we document later)
+Commands sent from external sources (network, input, ...) that affect the simulation's state. 
 */
 enum ds_SimCmdType
 {
-    SIM_CMD_CONFIG_LOAD,    /* Payload: serialized ds_SimConfig */
+    SIM_CMD_CONFIG_LOAD,    /* Load a serialized ds_SimConfig (first cmd seeding the sim) */
+
+    /* TODO Below are temporary commands, to be refactored in the future */
     SIM_CMD_BODY_ADD,       /* a body from a body prefab (by id) at a world transform, named by its entity */
     SIM_CMD_SHAPE_ADD,      /* a shape from a shape prefab (by id) on the entity's body, at a local transform */
     SIM_CMD_JOINT_ADD,      /* a distance joint between two entities' bodies */
@@ -176,20 +186,18 @@ ds_SimId
 Unique simulation identifier used by external sources to identify destination simulation.
 */
 DS_DEFINE_ID(ds_SimId, DS_ID_GENERATION_SHIFT, DS_ID_GENERATION_MAX)
-#define DS_SIM_ID_TEMPORARY     ds_SimIdInit(0, 0)
+
 
 /*
 ds_SimCmdPayload
 ================
-External set of serialized ds_SimCmd with a destination simulation
+Set of serialized commands with a destination simulation
 */
-
 struct ds_SimCmdPayload
 {
-    //TODO not finalized, but captures the essence
     ds_SimId    dst;
     u32         cmd_count;
-    struct SS   stream;     /* the commands bit-packed in order: bit_index bits used, bit_count the capacity */
+    struct SS   stream;     /* the commands bit-packed in order */
 };
 DEFINE_CPOOL_STRUCT(ds_SimCmdPayload);
 
@@ -214,8 +222,6 @@ u32                     ds_SimCmdPayloadTryDeserializeAndAlias(struct SS *ss, st
 u32                     ds_SimCmdPayloadAppend(struct ds_SimCmdPayload *payload, const struct ds_SimCmdPayload *src);
 
 
-
-
 /*
 ds_Sim
 ======
@@ -237,8 +243,6 @@ struct ds_Sim
 
     struct ds_Dynamics      dynamics;
     //struct ds_Game          game;             /* TODO: ds_Game undefined */
-    ds_SDB(ds_BodyPrefab)  *body_prefab_db;     /* externally owned */
-    ds_SDB(ds_ShapePrefab) *shape_prefab_db;    /* externally owned */
     struct ds_HashMap       entity_map;         /* TODO(Remove/Refactor) entity -> body pool index, for the commands and the host */
     struct ds_HashMap       joint_entity_map;   /* TODO(Remove/Refactor) joint entity -> joint pool index */
 
@@ -251,7 +255,7 @@ struct ds_Sim
  * Allocate a new simulation from config (ds_SimConfigCheck asserted) at time 0: the seed batch is the first external
  * command and the first system ticks are one period in. The databases are externally owned and must outlive sim.
  */
-void    ds_SimAlloc(struct ds_Sim *sim, const struct ds_SimConfig *config, const struct ds_DynamicsExternal *external, ds_SDB(ds_BodyPrefab) *prefab_db, ds_SDB(ds_ShapePrefab) *shape_prefab_db);
+void    ds_SimAlloc(struct ds_Sim *sim, const struct ds_SimConfig *config, const struct ds_DynamicsExternal *external);
 //TODO
 //void    ds_SimAllocReplay(struct ds_Sim *sim, struct ds_SimReplay *replay);
 /* Free the simulation's heap resources. */
@@ -260,11 +264,11 @@ void    ds_SimDealloc(struct ds_Sim *sim);
 void    ds_SimFlush(struct ds_Sim *sim);
 /*
  * Advance the simulation by us_delta of simulation time: the frame's external commands cmds (may be empty) execute
- * first, at the current time, then every system tick that is due. srv_frame is the server's frame arena, the ticks' scratch memory: each system tick
+ * first, at the current time, then every system tick that is due. tmp is the ticks' scratch memory: each system tick
  * runs between a push and a pop of a record on it. Optional(hash_pool): If non-null, hashes are generated
  * per-subsystem tick (of the tick's time, system and ds_SimHash) and pushed onto it.
  */
-void    ds_SimTick(struct arena *srv_frame, struct ds_Sim *sim, ds_CPool(u64) *hash_pool, const ds_CPool(ds_SimCmd) *cmds, const u64 us_delta);
+void    ds_SimTick(struct arena *tmp, struct ds_Sim *sim, ds_CPool(u64) *hash_pool, const ds_CPool(ds_SimCmd) *cmds, const u64 us_delta);
 /* Return the hash of the simulation's state (every system's state hash). */
 u64     ds_SimHash(const struct ds_Sim *sim);
 /* TODO(Remove/Refactor) Return the body added for entity (SIM_CMD_BODY_ADD), or the null id. */
