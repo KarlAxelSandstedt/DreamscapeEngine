@@ -159,6 +159,7 @@ struct c_Shape
 			                		                the matrix with the given density. */
 	v3	                    center_of_mass;		/* local shape frame center of mass */
 	f32	                    volume;
+	f32	                    extent;
 
 	enum c_ShapeType        type;
 	union

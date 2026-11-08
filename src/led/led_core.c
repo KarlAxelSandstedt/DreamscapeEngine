@@ -512,7 +512,7 @@ struct slot led_CollisionShapeLookup(struct led *led, const utf8 id)
 	return c_ShapeDBLookup(&led->cs_db, id);
 }
 
-struct slot led_ShapePrefabAdd(struct led *led, const utf8 id, const utf8 cshape, const f32 density, const f32 restitution, const f32 friction, const f32 margin)
+struct slot led_ShapePrefabAdd(struct led *led, const utf8 id, const utf8 cshape, const f32 density, const f32 restitution, const f32 friction)
 {
 	struct slot slot = empty_slot;	
 	if (!id.len)
@@ -547,7 +547,6 @@ struct slot led_ShapePrefabAdd(struct led *led, const utf8 id, const utf8 cshape
 			prefab->restitution = restitution;
 			prefab->friction = friction;
 			prefab->density = density;
-            prefab->margin = margin;
 		}
 	}
 
@@ -993,10 +992,9 @@ void led_RopeSetup(struct led *led)
 
     const f32 density = 1.0f;
     const f32 restitution = 0.0f;
-    const f32 margin = 0.5f;
-    led_ShapePrefabAdd(led, Utf8Inline("s_ceil"), Utf8Inline("c_ceil"), density, restitution, floor_friction, margin);
-    led_ShapePrefabAdd(led, Utf8Inline("s_floor"), Utf8Inline("c_floor"), density, restitution, floor_friction, margin);
-    led_ShapePrefabAdd(led, Utf8Inline("s_capsule"), Utf8Inline("c_capsule"), density, restitution, capsule_friction, margin);
+    led_ShapePrefabAdd(led, Utf8Inline("s_ceil"), Utf8Inline("c_ceil"), density, restitution, floor_friction);
+    led_ShapePrefabAdd(led, Utf8Inline("s_floor"), Utf8Inline("c_floor"), density, restitution, floor_friction);
+    led_ShapePrefabAdd(led, Utf8Inline("s_capsule"), Utf8Inline("c_capsule"), density, restitution, capsule_friction);
 
     led_ShapePrefabAttachRenderMesh(led, Utf8Inline("s_ceil"), Utf8Inline("rm_ceil")); 
     led_ShapePrefabAttachRenderMesh(led, Utf8Inline("s_floor"), Utf8Inline("rm_floor")); 
@@ -1150,12 +1148,11 @@ void led_JointSetup(struct led *led)
     const f32 density = 1.0f;
     const f32 restitution = 0.0f;
     const f32 friction = 0.5f;
-    const f32 margin = 0.5f;
-    led_ShapePrefabAdd(led, Utf8Inline("s_bar"), Utf8Inline("c_bar"), density, restitution, friction, margin);
-    led_ShapePrefabAdd(led, Utf8Inline("s_floor"), Utf8Inline("c_floor"), density, restitution, friction, margin);
-    led_ShapePrefabAdd(led, Utf8Inline("s_post"), Utf8Inline("c_post"), density, restitution, friction, margin);
-    led_ShapePrefabAdd(led, Utf8Inline("s_box"), Utf8Inline("c_box"), density, restitution, friction, margin);
-    led_ShapePrefabAdd(led, Utf8Inline("s_capsule"), Utf8Inline("c_capsule"), density, restitution, friction, margin);
+    led_ShapePrefabAdd(led, Utf8Inline("s_bar"), Utf8Inline("c_bar"), density, restitution, friction);
+    led_ShapePrefabAdd(led, Utf8Inline("s_floor"), Utf8Inline("c_floor"), density, restitution, friction);
+    led_ShapePrefabAdd(led, Utf8Inline("s_post"), Utf8Inline("c_post"), density, restitution, friction);
+    led_ShapePrefabAdd(led, Utf8Inline("s_box"), Utf8Inline("c_box"), density, restitution, friction);
+    led_ShapePrefabAdd(led, Utf8Inline("s_capsule"), Utf8Inline("c_capsule"), density, restitution, friction);
 
     led_ShapePrefabAttachRenderMesh(led, Utf8Inline("s_bar"), Utf8Inline("rm_bar"));
     led_ShapePrefabAttachRenderMesh(led, Utf8Inline("s_floor"), Utf8Inline("rm_floor"));
@@ -1531,7 +1528,7 @@ void led_MeshSetup(struct led *led)
         const utf8 l = Utf8Format(sys_win->ui->mem_frame, "l_s_%s", shape[i]);
         led_RigidBodyPrefabAdd(led, rb, dynamic[i]);
         led_RenderMeshAdd(led, rm, c);
-        led_ShapePrefabAdd(led, sp, c, 1.0f, 0.0f, 0.5f, 0.5f);
+        led_ShapePrefabAdd(led, sp, c, 1.0f, 0.0f, 0.5f);
         led_ShapePrefabAttachRenderMesh(led, sp, rm);
         led_RigidBodyPrefabAttachShape(led, rb, sp, l, &identity);
     }
@@ -1546,7 +1543,7 @@ void led_MeshSetup(struct led *led)
         const utf8 rb = Utf8Format(sys_win->ui->mem_frame, "rb_heavy_%s", heavy[i]);
         const utf8 l = Utf8Format(sys_win->ui->mem_frame, "l_s_heavy_%s", heavy[i]);
         led_RigidBodyPrefabAdd(led, rb, rb_dynamic);
-        led_ShapePrefabAdd(led, sp, c, 50.0f, 0.0f, 0.5f, 0.5f);
+        led_ShapePrefabAdd(led, sp, c, 50.0f, 0.0f, 0.5f);
         led_ShapePrefabAttachRenderMesh(led, sp, rm);
         led_RigidBodyPrefabAttachShape(led, rb, sp, l, &identity);
     }
@@ -1746,16 +1743,15 @@ void led_WallSmashSimulationSetup(struct led *led)
 
     const f32 density = 1.0f;
     const f32 restitution = 0.0f;
-    const f32 margin = 0.5f;
-    led_ShapePrefabAdd(led, Utf8Inline("s_mesh"), Utf8Inline("c_mesh"), density, restitution, floor_friction, margin);
-    led_ShapePrefabAdd(led, Utf8Inline("s_floor"), Utf8Inline("c_floor"), density, restitution, floor_friction, margin);
-    led_ShapePrefabAdd(led, Utf8Inline("s_box"), Utf8Inline("c_box"), density, restitution, box_friction, margin);
-    led_ShapePrefabAdd(led, Utf8Inline("s_capsule"), Utf8Inline("c_capsule"), density, restitution, capsule_friction, margin);
-    led_ShapePrefabAdd(led, Utf8Inline("s_sphere"), Utf8Inline("c_sphere"), 100.0f, restitution, sphere_friction, margin);
-    led_ShapePrefabAdd(led, Utf8Inline("s_s_sphere"), Utf8Inline("c_s_sphere"), 100.0f, restitution, sphere_friction, margin);
-    led_ShapePrefabAdd(led, Utf8Inline("s_dsphere"), Utf8Inline("c_dsphere"), density, restitution, box_friction, margin);
-    led_ShapePrefabAdd(led, Utf8Inline("s_ramp"), Utf8Inline("c_ramp"), density, restitution, ramp_friction, margin);
-    led_ShapePrefabAdd(led, Utf8Inline("s_bar"), Utf8Inline("c_bar"), density, restitution, floor_friction, margin);
+    led_ShapePrefabAdd(led, Utf8Inline("s_mesh"), Utf8Inline("c_mesh"), density, restitution, floor_friction);
+    led_ShapePrefabAdd(led, Utf8Inline("s_floor"), Utf8Inline("c_floor"), density, restitution, floor_friction);
+    led_ShapePrefabAdd(led, Utf8Inline("s_box"), Utf8Inline("c_box"), density, restitution, box_friction);
+    led_ShapePrefabAdd(led, Utf8Inline("s_capsule"), Utf8Inline("c_capsule"), density, restitution, capsule_friction);
+    led_ShapePrefabAdd(led, Utf8Inline("s_sphere"), Utf8Inline("c_sphere"), 100.0f, restitution, sphere_friction);
+    led_ShapePrefabAdd(led, Utf8Inline("s_s_sphere"), Utf8Inline("c_s_sphere"), 100.0f, restitution, sphere_friction);
+    led_ShapePrefabAdd(led, Utf8Inline("s_dsphere"), Utf8Inline("c_dsphere"), density, restitution, box_friction);
+    led_ShapePrefabAdd(led, Utf8Inline("s_ramp"), Utf8Inline("c_ramp"), density, restitution, ramp_friction);
+    led_ShapePrefabAdd(led, Utf8Inline("s_bar"), Utf8Inline("c_bar"), density, restitution, floor_friction);
 
     led_ShapePrefabAttachRenderMesh(led, Utf8Inline("s_mesh"), Utf8Inline("rm_mesh"));
     led_ShapePrefabAttachRenderMesh(led, Utf8Inline("s_floor"), Utf8Inline("rm_floor")); 

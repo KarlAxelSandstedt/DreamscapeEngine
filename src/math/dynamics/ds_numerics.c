@@ -34,6 +34,8 @@ struct ds_NumericsConfig ds_NumericsConfigDerive(const struct ds_NumericsConfig 
     config.edge_parallel_max_degrees = F32Clamp(config.edge_parallel_max_degrees, 0.0f, 45.0f);
     config.sat_face_bias = F32Clamp(config.sat_face_bias, 0.0f, F32MaxPositiveNormal());
     config.sat_cache_tolerance = F32Clamp(config.sat_cache_tolerance, 0.0f, F32MaxPositiveNormal());
+    config.proxy_margin_min = F32Clamp(config.proxy_margin_min, 0.0f, F32MaxPositiveNormal());
+    config.proxy_margin_scale = F32Clamp(config.proxy_margin_scale, 0.0f, F32MaxPositiveNormal());
     
     const f32 capsule_tan = F32Tan(config.capsule_parallel_max_degrees * F32_PI2 / 360);
     config.capsule_parallel_tan_sq = capsule_tan*capsule_tan;
@@ -52,6 +54,8 @@ struct ds_NumericsConfig ds_NumericsConfigDefault(void)
     config.dbvh_reinsert_threshold = 0.25f;
     config.cache_count_max = 32;
     config.gjk_max_iterations = 32;
+    config.proxy_margin_min = 0.02f;
+    config.proxy_margin_scale = 0.05f;
     /* tan(2.86 deg) ~ 0.05 */
     config.capsule_parallel_max_degrees = 2.86f;
     /* Box3D: cos(3.62 deg) ~ 0.998 */
@@ -76,8 +80,8 @@ void ds_NumericsConfigPop(void)
     g_numerics_config = NULL;
 }
 
-#define DS_NUMERICS_CONFIG_VERSION  1u
-#define DS_NUMERICS_CONFIG_BITS     (32 + 8*32)
+#define DS_NUMERICS_CONFIG_VERSION  2u
+#define DS_NUMERICS_CONFIG_BITS     (32 + 10*32)
 
 u64 ds_NumericsConfigSerializeBitPackedSize(const struct ds_NumericsConfig *config)
 {
@@ -97,6 +101,8 @@ void ds_NumericsConfigSerializeBitPacked(struct SS *ss, const struct ds_Numerics
     SSWriteU64Partial(ss, (b32) { .f = config->sat_face_bias }.u, 32);
     SSWriteU64Partial(ss, (b32) { .f = config->sat_cache_tolerance }.u, 32);
     SSWriteU64Partial(ss, config->gjk_max_iterations, 32);
+    SSWriteU64Partial(ss, (b32) { .f = config->proxy_margin_min }.u, 32);
+    SSWriteU64Partial(ss, (b32) { .f = config->proxy_margin_scale }.u, 32);
 }
 
 u32 ds_NumericsConfigTryDeserializeBitPacked(struct SS *ss, struct ds_NumericsConfig *config)
@@ -116,6 +122,8 @@ u32 ds_NumericsConfigTryDeserializeBitPacked(struct SS *ss, struct ds_NumericsCo
     config->sat_face_bias = (b32) { .u = (u32) SSReadU64Partial(&ss_mut, 32) }.f;
     config->sat_cache_tolerance = (b32) { .u = (u32) SSReadU64Partial(&ss_mut, 32) }.f;
     config->gjk_max_iterations = (u32) SSReadU64Partial(&ss_mut, 32);
+    config->proxy_margin_min = (b32) { .u = (u32) SSReadU64Partial(&ss_mut, 32) }.f;
+    config->proxy_margin_scale = (b32) { .u = (u32) SSReadU64Partial(&ss_mut, 32) }.f;
     *config = ds_NumericsConfigDerive(config);
     *ss = ss_mut;
     return 1;

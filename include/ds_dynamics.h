@@ -98,6 +98,9 @@ struct ds_NumericsConfig
 
     /* Max GJK iterations (support point evaluations) per distance query; at least 1 */
     u32 gjk_max_iterations;
+
+    f32 proxy_margin_min;
+    f32 proxy_margin_scale;
 };
 extern struct ds_NumericsConfig *g_numerics_config;
 
@@ -291,7 +294,6 @@ struct ds_ShapePrefab
 	f32 	restitution;	    /* Range [0.0, 1.0] : bounciness  		            */
 	f32 	friction;	        /* Range [0.0, 1.0] : bound tangent impulses to 
 						           mix(s1->friction, s2->friction)*(normal impuse)  */
-	f32		margin;	            /* bouding box margin for dynamic BVH proxies 	    */
 
     /* TODO: why here... Currently each shape <-> mesh, so for 
      * simplicity in led, we store the mesh reference in prefab. */

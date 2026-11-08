@@ -251,7 +251,6 @@ static ds_BodyId DynamicsTestBoxAdd(struct arena *mem, struct ds_Dynamics *pipel
         .density = 1.0f,
         .restitution = box->restitution,
         .friction = box->friction,
-        .margin = 0.5f,
     };
     const ds_Transform t_local = ds_TransformIdentity();
     ds_ShapeAdd(pipeline, &shape_prefab, &t_local, body);
@@ -825,7 +824,7 @@ static struct test_Output DynamicsShapeTest(struct test_Environment *env)
     };
     for (u32 i = 0; i < 3; ++i)
     {
-        const struct ds_ShapePrefab prefab = { .cshape = cshape_index[i], .density = 1.0f, .friction = 0.5f, .margin = 0.1f };
+        const struct ds_ShapePrefab prefab = { .cshape = cshape_index[i], .density = 1.0f, .friction = 0.5f };
         shape_id[i] = ds_ShapeAdd(&pipeline, &prefab, &t_local[i], body_id);
         TEST_NOT_ZERO(!ds_ShapeIdNullCheck(shape_id[i]));
     }
@@ -915,7 +914,7 @@ static struct test_Output DynamicsShapeTest(struct test_Environment *env)
     const u32 removed_index = ds_ShapeIdIndex(removed);
     ds_ShapeDynamicRemove(&pipeline, body, removed_index, 1);
     TEST_NOT_ZERO(ds_ShapeLookup(&pipeline, removed).address == NULL && body->shape_list.count == 2);
-    const struct ds_ShapePrefab again = { .cshape = cshape_index[1], .density = 1.0f, .friction = 0.5f, .margin = 0.1f };
+    const struct ds_ShapePrefab again = { .cshape = cshape_index[1], .density = 1.0f, .friction = 0.5f };
     const ds_ShapeId reused = ds_ShapeAdd(&pipeline, &again, &t_local[1], body_id);
     TEST_NOT_ZERO(!ds_ShapeIdNullCheck(reused) && !ds_ShapeIdEqual(reused, removed));
     TEST_NOT_ZERO(ds_ShapeLookup(&pipeline, removed).address == NULL && ds_ShapeLookup(&pipeline, reused).address != NULL);
@@ -975,8 +974,8 @@ static struct test_Output DynamicsBodyTest(struct test_Environment *env)
     TEST_NOT_ZERO(!ds_BodyIdNullCheck(a) && !ds_BodyIdNullCheck(b) && !ds_BodyIdEqual(a, b));
 
     /* two spheres on a: density 1 at x = +1, density 3 at x = -1 */
-    const struct ds_ShapePrefab light = { .cshape = slot.index, .density = 1.0f, .friction = 0.5f, .margin = 0.1f };
-    const struct ds_ShapePrefab heavy = { .cshape = slot.index, .density = 3.0f, .friction = 0.5f, .margin = 0.1f };
+    const struct ds_ShapePrefab light = { .cshape = slot.index, .density = 1.0f, .friction = 0.5f };
+    const struct ds_ShapePrefab heavy = { .cshape = slot.index, .density = 3.0f, .friction = 0.5f };
     const ds_Transform at_plus = { .rotation = QIdentity(), .position = V3(1.0f, 0.0f, 0.0f) };
     const ds_Transform at_minus = { .rotation = QIdentity(), .position = V3(-1.0f, 0.0f, 0.0f) };
     TEST_NOT_ZERO(!ds_ShapeIdNullCheck(ds_ShapeAdd(&pipeline, &light, &at_plus, a)));
@@ -3336,7 +3335,7 @@ static ds_BodyId DynamicsWarmShapeAdd(struct arena *mem, struct ds_Dynamics *pip
     const struct ds_BodyPrefab body_prefab = { .dynamic = ws->dynamic };
     const ds_TransformWorld t_world = { .rotation = ws->rotation, .position = V3Promote(ws->position) };
     const ds_BodyId body = ds_BodyAdd(pipeline, &body_prefab, &t_world, index);
-    const struct ds_ShapePrefab shape_prefab = { .cshape = slot.index, .density = 1.0f, .restitution = 0.0f, .friction = ws->friction, .margin = 0.5f };
+    const struct ds_ShapePrefab shape_prefab = { .cshape = slot.index, .density = 1.0f, .restitution = 0.0f, .friction = ws->friction };
     const ds_Transform t_local = ds_TransformIdentity();
     ds_ShapeAdd(pipeline, &shape_prefab, &t_local, body);
     return body;
@@ -3542,7 +3541,7 @@ static ds_BodyId SlideWarmAdd(struct arena *mem, struct ds_Dynamics *pipeline, s
     const struct ds_BodyPrefab body_prefab = { .dynamic = dynamic };
     const ds_TransformWorld t_world = { .rotation = rotation, .position = V3Promote(position) };
     const ds_BodyId body = ds_BodyAdd(pipeline, &body_prefab, &t_world, index);
-    const struct ds_ShapePrefab shape_prefab = { .cshape = slot.index, .density = 1.0f, .restitution = 0.0f, .friction = friction, .margin = 0.5f };
+    const struct ds_ShapePrefab shape_prefab = { .cshape = slot.index, .density = 1.0f, .restitution = 0.0f, .friction = friction };
     const ds_Transform t_local = ds_TransformIdentity();
     ds_ShapeAdd(pipeline, &shape_prefab, &t_local, body);
     return body;
@@ -3666,7 +3665,7 @@ static struct test_Output DynamicsMassRejectTest(struct test_Environment *env)
     const ds_BodyId dynamic = ds_BodyAdd(&pipeline, &dynamic_prefab, &t_dynamic, 0);
     const ds_BodyId fixed = ds_BodyAdd(&pipeline, &static_prefab, &t_static, 1);
     const ds_Transform t_local = ds_TransformIdentity();
-    struct ds_ShapePrefab prefab = { .cshape = slot.index, .density = 0.0f, .restitution = 0.0f, .friction = 0.5f, .margin = 0.5f };
+    struct ds_ShapePrefab prefab = { .cshape = slot.index, .density = 0.0f, .restitution = 0.0f, .friction = 0.5f };
 
     /* density zero, negative and NaN: refused on the dynamic body; the static body takes any */
     volatile f32 zero = 0.0f;
@@ -4230,7 +4229,7 @@ static void DynamicsPerfSnapshotBuild(const enum dynamics_PerfScene scene)
         const struct ds_BodyPrefab body_prefab = { .dynamic = 0 };
         const ds_TransformWorld t_world = { .rotation = QIdentity(), .position = V3F64(0.0, 0.0, 0.0) };
         const ds_BodyId body = ds_BodyAdd(&pipeline, &body_prefab, &t_world, index++);
-        const struct ds_ShapePrefab shape_prefab = { .cshape = slot.index, .density = 1.0f, .restitution = 0.0f, .friction = 0.8f, .margin = 0.5f };
+        const struct ds_ShapePrefab shape_prefab = { .cshape = slot.index, .density = 1.0f, .restitution = 0.0f, .friction = 0.8f };
         const ds_Transform t_local = ds_TransformIdentity();
         ds_ShapeAdd(&pipeline, &shape_prefab, &t_local, body);
 

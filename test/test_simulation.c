@@ -1170,8 +1170,8 @@ static struct test_Output ServerSceneTest(struct test_Environment *env)
     ds_SDBAlloc(NULL, shape_prefab_db, 32, GROWABLE);
     struct ds_ShapePrefab *slab_prefab = ds_SDBAdd(env->mem_1, shape_prefab_db, Utf8Inline("slab_shape")).address;
     struct ds_ShapePrefab *box_prefab = ds_SDBAdd(env->mem_1, shape_prefab_db, Utf8Inline("box_shape")).address;
-    slab_prefab->cshape = slab_shape.index; slab_prefab->density = 1.0f; slab_prefab->friction = 0.5f; slab_prefab->restitution = 0.0f; slab_prefab->margin = 0.5f;
-    box_prefab->cshape = box_shape.index; box_prefab->density = 1.0f; box_prefab->friction = 0.5f; box_prefab->restitution = 0.0f; box_prefab->margin = 0.5f;
+    slab_prefab->cshape = slab_shape.index; slab_prefab->density = 1.0f; slab_prefab->friction = 0.5f; slab_prefab->restitution = 0.0f;
+    box_prefab->cshape = box_shape.index; box_prefab->density = 1.0f; box_prefab->friction = 0.5f; box_prefab->restitution = 0.0f;
 
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
@@ -1274,8 +1274,8 @@ static struct test_Output ServerGrabTest(struct test_Environment *env)
     ds_SDBAlloc(NULL, shape_prefab_db, 32, GROWABLE);
     struct ds_ShapePrefab *slab_prefab = ds_SDBAdd(env->mem_1, shape_prefab_db, Utf8Inline("slab_shape")).address;
     struct ds_ShapePrefab *box_prefab = ds_SDBAdd(env->mem_1, shape_prefab_db, Utf8Inline("box_shape")).address;
-    slab_prefab->cshape = slab_shape.index; slab_prefab->density = 1.0f; slab_prefab->friction = 0.5f; slab_prefab->restitution = 0.0f; slab_prefab->margin = 0.5f;
-    box_prefab->cshape = box_shape.index; box_prefab->density = 1.0f; box_prefab->friction = 0.5f; box_prefab->restitution = 0.0f; box_prefab->margin = 0.5f;
+    slab_prefab->cshape = slab_shape.index; slab_prefab->density = 1.0f; slab_prefab->friction = 0.5f; slab_prefab->restitution = 0.0f;
+    box_prefab->cshape = box_shape.index; box_prefab->density = 1.0f; box_prefab->friction = 0.5f; box_prefab->restitution = 0.0f;
 
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);

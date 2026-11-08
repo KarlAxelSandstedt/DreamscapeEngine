@@ -130,7 +130,7 @@ led ds_ShapePrefab API
 ======================
 */
 /* Allocate prefab with the given id. Returns (NULL, U32_MAX) on failure. */
-struct slot	led_ShapePrefabAdd(struct led *led, const utf8 id, const utf8 c_shape, const f32 density, const f32 restitution, const f32 friction, const f32 margin);
+struct slot	led_ShapePrefabAdd(struct led *led, const utf8 id, const utf8 c_shape, const f32 density, const f32 restitution, const f32 friction);
 /* Remove prefab if it exists and is not being referenced; otherwise no-op.  */
 void 		led_ShapePrefabRemove(struct led *led, const utf8 id);
 /* Return prefab with the given id if it exist; otherwise return (STUB_ADDRESS, STUB_INDEX).  */

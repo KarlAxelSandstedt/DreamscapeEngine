@@ -215,6 +215,33 @@ static void StaticsCalculateFaceIntegrals(f32 integrals[10], const struct c_Shap
 	integrals[T_XY + y_i] += S_yya * n.buf[y_i] / 2.0f;
 }
 
+/* the longest side of the shape's local bounding box (0 for a mesh: static only) */
+static f32 c_ShapeExtent(const struct c_Shape *shape)
+{
+	if (shape->type == C_SHAPE_CONVEX_HULL)
+	{
+		v3 min = V3(F32_INFINITY, F32_INFINITY, F32_INFINITY);
+		v3 max = V3(-F32_INFINITY, -F32_INFINITY, -F32_INFINITY);
+		for (u32 i = 0; i < shape->hull.v_count; ++i)
+		{
+			min = V3Min(min, shape->hull.v[i]);
+			max = V3Max(max, shape->hull.v[i]);
+		}
+		const v3 side = V3Sub(max, min);
+		return F32Max(F32Max(side.x, side.y), side.z);
+	}
+	else if (shape->type == C_SHAPE_SPHERE)
+	{
+		return 2.0f * shape->sphere.radius;
+	}
+	else if (shape->type == C_SHAPE_CAPSULE)
+	{
+		return 2.0f * (shape->capsule.half_height + shape->capsule.radius);
+	}
+
+	return 0.0f;
+}
+
 void c_ShapeUpdateMassProperties(struct c_Shape *shape)
 {
 	ds_Assert(shape->type != C_SHAPE_TRI_MESH);
@@ -330,6 +357,7 @@ void c_ShapeDBAlloc(struct arena *mem, struct c_ShapeDB *db, const u32 length, c
     stub->render_bvh = NULL;
     stub->type = C_SHAPE_CONVEX_HULL;
     stub->hull = DcelBoxStub();
+    stub->extent = c_ShapeExtent(stub);
     c_ShapeUpdateMassProperties(stub);
 }
 
@@ -523,6 +551,7 @@ struct slot c_ShapeDBAdd(struct c_ShapeDB *db, const utf8 id, const struct c_Sha
     shape->render_bvh = NULL;
     c_ShapeCopy(&block, shape, src);
     ds_Assert(block.mem_left == 0);
+    shape->extent = c_ShapeExtent(shape);
     if (src->type != C_SHAPE_TRI_MESH)
     {
         c_ShapeUpdateMassProperties(shape);

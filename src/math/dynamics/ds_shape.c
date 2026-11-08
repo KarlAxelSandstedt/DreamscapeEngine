@@ -69,13 +69,16 @@ ds_ShapeId ds_ShapeAdd(struct ds_Dynamics *pipeline, const struct ds_ShapePrefab
 	shape->restitution = prefab->restitution;
 	shape->friction = prefab->friction;
 	shape->t_local = *t;
-	shape->margin = prefab->margin;
 	DLLFlush(shape->contact_list);
 
 	const struct c_Shape *cshape = c_ShapeDBShape(pipeline->external->cshape_db, prefab->cshape);
 	const struct slot cshape_slot = c_ShapeDBReference(pipeline->external->cshape_db, cshape->id);
 	shape->cshape_handle = cshape_slot.index;
 	shape->cshape_type = cshape->type;
+
+	shape->margin = (ds_BodyDynamicCheck(body))
+	              ? F32Max(pipeline->config.numerics.proxy_margin_min, pipeline->config.numerics.proxy_margin_scale * cshape->extent)
+	              : pipeline->config.numerics.proxy_margin_min;
 
 	struct aabb bbox_proxy = ds_ShapeWorldBbox(pipeline, shape);
     if (ds_BodyDynamicCheck(body))
