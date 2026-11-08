@@ -254,7 +254,7 @@ struct ds_Sim
 
     //struct ds_Game      game;             /* TODO: ds_Game undefined */
     struct ds_HashMap   entity_map;         /* TODO(Remove/Refactor) entity -> body pool index, for the commands and the host */
-    struct ds_HashMap   joint_entity_map;   /* TODO(Remove/Refactor) joint entity -> joint pool index */
+    ds_CPool(u64)       joint_entity_pool;  /* TODO(Remove/Refactor) joint entity << 32 | joint pool index */
 };
 
 /* Allocate a new simulation from config at time 0. The databases are externally owned and must outlive sim.  */
