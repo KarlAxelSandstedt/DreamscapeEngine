@@ -56,7 +56,7 @@ void ds_DynamicsConfigPop(struct ds_Dynamics *pipeline)
 
 #define DS_DYNAMICS_CONFIG_VERSION  2u
 /* version + initial_size, then the solver and numerics configs */
-#define DS_DYNAMICS_CONFIG_FIXED_SIZE   (4 + 4)
+#define DS_DYNAMICS_CONFIG_FIXED_BITS (32 + 32)
 
 struct ds_DynamicsConfig ds_DynamicsConfigDerive(const struct ds_DynamicsConfig *pending)
 {
@@ -82,34 +82,34 @@ struct ds_DynamicsConfig ds_DynamicsConfigDefault(void)
     return config;
 }
 
-u64 ds_DynamicsConfigSerializeSize(const struct ds_DynamicsConfig *config)
+u64 ds_DynamicsConfigSerializeBitPackedSize(const struct ds_DynamicsConfig *config)
 {
-    return DS_DYNAMICS_CONFIG_FIXED_SIZE
-         + ds_SolverConfigSerializeSize(&config->solver)
-         + ds_NumericsConfigSerializeSize(&config->numerics);
+    return DS_DYNAMICS_CONFIG_FIXED_BITS
+         + ds_SolverConfigSerializeBitPackedSize(&config->solver)
+         + ds_NumericsConfigSerializeBitPackedSize(&config->numerics);
 }
 
-void ds_DynamicsConfigSerialize(struct SS *ss, const struct ds_DynamicsConfig *config)
+void ds_DynamicsConfigSerializeBitPacked(struct SS *ss, const struct ds_DynamicsConfig *config)
 {
-    ds_Assert(ds_DynamicsConfigSerializeSize(config) <= SSBytesLeft(ss));
+    ds_Assert(ds_DynamicsConfigSerializeBitPackedSize(config) <= SSBitsLeft(ss));
 
-    SSWriteU32Le(ss, DS_DYNAMICS_CONFIG_VERSION);
-    SSWriteU32Le(ss, config->initial_size);
-    ds_SolverConfigSerialize(ss, &config->solver);
-    ds_NumericsConfigSerialize(ss, &config->numerics);
+    SSWriteU64Partial(ss, DS_DYNAMICS_CONFIG_VERSION, 32);
+    SSWriteU64Partial(ss, config->initial_size, 32);
+    ds_SolverConfigSerializeBitPacked(ss, &config->solver);
+    ds_NumericsConfigSerializeBitPacked(ss, &config->numerics);
 }
 
-u32 ds_DynamicsConfigTryDeserialize(struct SS *ss, struct ds_DynamicsConfig *config)
+u32 ds_DynamicsConfigTryDeserializeBitPacked(struct SS *ss, struct ds_DynamicsConfig *config)
 {
     struct SS ss_mut = *ss;
     *config = (struct ds_DynamicsConfig) { 0 };
-    if (SSBytesLeft(&ss_mut) < DS_DYNAMICS_CONFIG_FIXED_SIZE || SSReadU32Le(&ss_mut) != DS_DYNAMICS_CONFIG_VERSION)
+    if (SSBitsLeft(&ss_mut) < DS_DYNAMICS_CONFIG_FIXED_BITS || SSReadU64Partial(&ss_mut, 32) != DS_DYNAMICS_CONFIG_VERSION)
     {
         return 0;
     }
 
-    config->initial_size = SSReadU32Le(&ss_mut);
-    if (!ds_SolverConfigTryDeserialize(&ss_mut, &config->solver) || !ds_NumericsConfigTryDeserialize(&ss_mut, &config->numerics))
+    config->initial_size = (u32) SSReadU64Partial(&ss_mut, 32);
+    if (!ds_SolverConfigTryDeserializeBitPacked(&ss_mut, &config->solver) || !ds_NumericsConfigTryDeserializeBitPacked(&ss_mut, &config->numerics))
     {
         *config = (struct ds_DynamicsConfig) { 0 };
         return 0;

@@ -117,7 +117,7 @@ u32 ds_DynamicsHeapDataTryDeserialize(struct arena *mem, struct SS *ss, void **d
  */
 u64 ds_DynamicsSerializeSize(const struct ds_Dynamics *pipeline)
 {
-	u64 size = DS_SNAPSHOT_HEADER_FIXED_SIZE + ds_DynamicsConfigSerializeSize(&pipeline->config)
+	u64 size = DS_SNAPSHOT_HEADER_FIXED_SIZE + ds_DynamicsConfigSerializeBitPackedSize(&pipeline->config) / 8
 		+ ds_PoolSerializeSize(pipeline->body_pool)
 		+ ds_BitSetSerializeSize(&pipeline->body_usage_set)
 		+ ds_PoolSerializeSize(pipeline->joint_pool)
@@ -169,7 +169,7 @@ void ds_DynamicsSerialize(struct SS *ss, const struct ds_Dynamics *pipeline)
 
 	SSWriteU64Le(ss, pipeline->ns_tick);
 	SSWriteU64Le(ss, pipeline->frames_completed);
-	ds_DynamicsConfigSerialize(ss, &pipeline->config);
+	ds_DynamicsConfigSerializeBitPacked(ss, &pipeline->config);
 	SSWriteU64Le(ss, pipeline->island_to_split.val);
 
 	ds_PoolSerialize(ss, pipeline->body_pool);
@@ -222,7 +222,7 @@ u32 ds_DynamicsTryDeserialize(struct arena *mem, struct SS *ss, struct ds_Dynami
 	DLLFlush(pipeline->event_list);
     ds_DynamicsRuntimeAlloc(mem, &pipeline->runtime);
 	pipeline->frames_completed = SSReadU64Le(ss);
-	if (!ds_DynamicsConfigTryDeserialize(ss, &pipeline->config))
+	if (!ds_DynamicsConfigTryDeserializeBitPacked(ss, &pipeline->config))
 	{
 		goto failure;
 	}

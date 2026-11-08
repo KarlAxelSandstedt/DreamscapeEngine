@@ -43,7 +43,7 @@ static u32 SimConfigTestEqual(const struct ds_SimConfig *a, const struct ds_SimC
 
 /*
  * Round trip of the default config and of a config with every field changed (given and generated seeds);
- * the stream advances by exactly ds_SimConfigSerializeSize. Reads that must fail with the config zeroed and the
+ * the stream advances by exactly ds_SimConfigSerializeBitPackedSize. Reads that must fail with the config zeroed and the
  * stream unchanged: a truncated stream, a wrong version word, a stream off its byte boundary, and every
  * out-of-range value (zero seed, nonzero external tick, zero and too-slow system ticks).
  */
@@ -74,23 +74,23 @@ static struct test_Output SimConfigSerializeTest(struct test_Environment *env)
     const struct ds_SimConfig valid[3] = { ds_SimConfigDefault(), changed, generated };
     for (u32 c = 0; c < 3; ++c)
     {
-        const u64 size = ds_SimConfigSerializeSize(&valid[c]);
+        const u64 size = ds_SimConfigSerializeBitPackedSize(&valid[c]) / 8;
         struct SS ss = SSAlloc(env->mem_1, size + 16);
         TEST_NOT_EQUAL(NULL, ss.buf);
 
-        ds_SimConfigSerialize(&ss, &valid[c]);
+        ds_SimConfigSerializeBitPacked(&ss, &valid[c]);
         TEST_EQUAL(8*size, ss.bit_index);
 
         struct ds_SimConfig read = { 0 };
         ss.bit_index = 0;
-        TEST_EQUAL(1, ds_SimConfigTryDeserialize(&ss, &read));
+        TEST_EQUAL(1, ds_SimConfigTryDeserializeBitPacked(&ss, &read));
         TEST_EQUAL(8*size, ss.bit_index);
         TEST_EQUAL(1, SimConfigTestEqual(&valid[c], &read));
 
         /* truncated: one byte short */
         struct SS truncated = SSBuffered(ss.buf, size - 1);
         read = changed;
-        TEST_EQUAL(0, ds_SimConfigTryDeserialize(&truncated, &read));
+        TEST_EQUAL(0, ds_SimConfigTryDeserializeBitPacked(&truncated, &read));
         TEST_EQUAL(0, truncated.bit_index);
         TEST_EQUAL(0, read.seed[0] | read.us_system_tick[SIM_SYSTEM_DYNAMICS]);
 
@@ -98,7 +98,7 @@ static struct test_Output SimConfigSerializeTest(struct test_Environment *env)
         ss.bit_index = 0;
         SSWriteU32Le(&ss, 0xffffffffu);
         ss.bit_index = 0;
-        TEST_EQUAL(0, ds_SimConfigTryDeserialize(&ss, &read));
+        TEST_EQUAL(0, ds_SimConfigTryDeserializeBitPacked(&ss, &read));
         TEST_EQUAL(0, ss.bit_index);
     }
 
@@ -114,14 +114,14 @@ static struct test_Output SimConfigSerializeTest(struct test_Environment *env)
 
     for (u32 i = 0; i < 3; ++i)
     {
-        const u64 size = ds_SimConfigSerializeSize(&invalid[i]);
+        const u64 size = ds_SimConfigSerializeBitPackedSize(&invalid[i]) / 8;
         struct SS ss = SSAlloc(env->mem_1, size);
         TEST_NOT_EQUAL(NULL, ss.buf);
-        ds_SimConfigSerialize(&ss, &invalid[i]);
+        ds_SimConfigSerializeBitPacked(&ss, &invalid[i]);
         ss.bit_index = 0;
 
         struct ds_SimConfig read = changed;
-        TEST_EQUAL(0, ds_SimConfigTryDeserialize(&ss, &read));
+        TEST_EQUAL(0, ds_SimConfigTryDeserializeBitPacked(&ss, &read));
         TEST_EQUAL(0, ss.bit_index);
         TEST_EQUAL(0, read.seed[0] | read.us_system_tick[SIM_SYSTEM_DYNAMICS]);
     }
@@ -131,12 +131,12 @@ static struct test_Output SimConfigSerializeTest(struct test_Environment *env)
     edge.us_system_tick[SIM_SYSTEM_DYNAMICS] = 1;
     edge.us_system_tick[SIM_SYSTEM_GAME] = DS_SIM_TICK_US_MAX;
     {
-        const u64 size = ds_SimConfigSerializeSize(&edge);
+        const u64 size = ds_SimConfigSerializeBitPackedSize(&edge) / 8;
         struct SS ss = SSAlloc(env->mem_1, size);
-        ds_SimConfigSerialize(&ss, &edge);
+        ds_SimConfigSerializeBitPacked(&ss, &edge);
         ss.bit_index = 0;
         struct ds_SimConfig read = { 0 };
-        TEST_EQUAL(1, ds_SimConfigTryDeserialize(&ss, &read));
+        TEST_EQUAL(1, ds_SimConfigTryDeserializeBitPacked(&ss, &read));
         TEST_EQUAL(1, SimConfigTestEqual(&edge, &read));
     }
 
@@ -146,11 +146,11 @@ static struct test_Output SimConfigSerializeTest(struct test_Environment *env)
 /* 1 if a and b serialize to the same bytes: every field compared through the stream, floats by their bits */
 static u32 DynamicsConfigTestEqual(struct arena *mem, const struct ds_DynamicsConfig *a, const struct ds_DynamicsConfig *b)
 {
-    const u64 size = ds_DynamicsConfigSerializeSize(a);
+    const u64 size = ds_DynamicsConfigSerializeBitPackedSize(a) / 8;
     struct SS sa = SSAlloc(mem, size);
     struct SS sb = SSAlloc(mem, size);
-    ds_DynamicsConfigSerialize(&sa, a);
-    ds_DynamicsConfigSerialize(&sb, b);
+    ds_DynamicsConfigSerializeBitPacked(&sa, a);
+    ds_DynamicsConfigSerializeBitPacked(&sb, b);
 
     u32 equal = (sa.bit_index == sb.bit_index);
     for (u64 i = 0; equal && i < size; ++i)
@@ -195,22 +195,22 @@ static struct test_Output DynamicsConfigSerializeTest(struct test_Environment *e
     const struct ds_DynamicsConfig valid[2] = { def, changed };
     for (u32 c = 0; c < 2; ++c)
     {
-        const u64 size = ds_DynamicsConfigSerializeSize(&valid[c]);
+        const u64 size = ds_DynamicsConfigSerializeBitPackedSize(&valid[c]) / 8;
         struct SS ss = SSAlloc(env->mem_1, size + 16);
         TEST_NOT_EQUAL(NULL, ss.buf);
 
-        ds_DynamicsConfigSerialize(&ss, &valid[c]);
+        ds_DynamicsConfigSerializeBitPacked(&ss, &valid[c]);
         TEST_EQUAL(8*size, ss.bit_index);
 
         struct ds_DynamicsConfig read = { 0 };
         ss.bit_index = 0;
-        TEST_EQUAL(1, ds_DynamicsConfigTryDeserialize(&ss, &read));
+        TEST_EQUAL(1, ds_DynamicsConfigTryDeserializeBitPacked(&ss, &read));
         TEST_EQUAL(8*size, ss.bit_index);
         TEST_EQUAL(1, DynamicsConfigTestEqual(env->mem_1, &valid[c], &read));
 
         struct SS truncated = SSBuffered(ss.buf, size - 1);
         read = changed;
-        TEST_EQUAL(0, ds_DynamicsConfigTryDeserialize(&truncated, &read));
+        TEST_EQUAL(0, ds_DynamicsConfigTryDeserializeBitPacked(&truncated, &read));
         TEST_EQUAL(0, truncated.bit_index);
         TEST_EQUAL(0, read.initial_size | read.solver.pgs_iteration_count);
 
@@ -219,7 +219,7 @@ static struct test_Output DynamicsConfigSerializeTest(struct test_Environment *e
         {
             0,
             4 + 4,
-            4 + 4 + ds_SolverConfigSerializeSize(&valid[c].solver),
+            4 + 4 + ds_SolverConfigSerializeBitPackedSize(&valid[c].solver) / 8,
         };
         for (u32 v = 0; v < 3; ++v)
         {
@@ -228,7 +228,7 @@ static struct test_Output DynamicsConfigSerializeTest(struct test_Environment *e
             ss.bit_index = 8*version_offset[v];
             SSWriteU32Le(&ss, 0xffffffffu);
             ss.bit_index = 0;
-            TEST_EQUAL(0, ds_DynamicsConfigTryDeserialize(&ss, &read));
+            TEST_EQUAL(0, ds_DynamicsConfigTryDeserializeBitPacked(&ss, &read));
             TEST_EQUAL(0, ss.bit_index);
             ss.bit_index = 8*version_offset[v];
             SSWriteU32Le(&ss, version);
@@ -246,13 +246,13 @@ static struct test_Output DynamicsConfigSerializeTest(struct test_Environment *e
     out.numerics.capsule_parallel_max_degrees = 46.0f;
 
     const struct ds_DynamicsConfig derived = ds_DynamicsConfigDerive(&out);
-    const u64 size = ds_DynamicsConfigSerializeSize(&out);
+    const u64 size = ds_DynamicsConfigSerializeBitPackedSize(&out) / 8;
     struct SS ss = SSAlloc(env->mem_1, size);
     TEST_NOT_EQUAL(NULL, ss.buf);
-    ds_DynamicsConfigSerialize(&ss, &out);
+    ds_DynamicsConfigSerializeBitPacked(&ss, &out);
     ss.bit_index = 0;
     struct ds_DynamicsConfig read = changed;
-    TEST_EQUAL(1, ds_DynamicsConfigTryDeserialize(&ss, &read));
+    TEST_EQUAL(1, ds_DynamicsConfigTryDeserializeBitPacked(&ss, &read));
     TEST_EQUAL(8*size, ss.bit_index);
     TEST_EQUAL(1, DynamicsConfigTestEqual(env->mem_1, &derived, &read));
 
@@ -338,7 +338,6 @@ static struct test_Output SimTickTest(struct test_Environment *env)
 
     /* no physics tick before its period */
     ds_SimTick(env->mem_2, &sim, NULL, &none, 1);
-    TEST_EQUAL(1, sim.us_delta);
     TEST_EQUAL(1, sim.us_time);
     TEST_EQUAL(0, sim.dynamics.frames_completed);
 
@@ -470,11 +469,10 @@ static struct test_Output SimCmdPayloadSerializeTest(struct test_Environment *en
 	return output;
 }
 
-/* Write a ConfigLoad by hand at ss's bit offset: type, size field, size bytes of body (then pad zero bytes). */
-static void SimCmdTestWriteConfigLoad(struct SS *ss, const u64 type, const u64 size_field, const u8 *body, const u64 size, const u64 pad)
+/* Write a ConfigLoad by hand at ss's bit offset: type, size bytes of body (then pad zero bytes). */
+static void SimCmdTestWriteConfigLoad(struct SS *ss, const u64 type, const u8 *body, const u64 size, const u64 pad)
 {
     SSWriteU64Partial(ss, type, 8);
-    SSWriteU64Partial(ss, size_field, 32);
     struct SS from = SSBuffered((void *) body, size);
     while (SSBitsLeft(&from))
     {
@@ -489,10 +487,10 @@ static void SimCmdTestWriteConfigLoad(struct SS *ss, const u64 type, const u64 s
 }
 
 /*
- * ConfigLoad commands through ds_SimCmdPayloadPushAll and back through ds_SimCmdTryDeserialize: two commands pack to
+ * ConfigLoad commands through ds_SimCmdPayloadPushAll and back through ds_SimCmdTryDeserializeBitPacked: two commands pack to
  * exactly their bit size and read back equal, the stream ends after them, and a read at a 3-bit offset works. Malformed
- * commands are refused with the stream position untouched: unknown type, body size over the stream or over the cap,
- * a truncated body, a body longer than the config and a body that is not a config.
+ * commands are refused with the stream position untouched: unknown type, a truncated body and a body that is not a
+ * config.
  */
 static struct test_Output SimCmdSerializeTest(struct test_Environment *env)
 {
@@ -502,8 +500,8 @@ static struct test_Output SimCmdSerializeTest(struct test_Environment *env)
     changed.us_system_tick[SIM_SYSTEM_DYNAMICS] = 20000;
     const u64 seed[4] = { 7, 8, 9, 10 };
     ds_SimConfigSeed(&changed, seed);
-    const u64 body_size = ds_SimConfigSerializeSize(&changed);
-    const u64 cmd_bits = 8 + 32 + 8*body_size;
+    const u64 body_size = ds_SimConfigSerializeBitPackedSize(&changed) / 8;
+    const u64 cmd_bits = 8 + 8*body_size;
 
     ds_CPool(ds_SimCmd) pool;
     ds_CPoolAlloc(env->mem_1, pool, 2, NOT_GROWABLE);
@@ -522,16 +520,16 @@ static struct test_Output SimCmdSerializeTest(struct test_Environment *env)
     TEST_EQUAL(1, SSTryView(&view, &payload.stream, 0, payload.stream.bit_index));
     struct SS ss = SSSubstreamFromView(&view);
     struct ds_SimCmd read = { 0 };
-    TEST_EQUAL(1, ds_SimCmdTryDeserialize(env->mem_1, &ss, &read));
+    TEST_EQUAL(1, ds_SimCmdTryDeserializeBitPacked(env->mem_1, &ss, &read));
     TEST_EQUAL(SIM_CMD_CONFIG_LOAD, read.type);
     TEST_EQUAL(1, SimConfigTestEqual(&def, read.load_config.config));
     TEST_EQUAL(1, ds_SimCmdFormVerify(&read));
     const struct ds_SimConfig *first_read = read.load_config.config;
-    TEST_EQUAL(1, ds_SimCmdTryDeserialize(env->mem_1, &ss, &read));
+    TEST_EQUAL(1, ds_SimCmdTryDeserializeBitPacked(env->mem_1, &ss, &read));
     TEST_EQUAL(1, SimConfigTestEqual(&changed, read.load_config.config));
     TEST_TRUE(first_read != read.load_config.config && SimConfigTestEqual(&def, first_read));  /* each decode has its own copy on mem */
     TEST_EQUAL(0, SSBitsLeft(&ss));
-    TEST_EQUAL(0, ds_SimCmdTryDeserialize(env->mem_1, &ss, &read));
+    TEST_EQUAL(0, ds_SimCmdTryDeserializeBitPacked(env->mem_1, &ss, &read));
     TEST_EQUAL(2*cmd_bits, ss.bit_index);
 
     read.type = SIM_CMD_COUNT;
@@ -560,18 +558,18 @@ static struct test_Output SimCmdSerializeTest(struct test_Environment *env)
         TEST_EQUAL(1, SSTryView(&view, &scene_payload.stream, 0, scene_payload.stream.bit_index));
         struct SS cmds = SSSubstreamFromView(&view);
 
-        TEST_EQUAL(1, ds_SimCmdTryDeserialize(env->mem_1, &cmds, &read));
+        TEST_EQUAL(1, ds_SimCmdTryDeserializeBitPacked(env->mem_1, &cmds, &read));
         TEST_EQUAL(SIM_CMD_BODY_ADD, read.type);
         TEST_EQUAL(1, Utf8Equivalence(Utf8Inline("crate"), read.body_add.prefab));
         TEST_EQUAL(7, read.body_add.entity);
         TEST_TRUE(read.body_add.t_world.position.z == 1000000.25 && read.body_add.t_world.rotation.w == 0.9f && read.body_add.t_world.position.y == -2.5);
 
-        TEST_EQUAL(1, ds_SimCmdTryDeserialize(env->mem_1, &cmds, &read));
+        TEST_EQUAL(1, ds_SimCmdTryDeserializeBitPacked(env->mem_1, &cmds, &read));
         TEST_EQUAL(SIM_CMD_SHAPE_ADD, read.type);
         TEST_EQUAL(1, Utf8Equivalence(Utf8Inline("crate_box"), read.shape_add.prefab));
         TEST_TRUE(read.shape_add.t_local.position.z == -0.75f && read.shape_add.t_local.rotation.w == 1.0f && read.shape_add.entity == 7);
 
-        TEST_EQUAL(1, ds_SimCmdTryDeserialize(env->mem_1, &cmds, &read));
+        TEST_EQUAL(1, ds_SimCmdTryDeserializeBitPacked(env->mem_1, &cmds, &read));
         TEST_EQUAL(SIM_CMD_JOINT_ADD, read.type);
         TEST_TRUE(read.joint_add.enable_spring == 1 && read.joint_add.target == 2.0f && read.joint_add.range.low == 1.0f && read.joint_add.range.high == 3.0f);
         TEST_TRUE(read.joint_add.hertz == 4.0f && read.joint_add.damping_ratio == 0.5f && read.joint_add.breakage.force_threshold == 10.0f && read.joint_add.breakage.torque_threshold == 20.0f);
@@ -609,16 +607,16 @@ static struct test_Output SimCmdSerializeTest(struct test_Environment *env)
         TEST_EQUAL(1, SSTryView(&view, &grab_payload.stream, 0, grab_payload.stream.bit_index));
         struct SS cmds = SSSubstreamFromView(&view);
 
-        TEST_EQUAL(1, ds_SimCmdTryDeserialize(env->mem_1, &cmds, &read));
+        TEST_EQUAL(1, ds_SimCmdTryDeserializeBitPacked(env->mem_1, &cmds, &read));
         TEST_EQUAL(SIM_CMD_MOUSE_JOINT_ADD, read.type);
         TEST_TRUE(read.mouse_joint_add.joint_entity == 77 && read.mouse_joint_add.entity == 7 && read.mouse_joint_add.target.z == 1000000.25 && read.mouse_joint_add.target.y == -2.5);
         TEST_TRUE(read.mouse_joint_add.hertz == 3.0f && read.mouse_joint_add.damping_ratio == 1.0f && read.mouse_joint_add.force_scale == 10.0f && read.mouse_joint_add.torque_scale == 0.5f);
 
-        TEST_EQUAL(1, ds_SimCmdTryDeserialize(env->mem_1, &cmds, &read));
+        TEST_EQUAL(1, ds_SimCmdTryDeserializeBitPacked(env->mem_1, &cmds, &read));
         TEST_EQUAL(SIM_CMD_MOUSE_JOINT_TARGET_SET, read.type);
         TEST_TRUE(read.mouse_joint_target_set.joint_entity == 77 && read.mouse_joint_target_set.target.x == -0.125 && read.mouse_joint_target_set.target.z == 8.0);
 
-        TEST_EQUAL(1, ds_SimCmdTryDeserialize(env->mem_1, &cmds, &read));
+        TEST_EQUAL(1, ds_SimCmdTryDeserializeBitPacked(env->mem_1, &cmds, &read));
         TEST_EQUAL(SIM_CMD_JOINT_REMOVE, read.type);
         TEST_EQUAL(77, read.joint_remove.joint_entity);
         TEST_EQUAL(0, SSBitsLeft(&cmds));
@@ -633,56 +631,40 @@ static struct test_Output SimCmdSerializeTest(struct test_Environment *env)
 
     /* the serialized config by itself, for the hand-written cases */
     struct SS body = SSAlloc(env->mem_1, body_size);
-    ds_SimConfigSerialize(&body, &changed);
+    ds_SimConfigSerializeBitPacked(&body, &changed);
 
     /* at a 3-bit offset */
     struct SS hand = SSAlloc(env->mem_1, body_size + 16);
     SSWriteU64Partial(&hand, 5, 3);
-    SimCmdTestWriteConfigLoad(&hand, SIM_CMD_CONFIG_LOAD, body_size, body.buf, body_size, 0);
+    SimCmdTestWriteConfigLoad(&hand, SIM_CMD_CONFIG_LOAD, body.buf, body_size, 0);
     TEST_EQUAL(1, SSTryView(&view, &hand, 3, cmd_bits));
     ss = SSSubstreamFromView(&view);
-    TEST_EQUAL(1, ds_SimCmdTryDeserialize(env->mem_1, &ss, &read));
+    TEST_EQUAL(1, ds_SimCmdTryDeserializeBitPacked(env->mem_1, &ss, &read));
     TEST_EQUAL(1, SimConfigTestEqual(&changed, read.load_config.config));
     TEST_EQUAL(0, SSBitsLeft(&ss));
 
     /* unknown type */
     hand.bit_index = 0;
-    SimCmdTestWriteConfigLoad(&hand, SIM_CMD_COUNT, body_size, body.buf, body_size, 0);
+    SimCmdTestWriteConfigLoad(&hand, SIM_CMD_COUNT, body.buf, body_size, 0);
     ss = SSBuffered(hand.buf, body_size + 16);
-    TEST_EQUAL(0, ds_SimCmdTryDeserialize(env->mem_1, &ss, &read));
+    TEST_EQUAL(0, ds_SimCmdTryDeserializeBitPacked(env->mem_1, &ss, &read));
     TEST_EQUAL(0, ss.bit_index);
-
-    /* size over the stream, and over the cap */
-    hand.bit_index = 0;
-    SimCmdTestWriteConfigLoad(&hand, SIM_CMD_CONFIG_LOAD, body_size + 16, body.buf, body_size, 0);
-    ss = SSBuffered(hand.buf, body_size + 16);
-    TEST_EQUAL(0, ds_SimCmdTryDeserialize(env->mem_1, &ss, &read));
-    TEST_EQUAL(0, ss.bit_index);
-    hand.bit_index = 0;
-    SimCmdTestWriteConfigLoad(&hand, SIM_CMD_CONFIG_LOAD, U32_MAX, body.buf, body_size, 0);
-    ss = SSBuffered(hand.buf, body_size + 16);
-    TEST_EQUAL(0, ds_SimCmdTryDeserialize(env->mem_1, &ss, &read));
 
     /* truncated: the stream ends inside the body */
     hand.bit_index = 0;
-    SimCmdTestWriteConfigLoad(&hand, SIM_CMD_CONFIG_LOAD, body_size, body.buf, body_size, 0);
+    SimCmdTestWriteConfigLoad(&hand, SIM_CMD_CONFIG_LOAD, body.buf, body_size, 0);
     TEST_EQUAL(1, SSTryView(&view, &hand, 0, cmd_bits - 8));
     ss = SSSubstreamFromView(&view);
-    TEST_EQUAL(0, ds_SimCmdTryDeserialize(env->mem_1, &ss, &read));
+    TEST_EQUAL(0, ds_SimCmdTryDeserializeBitPacked(env->mem_1, &ss, &read));
     TEST_EQUAL(0, ss.bit_index);
 
-    /* a body one byte longer than the config, and a body that is no config (zeroed) */
-    hand.bit_index = 0;
-    SimCmdTestWriteConfigLoad(&hand, SIM_CMD_CONFIG_LOAD, body_size + 1, body.buf, body_size, 1);
-    ss = SSBuffered(hand.buf, body_size + 16);
-    TEST_EQUAL(0, ds_SimCmdTryDeserialize(env->mem_1, &ss, &read));
-    TEST_EQUAL(0, ss.bit_index);
+    /* a body that is no config (zeroed) */
     u8 *zero = ArenaPush(env->mem_1, body_size);
     memset(zero, 0, body_size);
     hand.bit_index = 0;
-    SimCmdTestWriteConfigLoad(&hand, SIM_CMD_CONFIG_LOAD, body_size, zero, body_size, 0);
+    SimCmdTestWriteConfigLoad(&hand, SIM_CMD_CONFIG_LOAD, zero, body_size, 0);
     ss = SSBuffered(hand.buf, body_size + 16);
-    TEST_EQUAL(0, ds_SimCmdTryDeserialize(env->mem_1, &ss, &read));
+    TEST_EQUAL(0, ds_SimCmdTryDeserializeBitPacked(env->mem_1, &ss, &read));
     TEST_EQUAL(0, ss.bit_index);
 
 	return output;
@@ -800,10 +782,9 @@ static struct test_Output ServerClockTest(struct test_Environment *env)
 
     /* sub-microsecond deltas: the remainder carries them */
     ds_ServerTick(&srv, 600);
-    TEST_EQUAL(0, sim->us_delta);
+    TEST_EQUAL(0, sim->us_time);
     TEST_EQUAL(600, host->ns_remainder);
     ds_ServerTick(&srv, 600);
-    TEST_EQUAL(1, sim->us_delta);
     TEST_EQUAL(200, host->ns_remainder);
     TEST_EQUAL(1, sim->us_time);
     TEST_EQUAL(0, sim->dynamics.frames_completed);
@@ -815,18 +796,16 @@ static struct test_Output ServerClockTest(struct test_Environment *env)
 
     /* the budget caps a long frame at the sum of the periods: two ticks, not twenty */
     ds_ServerTick(&srv, 20 * 1000 * period);
-    TEST_EQUAL(host->ns_budget / 1000, sim->us_delta);
     TEST_EQUAL(period + host->ns_budget / 1000, sim->us_time);
     TEST_EQUAL(1 + host->ns_budget / (1000 * period), sim->dynamics.frames_completed);
 
     /* speed 0: time stands still, the remainder too */
     host->speed = 0.0;
     ds_ServerTick(&srv, 1000 * period);
-    TEST_EQUAL(0, sim->us_delta);
     TEST_EQUAL(period + host->ns_budget / 1000, sim->us_time);
     host->speed = 2.0;
     ds_ServerTick(&srv, 500 * period);
-    TEST_EQUAL(period, sim->us_delta);
+    TEST_EQUAL(2*period + host->ns_budget / 1000, sim->us_time);
 
     ds_ServerDealloc(&srv);
     ArenaFree(&mem);
@@ -922,7 +901,7 @@ static struct test_Output ServerDoorTest(struct test_Environment *env)
 static struct test_Output RecordTestRead(struct test_Environment *env, const struct ds_SimConfig *config, const u64 *deltas, const u64 *counts, const u32 *first_iterations, const u32 n)
 {
 	struct test_Output output = { .success = 1, .id = __func__ };
-    const u64 cmd_bits = 8 + 32 + 8*ds_SimConfigSerializeSize(config);
+    const u64 cmd_bits = 8 + ds_SimConfigSerializeBitPackedSize(config);
     const struct dsBuffer file = FileDumpAtCwd(env->mem_1, "agent_test_record.bin");
     TEST_TRUE(file.size > 0);
     struct SS ss = SSBuffered(file.data, file.size);
@@ -940,12 +919,12 @@ static struct test_Output RecordTestRead(struct test_Environment *env, const str
         TEST_EQUAL(1, SSTryView(&view, &ss, ss.bit_index, bit_count));
         struct SS cmds = SSSubstreamFromView(&view);
         struct ds_SimCmd cmd;
-        TEST_EQUAL(1, ds_SimCmdTryDeserialize(env->mem_1, &cmds, &cmd));
+        TEST_EQUAL(1, ds_SimCmdTryDeserializeBitPacked(env->mem_1, &cmds, &cmd));
         TEST_EQUAL(first_iterations[e], cmd.load_config.config->dynamics.solver.pgs_iteration_count);
         TEST_EQUAL(1, SimConfigTestEqual(config, cmd.load_config.config));
         for (u32 c = 1; c < counts[e]; ++c)
         {
-            TEST_EQUAL(1, ds_SimCmdTryDeserialize(env->mem_1, &cmds, &cmd));
+            TEST_EQUAL(1, ds_SimCmdTryDeserializeBitPacked(env->mem_1, &cmds, &cmd));
         }
         TEST_EQUAL(0, SSBitsLeft(&cmds));
         ss.bit_index += 8 * ((bit_count + 7) / 8);
@@ -976,7 +955,7 @@ static struct test_Output ServerRecordTest(struct test_Environment *env)
     config.dynamics.initial_size = 32;
     const u32 iterations = config.dynamics.solver.pgs_iteration_count;
     const u64 period = config.us_system_tick[SIM_SYSTEM_DYNAMICS];
-    const u64 cmd_bits = 8 + 32 + 8*ds_SimConfigSerializeSize(&config);
+    const u64 cmd_bits = 8 + ds_SimConfigSerializeBitPackedSize(&config);
     struct arena mem = ArenaAlloc(NULL, 2*1024*1024);
 
     struct ds_Server srv;
@@ -1438,7 +1417,7 @@ static struct test_Output ServerGrabTest(struct test_Environment *env)
 /*
  * Decoder fuzz (fixed seed): a serialized payload of three ConfigLoads, mutated per case (bit flips, truncation, a
  * random or boundary word written over a random place, a byte inserted, random bytes, or left intact), through
- * ds_SimCmdPayloadTryDeserializeAndAlias, its commands through ds_SimCmdTryDeserialize + ds_SimCmdFormVerify, the
+ * ds_SimCmdPayloadTryDeserializeAndAlias, its commands through ds_SimCmdTryDeserializeBitPacked + ds_SimCmdFormVerify, the
  * command reader at random bit offsets of the raw bytes, and every 32nd case through the server's door. Contracts:
  * no assert; a failed read leaves the position as it was; a successful payload read advanced by its serialized size
  * and views bytes inside the buffer with zero pad bits; the intact case decodes whole; the door's simulation keeps
@@ -1544,7 +1523,7 @@ static struct test_Output SimCmdFuzzTest(struct test_Environment *env)
             {
                 const u64 before = cmds.bit_index;
                 struct ds_SimCmd cmd;
-                if (!ds_SimCmdTryDeserialize(env->mem_2, &cmds, &cmd))
+                if (!ds_SimCmdTryDeserializeBitPacked(env->mem_2, &cmds, &cmd))
                 {
                     TEST_EQUAL(before, cmds.bit_index);
                     break;
@@ -1564,7 +1543,7 @@ static struct test_Output SimCmdFuzzTest(struct test_Environment *env)
             raw.bit_index = (len) ? RngLocalU64Range(&rng, 0, 8 * len - 1) : 0;
             const u64 before = raw.bit_index;
             struct ds_SimCmd cmd;
-            if (!ds_SimCmdTryDeserialize(env->mem_2, &raw, &cmd)) { TEST_EQUAL(before, raw.bit_index); }
+            if (!ds_SimCmdTryDeserializeBitPacked(env->mem_2, &raw, &cmd)) { TEST_EQUAL(before, raw.bit_index); }
             else { TEST_TRUE(raw.bit_index > before && raw.bit_index <= 8 * len); }
             ArenaPopRecord(env->mem_2);
         }

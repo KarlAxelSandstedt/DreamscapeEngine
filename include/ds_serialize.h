@@ -29,6 +29,7 @@ Two kinds of access:
     Partial     SSRead/Write{U,I}{8,16,32,64}Partial: a value of bit_count bits at any bit position: 0-64 unsigned
                 (0: nothing read or written), 1-64 signed.
 Both kinds may be mixed in one stream; a byte access after partial ones needs bit_index % 8 == 0.
+Type serializers follow suit: XSerialize (aligned) nests only in aligned ones, XSerializeBitPacked nests anywhere.
 
 Bit order: 
     stream bit i  is bit i % 8 

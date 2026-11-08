@@ -213,18 +213,18 @@ static ds_ForceInline void V3CreateBasis(v3 *n1, v3 *n2, const v3 n3);
 static ds_ForceInline u32 V3FiniteCheck(const v3 v);
 static ds_ForceInline u32 V3F64FiniteCheck(const v3f64 v);
 
-/* Return the required size when serializing v. */
-static ds_ForceInline u64 V3SerializeSize(const v3 v);
-static ds_ForceInline u64 V3F64SerializeSize(const v3f64 v);
-/* Serialize v. WARNING: Assumes v fits in the stream. */
-static ds_ForceInline void V3Serialize(struct SS *ss, const v3 v);
-static ds_ForceInline void V3F64Serialize(struct SS *ss, const v3f64 v);
-/* Deserialize v. WARNING: Assumes v fits in the stream. */
-static ds_ForceInline void V3Deserialize(struct SS *ss, v3 *v);
-static ds_ForceInline void V3F64Deserialize(struct SS *ss, v3f64 *v);
+/* Return the required size in bits when serializing v (bit-packed). */
+static ds_ForceInline u64 V3SerializeBitPackedSize(const v3 v);
+static ds_ForceInline u64 V3F64SerializeBitPackedSize(const v3f64 v);
+/* Serialize v bit-packed. WARNING: Assumes v fits in the stream. */
+static ds_ForceInline void V3SerializeBitPacked(struct SS *ss, const v3 v);
+static ds_ForceInline void V3F64SerializeBitPacked(struct SS *ss, const v3f64 v);
+/* Deserialize bit-packed v. WARNING: Assumes v fits in the stream. */
+static ds_ForceInline void V3DeserializeBitPacked(struct SS *ss, v3 *v);
+static ds_ForceInline void V3F64DeserializeBitPacked(struct SS *ss, v3f64 *v);
 /* Returns 1 on success. On failure return 0 (bad stream) and reset the stream position. */
-static ds_ForceInline u32 V3TryDeserialize(struct SS *ss, v3 *v);
-static ds_ForceInline u32 V3F64TryDeserialize(struct SS *ss, v3f64 *v);
+static ds_ForceInline u32 V3TryDeserializeBitPacked(struct SS *ss, v3 *v);
+static ds_ForceInline u32 V3F64TryDeserializeBitPacked(struct SS *ss, v3f64 *v);
 
 /************************************* printing *************************************/
 
@@ -764,63 +764,63 @@ static ds_ForceInline u32 V3F64FiniteCheck(const v3f64 v)
 	return F64FiniteCheck(v.x) && F64FiniteCheck(v.y) && F64FiniteCheck(v.z);
 }
 
-static ds_ForceInline u64 V3SerializeSize(const v3 v)
+static ds_ForceInline u64 V3SerializeBitPackedSize(const v3 v)
 {
-	return 3*sizeof(f32);
+	return 3*32;
 }
 
-static ds_ForceInline u64 V3F64SerializeSize(const v3f64 v)
+static ds_ForceInline u64 V3F64SerializeBitPackedSize(const v3f64 v)
 {
-	return 3*sizeof(f64);
+	return 3*64;
 }
 
-static ds_ForceInline void V3Serialize(struct SS *ss, const v3 v)
+static ds_ForceInline void V3SerializeBitPacked(struct SS *ss, const v3 v)
 {
 	SSWriteU64Partial(ss, (b32) { .f = v.x }.u, 32);
 	SSWriteU64Partial(ss, (b32) { .f = v.y }.u, 32);
 	SSWriteU64Partial(ss, (b32) { .f = v.z }.u, 32);
 }
 
-static ds_ForceInline void V3F64Serialize(struct SS *ss, const v3f64 v)
+static ds_ForceInline void V3F64SerializeBitPacked(struct SS *ss, const v3f64 v)
 {
 	SSWriteU64Partial(ss, (b64) { .f = v.x }.u, 64);
 	SSWriteU64Partial(ss, (b64) { .f = v.y }.u, 64);
 	SSWriteU64Partial(ss, (b64) { .f = v.z }.u, 64);
 }
 
-static ds_ForceInline void V3Deserialize(struct SS *ss, v3 *v)
+static ds_ForceInline void V3DeserializeBitPacked(struct SS *ss, v3 *v)
 {
 	v->x = (b32) { .u = (u32) SSReadU64Partial(ss, 32) }.f;
 	v->y = (b32) { .u = (u32) SSReadU64Partial(ss, 32) }.f;
 	v->z = (b32) { .u = (u32) SSReadU64Partial(ss, 32) }.f;
 }
 
-static ds_ForceInline void V3F64Deserialize(struct SS *ss, v3f64 *v)
+static ds_ForceInline void V3F64DeserializeBitPacked(struct SS *ss, v3f64 *v)
 {
 	v->x = (b64) { .u = SSReadU64Partial(ss, 64) }.f;
 	v->y = (b64) { .u = SSReadU64Partial(ss, 64) }.f;
 	v->z = (b64) { .u = SSReadU64Partial(ss, 64) }.f;
 }
 
-static ds_ForceInline u32 V3TryDeserialize(struct SS *ss, v3 *v)
+static ds_ForceInline u32 V3TryDeserializeBitPacked(struct SS *ss, v3 *v)
 {
-	if (SSBitsLeft(ss) < 8*V3SerializeSize(*v))
+	if (SSBitsLeft(ss) < V3SerializeBitPackedSize(*v))
 	{
 		return 0;
 	}
 
-	V3Deserialize(ss, v);
+	V3DeserializeBitPacked(ss, v);
 	return 1;
 }
 
-static ds_ForceInline u32 V3F64TryDeserialize(struct SS *ss, v3f64 *v)
+static ds_ForceInline u32 V3F64TryDeserializeBitPacked(struct SS *ss, v3f64 *v)
 {
-	if (SSBitsLeft(ss) < 8*V3F64SerializeSize(*v))
+	if (SSBitsLeft(ss) < V3F64SerializeBitPackedSize(*v))
 	{
 		return 0;
 	}
 
-	V3F64Deserialize(ss, v);
+	V3F64DeserializeBitPacked(ss, v);
 	return 1;
 }
 

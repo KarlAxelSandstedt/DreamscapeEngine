@@ -109,12 +109,12 @@ struct ds_NumericsConfig    ds_NumericsConfigDerive(const struct ds_NumericsConf
 void                        ds_NumericsConfigPush(struct ds_NumericsConfig *config);
 /* Clear global config. */
 void                        ds_NumericsConfigPop(void);
-/* Return the required size when serializing the config. */
-u64                         ds_NumericsConfigSerializeSize(const struct ds_NumericsConfig *config);
-/* Serialize the config. WARNING: Assumes config fits in the stream. */
-void                        ds_NumericsConfigSerialize(struct SS *ss, const struct ds_NumericsConfig *config);
+/* Return the required size in bits when serializing the config (bit-packed). */
+u64                         ds_NumericsConfigSerializeBitPackedSize(const struct ds_NumericsConfig *config);
+/* Serialize the config bit-packed. WARNING: Assumes config fits in the stream. */
+void                        ds_NumericsConfigSerializeBitPacked(struct SS *ss, const struct ds_NumericsConfig *config);
 /* Returns 1 on success. On failure return 0 (bad stream, another version; config zeroed) and reset the stream position. */
-u32                         ds_NumericsConfigTryDeserialize(struct SS *ss, struct ds_NumericsConfig *config);
+u32                         ds_NumericsConfigTryDeserializeBitPacked(struct SS *ss, struct ds_NumericsConfig *config);
 
 
 /*
@@ -1214,7 +1214,7 @@ void        ds_SolverSetSleep(struct ds_Dynamics *pipeline, const u32 island);
 u64         ds_SolverSetSleepMemoryRequirement(const struct ds_Dynamics *pipeline, const u32 island);
 /* Return the required size when serializing the set (memory, pools and its contacts' frame data). */
 u64         ds_SolverSetSerializeSize(const struct ds_Dynamics *pipeline, const u32 set);
-/* Serialize the set. WARNING: Assumes set fits in the stream. */
+/* Serialize the set (aligned). WARNING: Assumes set fits in the stream. */
 void        ds_SolverSetSerialize(struct SS *ss, const struct ds_Dynamics *pipeline, const u32 set);
 /*
  * Deserialize into the allocated, zeroed set slot. The contact pool and the worker frames must already be
@@ -1402,12 +1402,12 @@ struct ds_SolverConfig      ds_SolverConfigDerive(const struct ds_SolverConfig *
 void                        ds_SolverConfigPush(struct ds_SolverConfig *config);
 /* Clear global config. */
 void                        ds_SolverConfigPop(void);
-/* Return the required size when serializing the config. */
-u64                         ds_SolverConfigSerializeSize(const struct ds_SolverConfig *config);
-/* Serialize the config. WARNING: Assumes config fits in the stream. */
-void                        ds_SolverConfigSerialize(struct SS *ss, const struct ds_SolverConfig *config);
+/* Return the required size in bits when serializing the config (bit-packed). */
+u64                         ds_SolverConfigSerializeBitPackedSize(const struct ds_SolverConfig *config);
+/* Serialize the config bit-packed. WARNING: Assumes config fits in the stream. */
+void                        ds_SolverConfigSerializeBitPacked(struct SS *ss, const struct ds_SolverConfig *config);
 /* Returns 1 on success. On failure return 0 (bad stream, another version; config zeroed) and reset the stream position. */
-u32                         ds_SolverConfigTryDeserialize(struct SS *ss, struct ds_SolverConfig *config);
+u32                         ds_SolverConfigTryDeserializeBitPacked(struct SS *ss, struct ds_SolverConfig *config);
 
 /*
 ds_CGraphColor
@@ -1427,7 +1427,7 @@ struct ds_CGraphColor
 
 /* Return the required size when serializing the color (pools, body bitset and its contacts' frame data). */
 u64                     ds_CGraphColorSerializeSize(const struct ds_Dynamics *pipeline, const u32 color);
-/* Serialize the color. WARNING: Assumes color fits in the stream. */
+/* Serialize the color (aligned). WARNING: Assumes color fits in the stream. */
 void                    ds_CGraphColorSerialize(struct SS *ss, const struct ds_Dynamics *pipeline, const u32 color);
 /* Deserialize the color. The contact pool and the worker frames must already be restored. Returns 1 on success and 0 on failure. */
 u32                     ds_CGraphColorTryDeserialize(struct SS *ss, struct ds_Dynamics *pipeline, const u32 color);
@@ -1589,7 +1589,7 @@ struct ds_DynamicsDrawConfig    ds_DynamicsDrawConfigDefault(void);
 struct ds_DynamicsDrawConfig    ds_DynamicsDrawConfigDerive(const struct ds_DynamicsDrawConfig *config);
 /* Return the required size when serializing the config. */
 u64                             ds_DynamicsDrawConfigSerializeSize(const struct ds_DynamicsDrawConfig *config);
-/* Serialize the config. WARNING: Assumes config fits in the stream. */
+/* Serialize the config (aligned). WARNING: Assumes config fits in the stream. */
 void                            ds_DynamicsDrawConfigSerialize(struct SS *ss, const struct ds_DynamicsDrawConfig *config);
 /* Returns 1 on success. On failure return 0 (bad stream, another version; config zeroed) and reset the stream position. */
 u32                             ds_DynamicsDrawConfigTryDeserialize(struct SS *ss, struct ds_DynamicsDrawConfig *config);
@@ -1618,12 +1618,12 @@ void                        ds_DynamicsConfigPush(struct ds_Dynamics *pipeline);
 void                        ds_DynamicsConfigPop(struct ds_Dynamics *pipeline);
 /* Derive and apply pipeline's config_pending (alloc-time values kept; sleeping switched if changed). */
 void                        ds_DynamicsConfigUpdatePending(struct ds_Dynamics *pipeline);
-/* Return the required size when serializing the config. */
-u64                         ds_DynamicsConfigSerializeSize(const struct ds_DynamicsConfig *config);
-/* Serialize the config. WARNING: Assumes config fits in the stream. */
-void                        ds_DynamicsConfigSerialize(struct SS *ss, const struct ds_DynamicsConfig *config);
+/* Return the required size in bits when serializing the config (bit-packed). */
+u64                         ds_DynamicsConfigSerializeBitPackedSize(const struct ds_DynamicsConfig *config);
+/* Serialize the config bit-packed. WARNING: Assumes config fits in the stream. */
+void                        ds_DynamicsConfigSerializeBitPacked(struct SS *ss, const struct ds_DynamicsConfig *config);
 /* Returns 1 on success. On failure return 0 (bad stream, another version; config zeroed) and reset the stream position. */
-u32                         ds_DynamicsConfigTryDeserialize(struct SS *ss, struct ds_DynamicsConfig *config);
+u32                         ds_DynamicsConfigTryDeserializeBitPacked(struct SS *ss, struct ds_DynamicsConfig *config);
 
 
 
@@ -1681,7 +1681,7 @@ void                    ds_CGraphAlloc(struct ds_Dynamics *pipeline, const u32 i
 void                    ds_CGraphDealloc(struct ds_Dynamics *pipeline);
 /* Return the required size when serializing the constraint graph. */
 u64                     ds_CGraphSerializeSize(const struct ds_Dynamics *pipeline);
-/* Serialize the constraint graph. WARNING: Assumes graph fits in the stream. */
+/* Serialize the constraint graph (aligned). WARNING: Assumes graph fits in the stream. */
 void                    ds_CGraphSerialize(struct SS *ss, const struct ds_Dynamics *pipeline);
 /* Deserialize the constraint graph. The contact pool and the worker frames must already be restored. Returns 1 on success and 0 on failure. */
 u32                     ds_CGraphTryDeserialize(struct SS *ss, struct ds_Dynamics *pipeline);
@@ -2162,7 +2162,7 @@ struct ds_Dynamics ds_DynamicsAlloc(const struct ds_DynamicsConfig *config, cons
 void 			ds_DynamicsDealloc(struct ds_Dynamics *pipeline);
 /* Return the required size when serializing the pipeline. */
 u64             ds_DynamicsSerializeSize(const struct ds_Dynamics *pipeline);
-/* Serialize the pipeline. WARNING: Assumes pipeline fits in the stream. */
+/* Serialize the pipeline (aligned). WARNING: Assumes pipeline fits in the stream. */
 void            ds_DynamicsSerialize(struct SS *ss, const struct ds_Dynamics *pipeline);
 /*
  * Deserialize a pipeline from stream and allocate resources on the heap. (Optional: runtime allocated

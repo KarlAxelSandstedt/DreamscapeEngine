@@ -80,12 +80,12 @@ struct ds_SimConfig     ds_SimConfigDefault(void);
 void                    ds_SimConfigSeed(struct ds_SimConfig *config, const u64 seed[4]);
 /* Set config's seed from the OS's random source. */
 void                    ds_SimConfigGenerateSeed(struct ds_SimConfig *config);
-/* Return the required size when serializing the config. */
-u64                     ds_SimConfigSerializeSize(const struct ds_SimConfig *config);
-/* Serialize the config. WARNING: Assumes config fits in the stream. */
-void                    ds_SimConfigSerialize(struct SS *ss, const struct ds_SimConfig *config);
+/* Return the required size in bits when serializing the config (bit-packed). */
+u64                     ds_SimConfigSerializeBitPackedSize(const struct ds_SimConfig *config);
+/* Serialize the config bit-packed. WARNING: Assumes config fits in the stream. */
+void                    ds_SimConfigSerializeBitPacked(struct SS *ss, const struct ds_SimConfig *config);
 /* Returns 1 on success. On failure return 0 (bad stream or bad config) and reset the stream position. */
-u32                     ds_SimConfigTryDeserialize(struct SS *ss, struct ds_SimConfig *config);
+u32                     ds_SimConfigTryDeserializeBitPacked(struct SS *ss, struct ds_SimConfig *config);
 
 
 /*
@@ -169,13 +169,16 @@ struct ds_SimCmd
 };
 DEFINE_CPOOL_STRUCT(ds_SimCmd);
 
-/* Returns 1 on success (the command's data is pushed on mem). On failure return 0 (bad stream or bad command, or no room: logged) and reset the stream position. */
-u32     ds_SimCmdTryDeserialize(struct arena *mem, struct SS *ss, struct ds_SimCmd *cmd);
+/* 
+ * Deserialize a bit-packed command. Returns 1 on success. On failure return 0 
+ * (bad stream, bad command or no room) and reset the stream position. 
+ */
+u32     ds_SimCmdTryDeserializeBitPacked(struct arena *mem, struct SS *ss, struct ds_SimCmd *cmd);
 /* Return 1 if cmd is well-formed (Is it actually a valid command in form), 0 otherwise. */
 u32     ds_SimCmdFormVerify(const struct ds_SimCmd *cmd);
 /*
- * Verify cmd against sim's state (ds_SimCmdDataVerify) and execute it. Returns 1 on success and
- * 0 if cmd is rejected
+ * Verify cmd against sim's state (ds_SimCmdDataVerify) and execute it. Returns 1 on success
+ * and 0 if cmd is rejected
  */
 u32     ds_SimCmdTryExecute(struct ds_Sim *sim, const struct ds_SimCmd *cmd);
 
@@ -216,7 +219,7 @@ struct ds_SimCmdPayload ds_SimCmdPayloadPushAll(struct arena *mem, const ds_SimI
 u32                     ds_SimCmdPayloadAppend(struct ds_SimCmdPayload *payload, const struct ds_SimCmdPayload *src);
 /* Return the required size when serializing the payload. */
 u64                     ds_SimCmdPayloadSerializeSize(const struct ds_SimCmdPayload *payload);
-/* Serialize the payload. WARNING: Assumes payload fits in the stream. */
+/* Serialize the payload (aligned). WARNING: Assumes payload fits in the stream. */
 void                    ds_SimCmdPayloadSerialize(struct SS *ss, const struct ds_SimCmdPayload *payload);
 /*
  * Deserialize payload and have payload->stream alias stream buffer. Returns 1 on success.
@@ -229,7 +232,7 @@ u32                     ds_SimCmdPayloadTryDeserializeAndAlias(struct SS *ss, st
 ds_Sim
 ======
 For full design see design doc. The crucial point here is that every state-change imposed
-on the simulation by an external source, goes through the simulations exterkjnal command
+on the simulation by an external source, goes through the simulation's external command
 buffer, enforcing a deterministic and replayable simulation.
 */
 
@@ -238,48 +241,44 @@ typedef u64 ds_SimKey;
 
 struct ds_Sim
 {
-    struct ds_SimConfig     config_seed;        /* the alloc-time config: the seed batch of ds_SimAlloc and ds_SimFlush */
-    u32                     initialized;        /* a ConfigLoad was applied since alloc/flush: the seed; later ones must keep the alloc-time values */
+    struct ds_SimConfig config_seed;        /* Alloc-time config                            */
+    u32                 initialized;        /* a ConfigLoad was applied since alloc/flush   */
 
-    u64                     us_time;            /* Simulation time                          */
-    u64                     us_delta;           /* Simulation time delta                    */
+    u64                 us_time;            /* Simulation time                              */
 
-    struct ds_Dynamics      dynamics;
-    //struct ds_Game          game;             /* TODO: ds_Game undefined */
-    struct ds_HashMap       entity_map;         /* TODO(Remove/Refactor) entity -> body pool index, for the commands and the host */
-    struct ds_HashMap       joint_entity_map;   /* TODO(Remove/Refactor) joint entity -> joint pool index */
+    /* Scheduler: Linear search for minimum on timestamped and system-tagged keys.          */
+    u64                 us_system_tick[SIM_SYSTEM_COUNT]; 
+    ds_SimKey           sys_schedule[SIM_SYSTEM_COUNT];
 
-    /* Scheduler: linear search for minimum on timestamped and system-tagged keys.  */
-    u64                     us_system_tick[SIM_SYSTEM_COUNT];
-    ds_SimKey               sys_schedule[SIM_SYSTEM_COUNT];
+    struct ds_Dynamics  dynamics;           /* physics state                                */
+
+    //struct ds_Game      game;             /* TODO: ds_Game undefined */
+    struct ds_HashMap   entity_map;         /* TODO(Remove/Refactor) entity -> body pool index, for the commands and the host */
+    struct ds_HashMap   joint_entity_map;   /* TODO(Remove/Refactor) joint entity -> joint pool index */
 };
 
-/*
- * Allocate a new simulation from config (ds_SimConfigCheck asserted) at time 0: the seed batch is the first external
- * command and the first system ticks are one period in. The databases are externally owned and must outlive sim.
- */
+/* Allocate a new simulation from config at time 0. The databases are externally owned and must outlive sim.  */
 void    ds_SimAlloc(struct ds_Sim *sim, const struct ds_SimConfig *config, const struct ds_DynamicsExternal *external);
-//TODO
-//void    ds_SimAllocReplay(struct ds_Sim *sim, struct ds_SimReplay *replay);
 /* Free the simulation's heap resources. */
 void    ds_SimDealloc(struct ds_Sim *sim);
 /* Flush systems, reset schedule to time=0 and reseed the simulation. Config and capacities stay. */
 void    ds_SimFlush(struct ds_Sim *sim);
 /*
- * Advance the simulation by us_delta of simulation time: the frame's external commands cmds (may be empty) execute
- * first, at the current time, then every system tick that is due. tmp is the ticks' scratch memory: each system tick
- * runs between a push and a pop of a record on it. Optional(hash_pool): If non-null, hashes are generated
- * per-subsystem tick (of the tick's time, system and ds_SimHash) and pushed onto it.
+ * Advance the simulation by us_delta microseconds. Any external commands execute first, at the
+ * current time, after which any scheduled systems are executed.
+ *
+ * Optional(hash_pool): a hash per system tick is pushed onto it.
  */
 void    ds_SimTick(struct arena *tmp, struct ds_Sim *sim, ds_CPool(u64) *hash_pool, const ds_CPool(ds_SimCmd) *cmds, const u64 us_delta);
 /* Return the hash of the simulation's state (every system's state hash). */
 u64     ds_SimHash(const struct ds_Sim *sim);
+//TODO Serialize API for sim
+
+
 /* TODO(Remove/Refactor) Return the body added for entity (SIM_CMD_BODY_ADD), or the null id. */
 ds_BodyId ds_SimBodyByEntity(const struct ds_Sim *sim, const u32 entity);
 /* TODO(Remove/Refactor) Return the joint added for the joint entity (SIM_CMD_MOUSE_JOINT_ADD), or the null id. */
 ds_JointId ds_SimJointByEntity(const struct ds_Sim *sim, const u32 joint_entity);
-
-//TODO Serialize API for sim
 
 
 

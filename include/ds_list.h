@@ -66,7 +66,7 @@ arguments may be evaluated more than once):
     // Return the required size when serializing ll (the nodes go with their pool).
     LLSerializeSize(ll)
 
-    // Serialize ll. WARNING: Assumes ll fits in the stream.
+    // Serialize ll (aligned). WARNING: Assumes ll fits in the stream.
     LLSerialize(ss, ll)
 
     // Deserialize ll. WARNING: Assumes ll fits in the stream.
@@ -185,7 +185,7 @@ field; arguments may be evaluated more than once):
     // Return the required size when serializing dll (the nodes go with their pool).
     DLLSerializeSize(dll)
 
-    // Serialize dll. WARNING: Assumes dll fits in the stream.
+    // Serialize dll (aligned). WARNING: Assumes dll fits in the stream.
     DLLSerialize(ss, dll)
 
     // Deserialize dll. WARNING: Assumes dll fits in the stream.

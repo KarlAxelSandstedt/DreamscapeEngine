@@ -96,61 +96,65 @@ void ds_SolverConfigPop(void)
 }
 
 #define DS_SOLVER_CONFIG_VERSION    1u
-#define DS_SOLVER_CONFIG_SIZE       (4 + 4*4 + 12 + 11*4)
+#define DS_SOLVER_CONFIG_BITS       (32 + 18*32)
 
-u64 ds_SolverConfigSerializeSize(const struct ds_SolverConfig *config)
+u64 ds_SolverConfigSerializeBitPackedSize(const struct ds_SolverConfig *config)
 {
-    return DS_SOLVER_CONFIG_SIZE;
+    return DS_SOLVER_CONFIG_BITS;
 }
 
-void ds_SolverConfigSerialize(struct SS *ss, const struct ds_SolverConfig *config)
+void ds_SolverConfigSerializeBitPacked(struct SS *ss, const struct ds_SolverConfig *config)
 {
-    ds_Assert(ds_SolverConfigSerializeSize(config) <= SSBytesLeft(ss));
+    ds_Assert(DS_SOLVER_CONFIG_BITS <= SSBitsLeft(ss));
 
-    SSWriteU32Le(ss, DS_SOLVER_CONFIG_VERSION);
-    SSWriteU32Le(ss, config->pgs_iteration_count);
-    SSWriteU32Le(ss, config->ngs_iteration_count);
-    SSWriteU32Le(ss, config->warmup_solver);
-    SSWriteF32LeN(ss, config->gravity.buf, 3);
-    SSWriteF32Le(ss, config->baumgarte_constant);
-    SSWriteF32Le(ss, config->max_linear_correction);
-    SSWriteF32Le(ss, config->max_linear_velocity_magnitude);
-    SSWriteF32Le(ss, config->max_angular_velocity_magnitude);
-    SSWriteF32Le(ss, config->linear_dampening);
-    SSWriteF32Le(ss, config->angular_dampening);
-    SSWriteF32Le(ss, config->linear_slop);
-    SSWriteF32Le(ss, config->restitution_threshold);
-    SSWriteU32Le(ss, config->sleep_enabled);
-    SSWriteF32Le(ss, config->sleep_time_threshold);
-    SSWriteF32Le(ss, config->sleep_linear_velocity_sq_limit);
-    SSWriteF32Le(ss, config->sleep_angular_velocity_sq_limit);
+    SSWriteU64Partial(ss, DS_SOLVER_CONFIG_VERSION, 32);
+    SSWriteU64Partial(ss, config->pgs_iteration_count, 32);
+    SSWriteU64Partial(ss, config->ngs_iteration_count, 32);
+    SSWriteU64Partial(ss, config->warmup_solver, 32);
+    SSWriteU64Partial(ss, (b32) { .f = config->gravity.x }.u, 32);
+    SSWriteU64Partial(ss, (b32) { .f = config->gravity.y }.u, 32);
+    SSWriteU64Partial(ss, (b32) { .f = config->gravity.z }.u, 32);
+    SSWriteU64Partial(ss, (b32) { .f = config->baumgarte_constant }.u, 32);
+    SSWriteU64Partial(ss, (b32) { .f = config->max_linear_correction }.u, 32);
+    SSWriteU64Partial(ss, (b32) { .f = config->max_linear_velocity_magnitude }.u, 32);
+    SSWriteU64Partial(ss, (b32) { .f = config->max_angular_velocity_magnitude }.u, 32);
+    SSWriteU64Partial(ss, (b32) { .f = config->linear_dampening }.u, 32);
+    SSWriteU64Partial(ss, (b32) { .f = config->angular_dampening }.u, 32);
+    SSWriteU64Partial(ss, (b32) { .f = config->linear_slop }.u, 32);
+    SSWriteU64Partial(ss, (b32) { .f = config->restitution_threshold }.u, 32);
+    SSWriteU64Partial(ss, config->sleep_enabled, 32);
+    SSWriteU64Partial(ss, (b32) { .f = config->sleep_time_threshold }.u, 32);
+    SSWriteU64Partial(ss, (b32) { .f = config->sleep_linear_velocity_sq_limit }.u, 32);
+    SSWriteU64Partial(ss, (b32) { .f = config->sleep_angular_velocity_sq_limit }.u, 32);
 }
 
-u32 ds_SolverConfigTryDeserialize(struct SS *ss, struct ds_SolverConfig *config)
+u32 ds_SolverConfigTryDeserializeBitPacked(struct SS *ss, struct ds_SolverConfig *config)
 {
     struct SS ss_mut = *ss;
     *config = (struct ds_SolverConfig) { 0 };
-    if (SSBytesLeft(&ss_mut) < DS_SOLVER_CONFIG_SIZE || SSReadU32Le(&ss_mut) != DS_SOLVER_CONFIG_VERSION)
+    if (SSBitsLeft(&ss_mut) < DS_SOLVER_CONFIG_BITS || SSReadU64Partial(&ss_mut, 32) != DS_SOLVER_CONFIG_VERSION)
     {
         return 0;
     }
 
-    config->pgs_iteration_count = SSReadU32Le(&ss_mut);
-    config->ngs_iteration_count = SSReadU32Le(&ss_mut);
-    config->warmup_solver = SSReadU32Le(&ss_mut);
-    SSReadF32LeN(&ss_mut, config->gravity.buf, 3);
-    config->baumgarte_constant = SSReadF32Le(&ss_mut);
-    config->max_linear_correction = SSReadF32Le(&ss_mut);
-    config->max_linear_velocity_magnitude = SSReadF32Le(&ss_mut);
-    config->max_angular_velocity_magnitude = SSReadF32Le(&ss_mut);
-    config->linear_dampening = SSReadF32Le(&ss_mut);
-    config->angular_dampening = SSReadF32Le(&ss_mut);
-    config->linear_slop = SSReadF32Le(&ss_mut);
-    config->restitution_threshold = SSReadF32Le(&ss_mut);
-    config->sleep_enabled = SSReadU32Le(&ss_mut);
-    config->sleep_time_threshold = SSReadF32Le(&ss_mut);
-    config->sleep_linear_velocity_sq_limit = SSReadF32Le(&ss_mut);
-    config->sleep_angular_velocity_sq_limit = SSReadF32Le(&ss_mut);
+    config->pgs_iteration_count = (u32) SSReadU64Partial(&ss_mut, 32);
+    config->ngs_iteration_count = (u32) SSReadU64Partial(&ss_mut, 32);
+    config->warmup_solver = (u32) SSReadU64Partial(&ss_mut, 32);
+    config->gravity.x = (b32) { .u = (u32) SSReadU64Partial(&ss_mut, 32) }.f;
+    config->gravity.y = (b32) { .u = (u32) SSReadU64Partial(&ss_mut, 32) }.f;
+    config->gravity.z = (b32) { .u = (u32) SSReadU64Partial(&ss_mut, 32) }.f;
+    config->baumgarte_constant = (b32) { .u = (u32) SSReadU64Partial(&ss_mut, 32) }.f;
+    config->max_linear_correction = (b32) { .u = (u32) SSReadU64Partial(&ss_mut, 32) }.f;
+    config->max_linear_velocity_magnitude = (b32) { .u = (u32) SSReadU64Partial(&ss_mut, 32) }.f;
+    config->max_angular_velocity_magnitude = (b32) { .u = (u32) SSReadU64Partial(&ss_mut, 32) }.f;
+    config->linear_dampening = (b32) { .u = (u32) SSReadU64Partial(&ss_mut, 32) }.f;
+    config->angular_dampening = (b32) { .u = (u32) SSReadU64Partial(&ss_mut, 32) }.f;
+    config->linear_slop = (b32) { .u = (u32) SSReadU64Partial(&ss_mut, 32) }.f;
+    config->restitution_threshold = (b32) { .u = (u32) SSReadU64Partial(&ss_mut, 32) }.f;
+    config->sleep_enabled = (u32) SSReadU64Partial(&ss_mut, 32);
+    config->sleep_time_threshold = (b32) { .u = (u32) SSReadU64Partial(&ss_mut, 32) }.f;
+    config->sleep_linear_velocity_sq_limit = (b32) { .u = (u32) SSReadU64Partial(&ss_mut, 32) }.f;
+    config->sleep_angular_velocity_sq_limit = (b32) { .u = (u32) SSReadU64Partial(&ss_mut, 32) }.f;
     *config = ds_SolverConfigDerive(config);
     *ss = ss_mut;
     return 1;

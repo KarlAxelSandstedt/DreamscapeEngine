@@ -37,7 +37,7 @@ extern "C" {
 static ds_ForceInline u32   ds_CompactSizeClass(const u64 val);
 /* Return the required size when serializing val. */
 static ds_ForceInline u64   ds_CompactSizeSerializeSize(const u64 val);
-/* Serialize val. WARNING: Assumes val fits in the stream. */
+/* Serialize val (aligned). WARNING: Assumes val fits in the stream. */
 static ds_ForceInline void  ds_CompactSizeSerialize(struct SS *ss, const u64 val);
 /* Return 1 on success. On failure, return 0 (not shortest encoding). WARNING: Assumes val fits in the stream.  */
 static ds_ForceInline u32   ds_CompactSizeDeserialize(struct SS *ss, u64 *val);

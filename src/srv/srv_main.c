@@ -126,7 +126,7 @@ static u32 ds_SimHostReplayTryReadPayload(struct SS *record, u64 *us_previous, s
     for (u64 c = 0; c < cmd_count && valid; ++c)
     {
         struct ds_SimCmd *cmd = ds_CPoolPush(*cmds).address;
-        valid = ds_SimCmdTryDeserialize(mem, &commands, cmd) && ds_SimCmdFormVerify(cmd);
+        valid = ds_SimCmdTryDeserializeBitPacked(mem, &commands, cmd) && ds_SimCmdFormVerify(cmd);
     }
 
     if (!valid || SSBitsLeft(&commands) != 0)
@@ -430,7 +430,7 @@ void ds_ServerTick(struct ds_Server *srv, const u64 ns_delta)
         for (u32 c = 0; c < payload->cmd_count && valid; ++c)
         {
             struct ds_SimCmd *cmd = ds_CPoolPush(host->cmd_pool).address;
-            valid = ds_SimCmdTryDeserialize(&srv->frame, &ss, cmd) && ds_SimCmdFormVerify(cmd);
+            valid = ds_SimCmdTryDeserializeBitPacked(&srv->frame, &ss, cmd) && ds_SimCmdFormVerify(cmd);
         }
 
         if (!valid || SSBitsLeft(&ss) != 0)

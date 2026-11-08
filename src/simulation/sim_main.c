@@ -107,51 +107,51 @@ void ds_SimConfigGenerateSeed(struct ds_SimConfig *config)
 }
 
 #define DS_SIM_CONFIG_VERSION       3u
-#define DS_SIM_CONFIG_FIXED_SIZE    (4 + 4*8 + SIM_SYSTEM_COUNT*8)
+#define DS_SIM_CONFIG_FIXED_BITS    (32 + 4*64 + SIM_SYSTEM_COUNT*64)
 
-u64 ds_SimConfigSerializeSize(const struct ds_SimConfig *config)
+u64 ds_SimConfigSerializeBitPackedSize(const struct ds_SimConfig *config)
 {
-    return DS_SIM_CONFIG_FIXED_SIZE + ds_DynamicsConfigSerializeSize(&config->dynamics);
+    return DS_SIM_CONFIG_FIXED_BITS + ds_DynamicsConfigSerializeBitPackedSize(&config->dynamics);
 }
 
-void ds_SimConfigSerialize(struct SS *ss, const struct ds_SimConfig *config)
+void ds_SimConfigSerializeBitPacked(struct SS *ss, const struct ds_SimConfig *config)
 {
-    ds_Assert(ds_SimConfigSerializeSize(config) <= SSBytesLeft(ss));
+    ds_Assert(ds_SimConfigSerializeBitPackedSize(config) <= SSBitsLeft(ss));
 
-    SSWriteU32Le(ss, DS_SIM_CONFIG_VERSION);
+    SSWriteU64Partial(ss, DS_SIM_CONFIG_VERSION, 32);
     for (u32 i = 0; i < 4; ++i)
     {
-        SSWriteU64Le(ss, config->seed[i]);
+        SSWriteU64Partial(ss, config->seed[i], 64);
     }
 
     for (u32 i = 0; i < SIM_SYSTEM_COUNT; ++i)
     {
-        SSWriteU64Le(ss, config->us_system_tick[i]);
+        SSWriteU64Partial(ss, config->us_system_tick[i], 64);
     }
 
-    ds_DynamicsConfigSerialize(ss, &config->dynamics);
+    ds_DynamicsConfigSerializeBitPacked(ss, &config->dynamics);
 }
 
-u32 ds_SimConfigTryDeserialize(struct SS *ss, struct ds_SimConfig *config)
+u32 ds_SimConfigTryDeserializeBitPacked(struct SS *ss, struct ds_SimConfig *config)
 {
     struct SS ss_mut = *ss;
     *config = (struct ds_SimConfig) { 0 };
-    if (SSBytesLeft(&ss_mut) < DS_SIM_CONFIG_FIXED_SIZE || SSReadU32Le(&ss_mut) != DS_SIM_CONFIG_VERSION)
+    if (SSBitsLeft(&ss_mut) < DS_SIM_CONFIG_FIXED_BITS || SSReadU64Partial(&ss_mut, 32) != DS_SIM_CONFIG_VERSION)
     {
         return 0;
     }
 
     for (u32 i = 0; i < 4; ++i)
     {
-        config->seed[i] = SSReadU64Le(&ss_mut);
+        config->seed[i] = SSReadU64Partial(&ss_mut, 64);
     }
 
     for (u32 i = 0; i < SIM_SYSTEM_COUNT; ++i)
     {
-        config->us_system_tick[i] = SSReadU64Le(&ss_mut);
+        config->us_system_tick[i] = SSReadU64Partial(&ss_mut, 64);
     }
 
-    if (!ds_DynamicsConfigTryDeserialize(&ss_mut, &config->dynamics) || !ds_SimConfigCheck(config))
+    if (!ds_DynamicsConfigTryDeserializeBitPacked(&ss_mut, &config->dynamics) || !ds_SimConfigCheck(config))
     {
         *config = (struct ds_SimConfig) { 0 };
         return 0;
@@ -166,7 +166,6 @@ u32 ds_SimConfigTryDeserialize(struct SS *ss, struct ds_SimConfig *config)
 static void ds_SimScheduleInit(struct ds_Sim *sim)
 {
     sim->us_time = 0;
-    sim->us_delta = 0;
 
     for (u32 i = 0; i < SIM_SYSTEM_COUNT; ++i)
     {
@@ -195,7 +194,7 @@ void ds_SimAlloc(struct ds_Sim *sim, const struct ds_SimConfig *config, const st
     *sim = (struct ds_Sim) { 0 };
     sim->config_seed = *config;
     sim->entity_map = ds_HashMapAlloc(NULL, 1024, 1024, GROWABLE);
-    sim->joint_entity_map = ds_HashMapAlloc(NULL, 64, 64, GROWABLE);
+    ds_CPoolAlloc(NULL, sim->joint_entity_pool, 8, GROWABLE);
     for (u32 i = 0; i < SIM_SYSTEM_COUNT; ++i)
     {
         sim->us_system_tick[i] = config->us_system_tick[i];
@@ -211,7 +210,7 @@ void ds_SimDealloc(struct ds_Sim *sim)
 {
     ds_DynamicsDealloc(&sim->dynamics);
     ds_HashMapDealloc(&sim->entity_map);
-    ds_HashMapDealloc(&sim->joint_entity_map);
+    ds_CPoolDealloc(sim->joint_entity_pool);
 }
 
 /* TODO(Remove/Refactor) */
@@ -232,12 +231,13 @@ ds_BodyId ds_SimBodyByEntity(const struct ds_Sim *sim, const u32 entity)
 /* TODO(Remove/Refactor) */
 ds_JointId ds_SimJointByEntity(const struct ds_Sim *sim, const u32 joint_entity)
 {
-    for (u32 i = ds_HashMapFirst(&sim->joint_entity_map, joint_entity); i != HASH_NULL; i = ds_HashMapNext(&sim->joint_entity_map, i))
+    for (u32 i = 0; i < sim->joint_entity_pool.count; ++i)
     {
-        const struct ds_Joint *joint = sim->dynamics.joint_pool.buf + i;
-        if (ds_PoolSlotAllocated(joint))
+        const u64 entry = sim->joint_entity_pool.buf[i];
+        if ((u32) (entry >> 32) == joint_entity)
         {
-            return joint->id;
+            const struct ds_Joint *joint = sim->dynamics.joint_pool.buf + (u32) entry;
+            return (ds_PoolSlotAllocated(joint)) ? joint->id : ds_JointIdNull();
         }
     }
 
@@ -248,7 +248,7 @@ void ds_SimFlush(struct ds_Sim *sim)
 {
     ds_DynamicsFlush(&sim->dynamics);
     ds_HashMapFlush(&sim->entity_map);
-    ds_HashMapFlush(&sim->joint_entity_map);
+    ds_CPoolFlush(sim->joint_entity_pool);
     ds_SimScheduleInit(sim);
     sim->initialized = 0;
     ds_SimSeed(sim, &sim->config_seed);
@@ -276,7 +276,6 @@ void ds_SimTick(struct arena *tmp, struct ds_Sim *sim, ds_CPool(u64) *hash_pool,
 
     ds_SimExecuteCmdBatch(sim, cmds);
 
-    sim->us_delta = us_delta;
     sim->us_time += us_delta;
 
     while (1)

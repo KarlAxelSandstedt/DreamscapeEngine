@@ -22,79 +22,14 @@
 
 /**************** ds_SimCmd ****************/
 
-/*
- * Serialized command: the type in DS_SIM_CMD_TYPE_BITS partial bits, then the type's body, bit-packed so that a
- * command starts at any bit. A body serialized by a byte serializer (ConfigLoad: ds_SimConfigSerialize) is carried
- * as its byte count in DS_SIM_CMD_SIZE_BITS and the bytes copied bit-exactly: the size is independent of the bit
- * offset and the byte serializers stay aligned, on their own buffer.
- */
+/* Serialized command: the type in DS_SIM_CMD_TYPE_BITS, then the type's body, bit-packed: a command starts at any bit. */
 #define DS_SIM_CMD_TYPE_BITS        8
-#define DS_SIM_CMD_SIZE_BITS        32
-#define DS_SIM_CMD_BODY_SIZE_MAX    (1 << 16)   /* a byte body larger than this is rejected before any allocation */
-
-/* Copy size bytes of buf into ss at its bit offset. */
-static void ds_SimCmdWriteBytes(struct SS *ss, const u8 *buf, const u64 size)
-{
-    struct SS src = SSBuffered((void *) buf, size);
-    while (SSBitsLeft(&src))
-    {
-        const u64 bit_count = U64Min(SSBitsLeft(&src), 64);
-        SSWriteU64Partial(ss, SSReadU64Partial(&src, bit_count), bit_count);
-    }
-}
-
-/* Copy size bytes from ss's bit offset into buf. */
-static void ds_SimCmdReadBytes(struct SS *ss, u8 *buf, const u64 size)
-{
-    struct SS dst = SSBuffered(buf, size);
-    while (SSBitsLeft(&dst))
-    {
-        const u64 bit_count = U64Min(SSBitsLeft(&dst), 64);
-        SSWriteU64Partial(&dst, SSReadU64Partial(ss, bit_count), bit_count);
-    }
-}
-
-/* a prefab id: 8 bits of size, then its bytes */
-#define DS_SIM_CMD_ID_BITS(id)      (8 + 8*(id).size)
-
-/* the id's bytes go on mem; 0 if the stream is short or mem is full */
-static u32 ds_SimCmdTryReadId(struct arena *mem, struct SS *ss, utf8 *id)
-{
-    if (SSBitsLeft(ss) < 8)
-    {
-        return 0;
-    }
-
-    const u32 size = (u32) SSReadU64Partial(ss, 8);
-    if (SSBitsLeft(ss) < 8*size)
-    {
-        return 0;
-    }
-
-    u8 *buf = ArenaPush(mem, (size) ? size : 1);
-    if (buf == NULL)
-    {
-        return 0;
-    }
-
-    for (u32 i = 0; i < size; ++i)
-    {
-        buf[i] = (u8) SSReadU64Partial(ss, 8);
-    }
-    *id = (utf8) { .buf = buf, .size = size, .len = size };
-    return 1;
-}
-#define DS_SIM_CMD_JOINT_ADD_BITS   (32 + 32 + 2*32 + 32 + 2*32 + 2*32 + 2*32 + 2*8*28)
-
-
-/******** ConfigLoad ********/
 
 static u32 ds_LoadConfigCmdFormVerify(const struct ds_LoadConfigCmd *cmd)
 {
     return ds_SimConfigCheck(cmd->config);
 }
 
-/* the seed is accepted as is; afterwards the alloc-time values are fixed */
 static u32 ds_LoadConfigCmdDataVerify(const struct ds_Sim *sim, const struct ds_LoadConfigCmd *cmd)
 {
     if (!sim->initialized)
@@ -133,52 +68,27 @@ static u32 ds_LoadConfigCmdTryExecute(struct ds_Sim *sim, const struct ds_LoadCo
     return 1;
 }
 
-static u64 ds_LoadConfigCmdSerializeBitsize(const struct ds_LoadConfigCmd *cmd)
+static u64 ds_LoadConfigCmdSerializeBitPackedSize(const struct ds_LoadConfigCmd *cmd)
 {
-    return DS_SIM_CMD_SIZE_BITS + 8*ds_SimConfigSerializeSize(cmd->config);
+    return ds_SimConfigSerializeBitPackedSize(cmd->config);
 }
 
-static void ds_LoadConfigCmdSerialize(struct SS *ss, const struct ds_LoadConfigCmd *cmd)
+static void ds_LoadConfigCmdSerializeBitPacked(struct SS *ss, const struct ds_LoadConfigCmd *cmd)
 {
-    struct arena *tmp = ArenaPushScratch();
-    const u64 size = ds_SimConfigSerializeSize(cmd->config);
-    struct SS body = SSAlloc(tmp, size);
-    ds_SimConfigSerialize(&body, cmd->config);
-
-    SSWriteU64Partial(ss, size, DS_SIM_CMD_SIZE_BITS);
-    ds_SimCmdWriteBytes(ss, body.buf, size);
-    ArenaPopScratch();
+    ds_SimConfigSerializeBitPacked(ss, cmd->config);
 }
 
-static u32 ds_LoadConfigCmdTryDeserialize(struct arena *mem, struct SS *ss, struct ds_LoadConfigCmd *cmd)
+static u32 ds_LoadConfigCmdTryDeserializeBitPacked(struct arena *mem, struct SS *ss, struct ds_LoadConfigCmd *cmd)
 {
-    if (SSBitsLeft(ss) < DS_SIM_CMD_SIZE_BITS)
-    {
-        return 0;
-    }
-
-    const u64 size = SSReadU64Partial(ss, DS_SIM_CMD_SIZE_BITS);
-    if (size > DS_SIM_CMD_BODY_SIZE_MAX || 8*size > SSBitsLeft(ss))
-    {
-        return 0;
-    }
-
     struct ds_SimConfig *config = ArenaPush(mem, sizeof(struct ds_SimConfig));
     if (config == NULL)
     {
-        Log(T_SYSTEM, S_ERROR, "ds_LoadConfigCmdTryDeserialize: no room for a config (%lu bytes)", (u64) sizeof(struct ds_SimConfig));
+        Log(T_SYSTEM, S_ERROR, "ds_LoadConfigCmdTryDeserializeBitPacked: no room for a config (%lu bytes)", (u64) sizeof(struct ds_SimConfig));
         return 0;
     }
 
-    struct arena *tmp = ArenaPushScratch();
-    struct SS body = SSAlloc(tmp, size);
-    ds_SimCmdReadBytes(ss, body.buf, size);
-    /* the whole body must be the config: a short or a long body is malformed */
-    const u32 success = ds_SimConfigTryDeserialize(&body, config) && body.bit_index == 8*size;
-    ArenaPopScratch();
-
     cmd->config = config;
-    return success;
+    return ds_SimConfigTryDeserializeBitPacked(ss, config);
 }
 
 #include "sim_cmd_tmp.c"
@@ -217,40 +127,40 @@ u32 ds_SimCmdTryExecute(struct ds_Sim *sim, const struct ds_SimCmd *cmd)
     }
 }
 
-static u64 ds_SimCmdSerializeBitsize(const struct ds_SimCmd *cmd)
+static u64 ds_SimCmdSerializeBitPackedSize(const struct ds_SimCmd *cmd)
 {
     switch (cmd->type)
     {
-        case SIM_CMD_CONFIG_LOAD:   { return DS_SIM_CMD_TYPE_BITS + ds_LoadConfigCmdSerializeBitsize(&cmd->load_config); }
-        case SIM_CMD_BODY_ADD:      { return DS_SIM_CMD_TYPE_BITS + ds_BodyAddCmdSerializeBitsize(&cmd->body_add); }
-        case SIM_CMD_SHAPE_ADD:     { return DS_SIM_CMD_TYPE_BITS + ds_ShapeAddCmdSerializeBitsize(&cmd->shape_add); }
-        case SIM_CMD_JOINT_ADD:     { return DS_SIM_CMD_TYPE_BITS + ds_JointAddCmdSerializeBitsize(&cmd->joint_add); }
-        case SIM_CMD_MOUSE_JOINT_ADD: { return DS_SIM_CMD_TYPE_BITS + ds_MouseJointAddCmdSerializeBitsize(&cmd->mouse_joint_add); }
-        case SIM_CMD_MOUSE_JOINT_TARGET_SET: { return DS_SIM_CMD_TYPE_BITS + ds_MouseJointTargetSetCmdSerializeBitsize(&cmd->mouse_joint_target_set); }
-        case SIM_CMD_JOINT_REMOVE: { return DS_SIM_CMD_TYPE_BITS + ds_JointRemoveCmdSerializeBitsize(&cmd->joint_remove); }
-        default:                    { ds_AssertString(0, "ds_SimCmdSerializeBitsize: unknown command type"); return 0; }
+        case SIM_CMD_CONFIG_LOAD:   { return DS_SIM_CMD_TYPE_BITS + ds_LoadConfigCmdSerializeBitPackedSize(&cmd->load_config); }
+        case SIM_CMD_BODY_ADD:      { return DS_SIM_CMD_TYPE_BITS + ds_BodyAddCmdSerializeBitPackedSize(&cmd->body_add); }
+        case SIM_CMD_SHAPE_ADD:     { return DS_SIM_CMD_TYPE_BITS + ds_ShapeAddCmdSerializeBitPackedSize(&cmd->shape_add); }
+        case SIM_CMD_JOINT_ADD:     { return DS_SIM_CMD_TYPE_BITS + ds_JointAddCmdSerializeBitPackedSize(&cmd->joint_add); }
+        case SIM_CMD_MOUSE_JOINT_ADD: { return DS_SIM_CMD_TYPE_BITS + ds_MouseJointAddCmdSerializeBitPackedSize(&cmd->mouse_joint_add); }
+        case SIM_CMD_MOUSE_JOINT_TARGET_SET: { return DS_SIM_CMD_TYPE_BITS + ds_MouseJointTargetSetCmdSerializeBitPackedSize(&cmd->mouse_joint_target_set); }
+        case SIM_CMD_JOINT_REMOVE: { return DS_SIM_CMD_TYPE_BITS + ds_JointRemoveCmdSerializeBitPackedSize(&cmd->joint_remove); }
+        default:                    { ds_AssertString(0, "ds_SimCmdSerializeBitPackedSize: unknown command type"); return 0; }
     }
 }
 
-static void ds_SimCmdSerialize(struct SS *ss, const struct ds_SimCmd *cmd)
+static void ds_SimCmdSerializeBitPacked(struct SS *ss, const struct ds_SimCmd *cmd)
 {
-    ds_Assert(ds_SimCmdSerializeBitsize(cmd) <= SSBitsLeft(ss));
+    ds_Assert(ds_SimCmdSerializeBitPackedSize(cmd) <= SSBitsLeft(ss));
 
     SSWriteU64Partial(ss, (u64) cmd->type, DS_SIM_CMD_TYPE_BITS);
     switch (cmd->type)
     {
-        case SIM_CMD_CONFIG_LOAD:   { ds_LoadConfigCmdSerialize(ss, &cmd->load_config); } break;
-        case SIM_CMD_BODY_ADD:      { ds_BodyAddCmdSerialize(ss, &cmd->body_add); } break;
-        case SIM_CMD_SHAPE_ADD:     { ds_ShapeAddCmdSerialize(ss, &cmd->shape_add); } break;
-        case SIM_CMD_JOINT_ADD:     { ds_JointAddCmdSerialize(ss, &cmd->joint_add); } break;
-        case SIM_CMD_MOUSE_JOINT_ADD: { ds_MouseJointAddCmdSerialize(ss, &cmd->mouse_joint_add); } break;
-        case SIM_CMD_MOUSE_JOINT_TARGET_SET: { ds_MouseJointTargetSetCmdSerialize(ss, &cmd->mouse_joint_target_set); } break;
-        case SIM_CMD_JOINT_REMOVE: { ds_JointRemoveCmdSerialize(ss, &cmd->joint_remove); } break;
-        default:                    { ds_AssertString(0, "ds_SimCmdSerialize: unknown command type"); } break;
+        case SIM_CMD_CONFIG_LOAD:   { ds_LoadConfigCmdSerializeBitPacked(ss, &cmd->load_config); } break;
+        case SIM_CMD_BODY_ADD:      { ds_BodyAddCmdSerializeBitPacked(ss, &cmd->body_add); } break;
+        case SIM_CMD_SHAPE_ADD:     { ds_ShapeAddCmdSerializeBitPacked(ss, &cmd->shape_add); } break;
+        case SIM_CMD_JOINT_ADD:     { ds_JointAddCmdSerializeBitPacked(ss, &cmd->joint_add); } break;
+        case SIM_CMD_MOUSE_JOINT_ADD: { ds_MouseJointAddCmdSerializeBitPacked(ss, &cmd->mouse_joint_add); } break;
+        case SIM_CMD_MOUSE_JOINT_TARGET_SET: { ds_MouseJointTargetSetCmdSerializeBitPacked(ss, &cmd->mouse_joint_target_set); } break;
+        case SIM_CMD_JOINT_REMOVE: { ds_JointRemoveCmdSerializeBitPacked(ss, &cmd->joint_remove); } break;
+        default:                    { ds_AssertString(0, "ds_SimCmdSerializeBitPacked: unknown command type"); } break;
     }
 }
 
-u32 ds_SimCmdTryDeserialize(struct arena *mem, struct SS *ss, struct ds_SimCmd *cmd)
+u32 ds_SimCmdTryDeserializeBitPacked(struct arena *mem, struct SS *ss, struct ds_SimCmd *cmd)
 {
     struct SS ss_mut = *ss;
     if (SSBitsLeft(&ss_mut) < DS_SIM_CMD_TYPE_BITS)
@@ -262,13 +172,13 @@ u32 ds_SimCmdTryDeserialize(struct arena *mem, struct SS *ss, struct ds_SimCmd *
     u32 success;
     switch (type)
     {
-        case SIM_CMD_CONFIG_LOAD:   { success = ds_LoadConfigCmdTryDeserialize(mem, &ss_mut, &cmd->load_config); } break;
-        case SIM_CMD_BODY_ADD:      { success = ds_BodyAddCmdTryDeserialize(mem, &ss_mut, &cmd->body_add); } break;
-        case SIM_CMD_SHAPE_ADD:     { success = ds_ShapeAddCmdTryDeserialize(mem, &ss_mut, &cmd->shape_add); } break;
-        case SIM_CMD_JOINT_ADD:     { success = ds_JointAddCmdTryDeserialize(&ss_mut, &cmd->joint_add); } break;
-        case SIM_CMD_MOUSE_JOINT_ADD: { success = ds_MouseJointAddCmdTryDeserialize(&ss_mut, &cmd->mouse_joint_add); } break;
-        case SIM_CMD_MOUSE_JOINT_TARGET_SET: { success = ds_MouseJointTargetSetCmdTryDeserialize(&ss_mut, &cmd->mouse_joint_target_set); } break;
-        case SIM_CMD_JOINT_REMOVE: { success = ds_JointRemoveCmdTryDeserialize(&ss_mut, &cmd->joint_remove); } break;
+        case SIM_CMD_CONFIG_LOAD:   { success = ds_LoadConfigCmdTryDeserializeBitPacked(mem, &ss_mut, &cmd->load_config); } break;
+        case SIM_CMD_BODY_ADD:      { success = ds_BodyAddCmdTryDeserializeBitPacked(mem, &ss_mut, &cmd->body_add); } break;
+        case SIM_CMD_SHAPE_ADD:     { success = ds_ShapeAddCmdTryDeserializeBitPacked(mem, &ss_mut, &cmd->shape_add); } break;
+        case SIM_CMD_JOINT_ADD:     { success = ds_JointAddCmdTryDeserializeBitPacked(&ss_mut, &cmd->joint_add); } break;
+        case SIM_CMD_MOUSE_JOINT_ADD: { success = ds_MouseJointAddCmdTryDeserializeBitPacked(&ss_mut, &cmd->mouse_joint_add); } break;
+        case SIM_CMD_MOUSE_JOINT_TARGET_SET: { success = ds_MouseJointTargetSetCmdTryDeserializeBitPacked(&ss_mut, &cmd->mouse_joint_target_set); } break;
+        case SIM_CMD_JOINT_REMOVE: { success = ds_JointRemoveCmdTryDeserializeBitPacked(&ss_mut, &cmd->joint_remove); } break;
         default:                    { success = 0; } break;
     }
 
@@ -310,7 +220,7 @@ struct ds_SimCmdPayload ds_SimCmdPayloadPushAll(struct arena *mem, const ds_SimI
     u64 bits = 0;
     for (u32 i = 0; i < pool->count; ++i)
     {
-        bits += ds_SimCmdSerializeBitsize(pool->buf + i);
+        bits += ds_SimCmdSerializeBitPackedSize(pool->buf + i);
     }
 
     struct ds_SimCmdPayload payload = ds_SimCmdPayloadAlloc(mem, dst, (bits + 7) / 8);
@@ -322,7 +232,7 @@ struct ds_SimCmdPayload ds_SimCmdPayloadPushAll(struct arena *mem, const ds_SimI
 
     for (u32 i = 0; i < pool->count; ++i)
     {
-        ds_SimCmdSerialize(&payload.stream, pool->buf + i);
+        ds_SimCmdSerializeBitPacked(&payload.stream, pool->buf + i);
     }
     payload.cmd_count = pool->count;
 
