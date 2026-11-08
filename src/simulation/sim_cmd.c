@@ -27,6 +27,7 @@
 
 static u32 ds_LoadConfigCmdFormVerify(const struct ds_LoadConfigCmd *cmd)
 {
+    ds_Assert(cmd->config);
     return ds_SimConfigCheck(cmd->config);
 }
 
@@ -168,6 +169,7 @@ u32 ds_SimCmdTryDeserializeBitPacked(struct arena *mem, struct SS *ss, struct ds
         return 0;
     }
 
+    const u64 mem_left = mem->mem_left;
     const u64 type = SSReadU64Partial(&ss_mut, DS_SIM_CMD_TYPE_BITS);
     u32 success;
     switch (type)
@@ -184,6 +186,7 @@ u32 ds_SimCmdTryDeserializeBitPacked(struct arena *mem, struct SS *ss, struct ds
 
     if (!success)
     {
+        ArenaPopPacked(mem, mem_left - mem->mem_left);
         return 0;
     }
 

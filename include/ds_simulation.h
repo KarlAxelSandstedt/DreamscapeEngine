@@ -171,7 +171,7 @@ DEFINE_CPOOL_STRUCT(ds_SimCmd);
 
 /* 
  * Deserialize a bit-packed command. Returns 1 on success. On failure return 0 
- * (bad stream, bad command or no room) and reset the stream position. 
+ * (bad stream, bad command or no room) and reset the stream position and mem. 
  */
 u32     ds_SimCmdTryDeserializeBitPacked(struct arena *mem, struct SS *ss, struct ds_SimCmd *cmd);
 /* Return 1 if cmd is well-formed (Is it actually a valid command in form), 0 otherwise. */
