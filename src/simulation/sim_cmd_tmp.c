@@ -26,6 +26,12 @@ static u32 ds_BodyAddCmdDataVerify(const struct ds_Sim *sim, const struct ds_Bod
 
 static u32 ds_BodyAddCmdTryExecute(struct ds_Sim *sim, const struct ds_BodyAddCmd *cmd)
 {
+    if (!ds_BodyAddCmdDataVerify(sim, cmd))
+    {
+        Log(T_SYSTEM, S_WARNING, "ds_BodyAddCmdTryExecute: rejected, unknown prefab %.*s or entity %u taken", cmd->prefab.size, cmd->prefab.buf, cmd->entity);
+        return 0;
+    }
+
     const struct ds_BodyPrefab *prefab = ds_SDBLookup(*sim->dynamics.external->body_prefab_db, cmd->prefab).address;
     const ds_BodyId body = ds_BodyAdd(&sim->dynamics, prefab, &cmd->t_world, cmd->entity);
     if (ds_BodyIdNullCheck(body))
@@ -80,6 +86,12 @@ static u32 ds_ShapeAddCmdDataVerify(const struct ds_Sim *sim, const struct ds_Sh
 
 static u32 ds_ShapeAddCmdTryExecute(struct ds_Sim *sim, const struct ds_ShapeAddCmd *cmd)
 {
+    if (!ds_ShapeAddCmdDataVerify(sim, cmd))
+    {
+        Log(T_SYSTEM, S_WARNING, "ds_ShapeAddCmdTryExecute: rejected, unknown prefab %.*s or no body for entity %u", cmd->prefab.size, cmd->prefab.buf, cmd->entity);
+        return 0;
+    }
+
     const struct ds_ShapePrefab *prefab = ds_SDBLookup(*sim->dynamics.external->shape_prefab_db, cmd->prefab).address;
     ds_ShapeAdd(&sim->dynamics, prefab, &cmd->t_local, ds_SimBodyByEntity(sim, cmd->entity));
     return 1;
@@ -133,6 +145,12 @@ static u32 ds_JointAddCmdDataVerify(const struct ds_Sim *sim, const struct ds_Jo
 
 static u32 ds_JointAddCmdTryExecute(struct ds_Sim *sim, const struct ds_JointAddCmd *cmd)
 {
+    if (!ds_JointAddCmdDataVerify(sim, cmd))
+    {
+        Log(T_SYSTEM, S_WARNING, "ds_JointAddCmdTryExecute: rejected, no body for entity %u or %u", cmd->entity[0], cmd->entity[1]);
+        return 0;
+    }
+
     struct ds_DistanceJointPrefab prefab;
     if (cmd->enable_spring)
     {
@@ -210,6 +228,12 @@ static u32 ds_MouseJointAddCmdDataVerify(const struct ds_Sim *sim, const struct 
 
 static u32 ds_MouseJointAddCmdTryExecute(struct ds_Sim *sim, const struct ds_MouseJointAddCmd *cmd)
 {
+    if (!ds_MouseJointAddCmdDataVerify(sim, cmd))
+    {
+        Log(T_SYSTEM, S_WARNING, "ds_MouseJointAddCmdTryExecute: rejected, entity %u has no dynamic body or joint entity %u is taken", cmd->entity, cmd->joint_entity);
+        return 0;
+    }
+
     const ds_BodyId id = ds_SimBodyByEntity(sim, cmd->entity);
     const struct ds_Body *body = ds_BodyLookup(&sim->dynamics, id).address;
     const struct ds_BodySim *bsim = sim->dynamics.solver_set_pool.buf[body->set].body_sim_pool.buf + body->sim;
@@ -278,6 +302,12 @@ static u32 ds_MouseJointTargetSetCmdDataVerify(const struct ds_Sim *sim, const s
 
 static u32 ds_MouseJointTargetSetCmdTryExecute(struct ds_Sim *sim, const struct ds_MouseJointTargetSetCmd *cmd)
 {
+    if (!ds_MouseJointTargetSetCmdDataVerify(sim, cmd))
+    {
+        Log(T_SYSTEM, S_WARNING, "ds_MouseJointTargetSetCmdTryExecute: rejected, joint entity %u is no mouse joint", cmd->joint_entity);
+        return 0;
+    }
+
     ds_MouseJointTargetSet(&sim->dynamics, ds_SimJointByEntity(sim, cmd->joint_entity), cmd->target);
     return 1;
 }
@@ -321,6 +351,12 @@ static u32 ds_JointRemoveCmdDataVerify(const struct ds_Sim *sim, const struct ds
 
 static u32 ds_JointRemoveCmdTryExecute(struct ds_Sim *sim, const struct ds_JointRemoveCmd *cmd)
 {
+    if (!ds_JointRemoveCmdDataVerify(sim, cmd))
+    {
+        Log(T_SYSTEM, S_WARNING, "ds_JointRemoveCmdTryExecute: rejected, no joint for joint entity %u", cmd->joint_entity);
+        return 0;
+    }
+
     const ds_JointId joint = ds_SimJointByEntity(sim, cmd->joint_entity);
     ds_HashMapRemove(&sim->joint_entity_map, cmd->joint_entity, ds_JointIdIndex(joint));
     ds_JointRemove(&sim->dynamics, joint);

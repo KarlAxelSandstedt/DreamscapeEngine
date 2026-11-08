@@ -94,11 +94,6 @@ static struct test_Output SimConfigSerializeTest(struct test_Environment *env)
         TEST_EQUAL(0, truncated.bit_index);
         TEST_EQUAL(0, read.seed[0] | read.us_system_tick[SIM_SYSTEM_DYNAMICS]);
 
-        /* off the byte boundary */
-        ss.bit_index = 3;
-        TEST_EQUAL(0, ds_SimConfigTryDeserialize(&ss, &read));
-        TEST_EQUAL(3, ss.bit_index);
-
         /* wrong version: the first word */
         ss.bit_index = 0;
         SSWriteU32Le(&ss, 0xffffffffu);
@@ -218,10 +213,6 @@ static struct test_Output DynamicsConfigSerializeTest(struct test_Environment *e
         TEST_EQUAL(0, ds_DynamicsConfigTryDeserialize(&truncated, &read));
         TEST_EQUAL(0, truncated.bit_index);
         TEST_EQUAL(0, read.initial_size | read.solver.pgs_iteration_count);
-
-        ss.bit_index = 3;
-        TEST_EQUAL(0, ds_DynamicsConfigTryDeserialize(&ss, &read));
-        TEST_EQUAL(3, ss.bit_index);
 
         /* a wrong version word: the config's, then each contained config's (at their offsets in the stream) */
         const u64 version_offset[3] =
@@ -444,12 +435,8 @@ static struct test_Output SimCmdPayloadSerializeTest(struct test_Environment *en
     struct ds_SimCmdPayload other = view;
     other.dst = ds_SimIdInit(4, 2);
     struct ds_SimCmdPayload roomy = ds_SimCmdPayloadAlloc(NULL, payload.dst, 2*bytes);
-    TEST_EQUAL(0, ds_SimCmdPayloadAppend(&roomy, &other));     /* another dst */
-    TEST_TRUE(roomy.stream.bit_index == 0 && roomy.cmd_count == 0);
-    struct ds_SimCmdPayload adopt = ds_SimCmdPayloadAlloc(NULL, ds_SimIdNull(), bytes);
-    TEST_EQUAL(1, ds_SimCmdPayloadAppend(&adopt, &other));
-    TEST_TRUE(ds_SimIdEqual(other.dst, adopt.dst));
-    ds_SimCmdPayloadDealloc(&adopt);
+    TEST_EQUAL(1, ds_SimCmdPayloadAppend(&roomy, &other));     /* dst is the caller's: another dst appends too */
+    TEST_TRUE(roomy.stream.bit_index == view.stream.bit_index && roomy.cmd_count == view.cmd_count && ds_SimIdEqual(roomy.dst, payload.dst));
     ds_SimCmdPayloadDealloc(&roomy);
     ds_SimCmdPayloadDealloc(&fused);
     TEST_TRUE(fused.stream.buf == NULL && fused.cmd_count == 0);

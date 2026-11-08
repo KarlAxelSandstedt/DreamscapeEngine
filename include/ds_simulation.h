@@ -20,8 +20,8 @@
 /*
 ds_simulation.h
 ===============
-Deterministic, replayable simulation: a timeline of system ticks and external 
-command batches ordered by Simulation Clock Time (SCT), recordable to and 
+Deterministic, replayable simulation: a timeline of system ticks and external
+command batches ordered by Simulation Clock Time (SCT), recordable to and
 replayable from command files.
 
 Design: notes/replays.txt.
@@ -68,7 +68,7 @@ are required to make the simulation executable.
 struct ds_SimConfig
 {
     u64 seed[4];                            /* simulation seed */
-    
+
     u64 us_system_tick[SIM_SYSTEM_COUNT];
 
     struct ds_DynamicsConfig dynamics;
@@ -91,7 +91,7 @@ u32                     ds_SimConfigTryDeserialize(struct SS *ss, struct ds_SimC
 /*
 ds_SimCmd
 =========
-Commands sent from external sources (network, input, ...) that affect the simulation's state. 
+Commands sent from external sources (network, input, ...) that affect the simulation's state.
 */
 enum ds_SimCmdType
 {
@@ -114,7 +114,7 @@ struct ds_SimCmd
     {
         struct ds_LoadConfigCmd
         {
-            const struct ds_SimConfig *config; 
+            const struct ds_SimConfig *config;
         } load_config;
 
         struct ds_BodyAddCmd
@@ -174,7 +174,7 @@ u32     ds_SimCmdTryDeserialize(struct arena *mem, struct SS *ss, struct ds_SimC
 /* Return 1 if cmd is well-formed (Is it actually a valid command in form), 0 otherwise. */
 u32     ds_SimCmdFormVerify(const struct ds_SimCmd *cmd);
 /*
- * Verify cmd against sim's state (ds_SimCmdDataVerify) and execute it. Returns 1 on success and 
+ * Verify cmd against sim's state (ds_SimCmdDataVerify) and execute it. Returns 1 on success and
  * 0 if cmd is rejected
  */
 u32     ds_SimCmdTryExecute(struct ds_Sim *sim, const struct ds_SimCmd *cmd);
@@ -201,25 +201,28 @@ struct ds_SimCmdPayload
 };
 DEFINE_CPOOL_STRUCT(ds_SimCmdPayload);
 
-/* Return without allocating an empty payload for dst */
+/* Return an empty payload for dst */
 struct ds_SimCmdPayload ds_SimCmdPayloadEmpty(const ds_SimId dst);
-/* Return an empty payload for dst with a size byte buffer in mem or on the heap (mem == NULL). */
-struct ds_SimCmdPayload ds_SimCmdPayloadAlloc(struct arena *mem, const ds_SimId dst, const u64 size);
-/* Free a heap payload's buffer (arena memory stays with the arena); the payload becomes empty. */
+/* Return an empty payload for dst with an allocated stream (Optionally on provided arena) */
+struct ds_SimCmdPayload ds_SimCmdPayloadAlloc(struct arena *mem, const ds_SimId dst, const u64 bytesize);
+/* Deallocate (NO-OP on arena allocated payload) and empty payload. */
 void                    ds_SimCmdPayloadDealloc(struct ds_SimCmdPayload *payload);
-/* Return a payload for dst holding the pool's commands serialized in order, sized exactly, in mem or on the heap (mem == NULL); empty if there is no room (logged). */
+/*
+ * Return a payload for dst with the pool's commands, serialized in order, (Optionally on provided arena).
+ * On failure, return empty payload.
+ */
 struct ds_SimCmdPayload ds_SimCmdPayloadPushAll(struct arena *mem, const ds_SimId dst, const ds_CPool(ds_SimCmd) *pool);
+/* Append src commands to payload. Returns 1 on success. On failure, return 0 and keep payload unchanged. */
+u32                     ds_SimCmdPayloadAppend(struct ds_SimCmdPayload *payload, const struct ds_SimCmdPayload *src);
 /* Return the required size when serializing the payload. */
 u64                     ds_SimCmdPayloadSerializeSize(const struct ds_SimCmdPayload *payload);
 /* Serialize the payload. WARNING: Assumes payload fits in the stream. */
 void                    ds_SimCmdPayloadSerialize(struct SS *ss, const struct ds_SimCmdPayload *payload);
 /*
- * Read the stream's payload as a view of the stream's buffer (no copy; valid while the buffer is). Returns 1 on
- * success and 0 on failure (bad stream): the stream position is as before and the payload is empty.
+ * Deserialize payload and have payload->stream alias stream buffer. Returns 1 on success.
+ * On failure return 0 (bad stream or nonzero pad bits), and reset stream position.
  */
 u32                     ds_SimCmdPayloadTryDeserializeAndAlias(struct SS *ss, struct ds_SimCmdPayload *payload);
-/* Append src's commands to payload (a null dst takes src's). Returns 1 on success and 0 on another dst or no room: payload as before. */
-u32                     ds_SimCmdPayloadAppend(struct ds_SimCmdPayload *payload, const struct ds_SimCmdPayload *src);
 
 
 /*
@@ -276,7 +279,7 @@ ds_BodyId ds_SimBodyByEntity(const struct ds_Sim *sim, const u32 entity);
 /* TODO(Remove/Refactor) Return the joint added for the joint entity (SIM_CMD_MOUSE_JOINT_ADD), or the null id. */
 ds_JointId ds_SimJointByEntity(const struct ds_Sim *sim, const u32 joint_entity);
 
-//TODO Serialize API for sim 
+//TODO Serialize API for sim
 
 
 

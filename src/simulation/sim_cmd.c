@@ -120,6 +120,12 @@ static u32 ds_LoadConfigCmdDataVerify(const struct ds_Sim *sim, const struct ds_
 
 static u32 ds_LoadConfigCmdTryExecute(struct ds_Sim *sim, const struct ds_LoadConfigCmd *cmd)
 {
+    if (!ds_LoadConfigCmdDataVerify(sim, cmd))
+    {
+        LogString(T_SYSTEM, S_WARNING, "ds_LoadConfigCmdTryExecute: rejected, the seed, tick periods or initial size differ from the simulation's");
+        return 0;
+    }
+
     /* the dynamics (the game later) */
     sim->dynamics.config_pending = cmd->config->dynamics;
     ds_DynamicsConfigUpdatePending(&sim->dynamics);
@@ -194,31 +200,9 @@ u32 ds_SimCmdFormVerify(const struct ds_SimCmd *cmd)
     }
 }
 
-/* Return 1 if the well-formed cmd is a valid command within sim's context, 0 otherwise.*/
-static u32 ds_SimCmdDataVerify(const struct ds_Sim *sim, const struct ds_SimCmd *cmd)
-{
-    ds_Assert(ds_SimCmdFormVerify(cmd));
-
-    switch (cmd->type)
-    {
-        case SIM_CMD_CONFIG_LOAD:   { return ds_LoadConfigCmdDataVerify(sim, &cmd->load_config); }
-        case SIM_CMD_BODY_ADD:      { return ds_BodyAddCmdDataVerify(sim, &cmd->body_add); }
-        case SIM_CMD_SHAPE_ADD:     { return ds_ShapeAddCmdDataVerify(sim, &cmd->shape_add); }
-        case SIM_CMD_JOINT_ADD:     { return ds_JointAddCmdDataVerify(sim, &cmd->joint_add); }
-        case SIM_CMD_MOUSE_JOINT_ADD: { return ds_MouseJointAddCmdDataVerify(sim, &cmd->mouse_joint_add); }
-        case SIM_CMD_MOUSE_JOINT_TARGET_SET: { return ds_MouseJointTargetSetCmdDataVerify(sim, &cmd->mouse_joint_target_set); }
-        case SIM_CMD_JOINT_REMOVE: { return ds_JointRemoveCmdDataVerify(sim, &cmd->joint_remove); }
-        default:                    { return 0; }
-    }
-}
-
 u32 ds_SimCmdTryExecute(struct ds_Sim *sim, const struct ds_SimCmd *cmd)
 {
-    if (!ds_SimCmdDataVerify(sim, cmd))
-    {
-        Log(T_SYSTEM, S_WARNING, "ds_SimCmdTryExecute: command of type %u rejected", (u32) cmd->type);
-        return 0;
-    }
+    ds_Assert(ds_SimCmdFormVerify(cmd));
 
     switch (cmd->type)
     {
@@ -305,14 +289,20 @@ struct ds_SimCmdPayload ds_SimCmdPayloadEmpty(const ds_SimId dst)
     return (struct ds_SimCmdPayload) { .dst = dst };
 }
 
-struct ds_SimCmdPayload ds_SimCmdPayloadAlloc(struct arena *mem, const ds_SimId dst, const u64 size)
+struct ds_SimCmdPayload ds_SimCmdPayloadAlloc(struct arena *mem, const ds_SimId dst, const u64 bytesize)
 {
     return (struct ds_SimCmdPayload)
     {
         .dst = dst,
         .cmd_count = 0,
-        .stream = SSAlloc(mem, size),
+        .stream = SSAlloc(mem, bytesize),
     };
+}
+
+void ds_SimCmdPayloadDealloc(struct ds_SimCmdPayload *payload)
+{
+    SSDealloc(&payload->stream);
+    *payload = ds_SimCmdPayloadEmpty(ds_SimIdNull());
 }
 
 struct ds_SimCmdPayload ds_SimCmdPayloadPushAll(struct arena *mem, const ds_SimId dst, const ds_CPool(ds_SimCmd) *pool)
@@ -335,16 +325,31 @@ struct ds_SimCmdPayload ds_SimCmdPayloadPushAll(struct arena *mem, const ds_SimI
         ds_SimCmdSerialize(&payload.stream, pool->buf + i);
     }
     payload.cmd_count = pool->count;
+
     return payload;
 }
 
-void ds_SimCmdPayloadDealloc(struct ds_SimCmdPayload *payload)
+u32 ds_SimCmdPayloadAppend(struct ds_SimCmdPayload *payload, const struct ds_SimCmdPayload *src)
 {
-    SSDealloc(&payload->stream);
-    *payload = ds_SimCmdPayloadEmpty(ds_SimIdNull());
+    struct SSView view;     /* src's used bits */
+    if (!SSTryView(&view, &src->stream, 0, src->stream.bit_index)
+        || SSBitsLeft(&payload->stream) < view.bit_count)
+    {
+        return 0;
+    }
+
+    struct SS s = SSSubstreamFromView(&view);
+    while (SSBitsLeft(&s))
+    {
+        const u64 bit_count = U64Min(SSBitsLeft(&s), 64);
+        SSWriteU64Partial(&payload->stream, SSReadU64Partial(&s, bit_count), bit_count);
+    }
+
+    payload->cmd_count += src->cmd_count;
+    return 1;
 }
 
-#define DS_SIM_CMD_PAYLOAD_FIXED_SIZE   (sizeof(u64) + 2*sizeof(u32))  /* dst, cmd_count, command bits */
+#define DS_SIM_CMD_PAYLOAD_FIXED_SIZE   (sizeof(u64) + 2*sizeof(u32))
 
 u64 ds_SimCmdPayloadSerializeSize(const struct ds_SimCmdPayload *payload)
 {
@@ -366,60 +371,35 @@ u32 ds_SimCmdPayloadTryDeserializeAndAlias(struct SS *ss, struct ds_SimCmdPayloa
 {
     struct SS ss_mut = *ss;
     *payload = ds_SimCmdPayloadEmpty(ds_SimIdNull());
-    struct ds_SimCmdPayload payload_mut = *payload;
-
     if (SSBytesLeft(&ss_mut) < DS_SIM_CMD_PAYLOAD_FIXED_SIZE)
     {
         return 0;
     }
 
-    payload_mut.dst.val = SSReadU64Le(&ss_mut);
-    payload_mut.cmd_count = SSReadU32Le(&ss_mut);
+    const ds_SimId dst = { SSReadU64Le(&ss_mut) };
+    const u32 cmd_count = SSReadU32Le(&ss_mut);
     const u64 bit_count = SSReadU32Le(&ss_mut);
-    struct SSView view;
-    if (!SSTryView(&view, &ss_mut, ss_mut.bit_index, bit_count))
+    const u64 byte_count = (bit_count + 7) / 8;
+    if (SSBytesLeft(&ss_mut) < byte_count)
     {
         return 0;
     }
 
-    /* the payload's own stream: its buf at the commands (byte aligned by the format), all bit_count bits used */
-    payload_mut.stream = SSBuffered(view.buf + view.bit_offset / 8, (bit_count + 7) / 8);
-    payload_mut.stream.bit_index = bit_count;
-    payload_mut.stream.bit_count = bit_count;
-
-    const u32 pad = (bit_count % 8) 
-        ? payload_mut.stream.buf[bit_count / 8] >> (bit_count % 8) 
-        : 0;
-    if (pad != 0)
+    u8 *payload_base = ss_mut.buf + ss_mut.bit_index / 8;
+    const u32 pad = (bit_count % 8)
+                       ? payload_base[byte_count - 1] >> (bit_count % 8)
+                       : 0;
+    if (pad)
     {
         return 0;
     }
 
-    ss_mut.bit_index += 8*((bit_count + 7) / 8);
-
+    payload->dst = dst;
+    payload->cmd_count = cmd_count;
+    payload->stream = SSBuffered(payload_base, byte_count);
+    payload->stream.bit_index = bit_count;
+    payload->stream.bit_count = bit_count;
+    ss_mut.bit_index += 8*byte_count;
     *ss = ss_mut;
-    *payload = payload_mut;
-    return 1;
-}
-
-u32 ds_SimCmdPayloadAppend(struct ds_SimCmdPayload *payload, const struct ds_SimCmdPayload *src)
-{
-    struct SSView view;     /* src's used bits */
-    if ((!ds_SimIdNullCheck(payload->dst) && payload->dst.val != src->dst.val)
-        || !SSTryView(&view, &src->stream, 0, src->stream.bit_index)
-        || SSBitsLeft(&payload->stream) < view.bit_count)
-    {
-        return 0;
-    }
-
-    struct SS s = SSSubstreamFromView(&view);
-    while (SSBitsLeft(&s))
-    {
-        const u64 bit_count = U64Min(SSBitsLeft(&s), 64);
-        SSWriteU64Partial(&payload->stream, SSReadU64Partial(&s, bit_count), bit_count);
-    }
-
-    payload->dst = src->dst;
-    payload->cmd_count += src->cmd_count;
     return 1;
 }
