@@ -247,18 +247,15 @@ void ds_ContactPromote(struct ds_Dynamics *pipeline, const u32 contact)
     };
 
     const u32 dynamic[2] = { ds_BodyDynamicBit(body[0]), ds_BodyDynamicBit(body[1]) };
-    const u32 expand_index = body[ dynamic[1] ]->island;
-    const u32 merge_index = body[ 1-dynamic[1] ]->island;
     ds_Assert(dynamic[0] || dynamic[1]);
+    u32 expand_index = body[ dynamic[1] ]->island;
+    if (dynamic[0] && dynamic[1] && body[0]->island != body[1]->island)
+    {
+		expand_index = ds_IslandMerge(pipeline, body[0]->island, body[1]->island);
+    }
 
 	struct ds_Island *expand = pipeline->island_pool.buf + expand_index;
     ds_SolverSetWakeUp(pipeline, expand->set);
-
-    if (dynamic[0] && dynamic[1] && expand_index != merge_index)
-    {
-		ds_IslandMerge(pipeline, expand_index, merge_index);
-    }
-
     c->island = expand_index;
 	DLLAppend(expand->contact_list, pipeline->contact_pool.buf, contact, island_contact);
 	PhysicsEventIslandExpanded(pipeline, expand->id);	

@@ -49,8 +49,7 @@ ds_JointId ds_JointAdd(struct ds_Dynamics *pipeline, const enum ds_JointType typ
     }
 
     const u32 dynamic[2] = { ds_BodyDynamicBit(b[0]), ds_BodyDynamicBit(b[1]) };
-    const u32 expand_index = b[ dynamic[1] ]->island;
-    const u32 merge_index = b[ 1-dynamic[1] ]->island;
+    u32 expand_index = b[ dynamic[1] ]->island;
     if (!dynamic[0] && !dynamic[1])
     {
         Log(T_PHYSICS, S_WARNING, "joint add rejected: bodies %u and %u are both static", slot_b0.index, slot_b1.index);
@@ -68,13 +67,13 @@ ds_JointId ds_JointAdd(struct ds_Dynamics *pipeline, const enum ds_JointType typ
         }
     }
 
+    if (dynamic[0] && dynamic[1] && b[0]->island != b[1]->island)
+    {
+		expand_index = ds_IslandMerge(pipeline, b[0]->island, b[1]->island);
+    }
+
 	struct ds_Island *expand = pipeline->island_pool.buf + expand_index;
     ds_SolverSetWakeUp(pipeline, expand->set);
-
-    if (dynamic[0] && dynamic[1] && expand_index != merge_index)
-    {
-		ds_IslandMerge(pipeline, expand_index, merge_index);
-    }
 
     const u32 old_max = pipeline->joint_pool.count_max;
     const u32 old_length = pipeline->joint_pool.length;

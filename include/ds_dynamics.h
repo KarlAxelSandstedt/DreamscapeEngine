@@ -1259,8 +1259,8 @@ DEFINE_POOL(ds_Island);
 struct slot ds_IslandLookup(struct ds_Dynamics *pipeline, const ds_IslandId id);
 /* remove island resources from database */
 void 		ds_IslandRemove(struct ds_Dynamics *pipeline, const u32 island);
-/* Merge islands (Or simply update if new local contact) using new contact */
-void 		ds_IslandMerge(struct ds_Dynamics *pipeline, const u32 expand, const u32 merge);
+/* Merge islands (Or simply update if new local contact) using new contact, and return expanded island index */
+u32 		ds_IslandMerge(struct ds_Dynamics *pipeline, const u32 island_index0, const u32 island_index1);
 /* Split island, or remake if no split happens.  */
 void 		ds_IslandSplit(struct ds_Dynamics *pipeline, const u32 island);
 /* Debug printing of island */

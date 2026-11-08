@@ -219,16 +219,23 @@ void ds_IslandValidateAll(const struct ds_Dynamics *pipeline)
 	}
 }
 
-void ds_IslandMerge(struct ds_Dynamics *pipeline, const u32 expand_index, const u32 merge_index)
+u32 ds_IslandMerge(struct ds_Dynamics *pipeline, const u32 island_index0, const u32 island_index1)
 {
     ProfZone;
-    
+    ds_Assert(island_index0 != island_index1);
+
+    /* the smaller island is relabelled */
+    const struct ds_Island *island0 = pipeline->island_pool.buf + island_index0;
+    const struct ds_Island *island1 = pipeline->island_pool.buf + island_index1;
+    const u32 count0 = island0->body_list.count + island0->contact_list.count + island0->joint_list.count;
+    const u32 count1 = island1->body_list.count + island1->contact_list.count + island1->joint_list.count;
+
+    const u32 expand_index = (count1 > count0 || (count1 == count0 && island_index1 < island_index0)) ? island_index1 : island_index0;
+    const u32 merge_index = (expand_index == island_index0) ? island_index1 : island_index0;
+
 	struct ds_Island *expand = pipeline->island_pool.buf + expand_index;
 	struct ds_Island *merge = pipeline->island_pool.buf + merge_index;
-    
-    ds_Assert(expand->set == SOLVER_SET_ACTIVE);
-    ds_Assert(expand_index != merge_index);
-
+    ds_SolverSetWakeUp(pipeline, expand->set);
     ds_SolverSetWakeUp(pipeline, merge->set);
 
     {
@@ -313,6 +320,7 @@ void ds_IslandMerge(struct ds_Dynamics *pipeline, const u32 expand_index, const 
 	ds_IslandRemove(pipeline, merge_index);
 	
     ProfZoneEnd;
+    return expand_index;
 }
 
 void ds_IslandRemove(struct ds_Dynamics *pipeline, const u32 island_index)
