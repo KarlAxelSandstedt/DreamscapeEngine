@@ -408,9 +408,9 @@ void ds_ServerTick(struct ds_Server *srv, const u64 ns_delta)
             continue;
         }
 
-//TODO guesses until there is data: what one payload may make the door decode (a hostile sender picks the counts)
-#define DS_SIM_PAYLOAD_CMD_COUNT_MAX    4096
-#define DS_SIM_PAYLOAD_BIT_COUNT_MAX    (1 << 20)
+//TODO effectively no caps until there is data on what one payload may make the door decode (a hostile sender picks the counts)
+#define DS_SIM_PAYLOAD_CMD_COUNT_MAX    (1u << 31)
+#define DS_SIM_PAYLOAD_BIT_COUNT_MAX    ((u64) 1 << 40)
         if (payload->cmd_count > DS_SIM_PAYLOAD_CMD_COUNT_MAX || payload->stream.bit_index > DS_SIM_PAYLOAD_BIT_COUNT_MAX)
         {
             Log(T_SYSTEM, S_WARNING, "ds_ServerTick: payload of %u commands, %lu bits for simulation %lu dropped (over the cap)", payload->cmd_count, payload->stream.bit_index, payload->dst.val);

@@ -45,7 +45,7 @@ static struct ds_RuntimeConfig ds_ConfigDefault(void)
     config.thread_scratchsize = 1*1024*1024;
     config.thread_scratch_count = 5;
     config.headless = 0;
-    config.dynamics_worker_framesize = 4*1024*1024;
+    config.dynamics_worker_framesize = 8*1024*1024;
     config.server_framesize = 32*1024*1024;
     return config;
 }

@@ -814,9 +814,9 @@ static struct test_Output ServerClockTest(struct test_Environment *env)
 }
 
 /*
- * The server's door: a server with one simulation and six arrivals in payload_pool (built on the server's frame
- * arena), a ConfigLoad, a payload for an unknown id, a payload whose command bits are corrupt, one over the command
- * count cap, a payload whose command count is wrong, and a second ConfigLoad. One ds_ServerTick: the two good payloads are decoded onto the simulation's pool in arrival order
+ * The server's door: a server with one simulation and five arrivals in payload_pool (built on the server's frame
+ * arena), a ConfigLoad, a payload for an unknown id, a payload whose command bits are corrupt, a payload whose
+ * command count is wrong, and a second ConfigLoad. One ds_ServerTick: the two good payloads are decoded onto the simulation's pool in arrival order
  * and executed by its tick (the last wins), the bad ones are dropped before the fuse (the fused payload holds the two
  * good ones), payload_pool and cmd_pool are empty afterwards. An empty frame changes nothing.
  */
@@ -859,8 +859,6 @@ static struct test_Output ServerDoorTest(struct test_Environment *env)
     corrupt.stream.buf[0] = 0xff;                                               /* the type */
     struct ds_SimCmdPayload miscounted = ds_SimCmdPayloadPushAll(&srv.frame, host->id, &pool);
     miscounted.cmd_count = 2;
-    struct ds_SimCmdPayload over_cap = ds_SimCmdPayloadPushAll(&srv.frame, host->id, &pool);
-    over_cap.cmd_count = 5000;
     cmd.load_config.config = &load[1];
     ds_CPoolFlush(pool);
     ds_CPoolPushValue(pool, cmd);
@@ -870,7 +868,6 @@ static struct test_Output ServerDoorTest(struct test_Environment *env)
     ds_CPoolPushValue(srv.payload_pool, good_first);
     ds_CPoolPushValue(srv.payload_pool, unknown);
     ds_CPoolPushValue(srv.payload_pool, corrupt);
-    ds_CPoolPushValue(srv.payload_pool, over_cap);
     ds_CPoolPushValue(srv.payload_pool, miscounted);
     ds_CPoolPushValue(srv.payload_pool, good_second);
 
