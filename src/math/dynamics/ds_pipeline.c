@@ -509,7 +509,9 @@ u32 ds_NarrowJobPhaseDispatch(const ds_JobId job)
 
     struct ds_NarrowJobPhase *phase = (struct ds_NarrowJobPhase *) g_scheduler->phase;
     struct ds_Dynamics *pipeline = phase->pipeline;
-    struct arena *frame = pipeline->runtime.worker[ds_ThreadSelfIndex()].frame;
+    struct ds_DynamicsWorker *worker = pipeline->runtime.worker + ds_ThreadSelfIndex();
+    struct arena *frame = worker->frame;
+    struct ds_BitSet *promote_demote_set = &worker->contact_promote_demote_set;
     struct ds_ParallelForChain *chain;
     struct ds_ParallelFor *pf;
     u32 low, high;
@@ -528,6 +530,10 @@ u32 ds_NarrowJobPhaseDispatch(const ds_JobId job)
                 {
                     const u32 ci = color->contact_pool.buf[si];
                     ds_ShapeContact(frame, pipeline, ci);
+                    if (pipeline->contact_pool.buf[ci].narrowphase.manifold_count == 0)
+                    {
+                        ds_BitSetSet(promote_demote_set, ci, 1);
+                    }
                 }
             }
         }
@@ -546,6 +552,10 @@ u32 ds_NarrowJobPhaseDispatch(const ds_JobId job)
             {
                 const u32 ci = active->contact_pool.buf[si];
                 ds_ShapeContact(frame, pipeline, ci);
+                if (pipeline->contact_pool.buf[ci].narrowphase.manifold_count > 0)
+                {
+                    ds_BitSetSet(promote_demote_set, ci, 1);
+                }
             }
         }
         ProfZoneEnd;
@@ -669,7 +679,6 @@ static void CollisionDetection(struct ds_Dynamics *pipeline)
             {
                 ds_BitSetIncreaseSize(set, U64Max(2*set->bit_count, pipeline->contact_pool.length), 0);
             }
-            ds_BitSetClear(set, 0);
         }
 
         for (u32 i = 0; i < CG_COLOR_COUNT + 1; ++i)
@@ -718,40 +727,24 @@ static void CollisionDetection(struct ds_Dynamics *pipeline)
 
     {
     	ProfZoneNamed("Contact Promotion/Demotion");
+        struct ds_DynamicsWorker *worker = pipeline->runtime.worker;
+        const u64 block_count = worker[0].contact_promote_demote_set.block_count;
+        for (u64 bi = 0; bi < block_count; ++bi)
         {
-            const struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
-            u32 compute = 0; 
-            while (compute < active->contact_pool.count)
+            u64 block = 0;
+            for (u32 w = 0; w < pipeline->runtime.worker_count; ++w)
             {
-                const u32 ci = active->contact_pool.buf[compute];
-                const struct ds_Contact *c = pipeline->contact_pool.buf + ci;
-                if (c->narrowphase.manifold_count > 0)
-                {
-                    ds_ContactPromote(pipeline, ci);
-                }
-                else
-                {
-                    compute += 1;
-                }
+                block |= worker[w].contact_promote_demote_set.bits[bi];
+                worker[w].contact_promote_demote_set.bits[bi] = 0;
             }
-        }
 
-        for (u32 color_index = 0; color_index < CG_COLOR_COUNT; ++color_index)
-        {
-            const struct ds_CGraphColor *color = pipeline->cgraph.color + color_index;
-            u32 compute = 0;
-            while (compute < color->contact_pool.count)
+            struct ds_BitBlock it = ds_BitBlockInit(block, bi);
+            while (ds_BitBlockHasNext(&it))
             {
-                const u32 ci = color->contact_pool.buf[compute];
-                const struct ds_Contact *c = pipeline->contact_pool.buf + ci;
-                if (c->narrowphase.manifold_count == 0)
-                {
-                    ds_ContactDemote(pipeline, ci);
-                }
-                else
-                {
-                    compute += 1;
-                }
+                const u32 ci = (u32) ds_BitBlockNext(&it);
+                (pipeline->contact_pool.buf[ci].narrowphase.manifold_count > 0)
+                    ? ds_ContactPromote(pipeline, ci)
+                    : ds_ContactDemote(pipeline, ci);
             }
         }
     	ProfZoneEnd;
