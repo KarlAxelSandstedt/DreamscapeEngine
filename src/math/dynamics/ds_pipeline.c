@@ -187,6 +187,7 @@ void ds_DynamicsRuntimeAlloc(struct arena *mem, struct ds_DynamicsRuntime *runti
         ds_CPoolAlloc(NULL, runtime->worker[i].draw.force, 0, GROWABLE);
         ds_DynamicsMetricsFlush(&runtime->worker[i].metrics);
         runtime->worker[i].joint_breaking_set = (struct ds_BitSet) { .growable = GROWABLE };
+        runtime->worker[i].contact_promote_demote_set = (struct ds_BitSet) { .growable = GROWABLE };
     }
     ds_CPoolAlloc(NULL, runtime->draw.segment, 0, GROWABLE);
     ds_CPoolAlloc(NULL, runtime->draw.point, 0, GROWABLE);
@@ -206,6 +207,7 @@ void ds_DynamicsRuntimeDealloc(struct ds_DynamicsRuntime *runtime)
         ds_CPoolDealloc(runtime->worker[i].draw.point);
         ds_CPoolDealloc(runtime->worker[i].draw.force);
         ds_BitSetDealloc(&runtime->worker[i].joint_breaking_set);
+        ds_BitSetDealloc(&runtime->worker[i].contact_promote_demote_set);
     }
     ds_CPoolDealloc(runtime->draw.segment);
     ds_CPoolDealloc(runtime->draw.point);
@@ -364,6 +366,7 @@ void ds_DynamicsFlush(struct ds_Dynamics *pipeline)
         ArenaFlush(pipeline->runtime.worker[i].frame_arr + 0);
         ArenaFlush(pipeline->runtime.worker[i].frame_arr + 1);
         ds_BitSetClear(&pipeline->runtime.worker[i].joint_breaking_set, 0);
+        ds_BitSetClear(&pipeline->runtime.worker[i].contact_promote_demote_set, 0);
     }
 
     memset(pipeline->runtime.profile_buf, 0, pipeline->runtime.profile_length*sizeof(struct ds_DynamicsProfile));
@@ -658,6 +661,16 @@ static void CollisionDetection(struct ds_Dynamics *pipeline)
         pipeline->runtime.profile->ns_narrowphase_start = ds_TimeNs();
 
         ds_JobPhaseBegin(&narrow_phase->phase);
+
+        for (u32 i = 0; i < pipeline->runtime.worker_count; ++i)
+        {
+            struct ds_BitSet *set = &pipeline->runtime.worker[i].contact_promote_demote_set;
+            if (set->bit_count < pipeline->contact_pool.length)
+            {
+                ds_BitSetIncreaseSize(set, U64Max(2*set->bit_count, pipeline->contact_pool.length), 0);
+            }
+            ds_BitSetClear(set, 0);
+        }
 
         for (u32 i = 0; i < CG_COLOR_COUNT + 1; ++i)
         {

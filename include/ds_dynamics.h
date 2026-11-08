@@ -1642,6 +1642,7 @@ struct ds_Align(DS_CACHE_LINE) ds_DynamicsWorker
     struct ds_DynamicsMetrics   metrics;
     struct ds_DynamicsDraw      draw;         /* debug drawing from jobs; flushed each tick */
     struct ds_BitSet            joint_breaking_set; /* bit = joint index whose reaction exceeded a threshold this tick */
+    struct ds_BitSet            contact_promote_demote_set;
 };
 
 /* indexed by workers using their thread indices (ds_ThreadSelfIndex()) */
