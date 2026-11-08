@@ -48,6 +48,11 @@ struct slot led_NodeLookup(struct led *led, const ds_Id id)
 
     struct slot slot;
     slot.index = ds_IdIndex(id);
+    if (slot.index >= led->node_hierarchy.pool.count_max)
+    {
+        return empty_slot;
+    }
+
     slot.address = led->node_hierarchy.pool.buf + slot.index;
     struct led_Node *node = slot.address;
     return ds_IdEqual(node->tagged_id, id)

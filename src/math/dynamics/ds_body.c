@@ -198,8 +198,8 @@ struct slot ds_BodyLookup(const struct ds_Dynamics *pipeline, const ds_BodyId id
 
 void ds_BodyUpdateMassProperties(struct ds_Dynamics *pipeline, const ds_BodyId id)
 {
-	struct ds_Body *body = pipeline->body_pool.buf + ds_BodyIdIndex(id);
-    if (!ds_PoolSlotAllocated(body) || !ds_BodyIdEqual(id, body->id))
+	struct ds_Body *body = ds_BodyLookup(pipeline, id).address;
+    if (body == NULL)
     {
         return;
     }

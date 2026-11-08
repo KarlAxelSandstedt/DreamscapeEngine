@@ -23,8 +23,8 @@
 
 static void ds_SimHostRecord(struct ds_SimHost *host, const u64 us_timestamp, const struct ds_SimCmdPayload *payload);
 static void ds_SimHostRecordSeed(struct ds_SimHost *host);
-static u32  ds_SimHostReplayPeek(const struct SS *record, const u64 us_previous, u64 *us_timestamp);
-static u32  ds_SimHostReplayTryReadPayload(struct SS *record, u64 *us_previous, struct arena *mem, ds_CPool(ds_SimCmd) *cmds);
+static u32  ds_SimHostReplayTryPeek(const struct SS *record, u64 *us_timestamp, const u64 us_previous);
+static u32  ds_SimHostReplayTryReadPayload(struct arena *mem, struct SS *record, u64 *us_previous, ds_CPool(ds_SimCmd) *cmds);
 static u32  ds_SimHostReplayTrySeed(struct SS *record, u64 *us_previous, struct ds_SimConfig *config);
 static void ds_SimHostWriteHashes(struct ds_SimHost *host);
 static void ds_SimHostReadAndCheckHashes(struct ds_SimHost *host);
@@ -195,10 +195,6 @@ void ds_SimHostReset(struct ds_Server *srv, const ds_SimId id)
     ds_CPoolFlush(host->hash_pool);
 }
 
-/*
- * Record entry: timestamp delta from the previous entry, cmd_count and the command bit count as CompactSize, then
- * the command bytes (the last byte's unused bits zero). No destination: the file is the simulation's.
- */
 static void ds_SimHostRecord(struct ds_SimHost *host, const u64 us_timestamp, const struct ds_SimCmdPayload *payload)
 {
     ds_Assert(us_timestamp >= host->us_previous_record);
@@ -207,7 +203,7 @@ static void ds_SimHostRecord(struct ds_SimHost *host, const u64 us_timestamp, co
     const u64 size = ds_CompactSizeSerializeSize(us_delta) + ds_CompactSizeSerializeSize(payload->cmd_count)
                    + ds_CompactSizeSerializeSize(bit_count) + (bit_count + 7) / 8;
     SSIncreaseSize(&host->record_stream, size);
-    host->record_stream.bit_index = 0;
+    SSFlush(&host->record_stream);
     ds_CompactSizeSerialize(&host->record_stream, us_delta);
     ds_CompactSizeSerialize(&host->record_stream, payload->cmd_count);
     ds_CompactSizeSerialize(&host->record_stream, bit_count);
@@ -219,7 +215,6 @@ static void ds_SimHostRecord(struct ds_SimHost *host, const u64 us_timestamp, co
     }
 }
 
-/* The seed entry: the simulation's seed batch at time 0. */
 static void ds_SimHostRecordSeed(struct ds_SimHost *host)
 {
     struct arena *tmp = ArenaPushScratch();
@@ -232,8 +227,7 @@ static void ds_SimHostRecordSeed(struct ds_SimHost *host)
     ArenaPopScratch();
 }
 
-/* Record reader: the next entry's timestamp (ss's position kept). Returns 0 on a bad stream. */
-static u32 ds_SimHostReplayPeek(const struct SS *record, const u64 us_previous, u64 *us_timestamp)
+static u32 ds_SimHostReplayTryPeek(const struct SS *record, u64 *us_timestamp, const u64 us_previous)
 {
     struct SS ss = *record;
     u64 us_delta;
@@ -246,11 +240,7 @@ static u32 ds_SimHostReplayPeek(const struct SS *record, const u64 us_previous, 
     return 1;
 }
 
-/*
- * Record reader: the next entry's commands onto cmds (their data on mem), *us_previous set to its timestamp. Returns
- * 0 on a bad stream or a malformed command: the stream position and cmds are as before.
- */
-static u32 ds_SimHostReplayTryReadPayload(struct SS *record, u64 *us_previous, struct arena *mem, ds_CPool(ds_SimCmd) *cmds)
+static u32 ds_SimHostReplayTryReadPayload(struct arena *mem, struct SS *record, u64 *us_previous, ds_CPool(ds_SimCmd) *cmds)
 {
     struct SS ss = *record;
     const u32 old_count = cmds->count;
@@ -285,7 +275,6 @@ static u32 ds_SimHostReplayTryReadPayload(struct SS *record, u64 *us_previous, s
     return 1;
 }
 
-/* Record reader: the seed entry (one ConfigLoad at 0) from the start of record; config set, the position after it. */
 static u32 ds_SimHostReplayTrySeed(struct SS *record, u64 *us_previous, struct ds_SimConfig *config)
 {
     record->bit_index = 0;
@@ -294,7 +283,7 @@ static u32 ds_SimHostReplayTrySeed(struct SS *record, u64 *us_previous, struct d
     struct arena *tmp = ArenaPushScratch();
     ds_CPool(ds_SimCmd) cmds;
     ds_CPoolAlloc(tmp, cmds, 1, NOT_GROWABLE);
-    const u32 valid = ds_SimHostReplayTryReadPayload(record, us_previous, tmp, &cmds)
+    const u32 valid = ds_SimHostReplayTryReadPayload(tmp, record, us_previous, &cmds)
                    && *us_previous == 0 && cmds.count == 1 && cmds.buf[0].type == SIM_CMD_CONFIG_LOAD;
     if (valid)
     {
@@ -514,7 +503,7 @@ void ds_ServerTick(struct ds_Server *srv, const u64 ns_delta)
                 }
 
                 u64 us_entry;
-                if (!ds_SimHostReplayPeek(&host->record_stream, host->us_previous_record, &us_entry))
+                if (!ds_SimHostReplayTryPeek(&host->record_stream, &us_entry, host->us_previous_record))
                 {
                     Log(T_SYSTEM, S_ERROR, "ds_ServerTick: simulation %lu's record is corrupt after %lu us, it runs on live", host->id.val, host->us_previous_record);
                     host->replay_ended = 1;
@@ -527,7 +516,7 @@ void ds_ServerTick(struct ds_Server *srv, const u64 ns_delta)
                 }
 
                 ds_SimTick(&srv->frame, &host->sim, hash_pool, &host->cmd_pool, us_entry - host->sim.us_time);
-                if (!ds_SimHostReplayTryReadPayload(&host->record_stream, &host->us_previous_record, &srv->frame, &host->cmd_pool))
+                if (!ds_SimHostReplayTryReadPayload(&srv->frame, &host->record_stream, &host->us_previous_record, &host->cmd_pool))
                 {
                     Log(T_SYSTEM, S_ERROR, "ds_ServerTick: simulation %lu's record is corrupt at %lu us, it runs on live", host->id.val, us_entry);
                     host->replay_ended = 1;
