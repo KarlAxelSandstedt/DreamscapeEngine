@@ -21,13 +21,124 @@
 #include "ds_server.h"
 #include "ds_compact_size.h"
 
+static void ds_SimHostRecord(struct ds_SimHost *host, const u64 us_timestamp, const struct ds_SimCmdPayload *payload);
+static void ds_SimHostRecordSeed(struct ds_SimHost *host);
+static u32  ds_SimHostReplayPeek(const struct SS *record, const u64 us_previous, u64 *us_timestamp);
+static u32  ds_SimHostReplayTryReadPayload(struct SS *record, u64 *us_previous, struct arena *mem, ds_CPool(ds_SimCmd) *cmds);
+static u32  ds_SimHostReplayTrySeed(struct SS *record, u64 *us_previous, struct ds_SimConfig *config);
+static void ds_SimHostWriteHashes(struct ds_SimHost *host);
+static void ds_SimHostReadAndCheckHashes(struct ds_SimHost *host);
+static void ds_SimHostDealloc(struct ds_SimHost *host);
 
 /**************** ds_Server ****************/
+
+ds_SimId ds_SimHostAdd(struct ds_Server *srv, const struct ds_SimConfig *config, const enum ds_SimMode mode, const char *record_path, const char *hash_path, const struct ds_DynamicsExternal *external)
+{
+    struct ds_SimHost host =
+    {
+        .mem = ArenaAlloc(NULL, 64*1024),
+        .record_mode = mode,
+        .speed = 1.0,
+        .record_file = FileNull(),
+        .hash = hash_path != NULL && mode != SIM_MODE_NONE,
+        .hash_file = FileNull(),
+    };
+
+    struct ds_SimConfig config_used = (config) ? *config : ds_SimConfigDefault();
+    if (mode == SIM_MODE_REPLAY)
+    {
+        if (FileTryOpenAtCwd(&host.mem, &host.record_file, record_path, 0) != FS_SUCCESS)
+        {
+            Log(T_SYSTEM, S_ERROR, "ds_SimHostAdd: record file \"%s\" could not be created, no simulation added", record_path);
+            goto failure;
+        }
+
+        u64 size = 0;
+        void *map = FileMemoryMap(&size, &host.record_file, FS_PROT_READ, FS_MAP_PRIVATE);
+        host.record_stream = SSBuffered(map, size);
+        if (map == NULL || !ds_SimHostReplayTrySeed(&host.record_stream, &host.us_previous_record, &config_used))
+        {
+            Log(T_SYSTEM, S_ERROR, "ds_SimHostAdd: record file \"%s\" has no seed entry, no simulation added", record_path);
+            goto failure;
+        }
+
+        if (host.hash)
+        {
+            if (FileTryOpenAtCwd(&host.mem, &host.hash_file, hash_path, 0) != FS_SUCCESS)
+            {
+                Log(T_SYSTEM, S_ERROR, "ds_SimHostAdd: hash file \"%s\" could not be opened, no simulation added", hash_path);
+                goto failure;
+            }
+            void *hash_map = FileMemoryMap(&size, &host.hash_file, FS_PROT_READ, FS_MAP_PRIVATE);
+            host.hash_stream = SSBuffered(hash_map, size);
+        }
+    }
+    else if (mode == SIM_MODE_RECORD)
+    {
+        if (FileTryCreateAtCwd(&host.mem, &host.record_file, record_path, 1) != FS_SUCCESS)
+        {
+            Log(T_SYSTEM, S_ERROR, "ds_SimHostAdd: record file \"%s\" could not be opened, no simulation added", record_path);
+            goto failure;
+        }
+
+        host.record_stream = SSAlloc(NULL, 4096);
+        if (host.hash)
+        {
+            if (FileTryCreateAtCwd(&host.mem, &host.hash_file, hash_path, 1) != FS_SUCCESS)
+            {
+                Log(T_SYSTEM, S_ERROR, "ds_SimHostAdd: hash file \"%s\" could not be created, no simulation added", hash_path);
+                goto failure;
+            }
+            host.hash_stream = SSAlloc(NULL, 4096);
+        }
+    }
+
+    for (u32 i = 0; i < SIM_SYSTEM_COUNT; ++i)
+    {
+        host.ns_budget += 1000 * config_used.us_system_tick[i];
+    }
+    ds_CPoolAlloc(NULL, host.hash_pool, 64, GROWABLE);
+    ds_CPoolAlloc(NULL, host.cmd_pool, 64, GROWABLE);
+    ds_SimAlloc(&host.sim, &config_used, external);
+
+    const u32 old_max = srv->sim_pool.count_max;
+    const struct slot slot = ds_PoolAdd(srv->sim_pool);
+    struct ds_SimHost *dst = slot.address;
+    host.pool_slot = dst->pool_slot;
+    host.id = ds_SimIdNextGeneration((old_max != srv->sim_pool.count_max) ? ds_SimIdInit(slot.index, 0) : dst->id);
+    host.frame_payload = ds_SimCmdPayloadEmpty(host.id);
+    *dst = host;
+    DLLAppend(srv->sim_list, srv->sim_pool.buf, slot.index, srv_sim);
+
+    if (mode == SIM_MODE_RECORD)
+    {
+        ds_SimHostRecordSeed(dst);
+    }
+
+    return dst->id;
+
+failure:
+    ds_SimHostDealloc(&host);
+    return ds_SimIdNull();
+}
+
+void ds_SimHostRemove(struct ds_Server *srv, const ds_SimId id)
+{
+    const struct slot slot = ds_SimHostLookup(srv, id);
+    if (slot.address == NULL)
+    {
+        Log(T_SYSTEM, S_WARNING, "ds_SimRemove: no simulation %lu", id.val);
+        return;
+    }
+
+    ds_SimHostDealloc(slot.address);
+    DLLRemove(srv->sim_list, srv->sim_pool.buf, slot.index, srv_sim);
+    ds_PoolRemove(srv->sim_pool, slot.index);
+}
 
 struct slot ds_SimHostLookup(const struct ds_Server *srv, const ds_SimId id)
 {
     struct slot slot = { .address = NULL, .index = U32_MAX };
-    /* the index is bounded before the slot is read: a foreign id must not read past the pool */
     const u32 index = ds_SimIdIndex(id);
     if (index < srv->sim_pool.count_max)
     {
@@ -42,13 +153,46 @@ struct slot ds_SimHostLookup(const struct ds_Server *srv, const ds_SimId id)
     return slot;
 }
 
-void ds_ServerAlloc(struct ds_Server *srv, const u64 frame_size, const u32 initial_sim_count)
+void ds_SimHostReset(struct ds_Server *srv, const ds_SimId id)
 {
-    *srv = (struct ds_Server) { 0 };
-    srv->frame = ArenaAlloc(NULL, frame_size);
-    ds_PoolAlloc(NULL, srv->sim_pool, initial_sim_count, GROWABLE);
-    DLLFlush(srv->sim_list);
-    ds_CPoolAlloc(NULL, srv->payload_pool, 64, GROWABLE);
+    struct ds_SimHost *host = ds_SimHostLookup(srv, id).address;
+    if (host == NULL)
+    {
+        Log(T_SYSTEM, S_WARNING, "ds_SimHostReset: no simulation %lu", id.val);
+        return;
+    }
+
+    ds_CPoolFlush(host->cmd_pool);
+    host->frame_payload = ds_SimCmdPayloadEmpty(host->id);
+    ds_SimFlush(&host->sim);
+
+    if (host->record_mode == SIM_MODE_RECORD)
+    {
+        if (!FileSetSize(&host->record_file, 0))
+        {
+            Log(T_SYSTEM, S_ERROR, "ds_SimHostReset: simulation %lu's record could not be truncated", id.val);
+        }
+
+        if (host->hash && !FileSetSize(&host->hash_file, 0))
+        {
+            Log(T_SYSTEM, S_ERROR, "ds_SimHostReset: simulation %lu's hash file could not be truncated", id.val);
+        }
+
+        host->us_previous_record = 0;
+        ds_SimHostRecordSeed(host);
+    }
+    else if (host->record_mode == SIM_MODE_REPLAY)
+    {
+        struct ds_SimConfig seed;
+        const u32 valid = ds_SimHostReplayTrySeed(&host->record_stream, &host->us_previous_record, &seed);
+        ds_Assert(valid);
+        host->replay_ended = 0;
+    }
+
+    host->hash_stream.bit_index = 0;
+    host->hash_count = 0;
+    host->hash_success = 0;
+    ds_CPoolFlush(host->hash_pool);
 }
 
 /*
@@ -211,8 +355,9 @@ static void ds_SimHostReadAndCheckHashes(struct ds_SimHost *host)
 
 static void ds_SimHostDealloc(struct ds_SimHost *host)
 {
+    ArenaFree(&host->mem);
     FileClose(&host->record_file);
-    if (host->record_mode == SIM_MODE_REPLAY)
+    if (host->record_stream.buf && !host->record_stream.heap_allocated)
     {
         FileMemoryUnmap(host->record_stream.buf, host->record_stream.bit_count / 8);
     }
@@ -230,153 +375,13 @@ static void ds_SimHostDealloc(struct ds_SimHost *host)
     ds_SimDealloc(&host->sim);
 }
 
-ds_SimId ds_SimHostAdd(struct ds_Server *srv, struct arena *mem, const struct ds_SimConfig *config, const enum ds_SimMode mode, const char *path, const u32 hash_wanted, const char *hash_path, const struct ds_DynamicsExternal *external)
+void ds_ServerAlloc(struct ds_Server *srv, const u64 frame_size, const u32 initial_sim_count)
 {
-    const u32 hash = hash_wanted && mode != SIM_MODE_NONE;
-
-    struct file file = FileNull();
-    if ((mode == SIM_MODE_RECORD && FileTryCreateAtCwd(mem, &file, path, 1) != FS_SUCCESS)
-        || (mode == SIM_MODE_REPLAY && FileTryOpenAtCwd(mem, &file, path, 0) != FS_SUCCESS))
-    {
-        Log(T_SYSTEM, S_ERROR, "ds_SimHostAdd: record file \"%s\" could not be %s, no simulation added", path, (mode == SIM_MODE_RECORD) ? "created" : "opened");
-        return ds_SimIdNull();
-    }
-
-    struct file hash_file = FileNull();
-    struct SS hash_stream = { 0 };
-    if (hash && mode == SIM_MODE_RECORD && FileTryCreateAtCwd(mem, &hash_file, hash_path, 1) == FS_SUCCESS)
-    {
-        hash_stream = SSAlloc(NULL, 4096);
-    }
-    else if (hash && mode == SIM_MODE_REPLAY && FileTryOpenAtCwd(mem, &hash_file, hash_path, 0) == FS_SUCCESS)
-    {
-        u64 size = 0;
-        void *map = FileMemoryMap(&size, &hash_file, FS_PROT_READ, FS_MAP_PRIVATE);
-        hash_stream = SSBuffered(map, size);
-    }
-
-    if (hash && hash_stream.buf == NULL)
-    {
-        Log(T_SYSTEM, S_ERROR, "ds_SimHostAdd: hash file \"%s\" could not be %s, no simulation added", hash_path, (mode == SIM_MODE_RECORD) ? "created" : "opened");
-        FileClose(&hash_file);
-        FileClose(&file);
-        return ds_SimIdNull();
-    }
-
-    struct ds_SimConfig config_used = (config) ? *config : ds_SimConfigDefault();
-    struct SS record = { 0 };
-    u64 us_previous = 0;
-    if (mode == SIM_MODE_REPLAY)
-    {
-        u64 size = 0;
-        void *map = FileMemoryMap(&size, &file, FS_PROT_READ, FS_MAP_PRIVATE);
-        record = SSBuffered(map, size);
-        if (map == NULL || !ds_SimHostReplayTrySeed(&record, &us_previous, &config_used))
-        {
-            Log(T_SYSTEM, S_ERROR, "ds_SimHostAdd: record file \"%s\" has no seed entry, no simulation added", path);
-            if (map) { FileMemoryUnmap(map, size); }
-            FileClose(&file);
-            if (hash_stream.buf && !hash_stream.heap_allocated) { FileMemoryUnmap(hash_stream.buf, hash_stream.bit_count / 8); }
-            SSDealloc(&hash_stream);
-            FileClose(&hash_file);
-            return ds_SimIdNull();
-        }
-    }
-    config = &config_used;
-
-    const u32 old_max = srv->sim_pool.count_max;
-    const struct slot slot = ds_PoolAdd(srv->sim_pool);
-    struct ds_SimHost *host = slot.address;
-    if (old_max != srv->sim_pool.count_max)
-    {
-        host->id = ds_SimIdInit(slot.index, 0);
-    }
-    host->id = ds_SimIdNextGeneration(host->id);
-
-    host->record_mode = mode;
-    host->speed = 1.0;
-    host->ns_remainder = 0;
-    host->ns_budget = 0;
-    for (u32 i = 0; i < SIM_SYSTEM_COUNT; ++i)
-    {
-        host->ns_budget += 1000 * config->us_system_tick[i];
-    }
-    host->record_file = file;
-    host->record_stream = (mode == SIM_MODE_RECORD) ? SSAlloc(NULL, 4096) : record;
-    host->us_previous_record = us_previous;
-    host->replay_ended = 0;
-    host->hash = hash;
-    host->hash_file = hash_file;
-    host->hash_stream = hash_stream;
-    ds_CPoolAlloc(NULL, host->hash_pool, 64, GROWABLE);
-    host->hash_count = 0;
-    host->hash_success = 0;
-    ds_CPoolAlloc(NULL, host->cmd_pool, 64, GROWABLE);
-    host->frame_payload = ds_SimCmdPayloadEmpty(host->id);
-
-    ds_SimAlloc(&host->sim, config, external);
-    DLLAppend(srv->sim_list, srv->sim_pool.buf, slot.index, srv_sim);
-
-    if (mode == SIM_MODE_RECORD)
-    {
-        ds_SimHostRecordSeed(host);
-    }
-
-    return host->id;
-}
-
-void ds_SimHostReset(struct ds_Server *srv, const ds_SimId id)
-{
-    struct ds_SimHost *host = ds_SimHostLookup(srv, id).address;
-    if (host == NULL)
-    {
-        Log(T_SYSTEM, S_WARNING, "ds_SimHostReset: no simulation %lu", id.val);
-        return;
-    }
-
-    ds_CPoolFlush(host->cmd_pool);
-    host->frame_payload = ds_SimCmdPayloadEmpty(host->id);
-    ds_SimFlush(&host->sim);
-
-    if (host->record_mode == SIM_MODE_RECORD)
-    {
-        if (!FileSetSize(&host->record_file, 0))
-        {
-            Log(T_SYSTEM, S_ERROR, "ds_SimHostReset: simulation %lu's record could not be truncated", id.val);
-        }
-        host->us_previous_record = 0;
-        ds_SimHostRecordSeed(host);
-    }
-    else if (host->record_mode == SIM_MODE_REPLAY)
-    {
-        struct ds_SimConfig seed;
-        const u32 valid = ds_SimHostReplayTrySeed(&host->record_stream, &host->us_previous_record, &seed);
-        ds_Assert(valid);
-        host->replay_ended = 0;
-    }
-
-    if (host->hash && host->record_mode == SIM_MODE_RECORD && !FileSetSize(&host->hash_file, 0))
-    {
-        Log(T_SYSTEM, S_ERROR, "ds_SimHostReset: simulation %lu's hash file could not be truncated", id.val);
-    }
-    host->hash_stream.bit_index = 0;
-    host->hash_count = 0;
-    host->hash_success = 0;
-    ds_CPoolFlush(host->hash_pool);
-}
-
-void ds_SimHostRemove(struct ds_Server *srv, const ds_SimId id)
-{
-    const struct slot slot = ds_SimHostLookup(srv, id);
-    if (slot.address == NULL)
-    {
-        Log(T_SYSTEM, S_WARNING, "ds_SimRemove: no simulation %lu", id.val);
-        return;
-    }
-
-    ds_SimHostDealloc(slot.address);
-    DLLRemove(srv->sim_list, srv->sim_pool.buf, slot.index, srv_sim);
-    ds_PoolRemove(srv->sim_pool, slot.index);
+    *srv = (struct ds_Server) { 0 };
+    srv->frame = ArenaAlloc(NULL, frame_size);
+    ds_PoolAlloc(NULL, srv->sim_pool, initial_sim_count, GROWABLE);
+    DLLFlush(srv->sim_list);
+    ds_CPoolAlloc(NULL, srv->payload_pool, 64, GROWABLE);
 }
 
 void ds_ServerDealloc(struct ds_Server *srv)
@@ -393,6 +398,8 @@ void ds_ServerDealloc(struct ds_Server *srv)
 void ds_ServerTick(struct ds_Server *srv, const u64 ns_delta)
 {
     /************** Payload Deserialization and Aliasing **************/
+
+    //TODO Later...
 
     /************************* Payload Fusing *************************/
 
@@ -549,5 +556,5 @@ void ds_ServerTick(struct ds_Server *srv, const u64 ns_delta)
         ds_CPoolFlush(host->hash_pool);
     }
 
-    ArenaFlush(&srv->frame);    /* arrivals until the next tick may live here */
+    ArenaFlush(&srv->frame);
 }

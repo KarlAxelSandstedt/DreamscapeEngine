@@ -456,6 +456,11 @@ void *FileMemoryMapPartial(const struct file *file, const u64 length, const u64 
 
 void FileMemoryUnmap(void *addr, const u64 length)
 {
+	if (addr == NULL)
+	{
+		return;
+	}
+
 	const u64 mod = (u64) addr % (u64) sysconf(_SC_PAGESIZE);
 	if (munmap((u8 *) addr - mod, length + mod) == -1)
 	{

@@ -208,7 +208,7 @@ u32		FileSetSize(const struct file *file, const u64 size);
 void *		FileMemoryMap(u64 *size, const struct file *file, const u32 prot, const u32 flags);
 /* return memory mapped address of file[offset, offset + length), growing the file first if it is shorter; any offset (aligned internally on every platform); NULL on failure */
 void *		FileMemoryMapPartial(const struct file *file, const u64 length, const u64 offset, const u32 prot, const u32 flags);
-/* unmap memory mapping */
+/* unmap memory mapping; a NULL addr is a no-op */
 void 		FileMemoryUnmap(void *addr, const u64 length);
 /*
  * sync mmap before unmapping.  NOTE: EXTREMELY SLOW OPERATION

@@ -648,6 +648,11 @@ void *FileMemoryMapPartial(const struct file *file, const u64 length, const u64 
 
 void FileMemoryUnmap(void *addr, const u64 length)
 {
+	if (addr == NULL)
+	{
+		return;
+	}
+
 	SYSTEM_INFO info;
 	GetSystemInfo(&info);
 	const u64 mod = (u64) addr % info.dwAllocationGranularity;

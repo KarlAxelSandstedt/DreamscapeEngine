@@ -17,121 +17,6 @@
 ==========================================================================
 */
 
-/*
-ds_server.h
-===========
-Authoritative host of a set of simulations. 
-//TODO can fill in more once we have more details settled 
-
-*/
-
-/*
-TODO: server notes (copied from sim_cmd.c; update to the decided design: no buffering in simulations, the
-server deserializes, routes by id, fuses, stamps on the simulation clock and records per simulation per frame)
-=================================================================================================================
-
-Every external source of input that affects the simulation state is generalized
-behind the ds_SimCmd API. By serializing all such commands, in order, to a file
-we gain the ability to fully replay any simulation. However, such APIs can quickly
-become cumbersome to use, so we discuss the issues and try to land on something
-reasonable.
-
-Judging from the words "external source" we can imagine these commands, in 
-serialized forms, being sent over networks, read from files, and so on. This seem
-like things that should be fully abstracted away and be part of the generalized
-command pipeline; every command arrives to the engine/server fully serialized:
-
-          File =>                               serialized(cmd) ---+
-                                                                   |
-       Network => Payload(serialized(cmd)) ---> serialized(cmd) ---+---> cmd.ValidateAndExecute()
-                                                                   |
-    LocalInput =>                               serialized(cmd) ---+
-
-The more complex question is how the external sources dispatch commands to the
-command queue. As in the previous case, this is preferable fully general, as and
-easy-to-use as possible. 
-
-We begin by acknowledging that any external command's destination is a specific
-simulation's command queue. This seems to be the correct abstraction level when
-specifying a command's destination; Presuming that a server generates a unique
-identifier (ds_SimId) per simulation, whenever we want to send a command(s) to a
-given simulation, we simply have to send an identifier with our command set:
-
-    Network:       Payload(sim_id, serialized(cmd[])) 
-    File:                  sim_id, serialized(cmd[])
-    LocalInput:            sim_id, serialized(cmd[])
-
-    struct ds_Core, struct ds_Engin
-    {
-        ds_Pool simulation_pool;    // One simulation = one game world...
-    
-        (...)
-    };
-
-
-    ServerHandleFramePayloads(...)
-    { 
-        server.payload = PayloadEmpty()
-        server.cmd_pool = CPoolEmpty();
-
-        // POSSIBLE FUNCTION 1 ABSTRACTION: payload = PayloadTryDeserializeAndVerify(&core, mem, ss)
-
-        ext_payload[count]);
-        for (i in stream_count)
-        {
-            ext_payload[i] = PayloadEmpty()
-
-            if (!PayloadTryDeserialize(ext_payload[i], ext_stream[i]) || PayloadHeaderVerify(&ext_payload))
-            {
-                continue;
-            }
-
-            success = 1; 
-            while (s.NotEmpty())
-            {
-                if (!CmdTryDeserialize(&cmd, ext_payload) || !CmdFormVerify(&cmd))
-                {
-                    server.cmd_pool.pop(push_count);
-                    ext_payload[count] = PayloadEmpty();
-                    break;
-                }
-
-                server.cmd_pool.push(cmd);
-                push_count += 1;
-            }
-        }
-
-        // POSSIBLE FUNCTION 2 ABSTRACTION: Append, we just append one payload onto another
-        
-        for (external in payload-streams[count])
-        {
-            payload.Append(external_payload);
-        }
-
-        // we now have commands in order to be executed, and a fused payload ready to be timestamped and recorded.
-    }
-
-Issues with above (memory lifetimes)
-
-Presume the engine recieves network payloads, and local payloads. 
-
-If we treat the engine's loop iteration as immediatelly applying
-any command payloads, we can make due with everything begin stored
-on a engine frame arena, and all payload handling happens outside
-the simulation. The simulations then execute these payloads 
-immediately.
-
-If we allow the engine to skip calls to ds_SimMain, we must store
-all non-fused (or one we continuously fuse to, without knowing the
-final size (complexity!)) payloads on simulation frame memory.
-
-Clearly, the first choice is the more clean process, with very
-predictable memory lifetimes (all payloads stays for a single engine 
-frame, but it does enforce us to immediately process and execute
-payloads.
-
- */
-
 #ifndef __DS_SERVER_H__
 #define __DS_SERVER_H__
 
@@ -145,73 +30,92 @@ extern "C" {
 #include "ds_platform.h"
 #include "ds_simulation.h"
 
-enum ds_SimMode
-{
-    SIM_MODE_NONE,   // Run new simulation without recording
-    SIM_MODE_RECORD, // Run new simulation while recording
-    SIM_MODE_REPLAY, // Run old simulation from replay
-    SIM_MODE_COUNT
-};
-
-/* A hosted simulation: the server's per-simulation state (clock conversion, mode, record, the frame's commands) and the simulation. */
-struct ds_SimHost
-{
-    POOL_NODE;
-    struct DLLNode          srv_sim;        /* ds_Server.sim_list */
-    ds_SimId                id;             /* generational identifier: the pool slot */
-
-    enum ds_SimMode         record_mode;
-    f64                     speed;          /* scales wall-clock time */
-    u64                     ns_remainder;   /* wall-clock time not yet accounted for (sub-microsecond) */
-    u64                     ns_budget;      /* the simulation never advances more than this per tick: sum of the system periods */
-    struct file             record_file;    /* RECORD: appended every frame with commands; REPLAY: mapped; else closed */
-    struct SS               record_stream;  /* RECORD: the frame's entry staged before it is appended; REPLAY: the mapped record, bit_index the read position */
-    u64                     us_previous_record; /* the last entry's timestamp (entries store the delta) */
-    u32                     replay_ended;   /* REPLAY: the record is consumed or corrupt; the simulation runs on live */
-
-    u32                     hash;           /* every system tick's hash goes to the hash file: RECORD appends, REPLAY compares */
-    struct file             hash_file;      /* RECORD: appended every frame; REPLAY: mapped; else closed */
-    struct SS               hash_stream;    /* RECORD: the frame's hashes staged; REPLAY: the mapped file, bit_index the read position */
-    ds_CPool(u64)           hash_pool;      /* the frame's hashes from the ticks */
-    u64                     hash_count;     /* hashes generated or compared since add/reset; a compared hash that differs is fatal */
-    u32                     hash_success;   /* REPLAY: every hash of the file compared equal (logged); the host may shut down */
-
-    ds_CPool(ds_SimCmd)     cmd_pool;       /* the frame's commands, decoded at the door, executed by the simulation's tick */
-    struct ds_SimCmdPayload frame_payload;  /* the frame's arrivals fused: the record's entry */
-
-    struct ds_Sim           sim;
-};
+/*
+ds_server
+=========
+Authoritative host of a set of simulations.  For design and reasoning, see notes/replays.txt
+*/
+struct ds_SimHost;
 DEFINE_POOL(ds_SimHost);
 
 struct ds_Server
 {
-    struct arena        frame;      /* frame memory: flushed every tick */
+    struct arena        frame;      /* flushed every tick */
 
     ds_Pool(ds_SimHost) sim_pool;   
-    struct DLL          sim_list;   /* the active simulations */
-    ds_CPool(ds_SimCmdPayload) payload_pool;    /* the frame's arrived payloads, valid during the tick */
+    struct DLL          sim_list;   /* the hosted simulations */
+    ds_CPool(ds_SimCmdPayload) payload_pool;    /* the frame's arrivals */
 };
 
-/* Allocate empty server. */
+/* Allocate an empty server. */
 void    ds_ServerAlloc(struct ds_Server *srv, const u64 frame_size, const u32 initial_sim_count);
-/* Deallocate server */
+/* Deallocate server resources. */
 void    ds_ServerDealloc(struct ds_Server *srv);
-/* Handle any incoming payloads after which every simulation is advanced by ns_delta of wall-clock time */
+/* Route frame command payloads, and advance simulations. */
 void    ds_ServerTick(struct ds_Server *srv, const u64 ns_delta);
+
+
 /*
- * Host a new simulation (ds_SimAlloc on mem, its paths copied there too) and return its id. RECORD creates (truncates)
- * the record file at record_path (relative to the cwd) and writes the seed entry; REPLAY maps it and takes the config
- * from its seed entry (config ignored); record_path is ignored for NONE. hash: RECORD creates (truncates) the hash file
- * at hash_path and appends every system tick's hash, REPLAY maps it and compares; ignored for NONE. config NULL is the
- * default config. If a file fails, nothing is added (logged) and the null id is returned.
+ds_SimHost
+==========
+Server simulation state.
+*/
+
+enum ds_SimMode
+{
+    SIM_MODE_NONE,   /* Run new simulation without recording    */
+    SIM_MODE_RECORD, /* Run new simulation while recording      */
+    SIM_MODE_REPLAY, /* Run old simulation from replay          */
+    SIM_MODE_COUNT
+};
+
+struct ds_SimHost
+{
+    POOL_NODE;
+    struct DLLNode          srv_sim;        /* ds_Server.sim_list node          */
+    ds_SimId                id;             /* generational identifier          */
+
+    struct arena            mem;            /* host-lifetime data: the file paths */
+    enum ds_SimMode         record_mode;
+    f64                     speed;          /* wall-clock time scale            */
+    u64                     ns_remainder;   /* sub-microsecond remainder        */
+    u64                     ns_budget;      /* simulation time cap per tick     */
+
+    struct file             record_file;    /* RECORD: appended; REPLAY: mapped */
+    struct SS               record_stream;  /* RECORD: the frame's entry; 
+                                               REPLAY: the mapped record        */
+    u64                     us_previous_record; /* the last entry's time 
+                                                   (entries store deltas)       */
+    u32                     replay_ended;   
+
+    u32                     hash;           /* hash simulation on system ticks  */
+    struct file             hash_file;      /* RECORD: appended; REPLAY: mapped */
+    struct SS               hash_stream;    /* RECORD: the frame's hashes; 
+                                               REPLAY: the mapped file          */
+    ds_CPool(u64)           hash_pool;      /* frame's hashes */
+    u64                     hash_count;     /* hashes written or compared since
+                                               add/reset                        */
+    u32                     hash_success;   /* REPLAY: all hashes matched       */
+
+    ds_CPool(ds_SimCmd)     cmd_pool;       /* the frame's commands             */
+    struct ds_SimCmdPayload frame_payload;  /* the frame's arrivals fused       */
+
+    struct ds_Sim           sim;
+};
+
+/*
+ * Host a simulation and return its id, or the null id if a file fails. 
+ *
+ * If record_mode == RECORD, host writes record_path and optional hash_path.
+ * If record_mode == REPLAY, host reads record_path and optional hash_path.
  */
-ds_SimId    ds_SimHostAdd(struct ds_Server *srv, struct arena *mem, const struct ds_SimConfig *config, const enum ds_SimMode record_mode, const char *record_path, const u32 hash, const char *hash_path, const struct ds_DynamicsExternal *external);
-/* Remove the hosted simulation with the given id (ds_SimDealloc, the record closed); an unknown id is logged. */
+ds_SimId    ds_SimHostAdd(struct ds_Server *srv, const struct ds_SimConfig *config, const enum ds_SimMode record_mode, const char *record_path, const char *hash_path, const struct ds_DynamicsExternal *external);
+/* Remove host and release its resources. */
 void        ds_SimHostRemove(struct ds_Server *srv, const ds_SimId id);
-/* Reset the hosted simulation to time 0 (ds_SimFlush); RECORD truncates the record and writes the seed entry again, REPLAY rewinds it; the hash file likewise. An unknown id is logged. */
-void        ds_SimHostReset(struct ds_Server *srv, const ds_SimId id);
-/* Return the slot of the hosted simulation with the given id, or { NULL, U32_MAX } if there is none. */
+/* Return the host's slot, or { NULL, U32_MAX }. */
 struct slot ds_SimHostLookup(const struct ds_Server *srv, const ds_SimId id);
+/* Reset the hosted simulation to time 0, truncating or replaying any provided records/hashes. */
+void        ds_SimHostReset(struct ds_Server *srv, const ds_SimId id);
 
 #ifdef __cplusplus
 }

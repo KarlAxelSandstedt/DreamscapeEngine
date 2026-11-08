@@ -144,7 +144,7 @@ struct led *led_Alloc(const utf8 simulation_path, const utf8 record_path, const 
 	                        : (mode == SIM_MODE_REPLAY) ? CstrUtf8(&g_editor->mem_persistent, replay_path) : NULL;
 	const char *hash_cstr = (hash_path.size) ? CstrUtf8(&g_editor->mem_persistent, hash_path) : NULL;
 	g_editor->dynamics_external = (struct ds_DynamicsExternal) { .cshape_db = &g_editor->cs_db, .body_prefab_db = &g_editor->body_prefab_db, .shape_prefab_db = &g_editor->shape_prefab_db };
-	g_editor->sim = ds_SimHostAdd(&g_editor->srv, &g_editor->mem_persistent, (mode == SIM_MODE_REPLAY) ? NULL : &sim_config, mode, record_cstr, hash_cstr != NULL, hash_cstr, &g_editor->dynamics_external);
+	g_editor->sim = ds_SimHostAdd(&g_editor->srv, (mode == SIM_MODE_REPLAY) ? NULL : &sim_config, mode, record_cstr, hash_cstr, &g_editor->dynamics_external);
 	struct ds_SimHost *host = ds_SimHostLookup(&g_editor->srv, g_editor->sim).address;
 	host->speed = 0.0;
 	g_editor->physics = &host->sim.dynamics;

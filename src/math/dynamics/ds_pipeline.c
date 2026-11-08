@@ -211,11 +211,14 @@ void ds_DynamicsRuntimeDealloc(struct ds_DynamicsRuntime *runtime)
     ds_CPoolDealloc(runtime->draw.point);
     ds_CPoolDealloc(runtime->draw.force);
 
-    ds_JobPhaseDealloc(&runtime->broad_phase->phase);
-    ds_JobPhaseDealloc(&runtime->narrow_phase->phase);
-    ds_JobPhaseDealloc(&runtime->solver_phase->phase);
-    ds_JobPhaseDealloc(&runtime->rebuild_phase->phase);
-    ds_JobPhaseDealloc(&runtime->removal_phase->phase);
+    if (runtime->broad_phase)
+    {
+        ds_JobPhaseDealloc(&runtime->broad_phase->phase);
+        ds_JobPhaseDealloc(&runtime->narrow_phase->phase);
+        ds_JobPhaseDealloc(&runtime->solver_phase->phase);
+        ds_JobPhaseDealloc(&runtime->rebuild_phase->phase);
+        ds_JobPhaseDealloc(&runtime->removal_phase->phase);
+    }
     if (runtime->heap_allocated)
     {
         ds_Free(runtime->broad_phase);
