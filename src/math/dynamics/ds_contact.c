@@ -77,7 +77,14 @@ struct slot ds_ContactTryAdd(struct ds_Dynamics *pipeline, const struct ds_Conta
     c->island = U32_MAX;
     c->id = ds_ContactIdNextGeneration(c->id);
     c->narrowphase = (struct c_ContactResult) { 0 };
-    c->cache.convex = (struct ds_ConvexCache) { .sat.type = SAT_CACHE_NONE, .gjk.count = 0 };
+    if (shape[0]->cshape_type == C_SHAPE_TRI_MESH || shape[1]->cshape_type == C_SHAPE_TRI_MESH)
+    {
+        c->cache.concave = (struct ds_ConcaveCache) { .tri_pool.growable = GROWABLE };
+    }
+    else
+    {
+        c->cache.convex = (struct ds_ConvexCache) { .sat.type = SAT_CACHE_NONE, .gjk.count = 0 };
+    }
     c->com_offset = V3Zero();
 
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;

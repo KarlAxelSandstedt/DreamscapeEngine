@@ -2191,9 +2191,11 @@ static void c_MeshContactFinish(struct arena *frame, struct c_ContactResult *res
  * Mesh vs convex shape (sphere, capsule, hull): one manifold per contacting triangle, local to the convex shape (n from
  * it to the mesh, v on its surface).
  */
-struct c_ContactResult c_MeshContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *mesh, const ds_TransformWorld *t_mesh, const struct c_Shape *convex, const ds_TransformWorld *t_convex)
+struct c_ContactResult c_MeshContact(struct arena *frame, struct ds_ConcaveCache *cache, const struct c_Shape *mesh, const ds_TransformWorld *t_mesh, const struct c_Shape *convex, const ds_TransformWorld *t_convex)
 {
     ds_Assert(convex->type < C_SHAPE_TRI_MESH);
+    ds_Assert(cache->tri_pool.growable);
+    const struct c_ContactResult cached_result = { 0 };
     struct c_ContactResult result = { 0 };
     struct c_MeshContactHelper helper;
     c_MeshContactInit(&helper, mesh, t_mesh, convex, t_convex);
@@ -2201,7 +2203,7 @@ struct c_ContactResult c_MeshContact(struct arena *frame, const struct c_Contact
     {
         case C_SHAPE_SPHERE:    { c_MeshSphereTriangles(&helper, &convex->sphere); } break;
         case C_SHAPE_CAPSULE:   { c_MeshCapsuleTriangles(&helper, &convex->capsule); } break;
-        default:                { c_MeshHullTriangles(&helper, cached_result, &convex->hull); } break;
+        default:                { c_MeshHullTriangles(&helper, &cached_result, &convex->hull); } break;
     }
     c_MeshContactFinish(frame, &result, &helper, convex->type == C_SHAPE_CONVEX_HULL);
     return result;

@@ -353,9 +353,17 @@ struct ds_ConvexCache
     struct GJKCache gjk;
 };
 
+struct ds_TriCache
+{
+    u32                 tri;
+    u32                 manifold;   /* this tick's manifold of the triangle, U32_MAX if separated */
+    struct SATCache     sat;
+};
+DEFINE_CPOOL_STRUCT(ds_TriCache);
+
 struct ds_ConcaveCache
 {
-    u32 tmp;
+    ds_CPool(ds_TriCache)   tri_pool;
 };
 
 /*
@@ -482,9 +490,9 @@ struct c_ContactResult  c_HullContact(struct arena *frame, struct ds_ConvexCache
 /*
  * mesh and convex shape: one local manifold per contacting triangle, in the convex shape's frame (n from it to the
  * mesh). The query records every candidate triangle on one of the thread's scratch arenas: more than it holds (about
- * 8,700 at the default 1 MiB) is fatal.
+ * 8,700 at the default 1 MiB) is fatal. cache is in-out and always valid (empty: a zeroed growable tri_pool).
  */
-struct c_ContactResult  c_MeshContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *mesh, const ds_TransformWorld *t_mesh, const struct c_Shape *convex, const ds_TransformWorld *t_convex);
+struct c_ContactResult  c_MeshContact(struct arena *frame, struct ds_ConcaveCache *cache, const struct c_Shape *mesh, const ds_TransformWorld *t_mesh, const struct c_Shape *convex, const ds_TransformWorld *t_convex);
 
 /********************************** RAYCASTS **********************************/
 
