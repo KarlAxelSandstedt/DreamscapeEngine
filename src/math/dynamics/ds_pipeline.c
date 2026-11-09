@@ -313,8 +313,7 @@ static void ds_ContactCacheDeallocAll(struct ds_Dynamics *pipeline)
     for (u32 i = 0; i < pipeline->contact_pool.count_max; ++i)
     {
         struct ds_Contact *c = pipeline->contact_pool.buf + i;
-        if (ds_PoolSlotAllocated(c)
-            && (pipeline->shape_pool.buf[c->key.shape[0]].cshape_type == C_SHAPE_TRI_MESH || pipeline->shape_pool.buf[c->key.shape[1]].cshape_type == C_SHAPE_TRI_MESH))
+        if (ds_PoolSlotAllocated(c) && !ds_ContactConvexCheck(c))
         {
             ds_CPoolDealloc(c->cache.concave.tri_pool);
         }

@@ -275,20 +275,13 @@ void ds_CGraphValidate(const struct ds_Dynamics *pipeline)
             ds_StaticAssert(CG_STATIC_COLOR_FIRST == 0, "");
             if (c <= CG_STATIC_COLOR_LAST)
             {
-                ds_Assert((!ds_BodyDynamicCheck(body[0]) 
-                         && ds_BodyDynamicCheck(body[1]) 
-                         && body[0]->set == SOLVER_SET_STATIC
-                         && body[1]->set == SOLVER_SET_ACTIVE)
-                    || 
-                       (ds_BodyDynamicCheck(body[0]) 
-                         && !ds_BodyDynamicCheck(body[1]) 
-                         && body[1]->set == SOLVER_SET_STATIC 
-                         && body[0]->set == SOLVER_SET_ACTIVE));
-
+                ds_Assert(ds_ContactStaticCheck(contact));
+                ds_Assert(body[ ds_ContactStaticIndex(contact) ]->set == SOLVER_SET_STATIC);
+                ds_Assert(body[ 1 - ds_ContactStaticIndex(contact) ]->set == SOLVER_SET_ACTIVE);
             }
             else if (CG_DYNAMIC_COLOR_FIRST <= c && c <= CG_DYNAMIC_COLOR_LAST)
             {
-                ds_Assert(ds_BodyDynamicCheck(body[0]) && ds_BodyDynamicCheck(body[1]));
+                ds_Assert(!ds_ContactStaticCheck(contact));
                 ds_Assert(body[0]->set == SOLVER_SET_ACTIVE);
                 ds_Assert(body[1]->set == SOLVER_SET_ACTIVE);
             }

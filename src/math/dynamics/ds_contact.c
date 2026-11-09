@@ -77,13 +77,29 @@ struct slot ds_ContactTryAdd(struct ds_Dynamics *pipeline, const struct ds_Conta
     c->island = U32_MAX;
     c->id = ds_ContactIdNextGeneration(c->id);
     c->narrowphase = (struct c_ContactResult) { 0 };
-    if (shape[0]->cshape_type == C_SHAPE_TRI_MESH || shape[1]->cshape_type == C_SHAPE_TRI_MESH)
+    const struct ds_Body *body[2] = { pipeline->body_pool.buf + shape[0]->body, pipeline->body_pool.buf + shape[1]->body };
+    ds_Assert(ds_BodyDynamicCheck(body[0]) || ds_BodyDynamicCheck(body[1]));
+    c->flags = 0;
+    if (shape[0]->cshape_type != C_SHAPE_TRI_MESH && shape[1]->cshape_type != C_SHAPE_TRI_MESH)
     {
-        c->cache.concave = (struct ds_ConcaveCache) { .tri_pool.growable = GROWABLE };
+        c->flags |= DS_CONTACT_CONVEX;
+    }
+
+    if (ds_BodyStaticCheck(body[0]))
+    {
+        c->flags |= DS_CONTACT_STATIC;
+    }
+    else if (ds_BodyStaticCheck(body[1]))
+    {
+        c->flags |= DS_CONTACT_STATIC | DS_CONTACT_STATIC_INDEX;
+    }
+    if (ds_ContactConvexCheck(c))
+    {
+        c->cache.convex = (struct ds_ConvexCache) { .sat.type = SAT_CACHE_NONE, .gjk.count = 0 };
     }
     else
     {
-        c->cache.convex = (struct ds_ConvexCache) { .sat.type = SAT_CACHE_NONE, .gjk.count = 0 };
+        c->cache.concave = (struct ds_ConcaveCache) { .tri_pool.growable = GROWABLE };
     }
     c->com_offset = V3Zero();
 
@@ -120,7 +136,7 @@ void ds_ContactRemove(struct ds_Dynamics *pipeline, const u32 index, const u32 i
     struct ds_Shape *shape0, *shape1;
     ds_ContactKeyAddress(&body0, &shape0, &body1, &shape1, pipeline, c->key);
 	PhysicsEventContactRemoved(pipeline, body0->id, shape0->id, body1->id, shape1->id);
-    if (shape0->cshape_type == C_SHAPE_TRI_MESH || shape1->cshape_type == C_SHAPE_TRI_MESH)
+    if (!ds_ContactConvexCheck(c))
     {
         ds_CPoolDealloc(c->cache.concave.tri_pool);
     }
@@ -258,10 +274,12 @@ void ds_ContactPromote(struct ds_Dynamics *pipeline, const u32 contact)
 	    pipeline->body_pool.buf + shape[1]->body,
     };
 
-    const u32 dynamic[2] = { ds_BodyDynamicBit(body[0]), ds_BodyDynamicBit(body[1]) };
-    ds_Assert(dynamic[0] || dynamic[1]);
-    u32 expand_index = body[ dynamic[1] ]->island;
-    if (dynamic[0] && dynamic[1] && body[0]->island != body[1]->island)
+    u32 expand_index = body[1]->island;
+    if (ds_ContactStaticCheck(c))
+    {
+        expand_index = body[ 1 - ds_ContactStaticIndex(c) ]->island;
+    }
+    else if (body[0]->island != body[1]->island)
     {
 		expand_index = ds_IslandMerge(pipeline, body[0]->island, body[1]->island);
     }

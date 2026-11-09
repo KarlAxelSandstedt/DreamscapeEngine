@@ -604,6 +604,15 @@ connectivity data and where to find its simulation/compute data.
     :: All contacts in a sleeping island are stored in the island's sleeping set, with a link (<->)
        and compute data. Any ds_SatCache that belongs to the contact is moved onto the heap. 
 */
+#define DS_CONTACT_STATIC_INDEX     ((u32) 1 << 0)      /* Static body's key index Applicable
+                                                           only if DS_CONTACT_STATIC.        */
+#define DS_CONTACT_STATIC           ((u32) 1 << 1)      /* One body is static                */
+#define DS_CONTACT_CONVEX           ((u32) 1 << 2)      /* Non-mesh contact.                 */
+
+#define ds_ContactStaticCheck(c)    ((c)->flags & DS_CONTACT_STATIC)
+#define ds_ContactStaticIndex(c)    ((c)->flags & DS_CONTACT_STATIC_INDEX)
+#define ds_ContactConvexCheck(c)    ((c)->flags & DS_CONTACT_CONVEX)
+
 struct ds_Contact
 {
     POOL_NODE;      
@@ -611,6 +620,7 @@ struct ds_Contact
     ds_ContactId                id;                 /* Generational Identifier                  */
     struct ds_ContactKey        key;                /* shape pair key                           */
     
+    u32                         flags;              /* DS_CONTACT_ bits                         */
     u32                         island;             /* Index of contact's island                */
     u32                         set;                /* Index of contact's set                   */
     u32                         compute;            /* Index of contact's set OR color data     */

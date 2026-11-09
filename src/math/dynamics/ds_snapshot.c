@@ -140,7 +140,7 @@ u64 ds_DynamicsSerializeSize(const struct ds_Dynamics *pipeline)
 	for (u32 i = 0; i < pipeline->contact_pool.count_max; ++i)
 	{
 		const struct ds_Contact *c = pipeline->contact_pool.buf + i;
-		if (ds_PoolSlotAllocated(c) && (pipeline->shape_pool.buf[c->key.shape[0]].cshape_type == C_SHAPE_TRI_MESH || pipeline->shape_pool.buf[c->key.shape[1]].cshape_type == C_SHAPE_TRI_MESH))
+		if (ds_PoolSlotAllocated(c) && !ds_ContactConvexCheck(c))
 		{
 			size += ds_CPoolSerializeSize(c->cache.concave.tri_pool);
 		}
@@ -196,7 +196,7 @@ void ds_DynamicsSerialize(struct SS *ss, const struct ds_Dynamics *pipeline)
 	for (u32 i = 0; i < pipeline->contact_pool.count_max; ++i)
 	{
 		const struct ds_Contact *c = pipeline->contact_pool.buf + i;
-		if (ds_PoolSlotAllocated(c) && (pipeline->shape_pool.buf[c->key.shape[0]].cshape_type == C_SHAPE_TRI_MESH || pipeline->shape_pool.buf[c->key.shape[1]].cshape_type == C_SHAPE_TRI_MESH))
+		if (ds_PoolSlotAllocated(c) && !ds_ContactConvexCheck(c))
 		{
 			ds_CPoolSerialize(ss, c->cache.concave.tri_pool);
 		}
@@ -274,7 +274,7 @@ u32 ds_DynamicsTryDeserialize(struct arena *mem, struct SS *ss, struct ds_Dynami
 	for (u32 i = 0; i < pipeline->contact_pool.count_max; ++i)
 	{
 		struct ds_Contact *c = pipeline->contact_pool.buf + i;
-		if (ds_PoolSlotAllocated(c) && (pipeline->shape_pool.buf[c->key.shape[0]].cshape_type == C_SHAPE_TRI_MESH || pipeline->shape_pool.buf[c->key.shape[1]].cshape_type == C_SHAPE_TRI_MESH))
+		if (ds_PoolSlotAllocated(c) && !ds_ContactConvexCheck(c))
 		{
 			c->cache.concave = (struct ds_ConcaveCache) { .tri_pool.growable = GROWABLE };
 		}
@@ -283,7 +283,7 @@ u32 ds_DynamicsTryDeserialize(struct arena *mem, struct SS *ss, struct ds_Dynami
 	for (u32 i = 0; i < pipeline->contact_pool.count_max; ++i)
 	{
 		struct ds_Contact *c = pipeline->contact_pool.buf + i;
-		if (ds_PoolSlotAllocated(c) && (pipeline->shape_pool.buf[c->key.shape[0]].cshape_type == C_SHAPE_TRI_MESH || pipeline->shape_pool.buf[c->key.shape[1]].cshape_type == C_SHAPE_TRI_MESH)
+		if (ds_PoolSlotAllocated(c) && !ds_ContactConvexCheck(c)
 			&& !ds_CPoolTryDeserialize(NULL, ss, c->cache.concave.tri_pool, GROWABLE))
 		{
 			goto failure;
