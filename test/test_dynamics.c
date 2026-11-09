@@ -58,7 +58,9 @@ islands that fall asleep at different frames is snapshotted at several frames. E
       every body's id, set, sim slot, island, sleep timer and pose, bit for bit);
     - re-serialize from a copy to the same size.
 A lone box is removed before one check (pools with free slots), and the last check first wakes every sleeping
-set in the original and in the copies. A restore points the dynamics globals at the copy, so the test points
+set in the original and in the copies. DynamicsSnapshotMeshTest runs the same checks, without the wake check, on
+boxes dropped onto a relief terrain (mesh contacts): a copy's mesh contacts hold the original's triangle caches,
+entry for entry (a separation entry's feature ids are not written, so they are not compared). A restore points the dynamics globals at the copy, so the test points
 them back at the original (ds_DynamicsConfigPush) before calling into it outside a tick.
 
 Solver sets (DynamicsSleepTest): a two-box stack and a lone box fall asleep into one set each (one island, the
@@ -532,6 +534,7 @@ static u32 SnapshotTestEqual(const struct ds_Dynamics *a, const struct ds_Dynami
         || a->body_pool.count != b->body_pool.count
         || a->shape_pool.count != b->shape_pool.count
         || a->contact_pool.count != b->contact_pool.count
+        || a->contact_pool.count_max != b->contact_pool.count_max
         || a->island_pool.count != b->island_pool.count
         || a->solver_set_pool.count != b->solver_set_pool.count
         || ds_DynamicsHash(a) != ds_DynamicsHash(b))
@@ -565,6 +568,37 @@ static u32 SnapshotTestEqual(const struct ds_Dynamics *a, const struct ds_Dynami
             || memcmp(&sim_a->world_center_of_mass, &sim_b->world_center_of_mass, sizeof(v3f64)) != 0)
         {
             return 0;
+        }
+    }
+
+    /* the mesh contacts' triangle caches, entry for entry */
+    for (u32 i = 0; i < a->contact_pool.count_max; ++i)
+    {
+        const struct ds_Contact *c_a = a->contact_pool.buf + i;
+        const struct ds_Contact *c_b = b->contact_pool.buf + i;
+        if (ds_PoolSlotAllocated(c_a) != ds_PoolSlotAllocated(c_b))
+        {
+            return 0;
+        }
+        if (!ds_PoolSlotAllocated(c_a) || ds_ContactConvexCheck(c_a))
+        {
+            continue;
+        }
+
+        const ds_CPool(ds_TriCache) *pool_a = &c_a->cache.concave.tri_pool, *pool_b = &c_b->cache.concave.tri_pool;
+        if (pool_a->count != pool_b->count)
+        {
+            return 0;
+        }
+        for (u32 e = 0; e < pool_a->count; ++e)
+        {
+            const struct ds_TriCache *ea = pool_a->buf + e, *eb = pool_b->buf + e;
+            if (ea->tri != eb->tri || ea->sat.type != eb->sat.type
+                || memcmp(&ea->sat.normal, &eb->sat.normal, sizeof(v3)) != 0 || memcmp(&ea->sat.depth, &eb->sat.depth, sizeof(f32)) != 0
+                || (ea->sat.type != SAT_CACHE_SEPARATION && memcmp(ea->sat.feature, eb->sat.feature, sizeof(ea->sat.feature)) != 0))
+            {
+                return 0;
+            }
         }
     }
 
@@ -759,6 +793,76 @@ static struct test_Output DynamicsSnapshotTest(struct test_Environment *env)
 	struct test_Output output = { .success = 1, .id = __func__ };
 
     TEST_TRUE(SnapshotTestRun());
+
+	return output;
+}
+
+/* test/test_contact.c: a MC_GRID x MC_GRID cell triangle grid, relief in cells, optional rotation */
+struct c_Shape McTerrain(struct arena *mem, const f32 cell, const f32 relief, const q *rotation);
+
+#define SNAPSHOT_MESH_TEST_BOXES    3   /* per side */
+
+/* a relief terrain on a static body, a grid of boxes dropped onto it; the checks of SnapshotTestRun without the wake check */
+static u32 SnapshotMeshTestRun(void)
+{
+    struct arena mem = ArenaAlloc(NULL, 128*1024*1024);
+    struct c_ShapeDB cshape_db = { 0 };
+    c_ShapeDBAlloc(NULL, &cshape_db, 64, GROWABLE);
+    ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
+    ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
+    struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&external, NSEC_PER_SEC / 60);
+    ds_DynamicsConfigPush(&pipeline);
+    pipeline.config_pending.solver.sleep_enabled = 1;
+    ds_DynamicsConfigUpdatePending(&pipeline);
+
+    /* mesh shapes sit at the body origin, unrotated */
+    const f32 cell = 1.0f;
+    const struct c_Shape terrain = McTerrain(&mem, cell, 0.05f, NULL);
+    const struct slot slot = c_ShapeDBAdd(&cshape_db, Utf8Inline("terrain"), &terrain);
+    const struct ds_BodyPrefab body_prefab = { .dynamic = 0 };
+    const ds_TransformWorld t_world = { .rotation = QIdentity(), .position = V3F64(0.0, 0.0, 0.0) };
+    const ds_BodyId terrain_body = ds_BodyAdd(&pipeline, &body_prefab, &t_world, 0);
+    const struct ds_ShapePrefab shape_prefab = { .cshape = slot.index, .density = 1.0f, .restitution = 0.0f, .friction = 0.8f };
+    const ds_Transform t_local = ds_TransformIdentity();
+    ds_ShapeAdd(&pipeline, &shape_prefab, &t_local, terrain_body);
+
+    u32 index = 1;
+    for (u32 i = 0; i < SNAPSHOT_MESH_TEST_BOXES; ++i)
+    {
+        for (u32 j = 0; j < SNAPSHOT_MESH_TEST_BOXES; ++j)
+        {
+            const struct dynamics_TestBox box = { .position = V3(3.0f + 3.0f*cell*(f32) i, 1.0f + 0.5f*(f32) j, 3.0f + 3.0f*cell*(f32) j), .rotation = QIdentity(), .hw = V3(0.5f, 0.5f, 0.5f), .dynamic = 1 };
+            DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, &box, dynamics_test_origin[0], index++);
+        }
+    }
+
+    u32 success = 1;
+    const u32 check_count = sizeof(snapshot_test_frame) / sizeof(snapshot_test_frame[0]);
+    for (u32 k = 0; k < check_count; ++k)
+    {
+        while (pipeline.frames_completed < snapshot_test_frame[k])
+        {
+            SnapshotTestTick(&pipeline);
+        }
+
+        success &= SnapshotTestCheck(&mem, &pipeline, &cshape_db, 0);
+    }
+
+    ds_DynamicsConfigPop(&pipeline);
+    ds_DynamicsDealloc(&pipeline);
+    ds_SDBDealloc(prefab_db);
+    c_ShapeDBDealloc(&cshape_db);
+    ArenaFree(&mem);
+    return success;
+}
+
+/* snapshot round trips of boxes on a terrain mesh (file comment) */
+static struct test_Output DynamicsSnapshotMeshTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    TEST_TRUE(SnapshotMeshTestRun());
 
 	return output;
 }
@@ -3941,6 +4045,7 @@ static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
     DynamicsRestingStackTest,
     DynamicsRestingSlopeTest,
     DynamicsSnapshotTest,
+    DynamicsSnapshotMeshTest,
     DynamicsShapeTest,
     DynamicsBodyTest,
     DynamicsContactTest,
@@ -4136,9 +4241,6 @@ the generic ones per point, a dynamic-colour copy without the dummy select nothi
 #define DYNAMICS_PERF_TERRAIN_CELL      2.0f
 #define DYNAMICS_PERF_TERRAIN_RELIEF    0.5f
 #define DYNAMICS_PERF_TERRAIN_BOXES     8       /* per side */
-
-/* test/test_contact.c: a MC_GRID x MC_GRID cell triangle grid, relief in cells, optional rotation */
-struct c_Shape McTerrain(struct arena *mem, const f32 cell, const f32 relief, const q *rotation);
 
 enum dynamics_PerfScene { DYNAMICS_PERF_SCENE_PYRAMID, DYNAMICS_PERF_SCENE_TERRAIN, DYNAMICS_PERF_SCENE_COUNT };
 enum dynamics_PerfStage { DYNAMICS_PERF_STAGE_VELOCITY, DYNAMICS_PERF_STAGE_POSITION };
