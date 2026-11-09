@@ -2492,14 +2492,6 @@ static void led_EngineRun(struct led *led, const u32 physics_ticked)
 
 			case PHYSICS_EVENT_ISLAND_EXPANDED:
             {
-                if (led->body_color_mode == RB_COLOR_MODE_ISLAND)
-                {
-                    const struct ds_Island *is = ds_IslandLookup(led->physics, event->island).address;
-                    if (is)
-                    {
-                        led_ColorIsland(led, event->island, is->color);
-                    }
-                }
             } break;
 
 			case PHYSICS_EVENT_BODY_NEW:
@@ -2537,6 +2529,10 @@ static void led_EngineRun(struct led *led, const u32 physics_ticked)
 	    			, compute->angular_velocity
 	    			, ns
 	    			, node->proxy);
+            if (led->body_color_mode == RB_COLOR_MODE_ISLAND)
+            {
+                led_NodeColorProxies(led, body->entity, led->physics->island_pool.buf[body->island].color);
+            }
         }
     }
         
