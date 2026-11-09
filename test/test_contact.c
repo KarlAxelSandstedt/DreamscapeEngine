@@ -3183,6 +3183,7 @@ struct test_Output MeshSphereCasesTest(struct test_Environment *env)
     }
     fprintf(stdout, "\tsphere on a triangle: 4000 random centers within the band\n");
 
+    ds_CPoolDealloc(none.tri_pool);
 	return output;
 }
 
@@ -3306,6 +3307,7 @@ static struct mc_CapsuleCase McCapsuleCase(struct arena *mem, const struct c_Sha
         const struct d3 world = D3Add(pos_m, D3RotationMul(cc.rm, D3V3(mesh->mesh_bvh.mesh->v[k])));
         cc.tri[k] = D3RotationTMul(cc.rc, D3Sub(world, pos_c));
     }
+    ds_CPoolDealloc(none.tri_pool);
     return cc;
 }
 
@@ -3740,6 +3742,7 @@ struct test_Output MeshFlatGridTest(struct test_Environment *env)
             D3Rotation(rc, q_convex);
             const struct d3 pos_c = D3Add(mesh_pos, D3RotationMul(rm, D3RotationMul(rg, center)));
             const ds_TransformWorld t_convex = { .rotation = q_convex, .position = V3F64(pos_c.x, pos_c.y, pos_c.z) };
+            ds_CPoolFlush(none.tri_pool);
             const struct c_ContactResult res = c_MeshContact(env->mem_2, &none, &mesh, &t_mesh, &convex, &t_convex);
 
             const struct d3 down = D3RotationTMul(rc, D3RotationMul(rm, D3RotationMul(rg, D3(0.0, -1.0, 0.0))));
@@ -3780,6 +3783,7 @@ struct test_Output MeshFlatGridTest(struct test_Environment *env)
         fprintf(stdout, "\t%s on a flat grid: 8000 touching, %.2f manifolds/query; worst |n - n_grid| / tol %.3g, |deepest - expected| / tol %.3g; ghost normals (counted) %llu\n",
             kind_id[kind], (f64) manifolds / 8000.0, worst_n, worst_depth, (unsigned long long) ghost);
     }
+    ds_CPoolDealloc(none.tri_pool);
     g_dynamics_worker = prev;
 	return output;
 }
@@ -3787,7 +3791,8 @@ struct test_Output MeshFlatGridTest(struct test_Environment *env)
 /* NULL if passed, else what failed */
 static const char *McTerrainCheck(struct arena *frame, u64 *manifolds, const struct c_Shape *mesh, const ds_TransformWorld *t_mesh, const struct c_Shape *convex, const ds_TransformWorld *t_convex)
 {
-    struct ds_ConcaveCache none = { .tri_pool.growable = GROWABLE };
+    struct ds_ConcaveCache none = { .tri_pool.growable = GROWABLE }, none_t = { .tri_pool.growable = GROWABLE };
+    const char *fail = NULL;
     const struct c_ContactResult r = c_MeshContact(frame, &none, mesh, t_mesh, convex, t_convex);
     *manifolds += r.manifold_count;
     for (u32 i = 0; i < r.manifold_count; ++i)
@@ -3797,7 +3802,8 @@ static const char *McTerrainCheck(struct arena *frame, u64 *manifolds, const str
         {
             fprintf(stderr, "\ttriangle %u:\n", r.tri[i]);
             c_ManifoldDebugPrint(m);
-            return "invalid manifold";
+            fail = "invalid manifold";
+            break;
         }
     }
 
@@ -3805,11 +3811,12 @@ static const char *McTerrainCheck(struct arena *frame, u64 *manifolds, const str
     const struct d3 offset = D3(4096.0, -1024.0, 65536.0);
     const ds_TransformWorld t_mesh_t = { .rotation = t_mesh->rotation, .position = V3F64(t_mesh->position.x + offset.x, t_mesh->position.y + offset.y, t_mesh->position.z + offset.z) };
     const ds_TransformWorld t_convex_t = { .rotation = t_convex->rotation, .position = V3F64(t_convex->position.x + offset.x, t_convex->position.y + offset.y, t_convex->position.z + offset.z) };
-    if (V3F64Sub(t_convex_t.position, t_mesh_t.position).x == V3F64Sub(t_convex->position, t_mesh->position).x
+    if (!fail
+     && V3F64Sub(t_convex_t.position, t_mesh_t.position).x == V3F64Sub(t_convex->position, t_mesh->position).x
      && V3F64Sub(t_convex_t.position, t_mesh_t.position).y == V3F64Sub(t_convex->position, t_mesh->position).y
      && V3F64Sub(t_convex_t.position, t_mesh_t.position).z == V3F64Sub(t_convex->position, t_mesh->position).z)
     {
-        const struct c_ContactResult r_t = c_MeshContact(frame, &none, mesh, &t_mesh_t, convex, &t_convex_t);
+        const struct c_ContactResult r_t = c_MeshContact(frame, &none_t, mesh, &t_mesh_t, convex, &t_convex_t);
         u32 same = (r_t.manifold_count == r.manifold_count);
         for (u32 i = 0; same && i < r.manifold_count; ++i)
         {
@@ -3822,11 +3829,13 @@ static const char *McTerrainCheck(struct arena *frame, u64 *manifolds, const str
         }
         if (!same)
         {
-            return "translated result differs";
+            fail = "translated result differs";
         }
     }
 
-    return NULL;
+    ds_CPoolDealloc(none.tri_pool);
+    ds_CPoolDealloc(none_t.tri_pool);
+    return fail;
 }
 
 /*
@@ -4132,6 +4141,7 @@ struct test_Output MeshHullCasesTest(struct test_Environment *env)
         struct ch_Hull h;
         ChHullInit(&h, &box, 1, hw, QNormalize(QMul(q_mesh, q_local)), D3Add(pos_m, D3RotationMul(rm, center)));
         const ds_TransformWorld t_mesh = { .rotation = q_mesh, .position = V3F64(pos_m.x, pos_m.y, pos_m.z) };
+        ds_CPoolFlush(none.tri_pool);
         const struct c_ContactResult r = c_MeshContact(env->mem_2, &none, &mesh, &t_mesh, &h.shape, &h.t);
         struct d3 t[3];
         McTriangleInHull(t, &h, rm, pos_m, mesh.mesh_bvh.mesh->v);
@@ -4175,6 +4185,7 @@ struct test_Output MeshHullCasesTest(struct test_Environment *env)
         }
     }
 
+    ds_CPoolDealloc(none.tri_pool);
     g_dynamics_worker = prev;
 	return output;
 }
@@ -4258,6 +4269,7 @@ struct test_Output MeshHullRandomTest(struct test_Environment *env)
         McTriangleInHull(t, &h, rm, pos_m, tm);
         const f64 tol = McHullTriTol(&h, t);
 
+        ds_CPoolFlush(none.tri_pool);
         const struct c_ContactResult r = c_MeshContact(env->mem_2, &none, &mesh, &t_mesh, &h.shape, &h.t);
         const char *fail = McHullTriVerify(&touching_off, &r, &h, t, tol, 0.0);
         const char *stage = "first";
@@ -4301,6 +4313,7 @@ struct test_Output MeshHullRandomTest(struct test_Environment *env)
         (unsigned long long) contacts, (unsigned long long) v_count[1], (unsigned long long) v_count[2], (unsigned long long) v_count[3],
         (unsigned long long) v_count[4], (unsigned long long) separated, (unsigned long long) probes, (unsigned long long) evictions, (unsigned long long) touching_off);
 
+    ds_CPoolDealloc(none.tri_pool);
     g_dynamics_worker = prev;
 	return output;
 }

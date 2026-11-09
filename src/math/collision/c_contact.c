@@ -2008,7 +2008,7 @@ static void c_MeshHullTriDelayed(struct c_MeshTri *r, const struct dcel *stub, c
  * (SAT_PAIR_TRIANGLE: a DcelTriStub with planes +-n_t, in the hull's frame): n from the hull to the mesh, v on the hull
  * (the mesh convention). Every tested triangle keeps a record: its contact, or its separating axis for the cache.
  */
-static void c_MeshHullTriangles(struct c_MeshContactHelper *helper, const struct c_ContactResult *cached_result, const struct dcel *hull)
+static void c_MeshHullTriangles(struct c_MeshContactHelper *helper, const struct ds_ConcaveCache *cache, const struct dcel *hull)
 {
     struct ds_DynamicsMetrics *metrics = &g_dynamics_worker[ds_ThreadSelfIndex()].metrics;
     u32 tri_index;
@@ -2030,11 +2030,11 @@ static void c_MeshHullTriangles(struct c_MeshContactHelper *helper, const struct
 
         /* the triangle's cache: a linear search over at most cache_count_max entries (small next to the SAT) */
         const struct SATCache *old_cache = NULL;
-        for (u32 ci = 0; ci < cached_result->cache_count; ++ci)
+        for (u32 ci = 0; ci < cache->tri_pool.count; ++ci)
         {
-            if (cached_result->cache[ci].tri == tri_index)
+            if (cache->tri_pool.buf[ci].tri == tri_index)
             {
-                old_cache = cached_result->cache + ci;
+                old_cache = &cache->tri_pool.buf[ci].sat;
                 break;
             }
         }
@@ -2049,7 +2049,6 @@ static void c_MeshHullTriangles(struct c_MeshContactHelper *helper, const struct
             c_MeshHullTriDelayed(r, &stub, features);
         }
 
-        r->cache.tri = tri_index;
         r->contact = colliding;
         r->depth = (colliding) ? c_ManifoldDeepest(&r->manifold) : 0.0f;
     }
@@ -2094,8 +2093,8 @@ void c_ContactResultSortTriangles(struct arena *frame, struct c_ContactResult *r
     }
 }
 
-/* One manifold per record that survives the internal-edge filter; caches: every record's (hulls) */
-static void c_MeshContactFinish(struct arena *frame, struct c_ContactResult *result, struct c_MeshContactHelper *helper, const u32 cache)
+/* One manifold per record that survives the internal-edge filter; cache entries (hulls): every record's with one */
+static void c_MeshContactFinish(struct arena *frame, struct c_ContactResult *result, struct ds_ConcaveCache *cache, struct c_MeshContactHelper *helper, const u32 sat)
 {
     u32 contact_count = 0;
     u32 delayed_count = 0;
@@ -2105,13 +2104,11 @@ static void c_MeshContactFinish(struct arena *frame, struct c_ContactResult *res
         delayed_count += (helper->record[i].contact && helper->record[i].delayed_count);
     }
 
-    const u32 cache_len = (cache) ? ((helper->record_count < g_numerics_config->cache_count_max) ? helper->record_count : g_numerics_config->cache_count_max) : 0;
-    result->cache = (cache_len) ? ArenaPushPacked(frame, cache_len*sizeof(struct SATCache)) : NULL;
     result->contact_manifold = ArenaPush(frame, contact_count*sizeof(struct c_Manifold));
     result->tri = ArenaPush(frame, contact_count*sizeof(u32));
     u32 *delayed = ArenaPush(helper->tmp, delayed_count*sizeof(u32));
     struct ds_BitSet void_bitset = ds_BitSetAlloc(helper->tmp, helper->mesh->v_count, 0, NOT_GROWABLE);
-    if ((contact_count && (!result->contact_manifold || !result->tri)) || (delayed_count && !delayed) || (cache_len && !result->cache)
+    if ((contact_count && (!result->contact_manifold || !result->tri)) || (delayed_count && !delayed)
         || (helper->mesh->v_count && !void_bitset.bits))
     {
         Log(T_SYSTEM, S_FATAL, "Out of memory in %s", __func__);
@@ -2129,10 +2126,6 @@ static void c_MeshContactFinish(struct arena *frame, struct c_ContactResult *res
         const struct c_MeshTri *r = helper->record + i;
         if (!r->contact)
         {
-            if (result->cache_count < cache_len && r->cache.type != SAT_CACHE_NONE)
-            {
-                result->cache[result->cache_count++] = r->cache;
-            }
             continue;
         }
 
@@ -2150,10 +2143,6 @@ static void c_MeshContactFinish(struct arena *frame, struct c_ContactResult *res
         result->contact_manifold[result->manifold_count] = r->manifold;
         result->tri[result->manifold_count] = r->tri;
         result->manifold_count += 1;
-        if (result->cache_count < cache_len && r->cache.type != SAT_CACHE_NONE)
-        {
-            result->cache[result->cache_count++] = r->cache;
-        }
         const u32 *v = helper->mesh->tri[r->tri].buf;
         ds_BitSetSet(&void_bitset, v[0], 1);
         ds_BitSetSet(&void_bitset, v[1], 1);
@@ -2172,14 +2161,25 @@ static void c_MeshContactFinish(struct arena *frame, struct c_ContactResult *res
             result->contact_manifold[result->manifold_count] = r->manifold;
             result->tri[result->manifold_count] = r->tri;
             result->manifold_count += 1;
-            if (result->cache_count < cache_len && r->cache.type != SAT_CACHE_NONE)
-            {
-                result->cache[result->cache_count++] = r->cache;
-            }
         }
         ds_BitSetSet(&void_bitset, v[0], 1);
         ds_BitSetSet(&void_bitset, v[1], 1);
         ds_BitSetSet(&void_bitset, v[2], 1);
+    }
+
+    ds_CPoolFlush(cache->tri_pool);
+    if (sat)
+    {
+        for (u32 i = 0; i < helper->record_count && cache->tri_pool.count < g_numerics_config->cache_count_max; ++i)
+        {
+            const struct c_MeshTri *r = helper->record + i;
+            if (r->cache.type != SAT_CACHE_NONE)
+            {
+                struct ds_TriCache *entry = ds_CPoolPush(cache->tri_pool).address;
+                entry->tri = r->tri;
+                entry->sat = r->cache;
+            }
+        }
     }
 
     ArenaPopScratch();
@@ -2195,7 +2195,6 @@ struct c_ContactResult c_MeshContact(struct arena *frame, struct ds_ConcaveCache
 {
     ds_Assert(convex->type < C_SHAPE_TRI_MESH);
     ds_Assert(cache->tri_pool.growable);
-    const struct c_ContactResult cached_result = { 0 };
     struct c_ContactResult result = { 0 };
     struct c_MeshContactHelper helper;
     c_MeshContactInit(&helper, mesh, t_mesh, convex, t_convex);
@@ -2203,8 +2202,8 @@ struct c_ContactResult c_MeshContact(struct arena *frame, struct ds_ConcaveCache
     {
         case C_SHAPE_SPHERE:    { c_MeshSphereTriangles(&helper, &convex->sphere); } break;
         case C_SHAPE_CAPSULE:   { c_MeshCapsuleTriangles(&helper, &convex->capsule); } break;
-        default:                { c_MeshHullTriangles(&helper, &cached_result, &convex->hull); } break;
+        default:                { c_MeshHullTriangles(&helper, cache, &convex->hull); } break;
     }
-    c_MeshContactFinish(frame, &result, &helper, convex->type == C_SHAPE_CONVEX_HULL);
+    c_MeshContactFinish(frame, &result, cache, &helper, convex->type == C_SHAPE_CONVEX_HULL);
     return result;
 }
