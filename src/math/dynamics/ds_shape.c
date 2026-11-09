@@ -303,7 +303,7 @@ static void ds_ContactResultToSolver(struct c_ContactResult *result, const ds_Tr
 }
 
 /* convex types precede C_SHAPE_TRI_MESH; [s0->type][s1->type] with s0 the more complex shape */
-static struct c_ContactResult  (*c_convex_contact_methods[C_SHAPE_TRI_MESH][C_SHAPE_TRI_MESH])(struct arena *, const struct c_ContactResult *, const struct c_Shape *, const ds_TransformWorld *, const struct c_Shape *, const ds_TransformWorld *) =
+static struct c_ContactResult  (*c_convex_contact_methods[C_SHAPE_TRI_MESH][C_SHAPE_TRI_MESH])(struct arena *, struct ds_ConvexCache *, const struct c_Shape *, const ds_TransformWorld *, const struct c_Shape *, const ds_TransformWorld *) =
 {
 	{ c_SphereContact,          0,                      0,              },
 	{ c_CapsuleSphereContact,   c_CapsuleContact,       0,              },
@@ -347,7 +347,7 @@ void ds_ShapeContact(struct arena *frame, const struct ds_Dynamics *pipeline, co
 
     struct c_ContactResult result = (c_s[other]->type == C_SHAPE_TRI_MESH)
         ? c_MeshContact(frame, &c->narrowphase, c_s[other], &t_world[other], c_s[local], &t_world[local])
-        : c_convex_contact_methods[c_s[local]->type][c_s[other]->type](frame, &c->narrowphase, c_s[local], &t_world[local], c_s[other], &t_world[other]);
+        : c_convex_contact_methods[c_s[local]->type][c_s[other]->type](frame, &c->cache.convex, c_s[local], &t_world[local], c_s[other], &t_world[other]);
 
 #ifdef DS_DEBUG
     /* the local manifolds, before the conversion below overwrites them */
@@ -360,7 +360,7 @@ void ds_ShapeContact(struct arena *frame, const struct ds_Dynamics *pipeline, co
             /* rerun to step into the failing case */
             (c_s[other]->type == C_SHAPE_TRI_MESH)
                 ? c_MeshContact(frame, &c->narrowphase, c_s[other], &t_world[other], c_s[local], &t_world[local])
-                : c_convex_contact_methods[c_s[local]->type][c_s[other]->type](frame, &c->narrowphase, c_s[local], &t_world[local], c_s[other], &t_world[other]);
+                : c_convex_contact_methods[c_s[local]->type][c_s[other]->type](frame, &c->cache.convex, c_s[local], &t_world[local], c_s[other], &t_world[other]);
             break;
         }
     }

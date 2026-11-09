@@ -121,7 +121,7 @@ struct sat_EdgeQuery
  *      depth = r_sum, v = r0 n.
  *      |p| below the positions' resolution (~eps max(|a|, |b|)): n is valid but its direction is noise.
  */
-struct c_ContactResult c_SphereContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
+struct c_ContactResult c_SphereContact(struct arena *frame, struct ds_ConvexCache *cache, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
 {
     ds_Assert(s0->type == C_SHAPE_SPHERE);
 	ds_Assert(s1->type == C_SHAPE_SPHERE);
@@ -166,7 +166,7 @@ struct c_ContactResult c_SphereContact(struct arena *frame, const struct c_Conta
  *      way out), depth = r_sum, v = c + r_capsule n.
  *      |d| below the positions' resolution: n is valid but its direction is noise.
  */
-struct c_ContactResult c_CapsuleSphereContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
+struct c_ContactResult c_CapsuleSphereContact(struct arena *frame, struct ds_ConvexCache *cache, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
 {
     ds_Assert(s0->type == C_SHAPE_CAPSULE);
     ds_Assert(s1->type == C_SHAPE_SPHERE);
@@ -247,7 +247,7 @@ static u32 c_CapsuleParallelManifold(struct c_Manifold *manifold, const v3 c, co
  * Capsule vs capsule: local manifold in s0's frame (n from s0 to s1); one point, or two when the
  * capsules are nearly parallel and lie side by side.
  */
-struct c_ContactResult c_CapsuleContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
+struct c_ContactResult c_CapsuleContact(struct arena *frame, struct ds_ConvexCache *cache, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
 {
     ds_Assert(s0->type == C_SHAPE_CAPSULE);
     ds_Assert(s1->type == C_SHAPE_CAPSULE);
@@ -345,13 +345,13 @@ struct c_ContactResult c_CapsuleContact(struct arena *frame, const struct c_Cont
     return result;
 }
 
-struct c_ContactResult c_HullSphereContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
+struct c_ContactResult c_HullSphereContact(struct arena *frame, struct ds_ConvexCache *cache, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
 {
 	ds_Assert(s0->type == C_SHAPE_CONVEX_HULL);
 	ds_Assert(s1->type == C_SHAPE_SPHERE);
 
     struct c_ContactResult result = { 0 };
-    result.gjk_cache = ArenaPushPacked(frame, sizeof(struct GJKCache));
+    const struct GJKCache old = cache->gjk;
 
     const f32 radius = s1->sphere.radius;
     const q inv = QConj(t0->rotation);
@@ -359,7 +359,7 @@ struct c_ContactResult c_HullSphereContact(struct arena *frame, const struct c_C
     const ds_Transform t_1_to_0 = { .rotation = QIdentity(), .position = p };
 
     v3 c[2], n;
-    const f32 distance = GJK(c+0, c+1, &n, result.gjk_cache, cached_result->gjk_cache, s0, s1, &t_1_to_0, radius);
+    const f32 distance = GJK(c+0, c+1, &n, &cache->gjk, (old.count) ? &old : NULL, s0, s1, &t_1_to_0, radius);
     if (radius < distance)
     {
         return result;
@@ -491,19 +491,19 @@ static void HullCapsuleEESeparation(struct sat_EdgeQuery *query, const struct dc
  * closest points; deep (core touches the hull): SAT face and edge queries; the core clipped to the reference
  * face, or the closest points of the best edge and the core if that edge separates more by sat_face_bias.
  */
-struct c_ContactResult c_HullCapsuleContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
+struct c_ContactResult c_HullCapsuleContact(struct arena *frame, struct ds_ConvexCache *cache, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
 {
 	ds_Assert(s0->type == C_SHAPE_CONVEX_HULL);
 	ds_Assert(s1->type == C_SHAPE_CAPSULE);
 
     struct c_ContactResult result = { 0 };
-    result.gjk_cache = ArenaPushPacked(frame, sizeof(struct GJKCache));
+    const struct GJKCache old = cache->gjk;
 
     const f32 radius = s1->capsule.radius;
     const ds_Transform t_1_to_0 = ds_TransformWorldRelative(t0, t1);
 
     v3 c[2], n;
-    const f32 distance = GJK(c+0, c+1, &n, result.gjk_cache, cached_result->gjk_cache, s0, s1, &t_1_to_0, radius);
+    const f32 distance = GJK(c+0, c+1, &n, &cache->gjk, (old.count) ? &old : NULL, s0, s1, &t_1_to_0, radius);
     if (radius < distance)
     {
         return result;
@@ -782,7 +782,7 @@ static u32 HullEdgeQuery(struct sat_EdgeQuery *query, const struct dcel *const h
  * Edge contact from query: the closest points of the edges' lines, v on s1 (hull 1's edge); only if both lie within the
  * segments (otherwise other features realize the axis). Writes the EE cache; returns 1 if built.
  */
-static u32 HullEdgeContact(struct c_Manifold *m, struct c_SatCache *cache, const struct sat_EdgeQuery *query)
+static u32 HullEdgeContact(struct c_Manifold *m, struct SATCache *cache, const struct sat_EdgeQuery *query)
 {
 	/* not parallel: the pair passed the parallel test */
 	f32 t1, t2;
@@ -1265,7 +1265,7 @@ static u32 HullFaceContact(struct arena *mem_tmp, struct c_Manifold *cm, sat_Fea
 }
 
 /* a separating axis for the SAT cache: normal from s0 to s1, separation > 0 */
-static void sat_CacheSeparation(struct c_SatCache *cache, const v3 normal, const f32 separation)
+static void sat_CacheSeparation(struct SATCache *cache, const v3 normal, const f32 separation)
 {
 	cache->type = SAT_CACHE_SEPARATION;
 	cache->normal = normal;
@@ -1295,7 +1295,7 @@ struct sat_Pair
  * while its depth moved by less than sat_cache_tolerance. Returns 1 if reused: new_cache written, *colliding set, for a
  * contact also m and (face contacts) its features.
  */
-static u32 sat_CacheTryReuse(struct c_Manifold *m, u32 *colliding, sat_FeatureId features[4], struct c_SatCache *new_cache, struct arena *mem_tmp, const struct sat_Pair *pair, const struct c_SatCache *old_cache)
+static u32 sat_CacheTryReuse(struct c_Manifold *m, u32 *colliding, sat_FeatureId features[4], struct SATCache *new_cache, struct arena *mem_tmp, const struct sat_Pair *pair, const struct SATCache *old_cache)
 {
 	struct ds_DynamicsMetrics *metrics = &g_dynamics_worker[ds_ThreadSelfIndex()].metrics;
 	const u32 triangle = (pair->type == SAT_PAIR_TRIANGLE);
@@ -1380,7 +1380,7 @@ static u32 sat_CacheTryReuse(struct c_Manifold *m, u32 *colliding, sat_FeatureId
  * sat_face_bias. Returns 1 if colliding: m written, and for a face contact its points' features. cache: the
  * separating axis or the contact's features; SAT_CACHE_NONE for the fallback contact.
  */
-static u32 sat_PairContact(struct c_Manifold *m, sat_FeatureId features[4], struct c_SatCache *cache, struct arena *mem_tmp, const struct sat_Pair *pair, const struct c_SatCache *old_cache)
+static u32 sat_PairContact(struct c_Manifold *m, sat_FeatureId features[4], struct SATCache *cache, struct arena *mem_tmp, const struct sat_Pair *pair, const struct SATCache *old_cache)
 {
 	u32 colliding;
 	if (old_cache && sat_CacheTryReuse(m, &colliding, features, cache, mem_tmp, pair, old_cache))
@@ -1468,7 +1468,7 @@ static u32 sat_PairContact(struct c_Manifold *m, sat_FeatureId features[4], stru
  * Hull vs hull: local manifold in s0's frame (n from s0 to s1). s1's vertices and face planes are moved into
  * s0's frame; s0 uses its stored planes. SAT and cache: sat_PairContact.
  */
-struct c_ContactResult c_HullContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
+struct c_ContactResult c_HullContact(struct arena *frame, struct ds_ConvexCache *cache, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
 {
 	ds_Assert(s0->type == C_SHAPE_CONVEX_HULL);
 	ds_Assert(s1->type == C_SHAPE_CONVEX_HULL);
@@ -1477,8 +1477,6 @@ struct c_ContactResult c_HullContact(struct arena *frame, const struct c_Contact
     metrics->hull_call_count += 1;
 
     struct c_ContactResult result = { 0 };
-    result.cache_count = 1;
-    result.cache = ArenaPushPacked(frame, sizeof(struct c_SatCache));
     result.manifold_count = 1;
     result.contact_manifold = ArenaPushPacked(frame, sizeof(struct c_Manifold));
 
@@ -1503,13 +1501,9 @@ struct c_ContactResult c_HullContact(struct arena *frame, const struct c_Contact
     const v3 center_0 = s0->center_of_mass;
 
     const struct sat_Pair pair = { .type = SAT_PAIR_HULL, .h = { h[0], h[1] }, .v = { v[0], v[1] }, .pl = { pl[0], pl[1] }, .center_0 = center_0 };
-    const struct c_SatCache *old_cache = (cached_result->cache_count) ? cached_result->cache : NULL;
+    const struct SATCache old = cache->sat;
     sat_FeatureId features[4];
-    const u32 colliding = sat_PairContact(result.contact_manifold, features, result.cache, mem_tmp, &pair, old_cache);
-    if (result.cache->type == SAT_CACHE_NONE)
-    {
-        result.cache_count = 0;
-    }
+    const u32 colliding = sat_PairContact(result.contact_manifold, features, &cache->sat, mem_tmp, &pair, (old.type != SAT_CACHE_NONE) ? &old : NULL);
 
     if (!colliding)
     {
@@ -1530,7 +1524,7 @@ struct c_MeshTri
     u32                 delayed[2];
     f32                 depth;          /* deepest point: the delayed phase goes deepest first */
     struct c_Manifold   manifold;       /* local to the convex shape */
-    struct c_SatCache   cache;          /* hulls */
+    struct SATCache   cache;          /* hulls */
 };
 
 /*
@@ -2035,7 +2029,7 @@ static void c_MeshHullTriangles(struct c_MeshContactHelper *helper, const struct
         const struct sat_Pair pair = { .type = SAT_PAIR_TRIANGLE, .h = { hull, &stub }, .v = { hull->v, tri }, .pl = { hull->plane, pl_tri }, .center_0 = V3(0.0f, 0.0f, 0.0f) };
 
         /* the triangle's cache: a linear search over at most cache_count_max entries (small next to the SAT) */
-        const struct c_SatCache *old_cache = NULL;
+        const struct SATCache *old_cache = NULL;
         for (u32 ci = 0; ci < cached_result->cache_count; ++ci)
         {
             if (cached_result->cache[ci].tri == tri_index)
@@ -2112,7 +2106,7 @@ static void c_MeshContactFinish(struct arena *frame, struct c_ContactResult *res
     }
 
     const u32 cache_len = (cache) ? ((helper->record_count < g_numerics_config->cache_count_max) ? helper->record_count : g_numerics_config->cache_count_max) : 0;
-    result->cache = (cache_len) ? ArenaPushPacked(frame, cache_len*sizeof(struct c_SatCache)) : NULL;
+    result->cache = (cache_len) ? ArenaPushPacked(frame, cache_len*sizeof(struct SATCache)) : NULL;
     result->contact_manifold = ArenaPush(frame, contact_count*sizeof(struct c_Manifold));
     result->tri = ArenaPush(frame, contact_count*sizeof(u32));
     u32 *delayed = ArenaPush(helper->tmp, delayed_count*sizeof(u32));

@@ -281,6 +281,84 @@ struct GJKCache
 };
 
 /*
+SATCache
+==========
+Internal physics engine struct for caching SAT-based contact calculations each frame. If a contact was found,
+the contact results may be re-used the next frame if a set of conditions are fullfilled.
+
+::: Internals :::
+
+sat_CacheTryReuse (c_contact.c): a separating axis is reused while it still separates; a contact is rebuilt from its
+cached features and reused while its depth changed by less than sat_cache_tolerance (ds_NumericsConfig).
+*/
+
+enum sat_CacheType
+{
+	SAT_CACHE_SEPARATION,   /* Seperation axis found    */
+	SAT_CACHE_CONTACT_FV,   /* Face-Vertex Contact      */
+	SAT_CACHE_CONTACT_EE,   /* Edge-Edge Contact        */
+	SAT_CACHE_NONE,         /* Nothing to cache (fallback contact); never stored in a c_ContactResult */
+	SAT_CACHE_COUNT,
+};
+
+typedef u32 sat_FeatureId;
+
+#define SAT_FEATURE_ID_TYPE_MASK            (0xc0000000)
+#define SAT_FEATURE_ID_INDEX_MASK           (0x3fffffff)
+
+#define SAT_FEATURE_TYPE_FACE               2
+#define SAT_FEATURE_TYPE_EDGE               1
+#define SAT_FEATURE_TYPE_VERTEX             0
+
+#define sat_FeatureIdVertexCheck(id)        (((id) >> 30) == SAT_FEATURE_TYPE_VERTEX)
+#define sat_FeatureIdEdgeCheck(id)          (((id) >> 30) == SAT_FEATURE_TYPE_EDGE)
+#define sat_FeatureIdFaceCheck(id)          (((id) >> 30) == SAT_FEATURE_TYPE_FACE)
+
+#define sat_FeatureIdType(id)               ((id) >> 30)
+#define sat_FeatureIdIndex(id)              ((id) & SAT_FEATURE_ID_INDEX_MASK)
+#define sat_FeatureIdConstruct(index, type) ((((u32) type) << 30) | (SAT_FEATURE_ID_INDEX_MASK & (index)))
+
+struct SATCache
+{
+    u32 tri;                    /* (Optional): Triangle in mesh. */
+	enum sat_CacheType	type;
+    
+    /*
+     * type == FACE:
+     *  feature[i].type == FACE => i IS NOT incident face
+     *  feature[i].type != FACE => i IS on incident face
+     *  normal == face normal
+     *
+     * type == EDGE:
+     *  feature[i].type == EDGE
+     *  feature[i].type == EDGE
+     *  normal == contact normal
+     *
+     * type == SEPARATION:
+     *      normal == separation axis pointing from reference body 
+     *      depth == separation distance (positive)
+     *
+     * type == NONE:
+     *  feature[i].type == FACE => i has the reference face
+     *  feature[i].type == VERTEX => i has the deepest vertex
+     */
+    sat_FeatureId   feature[2];
+    f32             depth;      
+    v3            normal;     
+};
+
+struct ds_ConvexCache
+{
+    struct SATCache sat;
+    struct GJKCache gjk;
+};
+
+struct ds_ConcaveCache
+{
+    u32 tmp;
+};
+
+/*
  * touch band width in units of the rounding noise eps * L. Hull faces must be flat well within it: planes (SAT,
  * clipping) and vertices (GJK) describe a face only to its flatness. DcelConvexHull's tolerance is a quarter of the
  * band, its faces flat to ~37 eps L, below the contact tests' accuracy (64 eps L), below the band (100 eps L).
@@ -387,7 +465,7 @@ struct c_ContactResult
         struct ds_SolverManifold *  manifold;           /* the same memory after ds_ShapeContact converted it
                                                            in place: solver form (ds_dynamics.h)         */
     };
-    struct c_SatCache *         cache;              /* Caches (if any)                          */
+    struct SATCache *         cache;              /* Caches (if any)                          */
     struct GJKCache *           gjk_cache;          /* GJK cache, at most one (NULL if none)    */
     u32 *                       tri;                /* Sorted triangles, low-to-high (if any)   */
     u32 *                       tri_manifold;       /* Sorted triangle manifold indices (if any)
@@ -395,13 +473,13 @@ struct c_ContactResult
                                                        is manifold[m].                          */
 };
 
-/* convex pairs: one local manifold in s0's frame (n from s0 to s1) */
-struct c_ContactResult  c_SphereContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
-struct c_ContactResult  c_CapsuleSphereContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
-struct c_ContactResult  c_CapsuleContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
-struct c_ContactResult  c_HullSphereContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
-struct c_ContactResult  c_HullCapsuleContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
-struct c_ContactResult  c_HullContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
+/* convex pairs: one local manifold in s0's frame (n from s0 to s1); cache is in-out and always valid, hull pairs use it */
+struct c_ContactResult  c_SphereContact(struct arena *frame, struct ds_ConvexCache *cache, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
+struct c_ContactResult  c_CapsuleSphereContact(struct arena *frame, struct ds_ConvexCache *cache, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
+struct c_ContactResult  c_CapsuleContact(struct arena *frame, struct ds_ConvexCache *cache, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
+struct c_ContactResult  c_HullSphereContact(struct arena *frame, struct ds_ConvexCache *cache, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
+struct c_ContactResult  c_HullCapsuleContact(struct arena *frame, struct ds_ConvexCache *cache, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
+struct c_ContactResult  c_HullContact(struct arena *frame, struct ds_ConvexCache *cache, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
 /*
  * mesh and convex shape: one local manifold per contacting triangle, in the convex shape's frame (n from it to the
  * mesh). The query records every candidate triangle on one of the thread's scratch arenas: more than it holds (about

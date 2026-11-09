@@ -538,74 +538,6 @@ void            ds_BodyUpdateOrientationRange(struct ds_Dynamics *pipeline, stru
 
 
 /*
-c_SatCache
-==========
-Internal physics engine struct for caching SAT-based contact calculations each frame. If a contact was found,
-the contact results may be re-used the next frame if a set of conditions are fullfilled.
-
-::: Internals :::
-
-sat_CacheTryReuse (c_contact.c): a separating axis is reused while it still separates; a contact is rebuilt from its
-cached features and reused while its depth changed by less than sat_cache_tolerance (ds_NumericsConfig).
-*/
-
-enum sat_CacheType
-{
-	SAT_CACHE_SEPARATION,   /* Seperation axis found    */
-	SAT_CACHE_CONTACT_FV,   /* Face-Vertex Contact      */
-	SAT_CACHE_CONTACT_EE,   /* Edge-Edge Contact        */
-	SAT_CACHE_NONE,         /* Nothing to cache (fallback contact); never stored in a c_ContactResult */
-	SAT_CACHE_COUNT,
-};
-
-typedef u32 sat_FeatureId;
-
-#define SAT_FEATURE_ID_TYPE_MASK            (0xc0000000)
-#define SAT_FEATURE_ID_INDEX_MASK           (0x3fffffff)
-
-#define SAT_FEATURE_TYPE_FACE               2
-#define SAT_FEATURE_TYPE_EDGE               1
-#define SAT_FEATURE_TYPE_VERTEX             0
-
-#define sat_FeatureIdVertexCheck(id)        (((id) >> 30) == SAT_FEATURE_TYPE_VERTEX)
-#define sat_FeatureIdEdgeCheck(id)          (((id) >> 30) == SAT_FEATURE_TYPE_EDGE)
-#define sat_FeatureIdFaceCheck(id)          (((id) >> 30) == SAT_FEATURE_TYPE_FACE)
-
-#define sat_FeatureIdType(id)               ((id) >> 30)
-#define sat_FeatureIdIndex(id)              ((id) & SAT_FEATURE_ID_INDEX_MASK)
-#define sat_FeatureIdConstruct(index, type) ((((u32) type) << 30) | (SAT_FEATURE_ID_INDEX_MASK & (index)))
-
-struct c_SatCache
-{
-    u32 tri;                    /* (Optional): Triangle in mesh. */
-	enum sat_CacheType	type;
-    
-    /*
-     * type == FACE:
-     *  feature[i].type == FACE => i IS NOT incident face
-     *  feature[i].type != FACE => i IS on incident face
-     *  normal == face normal
-     *
-     * type == EDGE:
-     *  feature[i].type == EDGE
-     *  feature[i].type == EDGE
-     *  normal == contact normal
-     *
-     * type == SEPARATION:
-     *      normal == separation axis pointing from reference body 
-     *      depth == separation distance (positive)
-     *
-     * type == NONE:
-     *  feature[i].type == FACE => i has the reference face
-     *  feature[i].type == VERTEX => i has the deepest vertex
-     */
-    sat_FeatureId   feature[2];
-    f32             depth;      
-    v3            normal;     
-};
-
-
-/*
 ds_SolverManifold
 =================
 A contact manifold in the solver's form: ds_ShapeContact converts the narrowphase's local manifolds
@@ -697,6 +629,11 @@ struct ds_Contact
      */
     struct c_ContactResult      narrowphase;        /* manifold: solver form (ds_ShapeContact converted the
                                                        narrowphase's contact_manifold in place)            */
+    union
+    {
+        struct ds_ConvexCache   convex;
+        struct ds_ConcaveCache  concave;
+    } cache;
     v3                          com_offset;         /* com1 - com0 (world axes, f32 from an f64 subtraction) */
 };
 DEFINE_POOL(ds_Contact);
