@@ -356,13 +356,8 @@ void ds_ShapeContact(struct arena *frame, const struct ds_Dynamics *pipeline, co
         if (!c_ManifoldCheck(result.contact_manifold + i))
         {
             c_ManifoldDebugPrint(result.contact_manifold + i);
-            Breakpoint(1);
-            /* rerun to step into the failing case */
-            (c_s[other]->type == C_SHAPE_TRI_MESH)
-                ? c_MeshContact(frame, &c->cache.concave, c_s[other], &t_world[other], c_s[local], &t_world[local])
-                : c_convex_contact_methods[c_s[local]->type][c_s[other]->type](frame, &c->cache.convex, c_s[local], &t_world[local], c_s[other], &t_world[other]);
-            break;
         }
+        ds_Assert(c_ManifoldCheck(result.contact_manifold + i));
     }
 #endif
 

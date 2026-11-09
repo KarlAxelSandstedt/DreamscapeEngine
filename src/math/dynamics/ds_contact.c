@@ -120,6 +120,10 @@ void ds_ContactRemove(struct ds_Dynamics *pipeline, const u32 index, const u32 i
     struct ds_Shape *shape0, *shape1;
     ds_ContactKeyAddress(&body0, &shape0, &body1, &shape1, pipeline, c->key);
 	PhysicsEventContactRemoved(pipeline, body0->id, shape0->id, body1->id, shape1->id);
+    if (shape0->cshape_type == C_SHAPE_TRI_MESH || shape1->cshape_type == C_SHAPE_TRI_MESH)
+    {
+        ds_CPoolDealloc(c->cache.concave.tri_pool);
+    }
 
     ds_SolverSetWakeUp(pipeline, c->set);
 

@@ -307,8 +307,23 @@ struct ds_Dynamics ds_DynamicsAlloc(const struct ds_DynamicsConfig *config, cons
 	return pipeline;
 }
 
+/* the mesh contacts' caches: heap pools owned by the contacts */
+static void ds_ContactCacheDeallocAll(struct ds_Dynamics *pipeline)
+{
+    for (u32 i = 0; i < pipeline->contact_pool.count_max; ++i)
+    {
+        struct ds_Contact *c = pipeline->contact_pool.buf + i;
+        if (ds_PoolSlotAllocated(c)
+            && (pipeline->shape_pool.buf[c->key.shape[0]].cshape_type == C_SHAPE_TRI_MESH || pipeline->shape_pool.buf[c->key.shape[1]].cshape_type == C_SHAPE_TRI_MESH))
+        {
+            ds_CPoolDealloc(c->cache.concave.tri_pool);
+        }
+    }
+}
+
 void ds_DynamicsDealloc(struct ds_Dynamics *pipeline)
 {
+    ds_ContactCacheDeallocAll(pipeline);
     ds_DynamicsRuntimeDealloc(&pipeline->runtime);
 
     ds_BitSetDealloc(&pipeline->shape_dynamic_usage_set);
@@ -361,6 +376,7 @@ static void ds_DynamicsClearFrame(struct ds_Dynamics *pipeline)
 
 void ds_DynamicsFlush(struct ds_Dynamics *pipeline)
 {
+    ds_ContactCacheDeallocAll(pipeline);
     for (u32 i = 0; i < pipeline->runtime.worker_count; ++i)
     {
         ArenaFlush(pipeline->runtime.worker[i].frame_arr + 0);
