@@ -466,7 +466,6 @@ struct c_ContactResult
                                                            in place: solver form (ds_dynamics.h)         */
     };
     struct SATCache *         cache;              /* Caches (if any)                          */
-    struct GJKCache *           gjk_cache;          /* GJK cache, at most one (NULL if none)    */
     u32 *                       tri;                /* Sorted triangles, low-to-high (if any)   */
     u32 *                       tri_manifold;       /* Sorted triangle manifold indices (if any)
                                                        m = tri_manifold[T] => manifold if tri[T]

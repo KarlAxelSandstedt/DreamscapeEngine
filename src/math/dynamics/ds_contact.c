@@ -303,8 +303,6 @@ u64 ds_ContactMemoryRequirement(const struct ds_Dynamics *pipeline, const u32 co
     const u64 mem_req_cache = c->narrowphase.cache_count*sizeof(struct SATCache);
     const u64 mem_req_compute = compute->ccache_count*sizeof(struct ds_ContactConstraintCache);
 
-    const u64 mem_req_gjk_cache = (c->narrowphase.gjk_cache) ? sizeof(struct GJKCache) : 0;
-
     u64 mem_req_tri = 0;
     u64 mem_req_tri_manifold = 0;
     if (c->narrowphase.tri)
@@ -313,7 +311,7 @@ u64 ds_ContactMemoryRequirement(const struct ds_Dynamics *pipeline, const u32 co
         mem_req_tri_manifold = c->narrowphase.manifold_count*sizeof(u32);
     }
 
-    return mem_req_manifold + mem_req_cache + mem_req_gjk_cache + mem_req_tri + mem_req_tri_manifold + mem_req_compute;
+    return mem_req_manifold + mem_req_cache + mem_req_tri + mem_req_tri_manifold + mem_req_compute;
 }
 
 void ds_ContactWakeUp(struct arena *frame, struct ds_Dynamics *pipeline, const u32 contact_index)
@@ -327,11 +325,6 @@ void ds_ContactWakeUp(struct arena *frame, struct ds_Dynamics *pipeline, const u
     if (c->narrowphase.cache)
     {
         c->narrowphase.cache = ArenaPushAlignedMemcpy(frame, c->narrowphase.cache, c->narrowphase.cache_count*sizeof(struct SATCache), 1);
-    }
-
-    if (c->narrowphase.gjk_cache)
-    {
-        c->narrowphase.gjk_cache = ArenaPushAlignedMemcpy(frame, c->narrowphase.gjk_cache, sizeof(struct GJKCache), 1);
     }
 
     if (c->narrowphase.tri)
@@ -372,11 +365,6 @@ void ds_ContactSleep(struct arena *mem_sleep, struct ds_Dynamics *pipeline, cons
     {
         const u64 mem_req_cache = c->narrowphase.cache_count*sizeof(struct SATCache);
         c->narrowphase.cache = ArenaPushAlignedMemcpy(mem_sleep, c->narrowphase.cache, mem_req_cache, 1);
-    }
-
-    if (c->narrowphase.gjk_cache)
-    {
-        c->narrowphase.gjk_cache = ArenaPushAlignedMemcpy(mem_sleep, c->narrowphase.gjk_cache, sizeof(struct GJKCache), 1);
     }
 
     if (c->narrowphase.tri)
@@ -443,7 +431,6 @@ void ds_ContactValidateAll(const struct ds_Dynamics *pipeline)
 
 #define DS_CONTACT_NARROWPHASE_CACHE     0x1
 #define DS_CONTACT_NARROWPHASE_TRI       0x2
-#define DS_CONTACT_NARROWPHASE_GJK_CACHE 0x4
 
 u64 ds_ContactNarrowphaseSerializeSize(const struct ds_Dynamics *pipeline, const u32 contact)
 {
@@ -452,10 +439,6 @@ u64 ds_ContactNarrowphaseSerializeSize(const struct ds_Dynamics *pipeline, const
 	if (r->cache)
 	{
 		size += (u64) r->cache_count*sizeof(struct SATCache);
-	}
-	if (r->gjk_cache)
-	{
-		size += sizeof(struct GJKCache);
 	}
 	if (r->tri)
 	{
@@ -468,17 +451,12 @@ void ds_ContactNarrowphaseSerialize(struct SS *ss, const struct ds_Dynamics *pip
 {
 	const struct c_ContactResult *r = &pipeline->contact_pool.buf[contact].narrowphase;
 	const u32 flags = ((r->cache) ? DS_CONTACT_NARROWPHASE_CACHE : 0)
-                    | ((r->tri) ? DS_CONTACT_NARROWPHASE_TRI : 0)
-                    | ((r->gjk_cache) ? DS_CONTACT_NARROWPHASE_GJK_CACHE : 0);
+                    | ((r->tri) ? DS_CONTACT_NARROWPHASE_TRI : 0);
 	SSWriteU32Le(ss, flags);
 	SSWrite8N(ss, (const b8 *) r->manifold, (u64) r->manifold_count*sizeof(struct ds_SolverManifold));
 	if (r->cache)
 	{
 		SSWrite8N(ss, (const b8 *) r->cache, (u64) r->cache_count*sizeof(struct SATCache));
-	}
-	if (r->gjk_cache)
-	{
-		SSWrite8N(ss, (const b8 *) r->gjk_cache, sizeof(struct GJKCache));
 	}
 	if (r->tri)
 	{
@@ -492,7 +470,6 @@ u32 ds_ContactNarrowphaseFrameTryDeserialize(struct SS *ss, struct ds_Dynamics *
 	struct c_ContactResult *r = &pipeline->contact_pool.buf[contact].narrowphase;
 	r->manifold = NULL;
 	r->cache = NULL;
-	r->gjk_cache = NULL;
 	r->tri = NULL;
 	r->tri_manifold = NULL;
 	if (SSBytesLeft(ss) < sizeof(u32))
@@ -503,7 +480,6 @@ u32 ds_ContactNarrowphaseFrameTryDeserialize(struct SS *ss, struct ds_Dynamics *
 	const u32 flags = SSReadU32Le(ss);
 	return ds_DynamicsFrameDataTryDeserialize(ss, (void **) &r->manifold, pipeline, (u64) r->manifold_count*sizeof(struct ds_SolverManifold))
 		&& (!(flags & DS_CONTACT_NARROWPHASE_CACHE) || ds_DynamicsFrameDataTryDeserialize(ss, (void **) &r->cache, pipeline, (u64) r->cache_count*sizeof(struct SATCache)))
-		&& (!(flags & DS_CONTACT_NARROWPHASE_GJK_CACHE) || ds_DynamicsFrameDataTryDeserialize(ss, (void **) &r->gjk_cache, pipeline, sizeof(struct GJKCache)))
 		&& (!(flags & DS_CONTACT_NARROWPHASE_TRI) || ds_DynamicsFrameDataTryDeserialize(ss, (void **) &r->tri, pipeline, (u64) r->manifold_count*sizeof(u32)))
 		&& (!(flags & DS_CONTACT_NARROWPHASE_TRI) || ds_DynamicsFrameDataTryDeserialize(ss, (void **) &r->tri_manifold, pipeline, (u64) r->manifold_count*sizeof(u32)));
 }
@@ -513,7 +489,6 @@ u32 ds_ContactNarrowphaseHeapTryDeserialize(struct arena *mem, struct SS *ss, st
 	struct c_ContactResult *r = &pipeline->contact_pool.buf[contact].narrowphase;
 	r->manifold = NULL;
 	r->cache = NULL;
-	r->gjk_cache = NULL;
 	r->tri = NULL;
 	r->tri_manifold = NULL;
 	if (SSBytesLeft(ss) < sizeof(u32))
@@ -524,7 +499,6 @@ u32 ds_ContactNarrowphaseHeapTryDeserialize(struct arena *mem, struct SS *ss, st
 	const u32 flags = SSReadU32Le(ss);
 	return ds_DynamicsHeapDataTryDeserialize(mem, ss, (void **) &r->manifold, (u64) r->manifold_count*sizeof(struct ds_SolverManifold))
 		&& (!(flags & DS_CONTACT_NARROWPHASE_CACHE) || ds_DynamicsHeapDataTryDeserialize(mem, ss, (void **) &r->cache, (u64) r->cache_count*sizeof(struct SATCache)))
-		&& (!(flags & DS_CONTACT_NARROWPHASE_GJK_CACHE) || ds_DynamicsHeapDataTryDeserialize(mem, ss, (void **) &r->gjk_cache, sizeof(struct GJKCache)))
 		&& (!(flags & DS_CONTACT_NARROWPHASE_TRI) || ds_DynamicsHeapDataTryDeserialize(mem, ss, (void **) &r->tri, (u64) r->manifold_count*sizeof(u32)))
 		&& (!(flags & DS_CONTACT_NARROWPHASE_TRI) || ds_DynamicsHeapDataTryDeserialize(mem, ss, (void **) &r->tri_manifold, (u64) r->manifold_count*sizeof(u32)));
 }
