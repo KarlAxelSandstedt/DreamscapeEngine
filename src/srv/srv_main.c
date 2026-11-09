@@ -386,6 +386,8 @@ void ds_ServerDealloc(struct ds_Server *srv)
 
 void ds_ServerTick(struct ds_Server *srv, const u64 ns_delta)
 {
+    ProfZone;
+
     /************** Payload Deserialization and Aliasing **************/
 
     //TODO Later...
@@ -546,4 +548,5 @@ void ds_ServerTick(struct ds_Server *srv, const u64 ns_delta)
     }
 
     ArenaFlush(&srv->frame);
+    ProfZoneEnd;
 }
