@@ -320,7 +320,6 @@ typedef u32 sat_FeatureId;
 
 struct SATCache
 {
-    u32 tri;                    /* (Optional): Triangle in mesh. */
 	enum sat_CacheType	type;
     
     /*
@@ -465,14 +464,12 @@ struct ds_SolverManifold;
 struct c_ContactResult
 {
     u32                         manifold_count;     /* Number of stored manifolds               */
-    u32                         cache_count;        /* Number of stored caches                  */
     union
     {
         struct c_Manifold *         contact_manifold;   /* c_*Contact output: local manifolds (if any) */
         struct ds_SolverManifold *  manifold;           /* the same memory after ds_ShapeContact converted it
                                                            in place: solver form (ds_dynamics.h)         */
     };
-    struct SATCache *         cache;              /* Caches (if any)                          */
     u32 *                       tri;                /* Sorted triangles, low-to-high (if any)   */
     u32 *                       tri_manifold;       /* Sorted triangle manifold indices (if any)
                                                        m = tri_manifold[T] => manifold if tri[T]
