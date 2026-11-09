@@ -137,6 +137,15 @@ u64 ds_DynamicsSerializeSize(const struct ds_Dynamics *pipeline)
 		+ ds_CGraphSerializeSize(pipeline)
 		+ ds_PoolSerializeSize(pipeline->solver_set_pool);
 
+	for (u32 i = 0; i < pipeline->contact_pool.count_max; ++i)
+	{
+		const struct ds_Contact *c = pipeline->contact_pool.buf + i;
+		if (ds_PoolSlotAllocated(c) && (pipeline->shape_pool.buf[c->key.shape[0]].cshape_type == C_SHAPE_TRI_MESH || pipeline->shape_pool.buf[c->key.shape[1]].cshape_type == C_SHAPE_TRI_MESH))
+		{
+			size += ds_CPoolSerializeSize(c->cache.concave.tri_pool);
+		}
+	}
+
 	for (u32 i = 0; i < pipeline->solver_set_pool.count_max; ++i)
 	{
 		if (ds_PoolSlotAllocated(pipeline->solver_set_pool.buf + i))
@@ -184,6 +193,14 @@ void ds_DynamicsSerialize(struct SS *ss, const struct ds_Dynamics *pipeline)
 	ds_PoolSerialize(ss, pipeline->event_pool);
 	DLLSerialize(ss, pipeline->event_list);
 	ds_PoolSerialize(ss, pipeline->contact_pool);
+	for (u32 i = 0; i < pipeline->contact_pool.count_max; ++i)
+	{
+		const struct ds_Contact *c = pipeline->contact_pool.buf + i;
+		if (ds_PoolSlotAllocated(c) && (pipeline->shape_pool.buf[c->key.shape[0]].cshape_type == C_SHAPE_TRI_MESH || pipeline->shape_pool.buf[c->key.shape[1]].cshape_type == C_SHAPE_TRI_MESH))
+		{
+			ds_CPoolSerialize(ss, c->cache.concave.tri_pool);
+		}
+	}
 	ds_HashMapSerialize(ss, &pipeline->contact_map);
 	ds_BitSetSerialize(ss, &pipeline->contact_usage_set);
 	ds_PoolSerialize(ss, pipeline->island_pool);
@@ -248,8 +265,32 @@ u32 ds_DynamicsTryDeserialize(struct arena *mem, struct SS *ss, struct ds_Dynami
 		|| !ds_CPoolTryDeserialize(NULL, ss, pipeline->dirty_shape_query, GROWABLE)
 		|| !ds_PoolTryDeserialize(NULL, ss, pipeline->event_pool, GROWABLE)
 		|| !DLLTryDeserialize(ss, pipeline->event_list)
-		|| !ds_PoolTryDeserialize(NULL, ss, pipeline->contact_pool, GROWABLE)
-		|| !ds_HashMapTryDeserialize(NULL, ss, &pipeline->contact_map, GROWABLE)
+		|| !ds_PoolTryDeserialize(NULL, ss, pipeline->contact_pool, GROWABLE))
+	{
+		goto failure;
+	}
+
+	/* the pool restored the contacts' raw bytes: empty the mesh caches first, so ds_DynamicsDealloc is safe after a failure */
+	for (u32 i = 0; i < pipeline->contact_pool.count_max; ++i)
+	{
+		struct ds_Contact *c = pipeline->contact_pool.buf + i;
+		if (ds_PoolSlotAllocated(c) && (pipeline->shape_pool.buf[c->key.shape[0]].cshape_type == C_SHAPE_TRI_MESH || pipeline->shape_pool.buf[c->key.shape[1]].cshape_type == C_SHAPE_TRI_MESH))
+		{
+			c->cache.concave = (struct ds_ConcaveCache) { .tri_pool.growable = GROWABLE };
+		}
+	}
+
+	for (u32 i = 0; i < pipeline->contact_pool.count_max; ++i)
+	{
+		struct ds_Contact *c = pipeline->contact_pool.buf + i;
+		if (ds_PoolSlotAllocated(c) && (pipeline->shape_pool.buf[c->key.shape[0]].cshape_type == C_SHAPE_TRI_MESH || pipeline->shape_pool.buf[c->key.shape[1]].cshape_type == C_SHAPE_TRI_MESH)
+			&& !ds_CPoolTryDeserialize(NULL, ss, c->cache.concave.tri_pool, GROWABLE))
+		{
+			goto failure;
+		}
+	}
+
+	if (!ds_HashMapTryDeserialize(NULL, ss, &pipeline->contact_map, GROWABLE)
 		|| !ds_BitSetTryDeserialize(NULL, ss, &pipeline->contact_usage_set, GROWABLE)
 		|| !ds_PoolTryDeserialize(NULL, ss, pipeline->island_pool, GROWABLE)
 		|| !ds_BitSetTryDeserialize(NULL, ss, &pipeline->island_high_energy_set, GROWABLE)
