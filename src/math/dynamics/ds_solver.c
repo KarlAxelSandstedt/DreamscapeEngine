@@ -391,9 +391,7 @@ void ds_ContactConstraintInitRange(struct ds_Dynamics *pipeline, const u32 color
 
         for (u32 cci = 0; cci < ccomp->cc_count; ++cci)
         {
-            const struct ds_SolverManifold *m = (c->narrowphase.tri)
-                                              ? c->narrowphase.manifold + c->narrowphase.tri_manifold[cci]
-                                              : c->narrowphase.manifold + cci;
+            const struct ds_SolverManifold *m = c->narrowphase.manifold + cci;
 
     	    struct ds_ContactConstraint *cc = ccomp->cc + cci;
 
@@ -517,20 +515,15 @@ void ds_ContactConstraintWarmupRange(struct ds_Dynamics *pipeline, const u32 col
         {
     	    struct ds_ContactConstraint *cc = ccomp->cc + cci;
             struct ds_ContactConstraintCache *ccache = ccomp->ccache;
-            const struct ds_SolverManifold *m = c->narrowphase.manifold;
+            const struct ds_SolverManifold *m = c->narrowphase.manifold + cci;
             if (c->narrowphase.tri)
             {
                 ccache = NULL;
                 for (u32 t = 0; t < ccomp->ccache_count; ++t)
                 {
-                    if (c->narrowphase.tri[cci] <= ccomp->ccache[t].tri)
+                    if (c->narrowphase.tri[cci] == ccomp->ccache[t].tri)
                     {
-                        if (c->narrowphase.tri[cci] == ccomp->ccache[t].tri)
-                        {
-                            ccache = ccomp->ccache + t;
-                            m = c->narrowphase.manifold + (c->narrowphase.tri_manifold[cci]);
-                        }
-
+                        ccache = ccomp->ccache + t;
                         break;
                     }
                 }
@@ -813,9 +806,7 @@ void ds_PositionConstraintInitAndCacheImpulsesRange(struct ds_Dynamics *pipeline
                 QConj(sim[0]->world.rotation),
                 QConj(sim[1]->world.rotation),
             };
-            const struct ds_SolverManifold *m = (c->narrowphase.tri)
-                                              ? c->narrowphase.manifold + c->narrowphase.tri_manifold[cci]
-                                              : c->narrowphase.manifold + cci;
+            const struct ds_SolverManifold *m = c->narrowphase.manifold + cci;
 		    for (u32 ccpi = 0; ccpi < cc->ccp_count; ++ccpi)
 		    {
                 struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;

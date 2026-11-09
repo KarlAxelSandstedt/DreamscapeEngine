@@ -2054,45 +2054,6 @@ static void c_MeshHullTriangles(struct c_MeshContactHelper *helper, const struct
     }
 }
 
-void c_ContactResultSortTriangles(struct arena *frame, struct c_ContactResult *result)
-{
-    if (!result->manifold_count)
-    {
-        result->tri = NULL;
-        result->tri_manifold = NULL;
-        return;
-    }
-
-    result->tri_manifold = ArenaPushPacked(frame, result->manifold_count*sizeof(u32));
-    if (!result->tri_manifold)
-    {
-	    Log(T_SYSTEM, S_FATAL, "Out of memory in %s", __func__);
-	    FatalCleanupAndExit();
-    }
-
-    u32 *t = result->tri;
-    u32 *m = result->tri_manifold;
-    for (u32 h = 0; h < result->manifold_count; ++h)
-    {
-        m[h] = h;
-        for (u32 i = h; i; --i)
-        {
-            if (t[i-1] < t[i])
-            {
-                break;
-            }
-
-            const u32 t_tmp = t[i-1];
-            t[i-1] = t[i];
-            t[i] = t_tmp;
-
-            const u32 m_tmp = m[i-1];
-            m[i-1] = m[i];
-            m[i] = m_tmp;
-        }
-    }
-}
-
 /* One manifold per record that survives the internal-edge filter; cache entries (hulls): every record's with one */
 static void c_MeshContactFinish(struct arena *frame, struct c_ContactResult *result, struct ds_ConcaveCache *cache, struct c_MeshContactHelper *helper, const u32 sat)
 {
@@ -2118,7 +2079,7 @@ static void c_MeshContactFinish(struct arena *frame, struct c_ContactResult *res
     /*
      * internal edges (TODO(decision): keep this void/delayed scheme or Box3D's): face contacts are emitted and void
      * their 3 vertices; edge/vertex contacts wait, deepest first, and are dropped if their vertices are voided.
-     * TODO(perf, audit C5): insertion sorts (here, c_ContactResultSortTriangles).
+     * TODO(perf, audit C5): insertion sort (here).
      */
     u32 delayed_n = 0;
     for (u32 i = 0; i < helper->record_count; ++i)
@@ -2184,7 +2145,6 @@ static void c_MeshContactFinish(struct arena *frame, struct c_ContactResult *res
 
     ArenaPopScratch();
     ArenaPopScratch();
-    c_ContactResultSortTriangles(frame, result);
 }
 
 /*

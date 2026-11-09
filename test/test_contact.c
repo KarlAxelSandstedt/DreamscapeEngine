@@ -3797,7 +3797,7 @@ static const char *McTerrainCheck(struct arena *frame, u64 *manifolds, const str
     *manifolds += r.manifold_count;
     for (u32 i = 0; i < r.manifold_count; ++i)
     {
-        const struct c_Manifold *m = r.contact_manifold + r.tri_manifold[i];
+        const struct c_Manifold *m = r.contact_manifold + i;
         if (!c_ManifoldCheck(m) || m->v_count < 1)
         {
             fprintf(stderr, "\ttriangle %u:\n", r.tri[i]);

@@ -470,10 +470,7 @@ struct c_ContactResult
         struct ds_SolverManifold *  manifold;           /* the same memory after ds_ShapeContact converted it
                                                            in place: solver form (ds_dynamics.h)         */
     };
-    u32 *                       tri;                /* Sorted triangles, low-to-high (if any)   */
-    u32 *                       tri_manifold;       /* Sorted triangle manifold indices (if any)
-                                                       m = tri_manifold[T] => manifold if tri[T]
-                                                       is manifold[m].                          */
+    u32 *                       tri;                /* mesh: manifold i's triangle (else NULL)  */
 };
 
 /* convex pairs: one local manifold in s0's frame (n from s0 to s1); cache is in-out and always valid, hull pairs use it */
