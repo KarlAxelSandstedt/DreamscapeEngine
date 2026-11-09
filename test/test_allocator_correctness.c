@@ -390,18 +390,16 @@ static struct test_Output CPoolTest(struct test_Environment *env)
         TEST_EQUAL(0, pool.count);
     }
 
-    /* length 0, not growable (arena and heap): a stub exists, pushes report full and write into it */
+    /* length 0, not growable (arena and heap): no block, not even the stub; the arena is untouched */
     for (u32 heap = 0; heap <= 1; ++heap)
     {
+        const u64 mem_left = env->mem_1->mem_left;
         ds_CPool(u32) empty;
         ds_CPoolAlloc((heap) ? NULL : env->mem_1, empty, 0, NOT_GROWABLE);
-        TEST_NOT_EQUAL(NULL, empty.buf);
+        TEST_EQUAL(NULL, empty.buf);
         TEST_EQUAL(0, empty.length);
-        TEST_EQUAL(U32_MAX, ds_CPoolPush(empty).index);
-        ds_CPoolPushValue(empty, 7);
-        const u32 src = 9;
-        TEST_EQUAL(U32_MAX, ds_CPoolPushMemcpy(empty, &src).index);
         TEST_EQUAL(0, empty.count);
+        TEST_EQUAL(mem_left, env->mem_1->mem_left);
         ds_CPoolDealloc(empty);
     }
 
@@ -471,16 +469,19 @@ static struct test_Output CPoolSerializeTest(struct test_Environment *env)
     TEST_EQUAL(NULL, read.buf);
     TEST_EQUAL(mem_left, env->mem_2->mem_left);
 
-    /* an empty length-0 pool round-trips into a pool with a stub */
+    /* an empty length-0 pool round-trips unallocated */
     ds_CPool(u64) empty;
     ds_CPoolAlloc(env->mem_2, empty, 0, NOT_GROWABLE);
     struct SS empty_ss = SSAlloc(env->mem_1, ds_CPoolSerializeSize(empty));
     ds_CPoolSerialize(&empty_ss, empty);
     empty_ss.bit_index = 0;
+    const u64 mem_left_empty = env->mem_2->mem_left;
     TEST_EQUAL(1, ds_CPoolTryDeserialize(env->mem_2, &empty_ss, read, NOT_GROWABLE));
-    TEST_NOT_EQUAL(NULL, read.buf);
+    TEST_EQUAL(NULL, read.buf);
     TEST_EQUAL(0, read.length);
-    TEST_EQUAL(U32_MAX, ds_CPoolPush(read).index);
+    TEST_EQUAL(0, read.count);
+    TEST_EQUAL(mem_left_empty, env->mem_2->mem_left);
+    TEST_EQUAL(8*ds_CPoolSerializeSize(empty), empty_ss.bit_index);
 
     ds_CPoolDealloc(pool);
 

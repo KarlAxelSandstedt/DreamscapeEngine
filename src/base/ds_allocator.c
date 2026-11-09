@@ -199,8 +199,12 @@ u32 ds_CPoolAllocInternal(struct arena *mem, void **buf, u32 *length, u32 *count
 	*count = 0;
 	*growable = alloc_growable;
 	*heap_allocated = 0;
+	/* length 0: no block, not even the stub (a growable pool allocates on its first push) */
+	if (alloc_length == 0)
+	{
+		return 1;
+	}
 
-	/* the stub is allocated for alloc_length == 0 too: pushes onto a full pool write into it */
 	const u64 size = slot_size*((u64) alloc_length + 1);
 	void *addr = (mem)
 		? ArenaPushAligned(mem, size, DS_CACHE_LINE)
@@ -244,8 +248,13 @@ u32 ds_CPoolTryDeserializeInternal(struct arena *mem, struct SS *ss, void **buf,
 	const u32 serialized_length = SSReadU32Le(ss);
 	const u32 serialized_count = SSReadU32Le(ss);
 	/* division instead of count*slot_size: a corrupt count must not overflow the check */
-	if (serialized_count > serialized_length || serialized_count > SSBytesLeft(ss) / slot_size
-		|| !ds_CPoolAllocInternal(mem, buf, length, count, growable, heap_allocated, slot_size, serialized_length, alloc_growable))
+	if (serialized_count > serialized_length || serialized_count > SSBytesLeft(ss) / slot_size)
+	{
+		ss->bit_index = bit_index;
+		return 0;
+	}
+
+	if (!ds_CPoolAllocInternal(mem, buf, length, count, growable, heap_allocated, slot_size, serialized_length, alloc_growable))
 	{
 		ss->bit_index = bit_index;
 		return 0;

@@ -313,10 +313,9 @@ The macros (pool is a ds_CPool(T) lvalue; arguments may be evaluated more than o
 
 ::: Stub slot and serialized format :::
 
-buf[-1] is a stub slot, allocated even for length 0, so a full pool always has an address to hand out:
-pushes onto a full fixed pool write into it, harmlessly. Index -1 (DS_STUB_INDEX) is therefore
-addressable: intrusive lists over pools (ds_list.h) use it as their sentinel. The allocation (stub
-included) is cache-line aligned. Serialized format (LE): u32 length, u32 count, then the count elements as raw bytes.
+buf[-1] is a stub slot: pushes onto a full fixed pool write into it, harmlessly, and intrusive lists over
+pools (ds_list.h) use index -1 (DS_STUB_INDEX) as their sentinel. Length 0 allocates nothing.
+The allocation (stub included) is cache-line aligned. Serialized format (LE): u32 length, u32 count, then the count elements as raw bytes.
 */
 
 #define DS_STUB_INDEX               -1

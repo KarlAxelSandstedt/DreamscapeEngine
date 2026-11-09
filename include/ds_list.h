@@ -24,7 +24,7 @@ Intrusive singly (LL) and doubly (DLL) linked lists over an indexed node array, 
 ds_CPool's buf: nodes are linked by index (i32), never by address, so the lists survive the array moving.
 
 - base[-1] must be addressable: the macros write the link fields of the sentinel, LL_SENTINEL ==
-  DLL_SENTINEL == DS_STUB_INDEX (-1), instead of branching. Pools and CPools have that stub slot.
+  DLL_SENTINEL == DS_STUB_INDEX (-1), instead of branching. Pools and CPools (length > 0) have that stub slot.
 - A list stores count, first and last (LL_SENTINEL when empty); indices are < 2^31. A node may be in
   several lists at once through different link fields (the ...Ex macros link across fields).
 - No checks that a node is in, or not in, a list. Not thread-safe.
