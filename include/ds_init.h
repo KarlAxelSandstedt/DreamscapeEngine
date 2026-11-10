@@ -94,6 +94,11 @@ struct ds_RuntimeConfig
     u32             headless;               /* 1: don't start graphics (rule 5)                         */
     u64             dynamics_worker_framesize; /* per dynamics worker: the pipeline's double-buffered frame arenas, bytes */
     u64             server_framesize;       /* the server's frame arena: the arrivals and the ticks' scratch memory, bytes */
+    u64             vm_commit_chunk_size;   /* VMCommit commits in chunks of this many bytes (rounded up to a power of two
+                                               of at least the VM granularity)                                            */
+    u64             vm_size_manifold_allocator; /* address space reserved for the manifold slab, bytes (rounded up to
+                                                   the VM granularity)                                                   */
+    u64             vm_size_tri_cache_allocator; /* the same for the triangle cache slab                                 */
 };
 
 /* The config ds_Init ran with, defaults resolved (thread_count >= 1, rng_seed nonzero). NULL outside ds_Init..ds_Shutdown. */

@@ -25,14 +25,15 @@ objects of one type. Which allocator for which lifetime: AGENTS.md, "Memory and 
 
 Contents (in this order):
     Poisoning   PoisonAddress/UnpoisonAddress: ASan markers (DS_ASAN), no-ops otherwise.
-    Utilities   PowerOfTwoCheck/PowerOfTwoCeil; g_mem_config (page size).
+    Utilities   PowerOfTwo* utility functions; g_mem_config (page size, VM granularity and commit chunk).
     Heap        ds_Alloc/ds_Realloc/ds_Free: aligned blocks of exactly the requested size.
+    VM          struct VM: reserved address space, committed in chunks on first need (Linux: by touch, Windows: MEM_COMMIT).
     Arena       stack allocator (push, pop, records) on a heap block or inside another arena.
     Ring        ring buffer whose end wraps through mirrored virtual memory (Linux, Windows).
     CPool       ds_CPool(T): compact typed array; removal moves the last element into the hole.
     Pool        ds_Pool(T) of POOL_NODE structs: stable indices, free list, serializable.
     TPool       ds_TPool(T) of TPOOL_NODE structs: thread-safe, addresses never move; lock-free free lists.
-Poisoning, Utilities and Heap are below. The others live in ds_arena.h, ds_ring.h, ds_compact_pool.h, ds_pool.h
+Poisoning, Utilities, Heap and VM are below. The others live in ds_arena.h, ds_ring.h, ds_compact_pool.h, ds_pool.h
 (Pool and TPool) and ds_slab.h, included at the end in this order; they are not included on their own.
 */
 
@@ -73,11 +74,6 @@ u32 ds_ThreadSelfIndex(void);
 #endif
 
 //TODO:
-//      () runtime-config
-//          vm_commit_chunk_size = (internally we Ceil this value)
-//          vm_size_manifold_allocator = (internally we Ceil this value)
-//          vm_size_tri_cache_allocator = (internally we Ceil this value)
-//
 //      () Arena vm-based
         
 /*
@@ -86,13 +82,15 @@ Memory utils
 Memory utility tools. 
 */
 
-/* Return 1 if n = 2*k for some k >= 0, otherwise return 0 */
+/* Return 1 if n = 2^k for some k >= 0, otherwise return 0 */
 static ds_ForceInline u32 PowerOfTwoCheck(const u64 n);
 /* Return smallest value 2^k >= n where k >= 0 */
 static ds_ForceInline u64 PowerOfTwoCeil(const u64 n);
-/* m a power of two (asserted): the smallest multiple of m >= n, the largest <= n, 1 if n is one */
+/* Return smallest value k*m >= n, where m is a power-of-two. WARNING: n + m must not overflow. */
 static ds_ForceInline u64 PowerOfTwoMultipleCeil(const u64 n, const u64 m);
+/* Return largest value k*m <= n, where m is a power-of-two. */
 static ds_ForceInline u64 PowerOfTwoMultipleFloor(const u64 n, const u64 m);
+/* Return 1 if n == k*m, where m is a power-of-two, and k some integer, otherwise return 0. */
 static ds_ForceInline u32 PowerOfTwoMultipleCheck(const u64 n, const u64 m);
 
 /*
@@ -104,13 +102,14 @@ Global memory configuration structure.
 struct memConfig
 {
 	u64				page_size;
-	u64				vm_granularity;		/* VMReserve rounds sizes up to it (Linux: the page; Windows: 64 KiB) */
+	u64				vm_granularity;		/* virutal memory reserve round-up size */
+	u64				vm_commit_chunk;	/* virtual memory chuck commit size     */
 };
 extern struct memConfig *g_mem_config;
 
-/* Initalize global memConfig and allocate resources */
-void ds_MemApiInit(void);
-/* Shutdown global memConfig resources */
+/* Init memory API */ 
+void ds_MemApiInit(const u64 vm_commit_chunk_size);
+/* Shutdown memory API */
 void ds_MemApiShutdown(void);
 
 
@@ -187,6 +186,7 @@ static ds_ForceInline u64 PowerOfTwoCeil(const u64 n)
 static ds_ForceInline u64 PowerOfTwoMultipleCeil(const u64 n, const u64 m)
 {
 	ds_Assert(PowerOfTwoCheck(m));
+	ds_AssertString(n <= U64_MAX - m, "Overflow in PowerOfTwoMultipleCeil");
 	return (n + m - 1) & ~(m - 1);
 }
 

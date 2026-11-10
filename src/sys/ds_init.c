@@ -47,6 +47,9 @@ static struct ds_RuntimeConfig ds_ConfigDefault(void)
     config.headless = 0;
     config.dynamics_worker_framesize = 8*1024*1024;
     config.server_framesize = 32*1024*1024;
+    config.vm_commit_chunk_size = 1024*1024;
+    config.vm_size_manifold_allocator = (u64) 1024*1024*1024;
+    config.vm_size_tri_cache_allocator = (u64) 512*1024*1024;
     return config;
 }
 
@@ -98,6 +101,9 @@ static const struct
     DS_CONFIG_FIELD(headless,             DS_CONFIG_FIELD_U32, 1, 0, 1,       "1: no graphics (SDL, windows, UI, GL)"),
     DS_CONFIG_FIELD(dynamics_worker_framesize, DS_CONFIG_FIELD_U64, 1, 1, U64_MAX, "per dynamics worker frame arena, bytes"),
     DS_CONFIG_FIELD(server_framesize,     DS_CONFIG_FIELD_U64, 1, 1, U64_MAX, "server frame arena (arrivals and the ticks' scratch), bytes"),
+    DS_CONFIG_FIELD(vm_commit_chunk_size, DS_CONFIG_FIELD_U64, 1, 1, U64_MAX, "VMCommit chunk, bytes (rounded up to a power of two >= the VM granularity)"),
+    DS_CONFIG_FIELD(vm_size_manifold_allocator, DS_CONFIG_FIELD_U64, 1, 1, U64_MAX, "address space of the manifold slab, bytes"),
+    DS_CONFIG_FIELD(vm_size_tri_cache_allocator, DS_CONFIG_FIELD_U64, 1, 1, U64_MAX, "address space of the triangle cache slab, bytes"),
 };
 
 #define DS_CONFIG_FIELD_COUNT   (sizeof(g_config_field) / sizeof(g_config_field[0]))
@@ -470,8 +476,6 @@ void ds_Init(const int argc, char *argv[])
         FatalCleanupAndExit();
     }
 
-    ds_MemApiInit();
-
     /* before the persistent arena (its size is in the config) and the log: report logged below */
     struct ds_RuntimeConfig *config = &g_config_storage;
     *config = ds_ConfigDefault();
@@ -540,6 +544,7 @@ void ds_Init(const int argc, char *argv[])
     config->thread_count = (config->thread_count > core_count) ? core_count : config->thread_count;
     config->thread_count = (config->thread_count > DS_THREAD_COUNT_MAX) ? DS_THREAD_COUNT_MAX : config->thread_count;
     g_config = config;
+    ds_MemApiInit(config->vm_commit_chunk_size);
 
     Log(T_SYSTEM, S_NOTE, "ds_Init: rng_seed (%lu, %lu, %lu, %lu), %u workers, persistent %lu B, scratch %u x %lu B, headless %u, dynamics worker frame %lu B, server frame %lu B",
         config->rng_seed[0], config->rng_seed[1], config->rng_seed[2], config->rng_seed[3], config->thread_count,
