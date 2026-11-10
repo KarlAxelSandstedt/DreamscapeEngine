@@ -1112,6 +1112,90 @@ static struct test_Output RingTest(struct test_Environment *env)
 	return output;
 }
 
+/* ds_CPoolPushBatch: consecutive slots, growth over several doublings, a fixed pool's refusal leaves it unchanged */
+static struct test_Output CPoolPushBatchTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    ds_CPool(u32) pool;
+    ds_CPoolAlloc(NULL, pool, 0, GROWABLE);
+    struct slot batch = ds_CPoolPushBatch(pool, 100);
+    TEST_EQUAL(0, batch.index);
+    TEST_EQUAL(100, pool.count);
+    TEST_TRUE(pool.length >= 100);
+    TEST_EQUAL(pool.buf, (u32 *) batch.address);
+    for (u32 i = 0; i < 100; ++i) { pool.buf[i] = i; }
+
+    batch = ds_CPoolPushBatch(pool, 1000);
+    TEST_EQUAL(100, batch.index);
+    TEST_EQUAL(1100, pool.count);
+    TEST_EQUAL(pool.buf + 100, (u32 *) batch.address);
+    for (u32 i = 0; i < 1000; ++i) { ((u32 *) batch.address)[i] = 100 + i; }
+    for (u32 i = 0; i < 1100; ++i) { TEST_EQUAL(i, pool.buf[i]); }
+    ds_CPoolDealloc(pool);
+
+    ds_CPool(u32) fixed;
+    ds_CPoolAlloc(env->mem_1, fixed, 8, NOT_GROWABLE);
+    batch = ds_CPoolPushBatch(fixed, 5);
+    TEST_EQUAL(0, batch.index);
+    TEST_EQUAL(5, fixed.count);
+    batch = ds_CPoolPushBatch(fixed, 4);
+    TEST_EQUAL(U32_MAX, batch.index);
+    TEST_EQUAL(5, fixed.count);
+    batch = ds_CPoolPushBatch(fixed, 3);
+    TEST_EQUAL(5, batch.index);
+    TEST_EQUAL(8, fixed.count);
+
+	return output;
+}
+
+struct slab_item { u64 a; u32 b; };
+DEFINE_SLAB(slab_item);
+
+/* ds_Slab: alloc (region, thread entries, free lists), flush, dealloc; the failure path leaves an empty slab */
+static struct test_Output SlabAllocTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+    ds_Slab(slab_item) slab;
+    const u64 vm_size = (u64) 16 << 20;
+    TEST_EQUAL(1, ds_SlabAlloc(slab, vm_size, 3));
+    TEST_NOT_EQUAL(NULL, slab.buf);
+    TEST_EQUAL((void *) slab.shared.vm.buf, (void *) slab.buf);
+    TEST_EQUAL(slab.shared.vm.reserved / sizeof(struct slab_item), slab.shared.length);
+    TEST_EQUAL(0, slab.shared.a_count_max);
+    TEST_EQUAL(3, slab.shared.thread_count);
+    for (u32 t = 0; t < 3; ++t)
+    {
+        const struct ds_SlabThread *thread = slab.shared.thread + t;
+        TEST_EQUAL(DS_SLAB_COUNT_DEFAULT, thread->free.count);
+        TEST_EQUAL(0, thread->count_allocated);
+        for (u32 c = 0; c < thread->free.count; ++c) { TEST_EQUAL(DS_SLAB_NULL, thread->free.buf[c]); }
+    }
+
+    /* flush resets the lists and the carve count */
+    slab.shared.a_count_max = 7;
+    slab.shared.thread[1].free.buf[3] = 0;
+    slab.shared.thread[1].count_allocated = 5;
+    ds_SlabFlush(slab);
+    TEST_EQUAL(0, slab.shared.a_count_max);
+    TEST_EQUAL(DS_SLAB_NULL, slab.shared.thread[1].free.buf[3]);
+    TEST_EQUAL(0, slab.shared.thread[1].count_allocated);
+
+    ds_SlabDealloc(slab);
+    TEST_EQUAL(NULL, slab.buf);
+    TEST_EQUAL(NULL, slab.shared.vm.buf);
+    TEST_EQUAL(NULL, slab.shared.thread);
+    TEST_EQUAL(0, slab.shared.thread_count);
+    TEST_EQUAL(0, slab.shared.length);
+
+    /* a reservation of 0 bytes fails and leaves the slab empty */
+    TEST_EQUAL(0, ds_SlabAlloc(slab, 0, 1));
+    TEST_EQUAL(NULL, slab.buf);
+    TEST_EQUAL(NULL, slab.shared.thread);
+    (void) env;
+	return output;
+}
+
 /* VM: a reservation, commits in slices, the no-op path inside the committed end, the cap at the reservation, release */
 static struct test_Output VMTest(struct test_Environment *env)
 {
@@ -1174,7 +1258,9 @@ static struct test_Output (*allocator_tests[])(struct test_Environment *) =
     TPoolParallelTest,
     TStackParallelTest,
     RingTest,
+    CPoolPushBatchTest,
     VMTest,
+    SlabAllocTest,
 };
 
 struct suite_Correctness storage_allocator_correctness_suite =

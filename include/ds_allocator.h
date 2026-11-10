@@ -73,9 +73,6 @@ u32 ds_ThreadSelfIndex(void);
 
 #endif
 
-//TODO:
-//      () Arena vm-based
-        
 /*
 Memory utils 
 ============
@@ -141,13 +138,15 @@ Virtual Memory API
 Virtual memory API for reserving and committing physical pages in increasing address order.
 */
 
-struct VM
+struct ds_Align(DS_CACHE_LINE) VM
 {
     u8 *    buf;        /* base                     */
     u64     reserved;   /* Virtual memory reserved  */
-    u64     a_committed;/* Physical memory committed */
-};
+    u8      pad0[DS_CACHE_LINE - sizeof(u8 *) - sizeof(u64)];
 
+    u64     a_committed;/* Physical memory committed */
+    u8      pad1[DS_CACHE_LINE - sizeof(u64)];
+};
 
 /* On success return non-zero struct with buf pointing to reserved pages. */
 struct VM   VMReserve(const u64 size);

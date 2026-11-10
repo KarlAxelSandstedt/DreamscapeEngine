@@ -71,6 +71,9 @@ The macros (pool is a ds_CPool(T) lvalue; arguments may be evaluated more than o
     // ds_CPoolPush, then assign val to the slot (to the stub when full).
     void            ds_CPoolPushValue(pool, val)
 
+    // Append push_count uninitialized slots and return base addres and index. On failure { stub address, U32_MAX } is returned.
+    struct slot     ds_CPoolPushBatch(pool, push_count)
+
     // Remove the last element, or the last pop_count elements (pop_count <= count).
     void            ds_CPoolPop(pool)
     void            ds_CPoolPopBatch(pool, pop_count)
@@ -179,9 +182,16 @@ do                                                                              
 /* Internal: see ds_CPoolPush and ds_CPoolPushMemcpy. */
 static inline struct slot ds_CPoolPushInternal(void **buf, u32 *count, u32 *length, u32 *heap_allocated, const u64 slot_size, const u32 growable);
 static inline struct slot ds_CPoolPushMemcpyInternal(void **buf, u32 *count, u32 *length, u32 *heap_allocated, const u64 slot_size, const u32 growable, const void *src);
+static inline struct slot ds_CPoolPushBatchInternal(void **buf, u32 *count, u32 *length,
+                                                    u32 *heap_allocated, const u64 slot_size,
+                                                    const u32 growable, const u32 push_count);
 
 #define ds_CPoolPush( pool ) ds_CPoolPushInternal((void **) &(pool).buf, &(pool).count, &(pool).length, &(pool).heap_allocated, sizeof((pool).buf[0]), (pool).growable)
 #define ds_CPoolPushMemcpy( pool, src ) ds_CPoolPushMemcpyInternal((void **) &(pool).buf, &(pool).count, &(pool).length, &(pool).heap_allocated, sizeof((pool).buf[0]), (pool).growable, (src))
+#define ds_CPoolPushBatch( pool, push_count )                                            \
+    ds_CPoolPushBatchInternal((void **) &(pool).buf, &(pool).count, &(pool).length,      \
+                              &(pool).heap_allocated, sizeof((pool).buf[0]),              \
+                              (pool).growable, (push_count))
 #define ds_CPoolPushValue( pool, val )                                                      \
 do                                                                                          \
 {                                                                                           \
@@ -269,6 +279,40 @@ static inline struct slot ds_CPoolPushMemcpyInternal(void **buf, u32 *count, u32
 {
     struct slot slot = ds_CPoolPushInternal(buf, count, length, heap_allocated, slot_size, growable);
     memcpy(slot.address, src, slot_size);
+    return slot;
+}
+
+static inline struct slot ds_CPoolPushBatchInternal(void **buf, u32 *count, u32 *length,
+                                                    u32 *heap_allocated, const u64 slot_size,
+                                                    const u32 growable, const u32 push_count)
+{
+    if ((u64) *count + push_count > *length)
+    {
+        if (!growable)
+        {
+            return (struct slot) { .index = U32_MAX, .address = (u8*)(*buf) - slot_size };
+        }
+
+        /* doubling, as ds_CPoolPushInternal, until the batch fits */
+        u64 new_length = (*length) ? (*length) : 1;
+        while (new_length < (u64) *count + push_count)
+        {
+            new_length <<= 1;
+        }
+        const u64 new_size = (new_length+1) * slot_size;
+        const u64 old_size = (*buf) ? ((*length)+1) * slot_size : 0;
+        void *base = (*buf) ? (u8 *)(*buf) - slot_size : NULL;
+        base = ds_Realloc(base, old_size, new_size, DS_CACHE_LINE);
+        PoisonAddress(base, new_size);
+        UnpoisonAddress(base, (*count + 1)*slot_size);
+        *buf = (u8 *) base + slot_size;
+        *length = (u32) new_length;
+        *heap_allocated = 1;
+    }
+
+    const struct slot slot = { .index = *count, .address = (u8*)(*buf) + *count*slot_size };
+    UnpoisonAddress(slot.address, push_count*slot_size);
+    *count += push_count;
     return slot;
 }
 

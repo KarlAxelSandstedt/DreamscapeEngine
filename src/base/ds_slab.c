@@ -17,4 +17,80 @@
 ==========================================================================
 */
 
-/* ds_slab.h: not implemented yet */
+ds_StaticAssert(sizeof(struct ds_SlabThread) == DS_CACHE_LINE, "");
+ds_StaticAssert(sizeof(struct ds_SlabShared) == 4*DS_CACHE_LINE, "");
+
+u32 ds_SlabSharedAlloc(struct ds_SlabShared *shared, 
+                       const u32 thread_count,
+                       const u64 slot_size,
+                       const u64 vm_size)
+{
+	ds_Assert(slot_size >= sizeof(u32) && thread_count > 0);
+	*shared = (struct ds_SlabShared) { 0 };
+
+	shared->vm = VMReserve(vm_size);
+	if (shared->vm.buf == NULL)
+	{
+        goto failure;
+	}
+
+	shared->thread = ds_Alloc(thread_count*sizeof(struct ds_SlabThread), DS_CACHE_LINE);
+	if (shared->thread == NULL)
+	{
+        goto failure;
+	}
+	memset(shared->thread, 0, thread_count*sizeof(struct ds_SlabThread));
+	shared->thread_count = thread_count;
+
+	for (u32 i = 0; i < thread_count; ++i)
+	{
+		struct ds_SlabThread *t = shared->thread + i;
+		ds_CPoolAlloc(NULL, t->free, DS_SLAB_COUNT_DEFAULT, GROWABLE);
+		if (t->free.buf == NULL)
+		{
+            goto failure;
+		}
+
+		const struct slot arr = ds_CPoolPushBatch(t->free, DS_SLAB_COUNT_DEFAULT);
+		memset(arr.address, 0xff, DS_SLAB_COUNT_DEFAULT*sizeof(u32));
+	}
+
+	/* slot indices stay below DS_SLAB_NULL */
+	const u64 slots = shared->vm.reserved / slot_size;
+	shared->length = (slots < U32_MAX) ? (u32) slots : U32_MAX - 1;
+	return 1;
+
+failure:
+    ds_SlabSharedDealloc(shared);
+    return 0;
+}
+
+void ds_SlabSharedDealloc(struct ds_SlabShared *shared)
+{
+    if (shared->vm.buf) 
+    { 
+        VMRelease(&shared->vm); 
+    }
+
+    if (shared->thread)
+    {
+	    for (u32 i = 0; i < shared->thread_count; ++i)
+	    {
+	        ds_CPoolDealloc(shared->thread[i].free);
+        }
+        ds_Free(shared->thread);
+    }
+
+    *shared = (struct ds_SlabShared) { 0 };
+}
+
+void ds_SlabSharedFlush(struct ds_SlabShared *shared)
+{
+    for (u32 i = 0; i < shared->thread_count; ++i)
+	{
+		struct ds_SlabThread *t = shared->thread + i;
+		memset(t->free.buf, 0xff, t->free.count*sizeof(u32));
+        t->count_allocated = 0;
+	}
+    shared->a_count_max = 0;
+}

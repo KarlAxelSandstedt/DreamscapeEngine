@@ -31,6 +31,8 @@
 #include "ds_base.h"
 #include "ds_serialize.h"
 
+ds_StaticAssert(sizeof(struct VM) == 2*DS_CACHE_LINE, "");
+
 struct memConfig g_mem_config_storage = { 0 };
 struct memConfig *g_mem_config = &g_mem_config_storage;
 
