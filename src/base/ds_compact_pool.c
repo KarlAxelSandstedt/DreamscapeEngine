@@ -36,7 +36,7 @@ u32 ds_CPoolAllocInternal(struct arena *mem, void **buf, u32 *length, u32 *count
 		? ArenaPushAligned(mem, size, DS_CACHE_LINE)
 		: ds_Alloc(size, DS_CACHE_LINE);
 
-	ds_Assert((u64) addr % DS_CACHE_LINE == 0);
+	ds_Assert(PowerOfTwoMultipleCheck((u64) addr, DS_CACHE_LINE));
 	if (addr == NULL)
 	{
 		return 0;

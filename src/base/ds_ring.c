@@ -34,7 +34,7 @@ struct ring RingAlloc(const u64 mem_hint)
 
 	/* whole pages (page_size is a power of two) */
 	const u64 page = g_mem_config->page_size;
-	const u64 mem_total = (mem_hint + page - 1) & ~(page - 1);
+	const u64 mem_total = PowerOfTwoMultipleCeil(mem_hint, page);
 
 	/* one memory object mapped twice (shared): writes through either view show in both */
 	const int fd = memfd_create("ds_ring", MFD_CLOEXEC);

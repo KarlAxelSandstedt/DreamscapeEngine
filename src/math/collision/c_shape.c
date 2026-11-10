@@ -383,8 +383,7 @@ static struct slot c_ShapeDBStubSlot(const struct c_ShapeDB *db)
 static u64 c_ShapeBlockOffset(const u64 offset, const u64 size)
 {
     ds_Assert(size);
-    ds_StaticAssert((DEFAULT_MEMORY_ALIGNMENT & (DEFAULT_MEMORY_ALIGNMENT - 1)) == 0, "the rounding mask needs a power of two");
-    return ((offset + DEFAULT_MEMORY_ALIGNMENT - 1) & ~(DEFAULT_MEMORY_ALIGNMENT - 1)) - offset + size;
+    return PowerOfTwoMultipleCeil(offset, DEFAULT_MEMORY_ALIGNMENT) - offset + size;
 }
 
 /* exact bytes of the slot's block: the id, the geometry arrays and a mesh's BVH pool, in c_ShapeCopy's order */

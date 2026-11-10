@@ -72,7 +72,14 @@ u32 ds_ThreadSelfIndex(void);
 
 #endif
 
-
+//TODO:
+//      () runtime-config
+//          vm_commit_chunk_size = (internally we Ceil this value)
+//          vm_size_manifold_allocator = (internally we Ceil this value)
+//          vm_size_tri_cache_allocator = (internally we Ceil this value)
+//
+//      () Arena vm-based
+        
 /*
 Memory utils 
 ============
@@ -80,9 +87,13 @@ Memory utility tools.
 */
 
 /* Return 1 if n = 2*k for some k >= 0, otherwise return 0 */
-u32 PowerOfTwoCheck(const u64 n);
+static ds_ForceInline u32 PowerOfTwoCheck(const u64 n);
 /* Return smallest value 2^k >= n where k >= 0 */
-u64	PowerOfTwoCeil(const u64 n);
+static ds_ForceInline u64 PowerOfTwoCeil(const u64 n);
+/* m a power of two (asserted): the smallest multiple of m >= n, the largest <= n, 1 if n is one */
+static ds_ForceInline u64 PowerOfTwoMultipleCeil(const u64 n, const u64 m);
+static ds_ForceInline u64 PowerOfTwoMultipleFloor(const u64 n, const u64 m);
+static ds_ForceInline u32 PowerOfTwoMultipleCheck(const u64 n, const u64 m);
 
 /*
 memConfig 
@@ -93,6 +104,7 @@ Global memory configuration structure.
 struct memConfig
 {
 	u64				page_size;
+	u64				vm_granularity;		/* VMReserve rounds sizes up to it (Linux: the page; Windows: 64 KiB) */
 };
 extern struct memConfig *g_mem_config;
 
@@ -104,7 +116,7 @@ void ds_MemApiShutdown(void);
 
 /*
 Heap API
---------
+========
 General purpose heap allocator.
 */
 
@@ -122,6 +134,83 @@ addr is returned unchanged.
 void *	ds_Realloc(void *addr, const u64 old_size, const u64 new_size, const u64 alignment);
 /* Free a ds_Alloc/ds_Realloc block (never with free); no-op on NULL. */
 void	ds_Free(void *addr);
+
+
+/*
+Virtual Memory API
+==================
+Virtual memory API for reserving and committing physical pages in increasing address order.
+*/
+
+struct VM
+{
+    u8 *    buf;        /* base                     */
+    u64     reserved;   /* Virtual memory reserved  */
+    u64     a_committed;/* Physical memory committed */
+};
+
+
+/* On success return non-zero struct with buf pointing to reserved pages. */
+struct VM   VMReserve(const u64 size);
+/* 
+ * (Thread-safe) Commit pages up to end. If end <= committed, NO-OP. 
+ * Return 1 on success, 0 on failure. 
+ */
+static u32  VMCommit(struct VM *vm, const u64 end);    
+/* Interal: sys-caller */
+u32         VMCommitInternal(struct VM *vm, const u64 end);    
+/* Release VM resources */
+void        VMRelease(struct VM *vm);
+
+/* ========================= INLINED IMPLEMENTATIONS ========================= */
+
+static ds_ForceInline u32 PowerOfTwoCheck(const u64 n)
+{
+	/* k > 0: 2^k =>   (10... - 1)  =>   (01...) = 0
+	 *               & (10...    )     & (10...)
+	 */
+
+	/* k > 0: NOT 2^k =>   (1XXX10... - 1)  =>   (1XXX01...) = (1XXX00...
+	 *                   & (1XXX10...    )     & (1XXX10...)
+	 */
+
+	return (n & (n-1)) == 0 && n > 0;
+}
+
+static ds_ForceInline u64 PowerOfTwoCeil(const u64 n)
+{
+	ds_AssertString(n <= ((u64) 1 << 63), "Overflow in PowerOfTwoCeil");
+	/* 2^k >= n > 2^(k-1) <=> n-1 has bit length k */
+	return (n <= 1) ? 1 : (u64) 1 << (64 - Clz64(n - 1));
+}
+
+static ds_ForceInline u64 PowerOfTwoMultipleCeil(const u64 n, const u64 m)
+{
+	ds_Assert(PowerOfTwoCheck(m));
+	return (n + m - 1) & ~(m - 1);
+}
+
+static ds_ForceInline u64 PowerOfTwoMultipleFloor(const u64 n, const u64 m)
+{
+	ds_Assert(PowerOfTwoCheck(m));
+	return n & ~(m - 1);
+}
+
+static ds_ForceInline u32 PowerOfTwoMultipleCheck(const u64 n, const u64 m)
+{
+	ds_Assert(PowerOfTwoCheck(m));
+	return (n & (m - 1)) == 0;
+}
+
+static u32 VMCommit(struct VM *vm, const u64 end)
+{
+    u32 success = 1;
+    if (AtomicLoadAcq64(&vm->a_committed) < end)
+    {
+        success = VMCommitInternal(vm, end);
+    }
+    return success;
+}
 
 #include "ds_arena.h"
 #include "ds_ring.h"

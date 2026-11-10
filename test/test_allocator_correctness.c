@@ -72,7 +72,7 @@ static struct test_Output HeapAllocTest(struct test_Environment *env)
         u64 size = 1 + RngU64Range(0, 100);
         u8 *addr = ds_Alloc(size, alignment);
         TEST_NOT_EQUAL(NULL, addr);
-        TEST_EQUAL(0, (u64) addr % alignment);
+        TEST_TRUE(PowerOfTwoMultipleCheck((u64) addr, alignment));
         for (u64 i = 0; i < size; ++i)
         {
             addr[i] = (u8) (7*i + 1);
@@ -84,7 +84,7 @@ static struct test_Output HeapAllocTest(struct test_Environment *env)
             const u64 new_size = (step % 3 == 2) ? size/2 + 1 : 3*size + 17;
             addr = ds_Realloc(addr, size, new_size, alignment);
             TEST_NOT_EQUAL(NULL, addr);
-            TEST_EQUAL(0, (u64) addr % alignment);
+            TEST_TRUE(PowerOfTwoMultipleCheck((u64) addr, alignment));
 
             const u64 kept = (size < new_size) ? size : new_size;
             u32 same = 1;
@@ -114,7 +114,7 @@ static struct test_Output ArenaPushTest(struct test_Environment *env)
 
     struct arena ar = ArenaAlloc(env->mem_1, 4096);
     TEST_NOT_EQUAL(NULL, ar.stack_ptr);
-    TEST_EQUAL(0, (u64) ar.stack_ptr % DS_CACHE_LINE);
+    TEST_TRUE(PowerOfTwoMultipleCheck((u64) ar.stack_ptr, DS_CACHE_LINE));
     TEST_EQUAL(4096, ar.mem_left);
     const u8 *base = ar.stack_ptr;
 
@@ -132,7 +132,7 @@ static struct test_Output ArenaPushTest(struct test_Environment *env)
             const u64 size = RngU64Range(1, 300);
             u8 *top = ar.stack_ptr;
             const u64 left = ar.mem_left;
-            const u64 pad = (alignment - ((u64) top & (alignment - 1))) & (alignment - 1);
+            const u64 pad = PowerOfTwoMultipleCeil((u64) top, alignment) - (u64) top;
             u8 *addr = ArenaPushAligned(&ar, size, alignment);
             if (pad + size > left)
             {
@@ -1112,6 +1112,53 @@ static struct test_Output RingTest(struct test_Environment *env)
 	return output;
 }
 
+/* VM: a reservation, commits in slices, the no-op path inside the committed end, the cap at the reservation, release */
+static struct test_Output VMTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+    const u64 size = (u64) 64 << 20;
+    struct VM vm = VMReserve(size);
+    TEST_NOT_EQUAL(NULL, vm.buf);
+    TEST_EQUAL(size, vm.reserved);
+    TEST_EQUAL(0, vm.a_committed);
+
+    /* one byte commits a whole slice, a multiple of the granularity */
+    TEST_EQUAL(1, VMCommit(&vm, 1));
+    TEST_TRUE(vm.a_committed >= 1 && vm.a_committed <= size && PowerOfTwoMultipleCheck(vm.a_committed, g_mem_config->vm_granularity));
+    const u64 first = vm.a_committed;
+    vm.buf[0] = 1;
+    vm.buf[first - 1] = 2;
+    TEST_EQUAL(1, vm.buf[0]);
+    TEST_EQUAL(2, vm.buf[first - 1]);
+
+    /* inside the committed end nothing moves */
+    TEST_EQUAL(1, VMCommit(&vm, first));
+    TEST_EQUAL(first, vm.a_committed);
+
+    /* up to the last byte: the end is capped at the reservation */
+    TEST_EQUAL(1, VMCommit(&vm, size));
+    TEST_EQUAL(size, vm.a_committed);
+    vm.buf[size - 1] = 3;
+    TEST_EQUAL(3, vm.buf[size - 1]);
+
+    /* an unrounded size rounds up to the granularity */
+    struct VM odd = VMReserve(12345);
+    TEST_NOT_EQUAL(NULL, odd.buf);
+    TEST_TRUE(odd.reserved >= 12345 && PowerOfTwoMultipleCheck(odd.reserved, g_mem_config->vm_granularity));
+    TEST_EQUAL(1, VMCommit(&odd, 12345));
+    TEST_EQUAL(odd.reserved, odd.a_committed);
+    odd.buf[12344] = 4;
+    TEST_EQUAL(4, odd.buf[12344]);
+    VMRelease(&odd);
+    TEST_EQUAL(NULL, odd.buf);
+    TEST_EQUAL(0, odd.reserved);
+
+    VMRelease(&vm);
+    TEST_EQUAL(NULL, vm.buf);
+    (void) env;
+	return output;
+}
+
 static struct test_Output (*allocator_tests[])(struct test_Environment *) =
 {
     PowerOfTwoTest,
@@ -1127,6 +1174,7 @@ static struct test_Output (*allocator_tests[])(struct test_Environment *) =
     TPoolParallelTest,
     TStackParallelTest,
     RingTest,
+    VMTest,
 };
 
 struct suite_Correctness storage_allocator_correctness_suite =

@@ -431,7 +431,7 @@ struct r_Mesh *r_MeshShape(struct c_Shape *shape, const u32 refinement)
 	const u64 index_bytes = (u64) built.index_count * sizeof(u32);
 	const u64 mesh_offset = 0;
 	const u64 vertex_offset = sizeof(struct r_Mesh);
-	const u64 index_offset = vertex_offset + ((vertex_bytes + 7) & ~(u64) 7);
+	const u64 index_offset = vertex_offset + PowerOfTwoMultipleCeil(vertex_bytes, 8);
 	u8 *block = ds_Alloc(index_offset + index_bytes, DEFAULT_MEMORY_ALIGNMENT);
 	if (block)
 	{
@@ -469,7 +469,7 @@ struct r_Mesh *r_MeshShapeBvh(struct c_Shape *shape)
 	const u64 vertex_bytes = (u64) node_count * 8 * L_PROXY3D_STRIDE;
 	const u64 index_bytes = (u64) node_count * 24 * sizeof(u32);
 	const u64 vertex_offset = sizeof(struct r_Mesh);
-	const u64 index_offset = vertex_offset + ((vertex_bytes + 7) & ~(u64) 7);
+	const u64 index_offset = vertex_offset + PowerOfTwoMultipleCeil(vertex_bytes, 8);
 	u8 *block = ds_Alloc(index_offset + index_bytes, DEFAULT_MEMORY_ALIGNMENT);
 	if (!block)
 	{

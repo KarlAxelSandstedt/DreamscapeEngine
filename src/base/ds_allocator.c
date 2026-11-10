@@ -34,26 +34,6 @@
 struct memConfig g_mem_config_storage = { 0 };
 struct memConfig *g_mem_config = &g_mem_config_storage;
 
-u32 PowerOfTwoCheck(const u64 n)
-{
-	/* k > 0: 2^k =>   (10... - 1)  =>   (01...) = 0
-	 *               & (10...    )     & (10...)
-	 */
-
-	/* k > 0: NOT 2^k =>   (1XXX10... - 1)  =>   (1XXX01...) = (1XXX00...
-	 *                   & (1XXX10...    )     & (1XXX10...)
-	 */
-
-	return (n & (n-1)) == 0 && n > 0;
-}
-
-u64 PowerOfTwoCeil(const u64 n)
-{
-	ds_AssertString(n <= ((u64) 1 << 63), "Overflow in PowerOfTwoCeil");
-	/* 2^k >= n > 2^(k-1) <=> n-1 has bit length k */
-	return (n <= 1) ? 1 : (u64) 1 << (64 - Clz64(n - 1));
-}
-
 void ds_MemApiShutdown(void)
 {
 }
@@ -62,6 +42,14 @@ void ds_MemApiInit()
 {
 	g_mem_config->page_size = ds_Pagesize();
 	ds_Assert( PowerOfTwoCheck( g_mem_config->page_size ) );
+#if __DS_PLATFORM__ == __DS_LINUX__
+	g_mem_config->vm_granularity = g_mem_config->page_size;
+#elif __DS_PLATFORM__ == __DS_WIN64__
+	SYSTEM_INFO info;
+	GetSystemInfo(&info);
+	g_mem_config->vm_granularity = info.dwAllocationGranularity;
+#endif
+	ds_Assert( PowerOfTwoCheck( g_mem_config->vm_granularity ) );
 }
 
 /* debug builds fill new memory: nothing may rely on it being zeroed */
@@ -122,6 +110,7 @@ void ds_Free(void *addr)
 #elif __DS_PLATFORM__ == __DS_WIN64__
 
 #include <malloc.h>
+#include <windows.h>
 
 void *ds_Alloc(const u64 size, const u64 alignment)
 {
@@ -190,6 +179,88 @@ void *ds_Realloc(void *addr, const u64 old_size, const u64 new_size, const u64 a
 	return new_addr;
 }
 
+struct VM VMReserve(const u64 size)
+{
+    if (!size)
+    {
+        return (struct VM) { 0 };
+    }
+
+    const u64 granularity = g_mem_config->vm_granularity;
+    const u64 reserved = PowerOfTwoMultipleCeil(size, granularity);
+
+#if __DS_PLATFORM__ == __DS_LINUX__
+
+    void *buf = mmap(NULL, reserved, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+    if (buf == MAP_FAILED)
+    {
+        LogSystemError(S_ERROR);
+        return (struct VM) { 0 };
+    }
+
+#elif __DS_PLATFORM__ == __DS_WIN64__
+
+    void *buf = VirtualAlloc(NULL, reserved, MEM_RESERVE, PAGE_NOACCESS);
+    if (buf == NULL)
+    {
+        LogSystemError(S_ERROR);
+        return (struct VM) { 0 };
+    }
+
+#endif
+    return (struct VM) { .buf = buf, .reserved = reserved, .a_committed = 0 };
+}
+
+/* VMCommitInternal commits whole slices, so the committed end moves in large steps (a multiple of vm_granularity) */
+#define VM_COMMIT_SLICE		((u64) 1 << 20)
+
+u32 VMCommitInternal(struct VM *vm, const u64 end)
+{
+    // TODO Must handle 
+    ds_Assert(vm->buf && end <= vm->reserved);
+    u64 target = PowerOfTwoMultipleCeil(end, VM_COMMIT_SLICE);
+    if (target > vm->reserved)
+    {
+        target = vm->reserved;
+    }
+
+    /* threads that cross the end together commit overlapping slices, which the system accepts; the largest end wins */
+    u64 committed = AtomicLoadAcq64(&vm->a_committed);
+    while (committed < target)
+    {
+#if __DS_PLATFORM__ == __DS_WIN64__
+        if (VirtualAlloc(vm->buf + committed, target - committed, MEM_COMMIT, PAGE_READWRITE) == NULL)
+        {
+            LogSystemError(S_ERROR);
+            return 0;
+        }
+#endif
+        if (AtomicCompareExchangeAcqRelAcq64(&vm->a_committed, &committed, target))
+        {
+            break;
+        }
+    }
+    return 1;
+}
+
+void VMRelease(struct VM *vm)
+{
+    if (vm->buf)
+    {
+#if __DS_PLATFORM__ == __DS_LINUX__
+        if (munmap(vm->buf, vm->reserved) != 0)
+        {
+            LogSystemError(S_ERROR);
+        }
+#elif __DS_PLATFORM__ == __DS_WIN64__
+        if (!VirtualFree(vm->buf, 0, MEM_RELEASE))
+        {
+            LogSystemError(S_ERROR);
+        }
+#endif
+    }
+    *vm = (struct VM) { 0 };
+}
 
 #include "ds_arena.c"
 #include "ds_ring.c"
