@@ -117,7 +117,7 @@ u32 PerfCyclesThreadAvailable(void)
 
 #else
 
-/* no user-mode counter on Windows (QueryThreadCycleTime is TSC-based) or the web */
+/* no user-mode counter on Windows (QueryThreadCycleTime is TSC-based) */
 void PerfCyclesThreadInit(void) { }
 void PerfCyclesThreadShutdown(void) { }
 u32 PerfCyclesThreadAvailable(void) { return 0; }
@@ -168,13 +168,7 @@ RT
 ==
 */
 
-#if __DS_PLATFORM__ == __DS_WEB__
-
-/* PerfWallClock ticks are ns on the web */
-static u64 RTTicksPerSecond(void) { return NSEC_PER_SEC; }
-#else
 static u64 RTTicksPerSecond(void) { return TscFrequency(); }
-#endif
 
 static void RTError(struct RT *t, const char *msg)
 {

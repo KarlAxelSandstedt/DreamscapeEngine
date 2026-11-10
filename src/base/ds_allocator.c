@@ -17,7 +17,7 @@
 ==========================================================================
 */
 
-#if __DS_PLATFORM__ == __DS_LINUX__ || __DS_PLATFORM__ == __DS_WEB__
+#if __DS_PLATFORM__ == __DS_LINUX__
 
 #define _GNU_SOURCE
 
@@ -71,7 +71,7 @@ void ds_MemApiInit()
 	#define DS_ALLOC_DEBUG_FILL(addr, size)
 #endif
 
-#if __DS_PLATFORM__ == __DS_LINUX__ || __DS_PLATFORM__ == __DS_WEB__
+#if __DS_PLATFORM__ == __DS_LINUX__
 
 #include <stddef.h>
 #include <sys/mman.h>

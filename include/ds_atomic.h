@@ -25,13 +25,13 @@ intrinsics.
 
 Contents (in this order):
     Fences      ds_MemoryFence<Ordering>.
-    Atomics     Atomic<Op><Ordering>32/64 on u32/u64, pointers through the variant of their size (32 on wasm32).
+    Atomics     Atomic<Op><Ordering>32/64 on u32/u64, pointers through the 64-bit variant.
     Overflow    U64AddReturnOverflow/U64MulReturnOverflow: nonzero on overflow; *dst gets the wrapped result.
     Bits        Clz/Ctz (leading/trailing zeroes), C (1-bits), Cz (0-bits), 32 and 64 bit.
 
 Every atomic exists for each ordering in its name (Rlx, Acq, Rel, AcqRel, SeqCst; a compare-exchange names the
-success, then the failure ordering) and for 32 and 64 bits (u32/u64; pointers through the variant of their size,
-32 on wasm32). Results are u32/u64 on every compiler. Every operand pointer is checked at compile time to point at
+success, then the failure ordering) and for 32 and 64 bits (u32/u64; pointers through the 64-bit variant).
+Results are u32/u64 on every compiler. Every operand pointer is checked at compile time to point at
 exactly 4 or 8 bytes. MSVC (x64): RMW operations are lock-prefixed full barriers whatever the ordering; loads are
 plain movs; Rlx/Rel stores are plain movs and SeqCst stores xchg. FORCE_SEQ_CST (GCC/clang) turns every ordering
 into SeqCst, for ruling out ordering bugs. The macros are declared below, one comment per family; their

@@ -43,38 +43,4 @@ void RngSystem(void *buf, const u64 size)
 	}
 }
 
-#elif __DS_PLATFORM__ == __DS_WEB__
-
-#include <unistd.h>
-#include <fcntl.h>
-
-void RngSystem(void *buf, const u64 size)
-{
-	int fd = open("/dev/urandom", O_RDONLY);
-	if (fd == -1)
-	{
-		LogSystemError(S_FATAL);
-		FatalCleanupAndExit();
-	}
-
-	u64 bytes_left = size;
-	while (bytes_left)
-	{
-		const u64 offset = size - bytes_left;
-		const ssize_t bytes_read = read(fd, ((u8*) buf) + offset, bytes_left);
-		if (bytes_read == -1 && errno == EINTR)
-		{
-			continue;
-		}
-		if (bytes_read <= 0)	/* 0: end of file, which /dev/urandom never gives; never loop on it */
-		{
-			LogSystemError(S_FATAL);
-			FatalCleanupAndExit();
-		}
-		bytes_left -= (u64) bytes_read;
-	}
-
-	close(fd);
-}
-
 #endif

@@ -48,7 +48,7 @@ DEFINE_TPOOL(ds_Structure);
 DEFINE_THASH(ds_Structure);
 
 static ds_THashMap(ds_Structure) g_tmap;
-/* the pool's address as a u64, so the 64-bit atomics work where pointers are 32 bits (wasm32) */
+/* the pool's address as a u64, so the 64-bit atomics work where pointers are 32 bits */
 static u64 g_tpool;
 static u32 first = 1;
 static u32 g_lookup_mismatches = 0;

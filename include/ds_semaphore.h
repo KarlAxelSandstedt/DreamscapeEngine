@@ -34,7 +34,7 @@ extern "C" {
 #include "ds_define.h"
 #include "ds_types.h"
 
-#if __DS_PLATFORM__ == __DS_LINUX__ || __DS_PLATFORM__ == __DS_WEB__
+#if __DS_PLATFORM__ == __DS_LINUX__
 
 	#include <semaphore.h>
 	typedef sem_t semaphore;

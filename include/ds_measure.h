@@ -64,8 +64,7 @@ Performance measuring blocks of code.
     Note 3: Within a measurement the block cannot overlap its neighbours, so it shows its latency,
     not the throughput it has inside a loop.
 
-PerfWallClock: best available wall-clock timer for performance measurements (x64: the TSC; web: ns from the OS
-clock).
+PerfWallClock: best available wall-clock timer for performance measurements (the TSC).
 
 PerfBegin/PerfEnd: both in one pair (a struct PerfStamp), one fence per side; the repetition tester's pair. The
 tick window encloses the two cycle reads, so its tick cost is about three times the wall-clock pair's.
@@ -130,7 +129,7 @@ uninterrupted at the highest clock, and its cycles are the block's cycles (a cyc
 clock for memory-bound blocks, which wait a fixed time). RTPrintStatistics subtracts the pairs' cost (regions x
 g_perf_overhead_*) from the minimum only and prints cycles when the thread had a counter at RTWave; for a job
 phase they are the master's own. A zeroed struct RT is a fresh tester; on an error it stays in RT_ERROR, the loop
-ends and RTPrintStatistics prints the error. On the web ticks are ns.
+ends and RTPrintStatistics prints the error.
 
     struct RT t = { 0 };
     RTWave(&t, bytes_per_repetition, 10.0);
@@ -186,19 +185,6 @@ void	RTPrintStatistics(const struct RT *t, FILE *file);
 
 /********************************** inline definitions **********************************/
 
-#if (__DS_PLATFORM__ == __DS_WEB__)
-
-static ds_ForceInline u64 PerfWallClockBegin(void)
-{
-	return ds_TimeNs();
-}
-
-static ds_ForceInline u64 PerfWallClockEnd(const u64 begin)
-{
-	return ds_TimeNs() - begin;
-}
-
-#else
 
 static ds_ForceInline u64 PerfWallClockBegin(void)
 {
@@ -218,7 +204,6 @@ static ds_ForceInline u64 PerfWallClockEnd(const u64 begin)
 	return tsc - begin;
 }
 
-#endif
 
 #if (__DS_PLATFORM__ == __DS_LINUX__)
 

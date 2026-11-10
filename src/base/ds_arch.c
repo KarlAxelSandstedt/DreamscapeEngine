@@ -22,18 +22,11 @@
 static struct dsArchConfig config = { 0 };
 const struct dsArchConfig *g_arch_config = &config;
 
-#if __DS_PLATFORM__ == __DS_LINUX__ || __DS_PLATFORM__ == __DS_WEB__
+#if __DS_PLATFORM__ == __DS_LINUX__
 
-#if __DS_PLATFORM__ == __DS_WEB__
-
-#define  __get_cpuid(f,a,b,c,d)		0
-#define  __get_cpuid_count(f,s,a,b,c,d)	0
-
-#else
 
 #include <cpuid.h>
 
-#endif
 
 #include <unistd.h>
 #include <sys/sysinfo.h>
@@ -494,9 +487,6 @@ static u32 internal_get_intel_arch_config(struct arena *mem)
 
 u32 ds_ArchBaselineCheck(void)
 {
-#if __DS_PLATFORM__ == __DS_WEB__
-	return 1;
-#else
 	/* the same leaves and bits on Intel and AMD */
 	u32 eax, ebx, ecx, edx;
 	ds_Cpuid(&eax, &ebx, &ecx, &edx, 0);
@@ -517,7 +507,6 @@ u32 ds_ArchBaselineCheck(void)
 	const u32 lzcnt = (ecx >> 5) & 0x1;
 
 	return sse2 & popcnt & bmi1 & lzcnt;
-#endif
 }
 
 u32 ds_ArchConfigInit(struct arena *mem)
@@ -528,12 +517,6 @@ u32 ds_ArchConfigInit(struct arena *mem)
 	config.cacheline = 64; //TODO
 
 	u32 requirements_fullfilled = 1;
-#if __DS_PLATFORM__ == __DS_WEB__
-	config.vendor_string = Utf8Inline("Web Browser (TODO)");
-	config.processor_string = Utf8Inline("Web CPU (TODO)");
-	//TODO check SIMD support 
-	dsArchConfig_log();
-#else
 	const utf8 amd =    Utf8Inline("AuthenticAMD");
 	const utf8 intel =  Utf8Inline("GenuineIntel");
 
@@ -582,7 +565,6 @@ u32 ds_ArchConfigInit(struct arena *mem)
 			(config.bmi1) ? "Y" : "N");
 		requirements_fullfilled = 0;
 	}
-#endif
 
 	return requirements_fullfilled;
 }

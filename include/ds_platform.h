@@ -20,7 +20,7 @@
 /*
 ds_platform.h
 =============
-The engine's interface to the operating system (Linux, Windows, web), implemented in src/sys: platform startup,
+The engine's interface to the operating system (Linux, Windows), implemented in src/sys: platform startup,
 system randomness, files and directories, the process environment (working directory, clipboard), keyboard and
 mouse codes, and system events. The graphics side (windows, GL) is in ds_graphics.h. Platform layer: its
 implementation may call the C library and OS APIs directly.
@@ -60,7 +60,7 @@ void 	ds_PlatformApiShutdown(void);
 
 /* 
  * Write random bytes into buf[size] using platform API. On linux, this is done by 
- * getrandom; on the Web we read from /dev/urandom; on Windows, BCryptGenRandom (system RNG).
+ * getrandom; on Windows, BCryptGenRandom (system RNG).
  * Fatal if the system source fails.
  */
 void	RngSystem(void *buf, const u64 size);
@@ -70,7 +70,7 @@ void	RngSystem(void *buf, const u64 size);
 /* 				Platform FileIO 			*/
 /************************************************************************/
 
-#if __DS_PLATFORM__ == __DS_LINUX__ || __DS_PLATFORM__ == __DS_WEB__
+#if __DS_PLATFORM__ == __DS_LINUX__
 
 	#include <sys/stat.h>
 	#include <sys/mman.h>
@@ -150,7 +150,7 @@ struct file FileNull(void);
 
 /****************************************** path operations  ****************************************/
 
-/* returns 1 if the path is relative, otherwise 0 (Linux, web: it starts with '/'; Windows: PathIsRelativeA). */
+/* returns 1 if the path is relative, otherwise 0 (Linux: it starts with '/'; Windows: PathIsRelativeA). */
 u32		CstrPathRelativeCheck(const char *path);
 u32		Utf8PathRelativeCheck(const utf8 path);
 
@@ -158,7 +158,7 @@ u32		Utf8PathRelativeCheck(const utf8 path);
 
 /*
  * Paths are relative to dir (or the cwd): FileTryCreate, FileTryOpen, DirectoryTryCreate and DirectoryTryOpen
- * return FS_PATH_INVALID for an absolute path. Platforms differ: FileDump accepts absolute paths on Linux and web
+ * return FS_PATH_INVALID for an absolute path. Platforms differ: FileDump accepts absolute paths on Linux
  * (Windows goes through FileTryOpen); FileStatusPath rejects them on Linux. On Windows, the joined absolute path (dir's
  * in its "\\?\" form, then the relative one) must fit MAX_PATH (260 UTF-16 units with the terminator), else
  * FS_PATH_INVALID.

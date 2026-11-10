@@ -21,8 +21,7 @@
 ds_time.h
 =========
 Time since ds_TimeApiInit from the OS monotonic clock (consistent across threads), and conversions for the
-x86 time-stamp counter (TSC) that profiling and the performance tests use. The TSC parts are x64 only: the
-web has no Rdtsc, and its TscFrequency() is 0.
+x86 time-stamp counter (TSC) that profiling and the performance tests use.
 */
 
 #ifndef __DREAMSCAPE_TIMER_H__
@@ -39,9 +38,7 @@ The ds_Time** API returns time elapsed since the API's initialization, from the 
 across threads. The TSC (Rdtsc) is per core; its readings from different cores differ by g_tsc_skew.
 */
 
-#if (__DS_PLATFORM__ == __DS_WEB__)
-
-#elif (__DS_COMPILER__ == __DS_GCC__ || __DS_COMPILER__ == __DS_CLANG__)
+#if (__DS_COMPILER__ == __DS_GCC__ || __DS_COMPILER__ == __DS_CLANG__)
 
 	#include <x86intrin.h>
 	/* the calling core's TSC */
@@ -98,7 +95,7 @@ u64	TscFromNs(const u64 ns);
 u64	NsFromTscTruthSource(const u64 tsc, const u64 ns_truth, const u64 cc_truth); 
 /* transform ns to tsc, with an additional truth pair (ns, tsc) read at the same moment in order to reduce error: it grows with the distance to the pair */
 u64	TscFromNsTruthSource(const u64 ns, const u64 ns_truth, const u64 cc_truth);  
-/* Return estimated tsc ticks per second, measured by ds_TimeApiInit (0 on the web) */
+/* Return estimated tsc ticks per second, measured by ds_TimeApiInit */
 u64 	TscFrequency(void);				
 /* Return estimated seconds given the tick count */
 f64 	SFromTsc(const u64 ticks);			

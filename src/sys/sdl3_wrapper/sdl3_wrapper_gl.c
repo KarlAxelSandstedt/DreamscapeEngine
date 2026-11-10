@@ -85,7 +85,7 @@ SDL_FunctionPointer LoadProc(const char *proc)
 
 /* NOTE: some platforms may not return NULL on invalid functions pointers; so checking
 for NULL is not a reliable way to check for errors. Since we are targeting 
-a subset of opengl 3.3 (webgl 2), perhaps we can assume that it is supported...
+opengl 3.3, perhaps we can assume that it is supported...
 We should check the GL version of the context and verify that the loaded functions
 are supported. 
  */

@@ -21,9 +21,6 @@
 
 #if defined(DS_LOG)
 
-#if __DS_PLATFORM__ == __DS_WEB__
-#include <emscripten/console.h>
-#endif
 
 #include <stdio.h>
 #include <string.h>
@@ -265,17 +262,11 @@ void LogWriteMessage(const enum system_id system, const enum severity_id severit
 	va_end(args);
 	size += text_size;
 
-#if __DS_PLATFORM__ != __DS_WEB__
 	msg->buf[size++] = '\n';
-#endif
 	msg->buf[size] = '\0';
 	msg->size = size;
 
-#if __DS_PLATFORM__ == __DS_WEB__
-	emscripten_out((char *) msg->buf);
-#else
 	fprintf(stdout, "%s", msg->buf);
-#endif
 	/* sync-point, msg ready for writing */
 	AtomicStoreRel32(&msg->a_in_use_and_completed, 1);
 	tl_tickets_held -= 1;

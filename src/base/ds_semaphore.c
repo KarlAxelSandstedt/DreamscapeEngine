@@ -20,7 +20,7 @@
 #include "ds_semaphore.h"
 #include "ds_log.h"
 
-#if __DS_PLATFORM__ == __DS_LINUX__ || __DS_PLATFORM__ == __DS_WEB__
+#if __DS_PLATFORM__ == __DS_LINUX__
 
 #include <errno.h>
 #include <stdio.h>
@@ -29,7 +29,6 @@
 
 void SemaphoreInit(semaphore *sem, const u32 val)
 {
-	/* != 0: emscripten returns ENOTSUP for pshared != 0 (not -1) and leaves sem uninitialized */
 	if (sem_init(sem, SEM_NOT_SHARED, val) != 0)
 	{
 		LogSystemError(S_FATAL);

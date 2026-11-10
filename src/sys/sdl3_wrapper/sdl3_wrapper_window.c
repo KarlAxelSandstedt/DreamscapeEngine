@@ -278,16 +278,12 @@ static void sdl3_CreateGlContext(struct nativeWindow *native)
 		FatalCleanupAndExit();
 	}
 
-#if __DS_PLATFORM__ == __DS_WEB__
-	/* keep the default: the browser presents at requestAnimationFrame only; interval 0 moves the main loop to setTimeout(0) */
-#else
 	/* turn off vsync for context (dont block on SWAP until window refresh (or something...) */
 	if (!SDL_GL_SetSwapInterval(0))
 	{
 		LogString(T_SYSTEM, S_FATAL, SDL_GetError());
 		FatalCleanupAndExit();
 	}
-#endif
 
 	static u64 once = 1;
 	if (once)
@@ -303,19 +299,11 @@ static void sdl3_CreateGlContext(struct nativeWindow *native)
 			LogString(T_SYSTEM, S_FATAL, SDL_GetError());
 			FatalCleanupAndExit();
 		}
-#if __DS_PLATFORM__ == __DS_WEB__
-		if (major < 3)
-		{
-			Log(T_SYSTEM, S_FATAL, "Requires GLES 3.0 or greater, got %i.%i, exiting", major, minor);
-			FatalCleanupAndExit();
-		}
-#else
 		if (major < 3 || (major == 3 && minor < 3))
 		{
 			Log(T_SYSTEM, S_FATAL, "Requires GL 3.3 or greater, got %i.%i, exiting", major, minor);
 			FatalCleanupAndExit();
 		}
-#endif
 	}
 }
 
@@ -334,13 +322,11 @@ static struct nativeWindow *sdl3_NativeWindowCreate(struct arena *mem, const cha
 		FatalCleanupAndExit();
 	}
 
-#if __DS_PLATFORM__ != __DS_WEB__
 	/* the canvas has no position; elsewhere a refusal (e.g. Wayland) leaves the window where the OS put it */
 	if (!SDL_SetWindowPosition(native->sdl_win, (i32) position.x, (i32) position.y))
 	{
 		LogString(T_SYSTEM, S_WARNING, SDL_GetError());
 	}
-#endif
 
 	sdl3_CreateGlContext(native);
 	return native;
@@ -436,18 +422,6 @@ void sdl3_WrapperInit(void)
 	if (!SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1)
 		|| !SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3)
 		|| !SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3)
-		)
-	{
-		LogString(T_SYSTEM, S_FATAL, SDL_GetError());
-		FatalCleanupAndExit();
-	}
-
-#elif __DS_PLATFORM__ == __DS_WEB__
-	SDL_SetHint(SDL_HINT_OPENGL_ES_DRIVER, "1");
-	SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
-	if (!SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1)
-		|| !SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3)
-		|| !SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0)
 		)
 	{
 		LogString(T_SYSTEM, S_FATAL, SDL_GetError());

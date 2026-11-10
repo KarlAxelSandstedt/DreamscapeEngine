@@ -33,7 +33,7 @@ extern "C" {
 
 #include "ds_string.h"
 
-#if __DS_PLATFORM__ == __DS_LINUX__ || __DS_PLATFORM__ == __DS_WEB__
+#if __DS_PLATFORM__ == __DS_LINUX__
 
 #include <sys/types.h>
 typedef pid_t	pid;
@@ -89,12 +89,12 @@ u32  	ds_LogicalCoreCount(void);
 u64	ds_Pagesize(void);
 /* return process identifier */
 pid	ds_Pid(void);
-/* cpu x86 querying: CPUID leaf function; Linux: all zero for a leaf the CPU lacks; web: all zero */
+/* cpu x86 querying: CPUID leaf function; Linux: all zero for a leaf the CPU lacks */
 void 	ds_Cpuid(u32 *eax, u32 *ebx, u32 *ecx, u32 *edx, const u32 function);
 /* ds_Cpuid with a subleaf (subfunction) */
 void 	ds_CpuidEx(u32 *eax, u32 *ebx, u32 *ecx, u32 *edx, const u32 function, const u32 subfunction);
 
-/* 1 if the CPU meets the baseline (always on the web), else 0. CPUID only: no memory, no log, safe before any init. */
+/* 1 if the CPU meets the baseline, else 0. CPUID only: no memory, no log, safe before any init. */
 u32	ds_ArchBaselineCheck(void);
 /*
  * sets up g_arch_config (strings on mem) and logs it. returns 1 on intrinsics requirements fullfilled, 0 otherwise

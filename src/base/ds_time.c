@@ -252,30 +252,6 @@ void ds_TimeApiInit(struct arena *persistent)
 	TscEstimateSkew(persistent);
 }
 
-#elif __DS_PLATFORM__ == __DS_WEB__
-
-#include <sys/time.h>
-
-u64 ds_TimeNs(void)
-{
-	struct timespec ts;
-	clock_gettime(CLOCK_MONOTONIC, &ts);
-	return (u64) NSEC_PER_SEC * ts.tv_sec + ts.tv_nsec - g_timer.ns_start;
-}
-
-void ds_TimeApiInit(struct arena *persistent)
-{
-	struct timespec ts;
-	clock_getres(CLOCK_MONOTONIC, &ts);
-	g_timer.ns_resolution = ts.tv_nsec;
-	clock_gettime(CLOCK_MONOTONIC, &ts);
-	g_timer.ns_start = NSEC_PER_SEC * ts.tv_sec + ts.tv_nsec;
-
-	g_timer.tsc_start = 0;
-	g_precision_timer.tsc_start = 0;
-	g_precision_timer.tsc_freq = 0;
-}
-
 #elif __DS_PLATFORM__ == __DS_WIN64__
 
 #include <windows.h>

@@ -1023,12 +1023,10 @@ static struct test_Output RingTest(struct test_Environment *env)
     TEST_TRUE(ring.buf != NULL && ring.mem_total >= 1 && ring.mem_left == ring.mem_total && ring.offset == 0);
     const u64 total = ring.mem_total;
 
-#if __DS_PLATFORM__ != __DS_WEB__
     for (u64 k = 0; k < total; ++k) { ring.buf[k] = RingTestByte(1, k); }
     for (u64 k = 0; k < total; ++k) { TEST_EQUAL(RingTestByte(1, k), ring.buf[total + k]); }
     for (u64 k = 0; k < total; ++k) { ring.buf[total + k] = RingTestByte(2, k); }
     for (u64 k = 0; k < total; ++k) { TEST_EQUAL(RingTestByte(2, k), ring.buf[k]); }
-#endif
 
     /* failures leave the ring as it was */
     struct ringSlot slot = RingPushEnd(&ring, 0);
@@ -1045,9 +1043,7 @@ static struct test_Output RingTest(struct test_Environment *env)
     slot = RingPushEnd(&ring, 64);
     TEST_TRUE(slot.address == ring.buf + total - 16 && slot.size == 64 && ring.offset == 48);
     for (u64 k = 0; k < 64; ++k) { slot.address[k] = RingTestByte(3, k); }
-#if __DS_PLATFORM__ != __DS_WEB__
     for (u64 k = 16; k < 64; ++k) { TEST_EQUAL(RingTestByte(3, k), ring.buf[k - 16]); }
-#endif
 
     /* a push before the start wraps back over the end */
     RingFlush(&ring);
@@ -1100,9 +1096,7 @@ static struct test_Output RingTest(struct test_Environment *env)
             for (u64 k = 0; k < size[i]; ++k)
             {
                 TEST_EQUAL(RingTestByte(id[i], k), address[i][k]);
-#if __DS_PLATFORM__ != __DS_WEB__
                 TEST_EQUAL(RingTestByte(id[i], k), ring.buf[(at + k) % total]);
-#endif
             }
             RingPopStart(&ring, size[i]);
             first = (first + 1) % RING_TEST_SLOTS;

@@ -38,7 +38,7 @@ typedef struct ds_Thread ds_Thread;
 /* the calling thread's ds_Thread; NULL on a thread the engine didn't create (and before ds_ThreadMasterInit) */
 extern ds_ThreadLocal ds_Thread *g_tl_self;
 
-#if __DS_PLATFORM__ == __DS_LINUX__ ||__DS_PLATFORM__ == __DS_WEB__
+#if __DS_PLATFORM__ == __DS_LINUX__
 
 #include <pthread.h>
 typedef pid_t	tid;

@@ -43,7 +43,7 @@ struct ds_Struct
 
 DEFINE_TPOOL(ds_Struct);
 
-/* the pool's address as a u64, so the 64-bit atomics work where pointers are 32 bits (wasm32) */
+/* the pool's address as a u64, so the 64-bit atomics work where pointers are 32 bits */
 static u64 g_tpool;
 static u32 first = 1;
 

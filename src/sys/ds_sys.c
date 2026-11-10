@@ -3,7 +3,7 @@
 #include "sys_init.c"
 #include "sys_input.c"
 
-#if __DS_PLATFORM__ == __DS_LINUX__ || __DS_PLATFORM__ == __DS_WEB__
+#if __DS_PLATFORM__ == __DS_LINUX__
 
 #include "linux/linux_filesystem.c"
 #include "linux/linux_random.c"

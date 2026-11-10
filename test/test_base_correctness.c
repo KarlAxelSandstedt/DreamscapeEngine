@@ -1078,7 +1078,7 @@ static struct test_Output InputNameTest(struct test_Environment *env)
 	return output;
 }
 
-#if __DS_PLATFORM__ == __DS_LINUX__ || __DS_PLATFORM__ == __DS_WEB__
+#if __DS_PLATFORM__ == __DS_LINUX__
 
 #include <unistd.h>
 #include <fcntl.h>
@@ -1715,7 +1715,7 @@ static struct test_Output (*base_tests[])(struct test_Environment *) =
     PoseTest,
     CameraTest,
     InputNameTest,
-#if __DS_PLATFORM__ == __DS_LINUX__ || __DS_PLATFORM__ == __DS_WEB__ || __DS_PLATFORM__ == __DS_WIN64__
+#if __DS_PLATFORM__ == __DS_LINUX__ || __DS_PLATFORM__ == __DS_WIN64__
     FilesystemTest,
 #endif
     SystemErrorStringTest,

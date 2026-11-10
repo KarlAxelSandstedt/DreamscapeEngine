@@ -964,7 +964,6 @@ utf8 Utf8FormatBufferedVariadic(u32 *reqsize, u8 *buf, const u32 bufsize, const 
 
 			case STRING_TOKEN_POINTER:
 			{
-				/* read a pointer, not a u64: pointers are 4 bytes on wasm32 */
 				const u64 val = (u64) (uintptr_t) va_arg(args, void *);
 				pstr = Utf8U64Buffered(buf + offset, bufsize - offset, val);
 				cont = pstr.len;

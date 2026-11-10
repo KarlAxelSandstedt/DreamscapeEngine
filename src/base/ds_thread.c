@@ -76,7 +76,7 @@ void ArenaPopScratch(void)
     g_tl_self->scratch_next -= 1;
 }
 
-#if __DS_PLATFORM__ == __DS_LINUX__ ||__DS_PLATFORM__ == __DS_WEB__
+#if __DS_PLATFORM__ == __DS_LINUX__
 
 #include <unistd.h>
 #include <pthread.h>

@@ -1002,10 +1002,8 @@ u32 gl_StateAlloc(struct arena *mem)
 	g_gl_state = slot.index;
 	struct gl_State *gl_state = slot.address;
 	GlFunctionsInit(&gl_state->func);
-#if __DS_PLATFORM__ != __DS_WEB__
 	/* the vertex shader's gl_PointSize applies to GL_POINTS; ES has no switch, it is always on */
 	gl_state->func.glEnable(GL_PROGRAM_POINT_SIZE);
-#endif
 
 	static u32 once = 1;
 	if (once)

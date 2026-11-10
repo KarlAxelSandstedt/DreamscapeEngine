@@ -51,7 +51,6 @@ Open questions on PFWait (owner's notes, moved from ds_job.h):
 
                  Windows
                  Linux
-                 WebAssembly + Emscripten
 
          POSSIBLE FUTURE PLATFORMS
 

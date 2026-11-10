@@ -60,10 +60,6 @@ Usage:
     (program systems sized by g_config, e.g. led_Alloc, ds_DynamicsAlloc, r_Init; main loop)
     ds_Shutdown();
 
-    Web: the browser owns the main loop. main() hands it to emscripten_set_main_loop, which unwinds
-    main()'s stack, and the loop callback calls ds_Shutdown when the program quits. Keep all state the
-    loop uses in globals.
-
 Config API
 ----------
 Description:
@@ -92,8 +88,7 @@ struct ds_RuntimeConfig
     u64             persistent_size;        /* engine-owned persistent arena                            */
     u32             thread_count;           /* scheduler workers including the main thread; 0: logical
                                                cores - 2. Clamped to [1, min(logical cores,
-                                               DS_THREAD_COUNT_MAX)]; on the web the core count is
-                                               meant to be the pthread pool size (unverified)          */
+                                               DS_THREAD_COUNT_MAX)]                                  */
     u64             thread_scratchsize;     /* per-thread scratch arena size                            */
     u32             thread_scratch_count;   /* per-thread scratch arena count                           */
     u32             headless;               /* 1: don't start graphics (rule 5)                         */
@@ -133,11 +128,11 @@ void            ds_ArgvParse(const int argc, char *argv[]);
 
 /*
  * Parse the command line (ds_ArgvParse) and start the engine with the defaults overridden by the config= file
- * (none: defaults only) and headless. Logs to the log= file (none: no log file; the web logs to the console
- * only). Fatal: a bad command line, an unsupported CPU or a persistent arena that can't be allocated.
+ * (none: defaults only) and headless. Logs to the log= file (none: no log file). Fatal: a bad command line, an
+ * unsupported CPU or a persistent arena that can't be allocated.
  */
 void 			ds_Init(const int argc, char *argv[]);
-/* Stop the engine in reverse order and free its memory. Web: may be called from the main loop callback. */
+/* Stop the engine in reverse order and free its memory. */
 void 			ds_Shutdown(void);
 
 /* Apply the keys in the file at path onto config. Returns 0 if the file can't be read (config unchanged). */

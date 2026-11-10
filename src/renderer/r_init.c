@@ -29,15 +29,6 @@
 #define fragment_color		"../assets/shaders/color.frag"
 #define vertex_lightning	"../assets/shaders/lightning.vert"
 #define fragment_lightning	"../assets/shaders/lightning.frag"
-#elif __DS_PLATFORM__ == __DS_WEB__
-#define vertex_ui		"../assets/shaders/gles_ui.vert"
-#define fragment_ui		"../assets/shaders/gles_ui.frag"
-#define vertex_proxy3d		"../assets/shaders/gles_proxy3d.vert"
-#define fragment_proxy3d	"../assets/shaders/gles_proxy3d.frag"
-#define vertex_color		"../assets/shaders/gles_color.vert"
-#define fragment_color		"../assets/shaders/gles_color.frag"
-#define vertex_lightning	"../assets/shaders/gles_lightning.vert"
-#define fragment_lightning	"../assets/shaders/gles_lightning.frag"
 #endif
 
 struct r_Core r_core_storage = { 0 };

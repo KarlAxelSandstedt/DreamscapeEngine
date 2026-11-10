@@ -23,19 +23,17 @@ ds_define.h
 Platform, compiler and build-mode definitions that every engine header builds on (it includes only the
 compiler's intrinsics headers). An unsupported platform, CPU or compiler is an #error.
 
-    __DS_PLATFORM__     __DS_LINUX__, __DS_WIN64__ or __DS_WEB__ (Emscripten).
-    __DS_COMPILER__     __DS_GCC__, __DS_CLANG__ (emcc too) or __DS_MSVC__.
-    __DS_X64__          64-bit x86 (Linux and Windows; the web is wasm).
-    DS_LITTLE_ENDIAN    or DS_BIG_ENDIAN (GCC/Clang byte-order macros; MSVC and the web are little endian).
+    __DS_PLATFORM__     __DS_LINUX__ or __DS_WIN64__.
+    __DS_COMPILER__     __DS_GCC__, __DS_CLANG__ or __DS_MSVC__.
+    __DS_X64__          64-bit x86.
+    DS_LITTLE_ENDIAN    or DS_BIG_ENDIAN (GCC/Clang byte-order macros; MSVC is little endian).
     DS_CACHE_LINE       64 bytes. DS_THREAD_COUNT_MAX: most threads the engine indexes, main thread included.
     ds_ThreadLocal, ds_StaticAssert(condition, cstr), ds_Align(bytes), ds_ForceInline, ds_NoReturn: portable keywords.
     ds_AcqRelCompilerBarrier   compiler-only barrier, no CPU fence (thread ordering: ds_atomic.h).
-    ds_CpuPause(count)  count pause instructions, a spin-wait hint; nothing on the web.
-    Breakpoint(condition)   DS_DEBUG builds: if condition holds, stop in a debugger (without one, Linux and
-                        Windows end the process; the web does nothing). Otherwise compiled out: no side
-                        effects or error handling inside.
+    ds_CpuPause(count)  count pause instructions, a spin-wait hint.
+    Breakpoint(condition)   DS_DEBUG builds: if condition holds, stop in a debugger (without one, the process
+                        ends). Otherwise compiled out: no side effects or error handling inside.
     DS_DEBUG            also defines DS_ASSERT_DEBUG (ds_assert.h), DS_PHYSICS_DEBUG and DS_GL_DEBUG.
-                        The web build undefines DS_PROFILE (no Tracy there).
 */
 
 #ifndef __DREAMSCAPE_DEFINE_H__
@@ -50,7 +48,6 @@ extern "C" {
 
 #define __DS_WIN64__	1
 #define __DS_LINUX__	2
-#define __DS_WEB__	3
 
 #define __DS_GCC__ 	4
 #define __DS_MSVC__ 	5
@@ -63,8 +60,6 @@ extern "C" {
     #else 
         #error "ds_define.h: Linux is supported on x86-64 only"
     #endif
-#elif defined(__EMSCRIPTEN__)
-	#define __DS_PLATFORM__ 	__DS_WEB__
 #elif defined(_WIN64)
 	#define __DS_PLATFORM__ 	__DS_WIN64__
     #if defined(_M_X64)
@@ -73,26 +68,14 @@ extern "C" {
         #error "ds_define.h: Windows is supported on x64 only"
     #endif
 #else
-    #error "ds_define.h: unsupported platform (Linux, Windows or Emscripten)"
+    #error "ds_define.h: unsupported platform (Linux or Windows)"
 #endif
 
 #define __GAPI__ __DS_SDL3__
 
 #define DS_CACHE_LINE		64
 
-#if defined(__EMSCRIPTEN__)
-
-	#define __DS_COMPILER__ __DS_CLANG__	/* emcc is clang; __DS_PLATFORM__ == __DS_WEB__ tells the web build apart */
-	#define DS_LITTLE_ENDIAN
-	#define ds_ThreadLocal __thread
-	#define ds_StaticAssert(ds_Assertion, str)	_Static_assert(ds_Assertion, str)
-	#define ds_Align(alignment) __attribute__((aligned(alignment)))
-	#define ds_ForceInline inline __attribute__((always_inline))
-	#define ds_NoReturn __attribute__((noreturn))
-    #define ds_AcqRelCompilerBarrier __asm__ __volatile__ ("" ::: "memory")
-	#undef DS_PROFILE	/* no Tracy on the web */
-
-#elif defined(__clang__)
+#if defined(__clang__)
 
 	#define __DS_COMPILER__	__DS_CLANG__
 	#if (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
@@ -166,16 +149,6 @@ extern "C" {
             }                                                                                           \
         } while (0)
 	#endif
-
-#elif __DS_PLATFORM__ == __DS_WEB__
-
-	void emscripten_debugger(void);
-	#ifdef DS_DEBUG
-		#define Breakpoint(condition) if (!(condition)) { } else { emscripten_debugger(); }
-	#else
-		#define Breakpoint(condition)
-	#endif
-    #define ds_CpuPause(count)	((void) 0)
 
 #elif __DS_PLATFORM__ == __DS_WIN64__
 

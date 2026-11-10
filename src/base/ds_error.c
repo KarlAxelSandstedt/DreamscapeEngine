@@ -48,18 +48,14 @@ static u32 a_fatal_cleanup_initiated = 0;
 /* set on the thread doing the cleanup: a fatal error during the cleanup itself exits at once */
 static ds_ThreadLocal u32 tl_fatal_cleanup_running = 0;
 
-#if __DS_PLATFORM__ == __DS_LINUX__ || __DS_PLATFORM__ == __DS_WEB__
+#if __DS_PLATFORM__ == __DS_LINUX__
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#if __DS_PLATFORM__ == __DS_LINUX__
 #include <execinfo.h>
 #define STACKTRACE_BUFSIZE	128
-#else
-#include <emscripten/emscripten.h>
-#endif
 
 void FatalCleanupAndExit(void)
 {
@@ -72,7 +68,6 @@ void FatalCleanupAndExit(void)
 	if (AtomicCompareExchangeAcqRlx32(&a_fatal_cleanup_initiated, &desired, 1))
 	{
 		tl_fatal_cleanup_running = 1;
-#if __DS_PLATFORM__ == __DS_LINUX__
 		void *buf[STACKTRACE_BUFSIZE];
 		char **strings;
 		const i32 count = backtrace(buf, STACKTRACE_BUFSIZE);
@@ -90,17 +85,6 @@ void FatalCleanupAndExit(void)
 			}
 			free(strings);
 		}
-#else
-		/* the first call returns the bytes needed (with the '\0'); the stack may grow by the second call */
-		const int len = emscripten_get_callstack(EM_LOG_C_STACK | EM_LOG_JS_STACK, NULL, 0) + 256;
-		char *callstack = malloc(len);
-		if (callstack)
-		{
-			emscripten_get_callstack(EM_LOG_C_STACK | EM_LOG_JS_STACK, callstack, len);
-			fprintf(stderr, "================== STACKTRACE ==================\n%s", callstack);
-			free(callstack);
-		}
-#endif
 		LogShutdown();
 		/* break only now: without a debugger the breakpoint kills the process, unflushed output is lost */
 		fflush(stdout);
@@ -115,7 +99,6 @@ void FatalCleanupAndExit(void)
 	}
 }
 
-#if __DS_PLATFORM__ == __DS_LINUX__
 utf8 Utf8SystemErrorCodeStringBuffered(u8 *buf, const u32 bufsize, const u32 code)
 {
 	ds_Assert(bufsize > 0);
@@ -130,25 +113,6 @@ utf8 Utf8SystemErrorCodeStringBuffered(u8 *buf, const u32 bufsize, const u32 cod
 
 	return err_str;
 }
-#else
-utf8 Utf8SystemErrorCodeStringBuffered(u8 *buf, const u32 bufsize, const u32 code)
-{
-    /* Note: Emscripten seems to comply with XSI, so need separate function here */
-	ds_Assert(bufsize > 0);
-
-    char tmpbuf[ERROR_BUFSIZE];
-    char *str = tmpbuf;
-	if (strerror_r(code, (char *) tmpbuf, ERROR_BUFSIZE) != 0)
-	{
-        str = "";
-		Log(T_SYSTEM, S_ERROR, "%s: strerror_r has no text for error code %u", __func__, code);
-	}
-
-    const utf8 err_str = Utf8CstrBuffered(buf, bufsize, str);
-
-	return err_str;
-}
-#endif
 
 #elif __DS_PLATFORM__ == __DS_WIN64__
 
