@@ -20,7 +20,6 @@
 #include "r_local.h"
 
 //TODO MOVE into asset_manager
-#if __DS_PLATFORM__ == __DS_WIN64__ || __DS_PLATFORM__ ==  __DS_LINUX__
 #define vertex_ui		"../assets/shaders/ui.vert"
 #define fragment_ui		"../assets/shaders/ui.frag"
 #define vertex_proxy3d		"../assets/shaders/proxy3d.vert"
@@ -29,7 +28,6 @@
 #define fragment_color		"../assets/shaders/color.frag"
 #define vertex_lightning	"../assets/shaders/lightning.vert"
 #define fragment_lightning	"../assets/shaders/lightning.frag"
-#endif
 
 struct r_Core r_core_storage = { 0 };
 struct r_Core *g_r_core = &r_core_storage;

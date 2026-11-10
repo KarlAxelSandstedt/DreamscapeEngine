@@ -13,24 +13,18 @@ CMakeLists.txt passes -mpopcnt -mlzcnt -mbmi (Linux, clang-cl; MSVC needs no
 flag); ds_ArchConfigInit refuses to start without them.
 Synchronization: use ds_atomic.h with explicit orderings; never rely on x86's
 strong memory ordering (other architectures may be added).
-Platforms: Linux, Windows, and Web through Emscripten.
+Platforms: Linux and Windows.
 Compilers: GCC, MSVC, Clang
-Graphics: OpenGL 3.3 core (Linux, Windows) and WebGL 2.0 (OpenGL ES 3.0, web).
-One renderer serves both, so it uses only the subset that works on both: no GL
-call, format, extension or limit that WebGL 2 lacks. Every shader exists twice,
-assets/shaders/<name> (#version 330 core) and gles_<name> (#version 300 es);
-change both.
+Graphics: OpenGL 3.3 core; shaders in assets/shaders (#version 330 core).
 External libraries: SDL3, dtoa, freetype, stb_image, tracy, xxHash.
 
-Useful builds (script/linux/*.sh, script/windows/*.bat, script/web/*.sh, and
-script/web/*.bat for web builds on Windows; they run from the repository root
-wherever they are called from):
+Useful builds (script/linux/*.sh and script/windows/*.bat; they run from the
+repository root wherever they are called from):
     determinism.(sh/bat) - fresh reference + replay at several thread counts
         (tests one build). An old .bin is only valid for the version that
         recorded it.
     run.(sh/bat) - optimized build with Tracy profiling
-    release.(sh/bat) - optimized build without profiling (the web's optimized
-        build)
+    release.(sh/bat) - optimized build without profiling
     debug.(sh/bat) - debugging build
     test.(sh/bat) - correctness suites, debugging build, under gdb/raddbg
     address_sanitize.(sh/bat) - memory corruption detection + poisoning with ASan
