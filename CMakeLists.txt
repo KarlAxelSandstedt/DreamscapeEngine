@@ -69,65 +69,7 @@ if (DS_PROFILE)
 	set(TRACY_ENABLE ON)
 endif ()
 
-if (DEFINED EMSCRIPTEN)
-
-	if (DS_ASAN)
-		add_compile_options(-fsanitize=address -fno-omit-frame-pointer)
-		add_link_options(-fsanitize=address)
-	endif ()
-
-	if (DS_UBSAN)
-		add_compile_options(-fsanitize=undefined -fno-omit-frame-pointer)
-		add_link_options(-fsanitize=undefined)
-	endif ()
-
-	if (DS_DEBUG)
-		# Add debug information and C<->wasm mapping
-		add_compile_options(-g)
-		add_link_options(-g -gsource-map)
-
-		# high overhead; check every memory reference?
-		add_link_options(-sASSERTIONS=2)
-		add_link_options(-sSTACK_OVERFLOW_CHECK=2)
-		if (NOT DS_ASAN)
-			add_link_options(-sSAFE_HEAP=1)
-		endif ()
-	else ()
-		add_link_options(-sASSERTIONS=0)
-		# low overhead; end-of-frame checking?
-		add_link_options(-sSTACK_OVERFLOW_CHECK=1)
-	endif()
-
-	if (DS_OPTIMIZE)
-		add_compile_options(-O3)
-	else ()
-		add_compile_options(-O0)
-	endif ()	
-	
-	add_compile_options(-W -Wall -Wextra -Wno-switch -Wno-unused-parameter -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function)
-
-	# determinism: never fuse a*b + c into an FMA (wasm relaxed-simd has FMA)
-	add_compile_options(-ffp-contract=off)
-
-	add_link_options(--emrun)
-	add_link_options(-sALLOW_MEMORY_GROWTH)
-	add_link_options(-sMEMORY_GROWTH_GEOMETRIC_STEP=0)
-	add_link_options(-sMAX_WEBGL_VERSION=2)
-
-	add_compile_options(-pthread)
-	add_link_options(-pthread -sPTHREAD_POOL_SIZE=navigator.hardwareConcurrency)
-
-	# lib/'s external projects (SDL3, freetype) get CMAKE_C_FLAGS, not add_compile_options: without -pthread
-	# their objects lack atomics and wasm-ld refuses the shared-memory link
-	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -pthread")
-
-    #add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-	#	COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:${PROJECT_NAME}>/src
-	#	COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/src $<TARGET_FILE_DIR:${PROJECT_NAME}>/src
-	#	COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:${PROJECT_NAME}>/lib
-	#	COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/lib $<TARGET_FILE_DIR:${PROJECT_NAME}>/lib
-	#)
-elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
 
 	if (DS_ASAN)
 		add_compile_options(-fsanitize=address -fno-omit-frame-pointer)
@@ -309,25 +251,7 @@ endif ()
 
 
 if (DS_TEST)
-	if (DEFINED EMSCRIPTEN)
-
-		set(CMAKE_EXECUTABLE_SUFFIX ".html")
-		add_executable(${DS_TEST_EXECUTABLE} "${DS_TEST_MODULE_PATH}/wasm/main.c")
-
-		# the files the executable reads, in its virtual file system: link options (emcc warns at every compile)
-		target_link_options(${DS_TEST_EXECUTABLE} PRIVATE
-			"--embed-file=../assets@../assets"
-			"--embed-file=../asset_components@../asset_components"
-			"--embed-file=../config@../config")
-
-		if (DS_TEST_DETERMINISM)
-			# test files to and from the build directory, see host_files.js
-			set(DS_HOST_FILES_JS "${DS_TEST_MODULE_PATH}/wasm/host_files.js")
-			target_link_options(${DS_TEST_EXECUTABLE} PRIVATE "--pre-js=${DS_HOST_FILES_JS}")
-			set_property(TARGET ${DS_TEST_EXECUTABLE} APPEND PROPERTY LINK_DEPENDS "${DS_HOST_FILES_JS}")
-		endif ()
-
-	elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+	if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
 
 		add_executable(${DS_TEST_EXECUTABLE} "${DS_TEST_MODULE_PATH}/linux/main.c")
 		

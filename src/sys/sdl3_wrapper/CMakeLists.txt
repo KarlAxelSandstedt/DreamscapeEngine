@@ -9,14 +9,5 @@ add_library(sdl3_wrapper STATIC
 target_include_directories(sdl3_wrapper INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(sdl3_wrapper PUBLIC Dreamscape::Containers)
 
-if (DEFINED EMSCRIPTEN)
-	target_link_libraries(sdl3_wrapper 
-		PRIVATE 
-            #SDL3::SDL3-static
-            #SDL3::Headers
-            SDL3::SDL3
-	)
-else ()
-    #target_link_libraries(sdl3_wrapper PRIVATE SDL3::SDL3-shared)	
-    target_link_libraries(sdl3_wrapper PRIVATE SDL3::SDL3)	
-endif ()
+#target_link_libraries(sdl3_wrapper PRIVATE SDL3::SDL3-shared)	
+target_link_libraries(sdl3_wrapper PRIVATE SDL3::SDL3)	
