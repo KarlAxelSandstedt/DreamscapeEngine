@@ -20,16 +20,18 @@
 /*
 ds_queue.h
 ==========
-Binary min-heaps of f32 priorities: the lowest priority is served first. Ties come out in an unspecified
-order; priorities must not be NaN (the order is then unspecified, but no element is lost). +inf is fine.
+Binary min-heaps of f32 priorities, and a lock-free LIFO of u32 values. The heaps serve the lowest
+priority first. Ties come out in an unspecified order; priorities must not be NaN (the order is then
+unspecified, but no element is lost). +inf is fine.
 
 Contents (in this order):
     MQA     (priority, external index) elements with a handle per element, so a queued element's
             priority can be lowered (MQADecreasePriority).
     MQ      (u32, priority) pairs without handles: push, pop, peek.
+    LIFO    thread-safe LIFO of u32 values.
 
-Both live in an arena (fixed length) or on the heap (fixed, or growable: the storage doubles when a push
-finds the queue full). A push onto a full fixed queue is fatal. Not thread-safe.
+Both heaps live in an arena (fixed length) or on the heap (fixed, or growable: the storage doubles when a push
+finds the queue full). A push onto a full fixed queue is fatal. The heaps are not thread-safe.
 */
 
 #ifndef __DS_QUEUE_H__
@@ -130,6 +132,41 @@ void 			MQPush(struct MQ *queue, const u32 id, const f32 priority);
 u32f32 			MQPop(struct MQ *heap);
 /* Return a minimum without removing it; the queue must not be empty. */
 u32f32 			MQPeek(const struct MQ *heap);
+
+/*
+LIFO
+----
+Lock-free Push/Pop LIFO queue with u32 values (< LIFO_NULL).
+*/
+
+#define LIFO_NULL   U32_MAX
+
+struct LIFONode
+{
+    u32 next;
+    u32 value;
+};
+
+struct ds_Align(DS_CACHE_LINE) LIFO
+{
+    u64                 a_head;
+    u8                  pad_head[DS_CACHE_LINE - sizeof(u64)];
+    u64                 a_free;
+    u8                  pad_free[DS_CACHE_LINE - sizeof(u64)];
+    u32                 a_count_max;
+    u8                  pad_count[DS_CACHE_LINE - sizeof(u32)];
+    struct VM           vm;
+    struct LIFONode *   n;
+};
+
+/* Master: Allocate and initialize empty lifo. On failure, lifo is zeroed. */
+u32     LIFOAlloc(struct LIFO *lifo, const u32 max_node_count);
+/* Master: Deallocate lifo resources */
+void    LIFODealloc(struct LIFO *lifo);
+/* Thread-safe: Push value onto queue. Return 1 on success, 0 on failure. */
+u32     LIFOPush(struct LIFO *lifo, const u32 value);
+/* Thread-safe: Pop and return value from queue on success. Return LIFO_NULL on failure. */
+u32     LIFOPop(struct LIFO *lifo);
 
 #ifdef __cplusplus
 } 
