@@ -108,6 +108,7 @@ void ds_PoolGrowInternal(void **buf, u32 *length, const u64 slot_size)
 	*length = new_length_including_stub - 1;
 }
 
+#if 0 /* TPool: retired, rebuilt on magazines and TStack */
 /*
  * Free lists are lock-free (Treiber) stacks of slot indices, one per thread index, each on its own cache
  * line (struct ds_TStack); an add tries its own list, then 2*logical_core_count random others. A list's head
@@ -215,6 +216,8 @@ void ds_TPoolGrowInternal(struct ds_TPoolState *state, void **block, const u32 i
 		}
 	}
 }
+
+#endif
 
 u32 ds_PoolTryDeserializeInternal(struct arena *mem, struct SS *ss, u32 *heap_allocated, void **buf, u32 *length, u32 *count, u32 *count_max, u32 *next_free, u32 *growable, const u64 slot_size, const u64 pool_slot_offset, const u32 alloc_growable)
 {

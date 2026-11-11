@@ -28,12 +28,13 @@ Contents (in this order):
     Utilities   PowerOfTwo* utility functions; g_mem_config (page size, VM granularity and commit chunk).
     Heap        ds_Alloc/ds_Realloc/ds_Free: aligned blocks of exactly the requested size.
     VM          struct VM: reserved address space, committed in chunks on first need (Linux: by touch, Windows: MEM_COMMIT).
+    TStack      struct TStack: lock-free LIFO of node indices over a buffer of TREIBER_NODE structs.
     Arena       stack allocator (push, pop, records) on a heap block or inside another arena.
     Ring        ring buffer whose end wraps through mirrored virtual memory (Linux, Windows).
     CPool       ds_CPool(T): compact typed array; removal moves the last element into the hole.
     Pool        ds_Pool(T) of POOL_NODE structs: stable indices, free list, serializable.
-    TPool       ds_TPool(T) of TPOOL_NODE structs: thread-safe, addresses never move; lock-free free lists.
-Poisoning, Utilities, Heap and VM are below. The others live in ds_arena.h, ds_ring.h, ds_compact_pool.h, ds_pool.h
+    TPool       retired (#if 0 in ds_pool.h): rebuilt on magazines and TStack.
+Poisoning, Utilities, Heap, VM and TStack are below. The others live in ds_arena.h, ds_ring.h, ds_compact_pool.h, ds_pool.h
 (Pool and TPool) and ds_slab.h, included at the end in this order; they are not included on their own.
 */
 
@@ -53,7 +54,7 @@ extern "C" {
 #include "ds_atomic.h"
 #include "ds_random.h"
 
-/* ds_thread.h includes this header: TPool needs only this declaration */
+/* ds_thread.h includes this header: the thread-safe containers need only this declaration */
 u32 ds_ThreadSelfIndex(void);
 
 #define DEFAULT_MEMORY_ALIGNMENT	((u64) 8)
@@ -160,6 +161,83 @@ u32         VMCommitInternal(struct VM *vm, const u64 end);
 /* Release VM resources */
 void        VMRelease(struct VM *vm);
 
+/*
+TStack
+======
+Intrusive Lock-free index stack (Treiber). To push struct indices onto stack, add 
+TREIBER_NODE to struct. 
+
+WARNING: It it illegal to push a struct onto multiple stacks simultaneously.
+*/
+
+#define TREIBER_NODE    u32 treiber_next
+#define TSTACK_NULL     U32_MAX
+
+typedef u64 TStackKey;
+
+/* Key of (index, tag), the index of a key, the tag of a key. */
+static ds_ForceInline TStackKey TStackKeyInit(const u32 index, const u32 tag);
+static ds_ForceInline u32       TStackKeyIndex(const TStackKey key);
+static ds_ForceInline u32       TStackKeyTag(const TStackKey key);
+
+struct ds_Align(DS_CACHE_LINE) TStack
+{
+    TStackKey   a_head;
+    u8          pad[DS_CACHE_LINE - sizeof(TStackKey)];
+};
+
+/* Master: initialize empty stack. */
+static ds_ForceInline void TStackFlush(struct TStack *stack)
+{
+    stack->a_head = TSTACK_NULL;
+};
+
+/* a popped node's treiber_next is TSTACK_NULL in debug builds: a second push of a queued node asserts */
+#ifdef DS_DEBUG
+#define TStackDebugMark(_buf_, _index_)     AtomicStoreRlx32(&(_buf_)[_index_].treiber_next, TSTACK_NULL)
+#else
+#define TStackDebugMark(_buf_, _index_)
+#endif
+
+/* Thread-safe: Push the node at index (< TSTACK_NULL, not in any stack) onto stack. */
+#define TStackPush(_stack_, _buf_, _index_)                                             \
+do                                                                                      \
+{                                                                                       \
+    ds_Assert((_index_) < TSTACK_NULL);                                                 \
+    ds_Assert(AtomicLoadRlx32(&(_buf_)[_index_].treiber_next) == TSTACK_NULL);          \
+                                                                                        \
+    TStackKey _head_ = AtomicLoadRlx64(&(_stack_)->a_head);                             \
+    TStackKey _new_head_;                                                               \
+    do                                                                                  \
+    {                                                                                   \
+        AtomicStoreRlx32(&(_buf_)[_index_].treiber_next, TStackKeyIndex(_head_));       \
+        _new_head_ = TStackKeyInit((_index_), TStackKeyTag(_head_) + 1);                \
+    } while (!AtomicCompareExchangeRelRlx64(&(_stack_)->a_head, &_head_, _new_head_));  \
+} while (0)
+
+/* Thread-safe: Pop and set _index_ to the top node's index from stack on success, TSTACK_NULL on failure. */
+#define TStackTryPop(_index_, _stack_, _buf_)                                           \
+do                                                                                      \
+{                                                                                       \
+    TStackKey _head_ = AtomicLoadAcq64(&(_stack_)->a_head);                             \
+    TStackKey _new_head_;                                                               \
+    do                                                                                  \
+    {                                                                                   \
+        (_index_) = TStackKeyIndex(_head_);                                             \
+        if ((_index_) == TSTACK_NULL)                                                   \
+        {                                                                               \
+            break;                                                                      \
+        }                                                                               \
+        _new_head_ = TStackKeyInit(AtomicLoadRlx32(&(_buf_)[_index_].treiber_next),     \
+                                   TStackKeyTag(_head_) + 1);                           \
+    } while (!AtomicCompareExchangeAcqRelAcq64(&(_stack_)->a_head, &_head_, _new_head_));\
+                                                                                        \
+    if ((_index_) != TSTACK_NULL)                                                       \
+    {                                                                                   \
+        TStackDebugMark(_buf_, _index_);                                                \
+    }                                                                                   \
+} while (0)
+
 /* ========================= INLINED IMPLEMENTATIONS ========================= */
 
 static ds_ForceInline u32 PowerOfTwoCheck(const u64 n)
@@ -199,6 +277,21 @@ static ds_ForceInline u32 PowerOfTwoMultipleCheck(const u64 n, const u64 m)
 {
 	ds_Assert(PowerOfTwoCheck(m));
 	return (n & (m - 1)) == 0;
+}
+
+static ds_ForceInline TStackKey TStackKeyInit(const u32 index, const u32 tag)
+{
+    return ((TStackKey) tag << 32) | index;
+}
+
+static ds_ForceInline u32 TStackKeyIndex(const TStackKey key)
+{
+    return (u32) key;
+}
+
+static ds_ForceInline u32 TStackKeyTag(const TStackKey key)
+{
+    return (u32) (key >> 32);
 }
 
 static u32 VMCommit(struct VM *vm, const u64 end)

@@ -35,6 +35,7 @@ struct list_node
 #define G_256B_COUNT  ((u64) 100000)
 #define G_1MB_COUNT   ((u64) 10000)
 
+#if 0 /* TPool: retired, rebuilt on magazines and TStack */
 struct ds_Struct
 {
     TPOOL_NODE;
@@ -120,6 +121,8 @@ void ds_StructTStackTest(void *void_pool)
     }
 }
 
+#endif
+
 struct test_PerformanceSerial allocator_serial_test[] =
 {
     0
@@ -128,6 +131,7 @@ struct test_PerformanceSerial allocator_serial_test[] =
 /* defined in test_allocator_correctness.c */
 extern struct suite_Correctness storage_allocator_correctness_suite;
 
+#if 0 /* TPool: retired, rebuilt on magazines and TStack */
 struct test_PerformanceParallel allocator_parallel_test[] =
 {    
     {
@@ -148,12 +152,13 @@ struct test_PerformanceParallel allocator_parallel_test[] =
         .test_free = &ds_StructTPoolIncrementTestFree,
     },
 };
+#endif
 
 struct suite_Performance storage_performance_allocator_suite =
 {
 	.id = "Allocator Performance",
-	.parallel_test = allocator_parallel_test,
-	.parallel_test_count = sizeof(allocator_parallel_test) / sizeof(allocator_parallel_test[0]),
+	.parallel_test = NULL,
+	.parallel_test_count = 0,
 	/* no serial tests yet: allocator_serial_test only holds an empty entry, whose NULL test the runner calls */
 	.serial_test = NULL,
 	.serial_test_count = 0,

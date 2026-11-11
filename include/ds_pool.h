@@ -22,6 +22,7 @@ ds_pool.h
 =========
 Pool: ds_Pool(T) of POOL_NODE structs: stable indices, free list, serializable.
 TPool: ds_TPool(T) of TPOOL_NODE structs: thread-safe, addresses never move; lock-free free lists.
+       Retired (#if 0): rebuilt on magazines and TStack.
 The inline definitions follow at the bottom, in the same order.
 Included by ds_allocator.h after its Heap section, not on its own.
 */
@@ -200,6 +201,7 @@ do                                                                              
 	                              &(pool).growable, sizeof((pool).buf[0]), ds_PoolSlotOffset(pool),     \
 	                              (__growable))
 
+#if 0 /* TPool: retired, rebuilt on magazines and TStack */
 /*
 TPool API
 ---------
@@ -340,6 +342,7 @@ static ds_ForceInline struct slot ds_TPoolAddInternal(struct ds_TPoolState *stat
 	                     sizeof((pool).block[0][0]), ds_TPoolTailOffset(pool))
 
 #define ds_TPoolRemove(pool, index)	ds_TPoolFreeListPush(pool, ds_ThreadSelfIndex(), index)
+#endif
 
 /******************************** Pool inline definitions *********************************/
 
@@ -404,6 +407,7 @@ static ds_ForceInline void ds_PoolIndexCheck(const void *buf, const u32 length, 
 	ds_Assert(((u64) addr - (u64) buf) % slot_size == 0);
 }
 
+#if 0 /* TPool: retired, rebuilt on magazines and TStack */
 /******************************** TPool inline definitions ********************************/
 
 /* Internal: block and offset in the block of slot index. */
@@ -490,5 +494,7 @@ static ds_ForceInline struct slot ds_TPoolAddInternal(struct ds_TPoolState *stat
 
 	return ds_TPoolIncrementInternal(state, block, slot_size);
 }
+
+#endif
 
 #endif

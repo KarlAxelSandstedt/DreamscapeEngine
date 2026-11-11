@@ -742,6 +742,7 @@ static struct test_Output PoolSerializeTest(struct test_Environment *env)
 	return output;
 }
 
+#if 0 /* TPool: retired, rebuilt on magazines and TStack */
 struct test_TNode
 {
     TPOOL_NODE;
@@ -1001,6 +1002,151 @@ static struct test_Output TStackParallelTest(struct test_Environment *env)
 	return output;
 }
 
+#endif
+
+struct test_TSNode
+{
+    TREIBER_NODE;
+    u32 owner;
+};
+
+/* TStack, one thread: LIFO order, empty pops, the debug mark after a pop, flush */
+static struct test_Output TStackTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+    struct TStack stack;
+    struct test_TSNode node[8];
+    for (u32 i = 0; i < 8; ++i) { node[i].treiber_next = TSTACK_NULL; }
+    TStackFlush(&stack);
+
+    u32 index = 0;
+    TStackTryPop(index, &stack, node);
+    TEST_EQUAL(TSTACK_NULL, index);
+
+    for (u32 i = 0; i < 8; ++i)
+    {
+        TStackPush(&stack, node, i);
+    }
+    TEST_EQUAL(7, TStackKeyIndex(stack.a_head));
+    TEST_EQUAL(8, TStackKeyTag(stack.a_head));
+    for (u32 i = 8; i-- > 0;)
+    {
+        TStackTryPop(index, &stack, node);
+        TEST_EQUAL(i, index);
+    }
+    TStackTryPop(index, &stack, node);
+    TEST_EQUAL(TSTACK_NULL, index);
+    /* a pop of an empty stack does not touch the head */
+    TEST_EQUAL(16, TStackKeyTag(stack.a_head));
+
+    /* pushes in another order come back reversed; flush empties */
+    TStackPush(&stack, node, 3);
+    TStackPush(&stack, node, 5);
+    TStackPush(&stack, node, 1);
+    TStackTryPop(index, &stack, node);
+    TEST_EQUAL(1, index);
+    TStackTryPop(index, &stack, node);
+    TEST_EQUAL(5, index);
+    TStackFlush(&stack);
+    TStackTryPop(index, &stack, node);
+    TEST_EQUAL(TSTACK_NULL, index);
+    (void) env;
+	return output;
+}
+
+#define TSTACK_PARALLEL_NODES   16
+#define TSTACK_PARALLEL_OPS     200000
+
+struct test_TStackParallel
+{
+    struct TStack       stack;
+    struct test_TSNode  node[TSTACK_PARALLEL_NODES];
+    u32 *               a_owner;
+    u32                 a_next_id;
+    u32                 a_errors;
+};
+
+/* One job: pop a node, claim it, release it, push it back; again and again. */
+static void TStackParallelJob(void *args)
+{
+    struct test_TStackParallel *t = args;
+    const u32 id = AtomicAddFetchRlx32(&t->a_next_id, 1);
+    for (u32 i = 0; i < TSTACK_PARALLEL_OPS; ++i)
+    {
+        u32 index;
+        TStackTryPop(index, &t->stack, t->node);
+        if (index == TSTACK_NULL)
+        {
+            continue;
+        }
+
+        u32 expected = 0;
+        if (index >= TSTACK_PARALLEL_NODES || !AtomicCompareExchangeAcqRlx32(t->a_owner + index, &expected, id))
+        {
+            AtomicAddFetchRlx32(&t->a_errors, 1);
+            return;
+        }
+
+        t->node[index].owner = id;
+        expected = id;
+        if (t->node[index].owner != id || !AtomicCompareExchangeAcqRlx32(t->a_owner + index, &expected, 0))
+        {
+            AtomicAddFetchRlx32(&t->a_errors, 1);
+            return;
+        }
+        TStackPush(&t->stack, t->node, index);
+    }
+}
+
+/*
+Every scheduler worker hammers one stack holding TSTACK_PARALLEL_NODES nodes (pop, claim, release, push):
+few nodes and one contended head is where ABA corrupts a Treiber stack without the tag. A node popped by
+two jobs at once fails its claim; at the end the stack holds exactly the nodes it started with.
+*/
+static struct test_Output TStackParallelTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct test_TStackParallel *t = ds_Alloc(sizeof(*t), DS_CACHE_LINE);
+    TEST_NOT_EQUAL(NULL, t);
+    t->a_owner = ds_Alloc(TSTACK_PARALLEL_NODES*sizeof(u32), DS_CACHE_LINE);
+    TEST_NOT_EQUAL(NULL, t->a_owner);
+    memset(t->a_owner, 0, TSTACK_PARALLEL_NODES*sizeof(u32));
+    AtomicStoreRel32(&t->a_next_id, 0);
+    AtomicStoreRel32(&t->a_errors, 0);
+    TStackFlush(&t->stack);
+    for (u32 i = 0; i < TSTACK_PARALLEL_NODES; ++i)
+    {
+        t->node[i].treiber_next = TSTACK_NULL;
+        TStackPush(&t->stack, t->node, i);
+    }
+
+    ds_TestRunParallel(TStackParallelJob, t);
+    TEST_EQUAL(0, AtomicLoadAcq32(&t->a_errors));
+
+    /* drain: exactly the starting nodes, each once (bounded: a corrupted stack may cycle) */
+    u8 seen[TSTACK_PARALLEL_NODES] = { 0 };
+    u32 popped = 0;
+    for (u32 i = 0; i <= TSTACK_PARALLEL_NODES; ++i)
+    {
+        u32 index;
+        TStackTryPop(index, &t->stack, t->node);
+        if (index == TSTACK_NULL)
+        {
+            break;
+        }
+        TEST_TRUE(index < TSTACK_PARALLEL_NODES && !seen[index]);
+        seen[index] = 1;
+        popped += 1;
+    }
+    TEST_EQUAL(TSTACK_PARALLEL_NODES, popped);
+
+    ds_Free(t->a_owner);
+    ds_Free(t);
+    (void) env;
+	return output;
+}
+
 #define RING_TEST_SLOTS 64
 
 /* the byte k of the allocation with the given id */
@@ -1254,8 +1400,7 @@ static struct test_Output (*allocator_tests[])(struct test_Environment *) =
     CPoolSerializeTest,
     PoolTest,
     PoolSerializeTest,
-    TPoolTest,
-    TPoolParallelTest,
+    TStackTest,
     TStackParallelTest,
     RingTest,
     CPoolPushBatchTest,

@@ -25,6 +25,7 @@ Hash maps from a 32-bit hash to indices of the caller's storage; the caller comp
 Contents (in this order):
     ds_HashMap  hash -> chain of indices (u32 arrays), for pools and arrays; single-threaded, serializable.
     THashMap    ds_THashMap(T): the same, lock-free and intrusive, over the nodes of a ds_TPool(T).
+                Retired (#if 0) with the TPool.
 */
 
 #ifndef __DS_HASH_MAP_H__
@@ -101,6 +102,7 @@ u32		            ds_HashMapFirst(const struct ds_HashMap *map, const u32 hash);
 /* Return the next index in the chain, or HASH_NULL. */
 u32		            ds_HashMapNext(const struct ds_HashMap *map, const u32 index);
 
+#if 0 /* TPool: retired, rebuilt on magazines and TStack */
 /*
 THashMap
 --------
@@ -355,6 +357,8 @@ static ds_ForceInline void ds_THashMapRemoveInternal(const struct ds_THashState 
 		return;
 	}
 }
+
+#endif
 
 #ifdef __cplusplus
 } 

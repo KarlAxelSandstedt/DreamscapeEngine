@@ -26,6 +26,7 @@
 #define XXH_INLINE_ALL
 #include "xxhash.h"
 
+#if 0 /* TPool: retired, rebuilt on magazines and TStack */
 struct ds_Structure
 {
     THASH_NODE;
@@ -295,3 +296,5 @@ struct suite_Performance storage_THashMap_performance_suite =
 
 struct suite_Performance *THashMap_performance_suite = &storage_THashMap_performance_suite;
 struct suite_Correctness *THashMap_correctness_suite = &storage_THashMap_correctness_suite;
+
+#endif

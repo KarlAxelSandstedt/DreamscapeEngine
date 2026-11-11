@@ -410,34 +410,3 @@ u32f32 	MQPeek(const struct MQ *queue)
 	ds_AssertString(queue->count > 0, "Heap should have elements to extract\n");
 	return queue->element[0];
 }
-
-/****************************** LIFO ******************************/
-
-ds_StaticAssert(sizeof(struct LIFO) == 6*DS_CACHE_LINE, "");
-
-//TODO
-u32 LIFOAlloc(struct LIFO *lifo, const u32 max_node_count)
-{
-    (void) lifo; (void) max_node_count;
-    return 0;
-}
-
-//TODO
-void LIFODealloc(struct LIFO *lifo)
-{
-    (void) lifo;
-}
-
-//TODO
-u32 LIFOPush(struct LIFO *lifo, const u32 value)
-{
-    (void) lifo; (void) value;
-    return 0;
-}
-
-//TODO
-u32 LIFOPop(struct LIFO *lifo)
-{
-    (void) lifo;
-    return LIFO_NULL;
-}
