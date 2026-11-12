@@ -38,6 +38,7 @@ Slab API
 ::: Usage and Documentation :::
 
     struct item { ... };
+    DEFINE_ARRAY_STRUCT(item);
     DEFINE_TSLAB(item);
 
     ds_TSlab(item) slab;
@@ -62,6 +63,11 @@ Slab API
 
     // Thread-safe: Remove array.
     void ds_TSlabRemove(slab, array)
+
+    // Thread-safe:
+    // Returns reallocated array, or { .length = 0, .buf = NULL, .base = U32_MAX }
+    // on count = 0. Removes any previous array.
+    ds_Array(T) ds_TSlabRealloc(slab, array, count)
 */
 
 #define DS_TSLAB_NULL            U32_MAX
@@ -95,11 +101,17 @@ void    ds_TSlabSharedDealloc(struct ds_TSlabShared *shared);
 
 void    ds_TSlabSharedFlush(struct ds_TSlabShared *shared);
 
-struct ds_ArrayUntyped ds_TSlabSharedAdd(struct ds_TSlabShared *shared, const u64 slot_size,
-                                         const u32 count);
+struct ds_ArrayUntyped  ds_TSlabSharedAdd(struct ds_TSlabShared *shared,
+                                          const u64 slot_size,
+                                          const u32 count);
 
 void    ds_TSlabSharedRemove(struct ds_TSlabShared *shared, const u64 slot_size,
                              const u32 base, const u32 length);
+
+struct ds_ArrayUntyped  ds_TSlabSharedRealloc(struct ds_TSlabShared *shared,
+                                              const u64 slot_size,
+                                              const struct ds_ArrayUntyped array,
+                                              const u32 count);
 
 /* Internal: log and exit; the Log API is not visible here */
 ds_NoReturn void ds_TSlabOutOfMemoryInternal(void);
@@ -121,10 +133,19 @@ do                                                                              
 
 #define ds_TSlabAdd(_slab_, _count_)                                                    \
     ((union { struct ds_ArrayUntyped u; ds_TypeOf(*(_slab_).array_type) t; })           \
-        { .u = ds_TSlabSharedAdd(&(_slab_).shared, sizeof((_slab_).buf[0]), (_count_)) }).t
+        { .u = ds_TSlabSharedAdd(&(_slab_).shared, sizeof((_slab_).buf[0]),             \
+                                 (_count_)) }).t
 
 #define ds_TSlabRemove(_slab_, _array_)                                                 \
     ds_TSlabSharedRemove(&(_slab_).shared, sizeof((_slab_).buf[0]), (_array_).base,     \
                          (_array_).length)
+
+#define ds_TSlabRealloc(_slab_, _array_, _count_)                                       \
+    ((union { struct ds_ArrayUntyped u; ds_TypeOf(*(_slab_).array_type) t; })           \
+        { .u = ds_TSlabSharedRealloc(&(_slab_).shared, sizeof((_slab_).buf[0]),         \
+                                     (struct ds_ArrayUntyped) { (_array_).buf,          \
+                                                                (_array_).length,       \
+                                                                (_array_).base },       \
+                                     (_count_)) }).t
 
 #endif

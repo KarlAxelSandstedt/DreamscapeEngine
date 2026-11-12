@@ -1350,6 +1350,52 @@ static struct test_Output SlabAllocTest(struct test_Environment *env)
 	return output;
 }
 
+/* ds_TSlabRealloc: the no-op band, growth with the copy, shrink with the first elements, release */
+static struct test_Output TSlabReallocTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+    ds_TSlab(slab_item) slab;
+    TEST_EQUAL(1, ds_TSlabAlloc(slab, (u64) 16 << 20, 1));
+
+    ds_Array(slab_item) arr = ds_TSlabAdd(slab, 3);
+    TEST_EQUAL(4, arr.length);
+    TEST_EQUAL((void *) (slab.buf + arr.base), (void *) arr.buf);
+    for (u32 i = 0; i < 4; ++i) { arr.buf[i].a = 100 + i; }
+    const u32 base_4 = arr.base;
+
+    /* 3 and 4 fit the length-4 array, nothing moves */
+    arr = ds_TSlabRealloc(slab, arr, 4);
+    TEST_EQUAL(base_4, arr.base);
+    arr = ds_TSlabRealloc(slab, arr, 3);
+    TEST_EQUAL(base_4, arr.base);
+
+    /* 5 needs 8: everything is copied, the old array goes back to the slab */
+    arr = ds_TSlabRealloc(slab, arr, 5);
+    TEST_EQUAL(8, arr.length);
+    TEST_NOT_EQUAL(base_4, arr.base);
+    for (u32 i = 0; i < 4; ++i) { TEST_EQUAL(100 + i, arr.buf[i].a); }
+    const ds_Array(slab_item) again = ds_TSlabAdd(slab, 4);
+    TEST_EQUAL(base_4, again.base);
+    ds_TSlabRemove(slab, again);
+    arr.buf[7].a = 107;
+
+    /* 2 is at most half of 8: the first two elements move to a length-2 array */
+    arr = ds_TSlabRealloc(slab, arr, 2);
+    TEST_EQUAL(2, arr.length);
+    TEST_EQUAL(100, arr.buf[0].a);
+    TEST_EQUAL(101, arr.buf[1].a);
+
+    /* 0 removes it */
+    arr = ds_TSlabRealloc(slab, arr, 0);
+    TEST_EQUAL(NULL, arr.buf);
+    TEST_EQUAL(0, arr.length);
+    TEST_EQUAL(U32_MAX, arr.base);
+
+    ds_TSlabDealloc(slab);
+    (void) env;
+	return output;
+}
+
 struct test_TSlabItem { u32 owner; u32 serial; u32 pad[6]; };
 DEFINE_ARRAY_STRUCT(test_TSlabItem);
 DEFINE_TSLAB(test_TSlabItem);
@@ -1642,6 +1688,7 @@ static struct test_Output (*allocator_tests[])(struct test_Environment *) =
     CPoolPushBatchTest,
     VMTest,
     SlabAllocTest,
+    TSlabReallocTest,
     TSlabParallelTest,
 };
 

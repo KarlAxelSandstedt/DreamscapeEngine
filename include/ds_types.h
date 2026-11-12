@@ -163,7 +163,7 @@ struct ds_ArrayUntyped
 	u32         base;
 };
 
-#define empty_array	(struct ds_ArrayUntyped) { .buf = NULL, .length = 0, .base = U32_MAX }
+#define ds_ArrayEmpty()	((struct ds_ArrayUntyped) { .buf = NULL, .length = 0, .base = U32_MAX })
 
 DEFINE_ARRAY_NATIVE(u8);
 DEFINE_ARRAY_NATIVE(u16);

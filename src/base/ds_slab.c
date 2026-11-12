@@ -83,7 +83,7 @@ struct ds_ArrayUntyped ds_TSlabSharedAdd(struct ds_TSlabShared *shared, const u6
         const u64 end = (u64) arr.base + arr.length;
         if (end > shared->length || !VMCommit(&shared->vm, end*slot_size))
         {
-            return empty_array;
+            return ds_ArrayEmpty();
         }
     }
 
@@ -97,6 +97,32 @@ void ds_TSlabSharedRemove(struct ds_TSlabShared *shared, const u64 slot_size, co
     ds_Assert(PowerOfTwoCheck(length));
     PoisonAddress(shared->vm.buf + base*slot_size, length*slot_size);
     ds_MagazinePow2Push(&shared->magazine, base, length);
+}
+
+struct ds_ArrayUntyped ds_TSlabSharedRealloc(struct ds_TSlabShared *shared, const u64 slot_size, const struct ds_ArrayUntyped array, const u32 count)
+{
+    ds_Assert(array.length);
+    if (count == 0)
+    {
+        ds_TSlabSharedRemove(shared, slot_size, array.base, array.length);
+        return ds_ArrayEmpty();
+    }
+
+    if ((array.length >> 1) < count && count <= array.length)
+    {
+        return array;
+    }
+
+    const struct ds_ArrayUntyped moved = ds_TSlabSharedAdd(shared, slot_size, count);
+    if (moved.buf == NULL)
+    {
+        ds_TSlabOutOfMemoryInternal();
+    }
+
+    const u32 kept = (count < array.length) ? count : array.length;
+    memcpy(moved.buf, array.buf, kept*slot_size);
+    ds_TSlabSharedRemove(shared, slot_size, array.base, array.length);
+    return moved;
 }
 
 void ds_TSlabOutOfMemoryInternal(void)
