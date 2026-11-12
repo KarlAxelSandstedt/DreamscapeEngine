@@ -297,6 +297,9 @@ u32 ds_MagazinePow2Alloc(struct arena *mem,
 
     const u64 max_magazine_count = (u64) max_array_count / DS_MAGAZINE_LENGTH_MIN;
 
+    storage->index_length = max_array_count;
+    storage->magazine_length = (u32) max_magazine_count;
+
     const u64 vm_index_size = (u64) max_array_count*sizeof(u32);
     const u64 vm_magazine_size = max_magazine_count*sizeof(struct ds_MagazineShared);
     if (mem)
@@ -339,9 +342,9 @@ u32 ds_MagazinePow2Alloc(struct arena *mem,
         u32 base = 0;
         for (u32 k = 0; k < 31; ++k)
         {
-            thr->local[k].base[0] = base;
+            thr->magazine[k].base[0] = base;
             base += storage->mclass_length[k];
-            thr->local[k].base[1] = base;
+            thr->magazine[k].base[1] = base;
             base += storage->mclass_length[k];
         }
     }
@@ -378,9 +381,9 @@ void ds_MagazinePow2Flush(struct ds_MagazinePow2 *storage)
         struct ds_MagazineThread *thr = storage->thread + i;
         for (u32 j = 0; j < 31; ++j)
         {
-            thr->local[j].cur = 0;
-            thr->local[j].count[0] = 0;
-            thr->local[j].count[1] = 0;
+            thr->magazine[j].cur = 0;
+            thr->magazine[j].count[0] = 0;
+            thr->magazine[j].count[1] = 0;
         }
     }
 
@@ -392,6 +395,136 @@ void ds_MagazinePow2Flush(struct ds_MagazinePow2 *storage)
 
     storage->a_index_count = 0;
     storage->a_magazine_count = 0;
+}
+
+static u32 ds_MagazineThreadTryPush(struct ds_MagazineThread *t, const u32 mclass, const u32 mclass_length, const u32 index)
+{
+    struct ds_MagazineLocal *local = t->magazine + mclass;
+    const u32 cur = local->cur;
+    if (local->count[cur] == mclass_length)
+    {
+        return 0;
+    }
+
+    t->index_pool.buf[local->base[cur] + local->count[cur]] = index;
+    local->count[cur] += 1;
+    return 1;
+}
+
+void ds_MagazinePow2Push(struct ds_MagazinePow2 *storage, const u32 index, const u32 count)
+{
+    ds_Assert(PowerOfTwoCheck(count));
+
+    const u32 mclass = Ctz32(count);
+    const u32 mclass_length = storage->mclass_length[ mclass ];
+    struct ds_MagazineThread *t = storage->thread + ds_ThreadSelfIndex();
+    struct ds_MagazineLocal *local = t->magazine + mclass;
+    ds_Assert(local->count[ local->cur ] == mclass_length);
+
+    if (ds_MagazineThreadTryPush(t, mclass, mclass_length, index))
+    {
+        return;
+    }
+
+    local->cur = 1 - local->cur;
+    if (ds_MagazineThreadTryPush(t, mclass, mclass_length, index))
+    {
+        return;
+    }
+
+    struct ds_TStack *stack_full = &storage->mclass[ mclass ].stack_full;
+    struct ds_TStack *stack_empty = &storage->mclass[ mclass ].stack_empty;
+
+    /* Failed to save index to thread, both magazines full, try grab an empty one. */
+    u32 m;
+    ds_TStackTryPop(m, stack_empty, storage->magazine);
+    if (m == TSTACK_NULL)
+    {
+        m = AtomicFetchAddRlx32(&storage->a_magazine_count, 1);
+        const u32 base = AtomicFetchAddRlx32(&storage->a_index_count, mclass_length);
+        /* m fits whenever base does: the node count is derived from the index count */
+        if ((u64) base + mclass_length > storage->index_length)
+        {
+            LogString(T_SYSTEM, S_FATAL, "magazine storage: more arrays than max_array_count, exiting");
+            FatalCleanupAndExit();
+        }
+        ds_Assert(m < storage->magazine_length);
+        VMCommit(&storage->vm_magazine, ((u64) m + 1)*sizeof(struct ds_MagazineShared));
+        VMCommit(&storage->vm_index, ((u64) base + mclass_length)*sizeof(u32));
+        storage->magazine[m].treiber_next = TSTACK_NULL;
+        storage->magazine[m].base = base;
+    }
+
+    struct ds_MagazineShared *shared = storage->magazine + m;
+    ds_Assert(local->count[ local->cur ] == mclass_length);
+
+    const u32 *local_index = t->index_pool.buf + local->base[ local->cur ];
+    u32 *shared_index = storage->index + shared->base;
+    memcpy(shared_index, local_index, mclass_length*sizeof(u32));
+
+    ds_TStackPush(stack_full, storage->magazine, m);
+
+    local->count[ local->cur ] = 1;
+    t->index_pool.buf[local->base[ local->cur ]] = index;
+}
+
+static u32 ds_MagazineThreadTryPop(struct ds_MagazineThread *t, const u32 mclass)
+{
+    struct ds_MagazineLocal *local = t->magazine + mclass;
+    const u32 cur = local->cur;
+    if (local->count[cur] == 0)
+    {
+        return U32_MAX;
+    }
+
+    local->count[cur] -= 1;
+    return t->index_pool.buf[local->base[cur] + local->count[cur]];
+}
+
+u32 ds_MagazinePow2TryPop(struct ds_MagazinePow2 *storage, const u32 count)
+{
+    ds_Assert(PowerOfTwoCheck(count));
+    const u32 mclass = Ctz32(count);
+    const u32 mclass_length = storage->mclass_length[ mclass ];
+
+    struct ds_MagazineThread *t = storage->thread + ds_ThreadSelfIndex();
+    struct ds_MagazineLocal *local = t->magazine + mclass;
+
+    u32 index = ds_MagazineThreadTryPop(t, mclass);
+    if (index != U32_MAX)
+    {
+        return index;
+    }
+
+    local->cur = 1 - local->cur;
+    index = ds_MagazineThreadTryPop(t, mclass);
+    if (index != U32_MAX)
+    {
+        return index;
+    }
+
+    struct ds_TStack *stack_full = &storage->mclass[ mclass ].stack_full;
+    struct ds_TStack *stack_empty = &storage->mclass[ mclass ].stack_empty;
+
+    /* Failed to save index to thread, both magazines empty, try grab full one. */
+    u32 m;
+    ds_TStackTryPop(m, stack_full, storage->magazine);
+    if (m != TSTACK_NULL)
+    {
+        struct ds_MagazineShared *shared = storage->magazine + m;
+
+        u32 *local_index = t->index_pool.buf + local->base[ local->cur ];
+        const u32 *shared_index = storage->index + shared->base;
+        memcpy(local_index, shared_index, mclass_length*sizeof(u32));
+
+        ds_TStackPush(stack_empty, storage->magazine, m);
+
+        local->count[ local->cur ] = mclass_length - 1;
+        return local_index[ local->count[ local->cur ] ];
+    }
+
+    /* No full magazine exist, signal to caller that they have should allocate objects. */
+    return U32_MAX;
 }
 
 #include "ds_arena.c"

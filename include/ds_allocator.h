@@ -323,7 +323,8 @@ static u32 VMCommit(struct VM *vm, const u64 end)
 /*
 ds_MagazinePow2
 ===============
-//TODO cleaned up version of below
+Bonwick style magazine storage, with size 2^N classes. Magazines store indices to external
+arrays of objects. The array's size depends on the magazine's class.
 */
 
 struct ds_MagazineLocal
@@ -333,16 +334,18 @@ struct ds_MagazineLocal
     u32 base[2];    /* magazine base in thread->index_pool.buf[]                        */
 };
 
+/* Thread-owned local cache of magazines and index buffer. */
 struct ds_Align(DS_CACHE_LINE) ds_MagazineThread
 {
-    ds_CPool(u32)           index_pool;
-    struct ds_MagazineLocal local[31];
+    ds_CPool(u32)           index_pool;     /* indices to base of external arrays  */
+    struct ds_MagazineLocal magazine[31];
 };
 
+/* magazines (either empty or full) in shared storage.  */
 struct ds_MagazineShared
 {
     TREIBER_NODE;
-    u32 base;
+    u32 base;       /* indices to base of external arrays  */
 };
 
 struct ds_Align(DS_CACHE_LINE) ds_MagazineClass
@@ -352,9 +355,9 @@ struct ds_Align(DS_CACHE_LINE) ds_MagazineClass
 };
 
 /*
- * Hint for how much memory a magazine should index into. Magazines with indices to
- * smaller arrays gets capped at 64 arrays, while large array magazines stores at 
- * least4 array indices.
+ * Hint for how much memory a magazine should index into: a class's magazine length is the hint
+ * divided by the class's array size, clamped. Magazines with indices to smaller arrays get
+ * capped at 64 arrays, while large array magazines store at least 4 array indices.
  */
 #define DS_MAGAZINE_SIZE_HINT   (16*1024)
 #define DS_MAGAZINE_LENGTH_MIN  4
@@ -362,11 +365,14 @@ struct ds_Align(DS_CACHE_LINE) ds_MagazineClass
 
 struct ds_MagazinePow2
 {
-    u32 *                       index;
-    struct ds_MagazineShared *  magazine;       
+    u32 *                       index;              
+    struct ds_MagazineShared *  magazine;           
+
     struct ds_MagazineThread *  thread;
     u32                         thread_count;
     u32                         heap_allocated;
+    u32                         index_length;
+    u32                         magazine_length;
 
     u32                         mclass_length[31];  /* magazine length per class        */
     struct ds_MagazineClass     mclass[31];         /* stacks of empty/full magazines   */
@@ -380,16 +386,37 @@ struct ds_MagazinePow2
     struct VM                   vm_magazine;
 };
 
-//TODO
+/*
+ * Master: Initialize magazine storage (Optionally on provided arena). slot_size is the size
+ * of each external element, and max_array_count is the upper-limit of the number of array
+ * allocations (This value can be very huge if mem == NULL, since we only commit memory as
+ * needed).
+ */
 u32     ds_MagazinePow2Alloc(struct arena *mem,
                                 struct ds_MagazinePow2 *storage,
                                 const u32 thread_count,
                                 const u64 slot_size,
                                 const u32 max_array_count);
-//TODO
+/* Master: Dealloc memory and zero storage. With an arena, only the storage is zeroed. */
 void    ds_MagazinePow2Dealloc(struct ds_MagazinePow2 *storage);
-//TODO
+/* Master: Flush shared and thread magazine state; every pushed index is forgotten. */
 void    ds_MagazinePow2Flush(struct ds_MagazinePow2 *storage);
+/* 
+ * Thread-safe: Push (free) an array[count] starting at index in external buffer into magazine
+ * storage. 
+ */
+void    ds_MagazinePow2Push(struct ds_MagazinePow2 *storage, const u32 index, const u32 count_power_of_two);
+/* 
+ * Thread-safe: Pop (allocate) an array[count] from magazine storage and return the base index
+ * in external buffer it starts at. If no array exists in the magazine storage to be popped,
+ * U32_MAX is returned, in which case the caller should pop count_power_of_two elements
+ * directly from its object buffer.
+ *
+ * RETURNS: On success, base index in external buffer
+ *          On failure, U32_MAX. 
+ */
+u32     ds_MagazinePow2TryPop(struct ds_MagazinePow2 *storage, const u32 count_power_of_two);
+
 
 /*
 Magazine API
@@ -398,71 +425,9 @@ Magazine API
 //TODO: ds_Array( T ) { .length, .buf } ? ds_Slab allocates larger arrays that user asks for,
 //      so this small helper is probably useful, or we just re-use cpool...
 
-//TODO temporary architecture segment
-
----------------------------------------------------------------
-
-(Just pseudocode, do not expect syncing here)
-
-Suppose local ops of add or remove failed (2 empty magazines, 2 filled
-magazines, respectively). Then a thread needs to grab a magazine from
-the depot:
-
-    If add object, pop full magazine m
-        If success
-            push indices of m onto local magazine
-            push m.id onto empty stack
-            return 1;
-
-        // no filled magazines left so we return 0
-        // signaling for caller to push contiguous
-        // object memory and allocate the local but
-        // empty magazine with new slots.
-        return 0;
-
-
-    If remove object, pop empty magazine m
-
-        if failure
-
-        If success;
-            push local indices onto m index base;
-            push m onto filled stack
-            clear local indices.
-            return 1;
-
-        // no empty magazines left so we alloc new
-        // magazine (This is where new magazines are
-        // allocated!)
-        
-        base = vm_magazine.push(class_index_count*sizeof(u32));
-        ds_MagazineId m = { .tag = 1, .base = base };
-        push local indices onto m index base;
-        push m onto filled stack
-        clear local indices.
-        return 1;
-
+//TODO: Serialization API?
+//TODO: Memusage API
 */
-
-
-typedef u64 ds_MagazineId;
-
-//j/* One depot per class */
-//jstruct ds_MagazineDepot
-//j{
-//j};
-//j
-//jstruct ds_MagazinePow2;
-//j{
-//j    u32                         thread_count;   
-//j    u32                         class_count;    /* Number of count-classes                  */
-//j
-//j    u32 *                       magasine_length;/* length[k] == magazine[thread][k].length  */
-//j    struct ds_Magazine **       magazine;       /* per-thread owned arrays of magazines, 
-//j                                                   grown when needed                        */
-//j    struct ds_MagazineDepot *   depot;          /* per-class depot of magazines             */
-//j};
-//j
 
 #include "ds_slab.h"
 
