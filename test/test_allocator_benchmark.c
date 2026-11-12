@@ -42,6 +42,8 @@ common prefix, frees the old one and writes the new elements.
 
 struct sb_elem_m { u8 b[168]; };
 struct sb_elem_c { u8 b[32]; };
+DEFINE_ARRAY_STRUCT(sb_elem_m);
+DEFINE_ARRAY_STRUCT(sb_elem_c);
 DEFINE_TSLAB(sb_elem_m);
 DEFINE_TSLAB(sb_elem_c);
 
@@ -55,12 +57,18 @@ enum sb_variant
     SB_STEAL,
     SB_DEQUE,
     SB_MAGAZINE,
+    SB_OLD,
 };
+
+/* the full set of variants (ds_Alloc, ds_Realloc, the stack and deque designs) only on request */
+#ifndef SB_EXTRA_VARIANTS
+#define SB_EXTRA_VARIANTS 0
+#endif
 
 static const char *sb_variant_name[] =
 {
     "null", "ds_TSlab", "ds_Alloc", "ds_Realloc", "central TStack", "per-thread TStack steal", "per-thread WSDeque steal",
-    "magazines",
+    "magazines", "ds_TSlab old (per-thread lists)",
 };
 static const u32 sb_elem_size[2] = { sizeof(struct sb_elem_m), sizeof(struct sb_elem_c) };
 /* new-count histograms of the trace, manifold arrays and tri cache arrays */
@@ -191,6 +199,38 @@ static struct slot sb_central_carve(struct sb_central *c, const u32 count)
     }
     slot.address = c->vm.buf + slot.index*c->slot_size;
     return slot;
+}
+
+/* old ds_TSlab: per-thread free lists per count, the link in the freed array's first u32, a shared bump */
+struct ds_Align(DS_CACHE_LINE) sb_old_thread
+{
+    u32 head[SB_COUNT_MAX];
+    u8  pad[DS_CACHE_LINE - SB_COUNT_MAX*sizeof(u32)];
+};
+
+static struct sb_old_thread *g_old[2];
+
+static struct slot sb_old_add(const u32 kind, const u32 count)
+{
+    struct sb_central *c = g_central + kind;
+    struct sb_old_thread *t = g_old[kind] + ds_ThreadSelfIndex();
+    struct slot slot;
+    slot.index = t->head[count];
+    if (slot.index != U32_MAX)
+    {
+        slot.address = c->vm.buf + (u64) slot.index*c->slot_size;
+        t->head[count] = *(u32 *) slot.address;
+        return slot;
+    }
+    return sb_central_carve(c, count);
+}
+
+static void sb_old_remove(const u32 kind, const u32 index, const u32 count)
+{
+    struct sb_central *c = g_central + kind;
+    struct sb_old_thread *t = g_old[kind] + ds_ThreadSelfIndex();
+    *(u32 *) (c->vm.buf + (u64) index*c->slot_size) = t->head[count];
+    t->head[count] = index;
 }
 
 static struct slot sb_central_add(struct sb_central *c, const u32 count)
@@ -388,11 +428,11 @@ static u8 *sb_array_alloc(const u32 variant, const u32 kind, const u32 count, u3
     g_counter[ds_ThreadSelfIndex()].alloc += 1;
     if (variant == SB_SLAB)
     {
-        struct slot slot;
-        if (kind == 0) { slot = ds_TSlabAdd(g_slab_m, count); }
-        else           { slot = ds_TSlabAdd(g_slab_c, count); }
-        *index = slot.index;
-        return slot.address;
+        struct ds_ArrayUntyped arr;
+        if (kind == 0) { const ds_Array(sb_elem_m) a = ds_TSlabAdd(g_slab_m, count); arr = (struct ds_ArrayUntyped) { a.buf, a.length, a.base }; }
+        else           { const ds_Array(sb_elem_c) a = ds_TSlabAdd(g_slab_c, count); arr = (struct ds_ArrayUntyped) { a.buf, a.length, a.base }; }
+        *index = arr.base;
+        return arr.buf;
     }
     else if (variant == SB_ALLOC)
     {
@@ -422,6 +462,12 @@ static u8 *sb_array_alloc(const u32 variant, const u32 kind, const u32 count, u3
         *index = slot.index;
         return slot.address;
     }
+    else if (variant == SB_OLD)
+    {
+        const struct slot slot = sb_old_add(kind, count);
+        *index = slot.index;
+        return slot.address;
+    }
     return NULL;
 }
 
@@ -430,8 +476,9 @@ static void sb_array_free(const u32 variant, const u32 kind, u8 *ptr, const u32 
     g_counter[ds_ThreadSelfIndex()].free += 1;
     if (variant == SB_SLAB)
     {
-        if (kind == 0) { ds_TSlabRemove(g_slab_m, index, count); }
-        else           { ds_TSlabRemove(g_slab_c, index, count); }
+        const u32 length = (u32) PowerOfTwoCeil(count);
+        if (kind == 0) { const ds_Array(sb_elem_m) a = { NULL, length, index }; ds_TSlabRemove(g_slab_m, a); }
+        else           { const ds_Array(sb_elem_c) a = { NULL, length, index }; ds_TSlabRemove(g_slab_c, a); }
     }
     else if (variant == SB_ALLOC)
     {
@@ -452,6 +499,10 @@ static void sb_array_free(const u32 variant, const u32 kind, u8 *ptr, const u32 
     else if (variant == SB_MAGAZINE)
     {
         sb_mag_remove(kind, index, count);
+    }
+    else if (variant == SB_OLD)
+    {
+        sb_old_remove(kind, index, count);
     }
 }
 
@@ -625,7 +676,8 @@ static void *sb_init(const u32 variant, const u32 rotate, const u32 pow2)
             ds_TSlabAlloc(g_slab_m, SB_VM_SIZE, g_set_count);
             ds_TSlabAlloc(g_slab_c, SB_VM_SIZE, g_set_count);
         }
-        else if (variant == SB_CENTRAL || variant == SB_STEAL || variant == SB_DEQUE || variant == SB_MAGAZINE)
+        else if (variant == SB_CENTRAL || variant == SB_STEAL || variant == SB_DEQUE || variant == SB_MAGAZINE
+                 || variant == SB_OLD)
         {
             sb_central_alloc(g_central + 0, sb_elem_size[0]);
             sb_central_alloc(g_central + 1, sb_elem_size[1]);
@@ -637,6 +689,14 @@ static void *sb_init(const u32 variant, const u32 rotate, const u32 pow2)
                     const u64 size = (u64) g_steal_threads*SB_COUNT_MAX*sizeof(struct sb_cstack);
                     g_steal[kind] = ds_Alloc(size, DS_CACHE_LINE);
                     for (u32 i = 0; i < g_steal_threads*SB_COUNT_MAX; ++i) { g_steal[kind][i].a_head = U32_MAX; }
+                }
+            }
+            else if (variant == SB_OLD)
+            {
+                for (u32 kind = 0; kind < 2; ++kind)
+                {
+                    g_old[kind] = ds_Alloc(g_steal_threads*sizeof(struct sb_old_thread), DS_CACHE_LINE);
+                    memset(g_old[kind], 0xff, g_steal_threads*sizeof(struct sb_old_thread));
                 }
             }
             else if (variant == SB_MAGAZINE)
@@ -757,7 +817,7 @@ static void sb_free(void *args)
             ds_TSlabDealloc(g_slab_c);
         }
         else if (job->variant == SB_CENTRAL || job->variant == SB_STEAL || job->variant == SB_DEQUE
-                 || job->variant == SB_MAGAZINE)
+                 || job->variant == SB_MAGAZINE || job->variant == SB_OLD)
         {
             VMRelease(&g_central[0].vm);
             VMRelease(&g_central[1].vm);
@@ -766,6 +826,12 @@ static void sb_free(void *args)
                 ds_Free(g_steal[0]);
                 ds_Free(g_steal[1]);
                 g_steal[0] = g_steal[1] = NULL;
+            }
+            else if (job->variant == SB_OLD)
+            {
+                ds_Free(g_old[0]);
+                ds_Free(g_old[1]);
+                g_old[0] = g_old[1] = NULL;
             }
             else if (job->variant == SB_MAGAZINE)
             {
@@ -794,6 +860,11 @@ SB_INIT(slab_fixed, SB_SLAB, 0, 0)
 SB_INIT(slab_rotate, SB_SLAB, 1, 0)
 SB_INIT(slab_fixed_pow2, SB_SLAB, 0, 1)
 SB_INIT(slab_rotate_pow2, SB_SLAB, 1, 1)
+SB_INIT(old_fixed, SB_OLD, 0, 0)
+SB_INIT(old_rotate, SB_OLD, 1, 0)
+SB_INIT(old_fixed_pow2, SB_OLD, 0, 1)
+SB_INIT(old_rotate_pow2, SB_OLD, 1, 1)
+#if SB_EXTRA_VARIANTS
 SB_INIT(central_fixed, SB_CENTRAL, 0, 0)
 SB_INIT(central_rotate, SB_CENTRAL, 1, 0)
 SB_INIT(steal_fixed, SB_STEAL, 0, 0)
@@ -808,6 +879,7 @@ SB_INIT(alloc_fixed_pow2, SB_ALLOC, 0, 1)
 SB_INIT(alloc_rotate_pow2, SB_ALLOC, 1, 1)
 SB_INIT(realloc_fixed, SB_REALLOC, 0, 0)
 SB_INIT(realloc_rotate, SB_REALLOC, 1, 0)
+#endif
 
 #define SB_ENTRY(name, id_str) { .id = id_str, .size = 1, .test = sb_test, .test_init = sb_init_##name, .test_reset = sb_reset, .test_free = sb_free }
 
@@ -818,6 +890,11 @@ static struct test_PerformanceParallel slab_parallel_test[] =
     SB_ENTRY(slab_rotate, "MeshArraysSlabRotate"),
     SB_ENTRY(slab_fixed_pow2, "MeshArraysSlabFixedPow2"),
     SB_ENTRY(slab_rotate_pow2, "MeshArraysSlabRotatePow2"),
+    SB_ENTRY(old_fixed, "MeshArraysOldSlabFixed"),
+    SB_ENTRY(old_rotate, "MeshArraysOldSlabRotate"),
+    SB_ENTRY(old_fixed_pow2, "MeshArraysOldSlabFixedPow2"),
+    SB_ENTRY(old_rotate_pow2, "MeshArraysOldSlabRotatePow2"),
+#if SB_EXTRA_VARIANTS
     SB_ENTRY(central_fixed, "MeshArraysCentralFixed"),
     SB_ENTRY(central_rotate, "MeshArraysCentralRotate"),
     SB_ENTRY(steal_fixed, "MeshArraysStealFixed"),
@@ -832,6 +909,7 @@ static struct test_PerformanceParallel slab_parallel_test[] =
     SB_ENTRY(alloc_rotate_pow2, "MeshArraysAllocRotatePow2"),
     SB_ENTRY(realloc_fixed, "MeshArraysReallocFixed"),
     SB_ENTRY(realloc_rotate, "MeshArraysReallocRotate"),
+#endif
 };
 
 static struct suite_Performance storage_performance_slab_suite =
