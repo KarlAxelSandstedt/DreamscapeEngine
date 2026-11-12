@@ -28,7 +28,8 @@ compiler's intrinsics headers). An unsupported platform, CPU or compiler is an #
     __DS_X64__          64-bit x86.
     DS_LITTLE_ENDIAN    or DS_BIG_ENDIAN (GCC/Clang byte-order macros; MSVC is little endian).
     DS_CACHE_LINE       64 bytes. DS_THREAD_COUNT_MAX: most threads the engine indexes, main thread included.
-    ds_ThreadLocal, ds_StaticAssert(condition, cstr), ds_Align(bytes), ds_ForceInline, ds_NoReturn: portable keywords.
+    ds_ThreadLocal, ds_StaticAssert(condition, cstr), ds_Align(bytes), ds_ForceInline, ds_NoReturn, ds_TypeOf(expr):
+    portable keywords.
     ds_AcqRelCompilerBarrier   compiler-only barrier, no CPU fence (thread ordering: ds_atomic.h).
     ds_CpuPause(count)  count pause instructions, a spin-wait hint.
     Breakpoint(condition)   DS_DEBUG builds: if condition holds, stop in a debugger (without one, the process
@@ -88,6 +89,7 @@ extern "C" {
 	#define ds_Align(alignment) __attribute__((aligned(alignment)))
 	#define ds_ForceInline inline __attribute__((always_inline))
 	#define ds_NoReturn __attribute__((noreturn))
+	#define ds_TypeOf(expr) __typeof__(expr)
     #define ds_AcqRelCompilerBarrier __asm__ __volatile__ ("" ::: "memory")
 
 #elif defined(__GNUC__)
@@ -103,6 +105,7 @@ extern "C" {
 	#define ds_Align(alignment) __attribute__((aligned(alignment)))
 	#define ds_ForceInline inline __attribute__((always_inline))
 	#define ds_NoReturn __attribute__((noreturn))
+	#define ds_TypeOf(expr) __typeof__(expr)
     #define ds_AcqRelCompilerBarrier __asm__ __volatile__ ("" ::: "memory")
 
 #elif defined(_MSC_VER)
@@ -113,6 +116,7 @@ extern "C" {
 	#define ds_StaticAssert(ds_Assertion, str)	static_assert(ds_Assertion, str)
 	#define ds_Align(alignment) __declspec(align(alignment)) 
 	#define ds_ForceInline __forceinline
+	#define ds_TypeOf(expr) typeof(expr)
 	#define ds_NoReturn __declspec(noreturn)
     #define ds_AcqRelCompilerBarrier atomic_signal_fence(memory_order_acq_rel)
 

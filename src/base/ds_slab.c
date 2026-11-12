@@ -17,8 +17,8 @@
 ==========================================================================
 */
 
-ds_StaticAssert(sizeof(struct ds_TSlabThread) == DS_CACHE_LINE, "");
-ds_StaticAssert(sizeof(struct ds_TSlabShared) == 4*DS_CACHE_LINE, "");
+ds_StaticAssert(offsetof(struct ds_TSlabShared, magazine) % DS_CACHE_LINE == 0, "");
+ds_StaticAssert(offsetof(struct ds_TSlabShared, vm) % DS_CACHE_LINE == 0, "");
 
 u32 ds_TSlabSharedAlloc(struct ds_TSlabShared *shared,
                        void **external,
@@ -26,7 +26,7 @@ u32 ds_TSlabSharedAlloc(struct ds_TSlabShared *shared,
                        const u64 slot_size,
                        const u64 vm_size)
 {
-	ds_Assert(slot_size >= sizeof(u32) && thread_count > 0);
+	ds_Assert(slot_size > 0 && thread_count > 0);
 	*shared = (struct ds_TSlabShared) { 0 };
 	*external = NULL;
 
@@ -36,30 +36,16 @@ u32 ds_TSlabSharedAlloc(struct ds_TSlabShared *shared,
         goto failure;
 	}
 
-	shared->thread = ds_Alloc(thread_count*sizeof(struct ds_TSlabThread), DS_CACHE_LINE);
-	if (shared->thread == NULL)
-	{
-        goto failure;
-	}
-	memset(shared->thread, 0, thread_count*sizeof(struct ds_TSlabThread));
-	shared->thread_count = thread_count;
-
-	for (u32 i = 0; i < thread_count; ++i)
-	{
-		struct ds_TSlabThread *t = shared->thread + i;
-		ds_CPoolAlloc(NULL, t->free, DS_TSLAB_COUNT_DEFAULT, GROWABLE);
-		if (t->free.buf == NULL)
-		{
-            goto failure;
-		}
-
-		const struct slot arr = ds_CPoolPushBatch(t->free, DS_TSLAB_COUNT_DEFAULT);
-		memset(arr.address, 0xff, DS_TSLAB_COUNT_DEFAULT*sizeof(u32));
-	}
-
 	/* slot indices stay below DS_TSLAB_NULL */
 	const u64 slots = shared->vm.reserved / slot_size;
 	shared->length = (slots < U32_MAX) ? (u32) slots : U32_MAX - 1;
+
+	/* an array takes at least one slot: the slot count bounds the arrays alive at once */
+	if (!ds_MagazinePow2Alloc(NULL, &shared->magazine, thread_count, slot_size, shared->length))
+	{
+        goto failure;
+	}
+
 	*external = shared->vm.buf;
 	return 1;
 
@@ -70,18 +56,10 @@ failure:
 
 void ds_TSlabSharedDealloc(struct ds_TSlabShared *shared)
 {
+    ds_MagazinePow2Dealloc(&shared->magazine);
     if (shared->vm.buf) 
     { 
         VMRelease(&shared->vm); 
-    }
-
-    if (shared->thread)
-    {
-	    for (u32 i = 0; i < shared->thread_count; ++i)
-	    {
-	        ds_CPoolDealloc(shared->thread[i].free);
-        }
-        ds_Free(shared->thread);
     }
 
     *shared = (struct ds_TSlabShared) { 0 };
@@ -89,13 +67,36 @@ void ds_TSlabSharedDealloc(struct ds_TSlabShared *shared)
 
 void ds_TSlabSharedFlush(struct ds_TSlabShared *shared)
 {
-    for (u32 i = 0; i < shared->thread_count; ++i)
-	{
-		struct ds_TSlabThread *t = shared->thread + i;
-		memset(t->free.buf, 0xff, t->free.count*sizeof(u32));
-        t->count_allocated = 0;
-	}
+    ds_MagazinePow2Flush(&shared->magazine);
     shared->a_count_max = 0;
+}
+
+struct ds_ArrayUntyped ds_TSlabSharedAdd(struct ds_TSlabShared *shared, const u64 slot_size, const u32 count)
+{
+    ds_Assert(count > 0);
+    struct ds_ArrayUntyped arr;
+    arr.length = (u32) PowerOfTwoCeil(count);
+    arr.base = ds_MagazinePow2TryPop(&shared->magazine, arr.length);
+    if (arr.base == U32_MAX)
+    {
+        arr.base = AtomicFetchAddRlx32(&shared->a_count_max, arr.length);
+        const u64 end = (u64) arr.base + arr.length;
+        if (end > shared->length || !VMCommit(&shared->vm, end*slot_size))
+        {
+            return empty_array;
+        }
+    }
+
+    arr.buf = shared->vm.buf + arr.base*slot_size;
+    UnpoisonAddress(arr.buf, arr.length*slot_size);
+    return arr;
+}
+
+void ds_TSlabSharedRemove(struct ds_TSlabShared *shared, const u64 slot_size, const u32 base, const u32 length)
+{
+    ds_Assert(PowerOfTwoCheck(length));
+    PoisonAddress(shared->vm.buf + base*slot_size, length*slot_size);
+    ds_MagazinePow2Push(&shared->magazine, base, length);
 }
 
 void ds_TSlabOutOfMemoryInternal(void)

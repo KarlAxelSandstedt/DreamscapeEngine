@@ -1298,9 +1298,10 @@ static struct test_Output CPoolPushBatchTest(struct test_Environment *env)
 }
 
 struct slab_item { u64 a; u32 b; };
+DEFINE_ARRAY_STRUCT(slab_item);
 DEFINE_TSLAB(slab_item);
 
-/* ds_TSlab: alloc (region, thread entries, free lists), flush, dealloc; the failure path leaves an empty slab */
+/* ds_TSlab: alloc (region, magazines), flush, dealloc; the failure path leaves an empty slab */
 static struct test_Output SlabAllocTest(struct test_Environment *env)
 {
 	struct test_Output output = { .success = 1, .id = __func__ };
@@ -1311,35 +1312,268 @@ static struct test_Output SlabAllocTest(struct test_Environment *env)
     TEST_EQUAL((void *) slab.shared.vm.buf, (void *) slab.buf);
     TEST_EQUAL(slab.shared.vm.reserved / sizeof(struct slab_item), slab.shared.length);
     TEST_EQUAL(0, slab.shared.a_count_max);
-    TEST_EQUAL(3, slab.shared.thread_count);
-    for (u32 t = 0; t < 3; ++t)
+    TEST_EQUAL(3, slab.shared.magazine.thread_count);
+    TEST_EQUAL(slab.shared.length, slab.shared.magazine.index_length);
+    /* 16-byte items: 1024 per magazine, clamped to 64 down to class 8, then halving to 4 */
+    TEST_EQUAL(64, slab.shared.magazine.mclass_length[0]);
+    TEST_EQUAL(64, slab.shared.magazine.mclass_length[4]);
+    TEST_EQUAL(32, slab.shared.magazine.mclass_length[5]);
+    TEST_EQUAL(4, slab.shared.magazine.mclass_length[8]);
+    TEST_EQUAL(4, slab.shared.magazine.mclass_length[30]);
+    for (u32 c = 0; c < 31; ++c)
     {
-        const struct ds_TSlabThread *thread = slab.shared.thread + t;
-        TEST_EQUAL(DS_TSLAB_COUNT_DEFAULT, thread->free.count);
-        TEST_EQUAL(0, thread->count_allocated);
-        for (u32 c = 0; c < thread->free.count; ++c) { TEST_EQUAL(DS_TSLAB_NULL, thread->free.buf[c]); }
+        TEST_EQUAL(TSTACK_NULL, ds_TStackKeyIndex(slab.shared.magazine.mclass[c].stack_full.a_head));
+        TEST_EQUAL(TSTACK_NULL, ds_TStackKeyIndex(slab.shared.magazine.mclass[c].stack_empty.a_head));
     }
 
-    /* flush resets the lists and the carve count */
+    /* flush resets the carve count and the magazines */
     slab.shared.a_count_max = 7;
-    slab.shared.thread[1].free.buf[3] = 0;
-    slab.shared.thread[1].count_allocated = 5;
+    slab.shared.magazine.thread[1].magazine[3].count[0] = 2;
+    slab.shared.magazine.a_index_count = 5;
     ds_TSlabFlush(slab);
     TEST_EQUAL(0, slab.shared.a_count_max);
-    TEST_EQUAL(DS_TSLAB_NULL, slab.shared.thread[1].free.buf[3]);
-    TEST_EQUAL(0, slab.shared.thread[1].count_allocated);
+    TEST_EQUAL(0, slab.shared.magazine.thread[1].magazine[3].count[0]);
+    TEST_EQUAL(0, slab.shared.magazine.a_index_count);
 
     ds_TSlabDealloc(slab);
     TEST_EQUAL(NULL, slab.buf);
     TEST_EQUAL(NULL, slab.shared.vm.buf);
-    TEST_EQUAL(NULL, slab.shared.thread);
-    TEST_EQUAL(0, slab.shared.thread_count);
+    TEST_EQUAL(NULL, slab.shared.magazine.thread);
+    TEST_EQUAL(0, slab.shared.magazine.thread_count);
     TEST_EQUAL(0, slab.shared.length);
 
     /* a reservation of 0 bytes fails and leaves the slab empty */
     TEST_EQUAL(0, ds_TSlabAlloc(slab, 0, 1));
     TEST_EQUAL(NULL, slab.buf);
-    TEST_EQUAL(NULL, slab.shared.thread);
+    TEST_EQUAL(NULL, slab.shared.magazine.thread);
+    (void) env;
+	return output;
+}
+
+struct test_TSlabItem { u32 owner; u32 serial; u32 pad[6]; };
+DEFINE_ARRAY_STRUCT(test_TSlabItem);
+DEFINE_TSLAB(test_TSlabItem);
+
+/* an array handed to another worker to free */
+struct test_TSlabHandoff
+{
+    TREIBER_NODE;
+    u32 base;
+    u32 length;
+    u32 owner;
+    u32 serial;
+};
+
+#define TSLAB_PARALLEL_HELD     256
+#define TSLAB_PARALLEL_HANDOFF  1024
+#ifndef TSLAB_PARALLEL_OPS
+#define TSLAB_PARALLEL_OPS      200000
+#endif
+
+struct test_TSlabParallel
+{
+    ds_TSlab(test_TSlabItem)    slab;
+    struct ds_TStack            handoff_free;
+    struct ds_TStack            handoff_full;
+    struct test_TSlabHandoff *  node;
+    u32                         a_next_id;
+    u32                         a_errors;
+    u32                         a_live;
+};
+
+static void TSlabParallelFill(struct test_TSlabItem *item, const u32 length, const u32 owner, const u32 serial)
+{
+    for (u32 i = 0; i < length; ++i)
+    {
+        item[i].owner = owner;
+        item[i].serial = serial;
+    }
+}
+
+static u32 TSlabParallelCheck(const struct test_TSlabItem *item, const u32 length, const u32 owner, const u32 serial)
+{
+    u32 ok = 1;
+    for (u32 i = 0; i < length; ++i)
+    {
+        ok &= (item[i].owner == owner) & (item[i].serial == serial);
+    }
+    return ok;
+}
+
+/*
+One job: arrays of 1..8 items come and go in bursts (allocation-heavy, then free-heavy, by phase), every
+array carries its owner and serial in every element and is checked before it is freed; some arrays are
+handed over a shared stack to whichever worker takes them, so they are freed on another thread.
+*/
+static void TSlabParallelJob(void *args)
+{
+    struct test_TSlabParallel *t = args;
+    const u32 id = AtomicAddFetchRlx32(&t->a_next_id, 1);
+    struct rng rng;
+    RngLocalInit(&rng, 0x75a6 + id);
+
+    ds_Array(test_TSlabItem) held[TSLAB_PARALLEL_HELD];
+    u32 serial_of[TSLAB_PARALLEL_HELD];
+    u32 held_count = 0;
+    u32 serial = 0;
+    u32 errors = 0;
+
+    for (u32 i = 0; i < TSLAB_PARALLEL_OPS && errors == 0; ++i)
+    {
+        /* phase 0 allocates three times as often as it frees, phase 1 the reverse */
+        const u32 phase = (i / 2048) & 1;
+        const u32 r = (u32) RngLocalU64Range(&rng, 0, 7);
+        const u32 alloc = (phase == 0) ? (r < 6) : (r < 2);
+
+        if (alloc && held_count < TSLAB_PARALLEL_HELD)
+        {
+            const u32 count = 1 + (u32) RngLocalU64Range(&rng, 0, 7);
+            const ds_Array(test_TSlabItem) arr = ds_TSlabAdd(t->slab, count);
+            if (arr.buf == NULL || arr.length < count || arr.length != PowerOfTwoCeil(count)
+                || arr.buf != t->slab.buf + arr.base)
+            {
+                errors += 1;
+                break;
+            }
+            serial += 1;
+            TSlabParallelFill(arr.buf, arr.length, id, serial);
+            AtomicAddFetchRlx32(&t->a_live, 1);
+            held[held_count] = arr;
+            serial_of[held_count] = serial;
+            held_count += 1;
+        }
+        else if (held_count > 0)
+        {
+            const u32 pick = (u32) RngLocalU64Range(&rng, 0, held_count - 1);
+            const ds_Array(test_TSlabItem) arr = held[pick];
+            const u32 arr_serial = serial_of[pick];
+            held_count -= 1;
+            held[pick] = held[held_count];
+            serial_of[pick] = serial_of[held_count];
+
+            errors += !TSlabParallelCheck(arr.buf, arr.length, id, arr_serial);
+            if (r & 1)
+            {
+                /* hand it over: another worker checks and frees it */
+                u32 n;
+                ds_TStackTryPop(n, &t->handoff_free, t->node);
+                if (n != TSTACK_NULL)
+                {
+                    t->node[n].base = arr.base;
+                    t->node[n].length = arr.length;
+                    t->node[n].owner = id;
+                    t->node[n].serial = arr_serial;
+                    ds_TStackPush(&t->handoff_full, t->node, n);
+                    continue;
+                }
+            }
+            ds_TSlabRemove(t->slab, arr);
+            AtomicAddFetchRlx32(&t->a_live, (u32) -1);
+        }
+
+        /* take an array handed over by anyone */
+        if ((r & 3) == 0)
+        {
+            u32 n;
+            ds_TStackTryPop(n, &t->handoff_full, t->node);
+            if (n != TSTACK_NULL)
+            {
+                const struct test_TSlabHandoff h = t->node[n];
+                ds_TStackPush(&t->handoff_free, t->node, n);
+                const ds_Array(test_TSlabItem) arr = { t->slab.buf + h.base, h.length, h.base };
+                errors += !TSlabParallelCheck(arr.buf, arr.length, h.owner, h.serial);
+                ds_TSlabRemove(t->slab, arr);
+                AtomicAddFetchRlx32(&t->a_live, (u32) -1);
+            }
+        }
+    }
+
+    while (held_count > 0)
+    {
+        held_count -= 1;
+        errors += !TSlabParallelCheck(held[held_count].buf, held[held_count].length, id, serial_of[held_count]);
+        ds_TSlabRemove(t->slab, held[held_count]);
+        AtomicAddFetchRlx32(&t->a_live, (u32) -1);
+    }
+
+    AtomicAddFetchRlx32(&t->a_errors, errors);
+}
+
+/*
+Every scheduler worker runs TSlabParallelJob on one slab; the bursts push whole magazines through the
+depot and the handoffs free arrays on other threads than the allocating one. No element of a live array
+may be overwritten (two arrays sharing slots), everything handed over is freed, and the slab holds nothing
+live at the end.
+*/
+static struct test_Output TSlabParallelTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct test_TSlabParallel *t = ds_Alloc(sizeof(*t), DS_CACHE_LINE);
+    TEST_NOT_EQUAL(NULL, t);
+    TEST_EQUAL(1, ds_TSlabAlloc(t->slab, (u64) 256 << 20, g_arch_config->logical_core_count));
+    t->node = ds_Alloc(TSLAB_PARALLEL_HANDOFF*sizeof(struct test_TSlabHandoff), DS_CACHE_LINE);
+    TEST_NOT_EQUAL(NULL, t->node);
+    ds_TStackFlush(&t->handoff_free);
+    ds_TStackFlush(&t->handoff_full);
+    for (u32 i = 0; i < TSLAB_PARALLEL_HANDOFF; ++i)
+    {
+        t->node[i].treiber_next = TSTACK_NULL;
+        ds_TStackPush(&t->handoff_free, t->node, i);
+    }
+    AtomicStoreRel32(&t->a_next_id, 0);
+    AtomicStoreRel32(&t->a_errors, 0);
+    AtomicStoreRel32(&t->a_live, 0);
+
+    ds_TestRunParallel(TSlabParallelJob, t);
+    TEST_EQUAL(0, AtomicLoadAcq32(&t->a_errors));
+
+    /* the handoffs nobody took are checked and freed here */
+    u32 taken = 0;
+    for (;;)
+    {
+        u32 n;
+        ds_TStackTryPop(n, &t->handoff_full, t->node);
+        if (n == TSTACK_NULL)
+        {
+            break;
+        }
+        const struct test_TSlabHandoff h = t->node[n];
+        const ds_Array(test_TSlabItem) arr = { t->slab.buf + h.base, h.length, h.base };
+        TEST_TRUE(TSlabParallelCheck(arr.buf, arr.length, h.owner, h.serial));
+        ds_TSlabRemove(t->slab, arr);
+        AtomicAddFetchRlx32(&t->a_live, (u32) -1);
+        taken += 1;
+    }
+    TEST_EQUAL(0, AtomicLoadAcq32(&t->a_live));
+    TEST_TRUE(t->slab.shared.a_count_max <= t->slab.shared.length);
+
+    /* every slot ever carved is free again: the depot and the local magazines hold them all */
+    u32 free_count = 0;
+    for (u32 c = 0; c < 31; ++c)
+    {
+        const u32 length = t->slab.shared.magazine.mclass_length[c];
+        for (u32 w = 0; w < t->slab.shared.magazine.thread_count; ++w)
+        {
+            const struct ds_MagazineLocal *local = t->slab.shared.magazine.thread[w].magazine + c;
+            free_count += (local->count[0] + local->count[1]) << c;
+        }
+        for (;;)
+        {
+            u32 m;
+            ds_TStackTryPop(m, &t->slab.shared.magazine.mclass[c].stack_full, t->slab.shared.magazine.magazine);
+            if (m == TSTACK_NULL)
+            {
+                break;
+            }
+            free_count += length << c;
+        }
+    }
+    TEST_EQUAL(t->slab.shared.a_count_max, free_count);
+
+    ds_Free(t->node);
+    ds_TSlabDealloc(t->slab);
+    ds_Free(t);
     (void) env;
 	return output;
 }
@@ -1408,6 +1642,7 @@ static struct test_Output (*allocator_tests[])(struct test_Environment *) =
     CPoolPushBatchTest,
     VMTest,
     SlabAllocTest,
+    TSlabParallelTest,
 };
 
 struct suite_Correctness storage_allocator_correctness_suite =

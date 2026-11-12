@@ -357,13 +357,14 @@ struct ds_Align(DS_CACHE_LINE) ds_MagazineClass
 /*
  * Hint for how much memory a magazine should index into: a class's magazine length is the hint
  * divided by the class's array size, clamped. Magazines with indices to smaller arrays get
- * capped at 64 arrays, while large array magazines store at least 4 array indices.
+ * capped at DS_MAGAZINE_LENGTH_MAX arrays, while large array magazines store at least
+ * DS_MAGAZINE_LENGTH_MIN array indices.
  */
 #define DS_MAGAZINE_SIZE_HINT   (16*1024)
 #define DS_MAGAZINE_LENGTH_MIN  4
 #define DS_MAGAZINE_LENGTH_MAX  64
 
-struct ds_MagazinePow2
+struct ds_Align(DS_CACHE_LINE) ds_MagazinePow2
 {
     u32 *                       index;              
     struct ds_MagazineShared *  magazine;           

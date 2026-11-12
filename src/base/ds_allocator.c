@@ -419,8 +419,6 @@ void ds_MagazinePow2Push(struct ds_MagazinePow2 *storage, const u32 index, const
     const u32 mclass_length = storage->mclass_length[ mclass ];
     struct ds_MagazineThread *t = storage->thread + ds_ThreadSelfIndex();
     struct ds_MagazineLocal *local = t->magazine + mclass;
-    ds_Assert(local->count[ local->cur ] == mclass_length);
-
     if (ds_MagazineThreadTryPush(t, mclass, mclass_length, index))
     {
         return;

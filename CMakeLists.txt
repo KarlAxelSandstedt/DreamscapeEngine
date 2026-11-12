@@ -164,7 +164,7 @@ elseif (CMAKE_SYSTEM_NAME STREQUAL "Windows")
 		add_compile_options(/fp:precise)
 	endif ()
 
-	add_compile_options(/std:c11 /experimental:c11atomics)
+	add_compile_options(/std:clatest /experimental:c11atomics)
 	#parallel compilation
 	add_compile_options(/MP)
 
