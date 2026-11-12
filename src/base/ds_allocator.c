@@ -261,6 +261,139 @@ void VMRelease(struct VM *vm)
     *vm = (struct VM) { 0 };
 }
 
+/****************************** ds_MagazinePow2 ******************************/
+
+ds_StaticAssert(offsetof(struct ds_MagazinePow2, a_index_count) % DS_CACHE_LINE == 0, "");
+ds_StaticAssert(offsetof(struct ds_MagazinePow2, a_magazine_count) % DS_CACHE_LINE == 0, "");
+ds_StaticAssert(offsetof(struct ds_MagazinePow2, vm_index) % DS_CACHE_LINE == 0, "");
+
+static u32 ds_MagazineClassLength(const u64 mclass, const u64 slot_size)
+{
+    ds_Assert(mclass < 31);
+    const u64 array_length = (u64) 1 << mclass;
+    const u64 array_size = slot_size*array_length;
+
+    const u32 m_length = U32Clamp((u32) (DS_MAGAZINE_SIZE_HINT / array_size), 
+                                  DS_MAGAZINE_LENGTH_MIN,
+                                  DS_MAGAZINE_LENGTH_MAX);
+    return m_length;
+}
+
+u32 ds_MagazinePow2Alloc(struct arena *mem,
+                            struct ds_MagazinePow2 *storage,
+                            const u32 thread_count,
+                            const u64 slot_size,
+                            const u32 max_array_count)
+{
+    *storage = (struct ds_MagazinePow2) { 0 };
+    storage->thread_count = thread_count;
+
+    u32 local_length = 0;
+    for (u32 i = 0; i < 31; ++i)
+    {
+        storage->mclass_length[i] = ds_MagazineClassLength(i, slot_size);
+        local_length += 2*storage->mclass_length[i];
+    }
+
+    const u64 max_magazine_count = (u64) max_array_count / DS_MAGAZINE_LENGTH_MIN;
+
+    const u64 vm_index_size = (u64) max_array_count*sizeof(u32);
+    const u64 vm_magazine_size = max_magazine_count*sizeof(struct ds_MagazineShared);
+    if (mem)
+    {
+        storage->heap_allocated = 0;
+        storage->thread = ArenaPushAligned(mem, thread_count*sizeof(struct ds_MagazineThread), DS_CACHE_LINE);
+        storage->magazine = ArenaPushAligned(mem, vm_magazine_size, DS_CACHE_LINE);
+        storage->index = ArenaPushAligned(mem, vm_index_size, DS_CACHE_LINE);
+
+        storage->vm_magazine = (struct VM) { .buf = NULL, .reserved = vm_magazine_size, .a_committed = vm_magazine_size };
+        storage->vm_index = (struct VM) { .buf = NULL, .reserved = vm_index_size, .a_committed = vm_index_size };
+    }
+    else
+    {
+        storage->heap_allocated = 1;
+        storage->thread = ds_Alloc(thread_count*sizeof(struct ds_MagazineThread), DS_CACHE_LINE);
+        storage->vm_index = VMReserve(vm_index_size);
+        storage->vm_magazine = VMReserve(vm_magazine_size);
+        storage->index = (u32 *) storage->vm_index.buf;
+        storage->magazine = (struct ds_MagazineShared *) storage->vm_magazine.buf;
+    }
+
+    if (!storage->thread || !storage->magazine || !storage->index)
+    {
+        ds_MagazinePow2Dealloc(storage);
+        return 0;
+    }
+
+    for (u32 i = 0; i < storage->thread_count; ++i)
+    {
+        struct ds_MagazineThread *thr = storage->thread + i;
+        ds_CPoolAlloc(mem, thr->index_pool, local_length, NOT_GROWABLE);
+        if (thr->index_pool.buf == NULL)
+        {
+            ds_MagazinePow2Dealloc(storage);
+            return 0;
+        }
+
+        ds_CPoolPushBatch(thr->index_pool, local_length);
+        u32 base = 0;
+        for (u32 k = 0; k < 31; ++k)
+        {
+            thr->local[k].base[0] = base;
+            base += storage->mclass_length[k];
+            thr->local[k].base[1] = base;
+            base += storage->mclass_length[k];
+        }
+    }
+ 
+    ds_MagazinePow2Flush(storage);
+    
+    return 1;
+}
+
+void ds_MagazinePow2Dealloc(struct ds_MagazinePow2 *storage)
+{
+    if (storage->thread)
+    {
+        for (u32 i = 0; i < storage->thread_count; ++i)
+        {
+            ds_CPoolDealloc(storage->thread[i].index_pool);
+        }
+    }
+
+    if (storage->heap_allocated)
+    {
+        ds_Free(storage->thread);
+        VMRelease(&storage->vm_index);
+        VMRelease(&storage->vm_magazine);
+    }
+
+    *storage = (struct ds_MagazinePow2) { 0 };
+}
+
+void ds_MagazinePow2Flush(struct ds_MagazinePow2 *storage)
+{
+    for (u32 i = 0; i < storage->thread_count; ++i)
+    {
+        struct ds_MagazineThread *thr = storage->thread + i;
+        for (u32 j = 0; j < 31; ++j)
+        {
+            thr->local[j].cur = 0;
+            thr->local[j].count[0] = 0;
+            thr->local[j].count[1] = 0;
+        }
+    }
+
+    for (u32 i = 0; i < 31; ++i)
+    {
+        ds_TStackFlush(&storage->mclass[i].stack_full);
+        ds_TStackFlush(&storage->mclass[i].stack_empty);
+    }
+
+    storage->a_index_count = 0;
+    storage->a_magazine_count = 0;
+}
+
 #include "ds_arena.c"
 #include "ds_ring.c"
 #include "ds_compact_pool.c"

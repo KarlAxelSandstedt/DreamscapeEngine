@@ -1014,52 +1014,54 @@ struct test_TSNode
 static struct test_Output TStackTest(struct test_Environment *env)
 {
 	struct test_Output output = { .success = 1, .id = __func__ };
-    struct TStack stack;
+    struct ds_TStack stack;
     struct test_TSNode node[8];
     for (u32 i = 0; i < 8; ++i) { node[i].treiber_next = TSTACK_NULL; }
-    TStackFlush(&stack);
+    ds_TStackFlush(&stack);
 
     u32 index = 0;
-    TStackTryPop(index, &stack, node);
+    ds_TStackTryPop(index, &stack, node);
     TEST_EQUAL(TSTACK_NULL, index);
 
     for (u32 i = 0; i < 8; ++i)
     {
-        TStackPush(&stack, node, i);
+        ds_TStackPush(&stack, node, i);
     }
-    TEST_EQUAL(7, TStackKeyIndex(stack.a_head));
-    TEST_EQUAL(8, TStackKeyTag(stack.a_head));
+    TEST_EQUAL(7, ds_TStackKeyIndex(stack.a_head));
+    TEST_EQUAL(8, ds_TStackKeyTag(stack.a_head));
     for (u32 i = 8; i-- > 0;)
     {
-        TStackTryPop(index, &stack, node);
+        ds_TStackTryPop(index, &stack, node);
         TEST_EQUAL(i, index);
     }
-    TStackTryPop(index, &stack, node);
+    ds_TStackTryPop(index, &stack, node);
     TEST_EQUAL(TSTACK_NULL, index);
     /* a pop of an empty stack does not touch the head */
-    TEST_EQUAL(16, TStackKeyTag(stack.a_head));
+    TEST_EQUAL(16, ds_TStackKeyTag(stack.a_head));
 
     /* pushes in another order come back reversed; flush empties */
-    TStackPush(&stack, node, 3);
-    TStackPush(&stack, node, 5);
-    TStackPush(&stack, node, 1);
-    TStackTryPop(index, &stack, node);
+    ds_TStackPush(&stack, node, 3);
+    ds_TStackPush(&stack, node, 5);
+    ds_TStackPush(&stack, node, 1);
+    ds_TStackTryPop(index, &stack, node);
     TEST_EQUAL(1, index);
-    TStackTryPop(index, &stack, node);
+    ds_TStackTryPop(index, &stack, node);
     TEST_EQUAL(5, index);
-    TStackFlush(&stack);
-    TStackTryPop(index, &stack, node);
+    ds_TStackFlush(&stack);
+    ds_TStackTryPop(index, &stack, node);
     TEST_EQUAL(TSTACK_NULL, index);
     (void) env;
 	return output;
 }
 
 #define TSTACK_PARALLEL_NODES   16
+#ifndef TSTACK_PARALLEL_OPS
 #define TSTACK_PARALLEL_OPS     200000
+#endif
 
 struct test_TStackParallel
 {
-    struct TStack       stack;
+    struct ds_TStack       stack;
     struct test_TSNode  node[TSTACK_PARALLEL_NODES];
     u32 *               a_owner;
     u32                 a_next_id;
@@ -1074,7 +1076,7 @@ static void TStackParallelJob(void *args)
     for (u32 i = 0; i < TSTACK_PARALLEL_OPS; ++i)
     {
         u32 index;
-        TStackTryPop(index, &t->stack, t->node);
+        ds_TStackTryPop(index, &t->stack, t->node);
         if (index == TSTACK_NULL)
         {
             continue;
@@ -1094,7 +1096,7 @@ static void TStackParallelJob(void *args)
             AtomicAddFetchRlx32(&t->a_errors, 1);
             return;
         }
-        TStackPush(&t->stack, t->node, index);
+        ds_TStackPush(&t->stack, t->node, index);
     }
 }
 
@@ -1114,11 +1116,11 @@ static struct test_Output TStackParallelTest(struct test_Environment *env)
     memset(t->a_owner, 0, TSTACK_PARALLEL_NODES*sizeof(u32));
     AtomicStoreRel32(&t->a_next_id, 0);
     AtomicStoreRel32(&t->a_errors, 0);
-    TStackFlush(&t->stack);
+    ds_TStackFlush(&t->stack);
     for (u32 i = 0; i < TSTACK_PARALLEL_NODES; ++i)
     {
         t->node[i].treiber_next = TSTACK_NULL;
-        TStackPush(&t->stack, t->node, i);
+        ds_TStackPush(&t->stack, t->node, i);
     }
 
     ds_TestRunParallel(TStackParallelJob, t);
@@ -1130,7 +1132,7 @@ static struct test_Output TStackParallelTest(struct test_Environment *env)
     for (u32 i = 0; i <= TSTACK_PARALLEL_NODES; ++i)
     {
         u32 index;
-        TStackTryPop(index, &t->stack, t->node);
+        ds_TStackTryPop(index, &t->stack, t->node);
         if (index == TSTACK_NULL)
         {
             break;
@@ -1296,15 +1298,15 @@ static struct test_Output CPoolPushBatchTest(struct test_Environment *env)
 }
 
 struct slab_item { u64 a; u32 b; };
-DEFINE_SLAB(slab_item);
+DEFINE_TSLAB(slab_item);
 
-/* ds_Slab: alloc (region, thread entries, free lists), flush, dealloc; the failure path leaves an empty slab */
+/* ds_TSlab: alloc (region, thread entries, free lists), flush, dealloc; the failure path leaves an empty slab */
 static struct test_Output SlabAllocTest(struct test_Environment *env)
 {
 	struct test_Output output = { .success = 1, .id = __func__ };
-    ds_Slab(slab_item) slab;
+    ds_TSlab(slab_item) slab;
     const u64 vm_size = (u64) 16 << 20;
-    TEST_EQUAL(1, ds_SlabAlloc(slab, vm_size, 3));
+    TEST_EQUAL(1, ds_TSlabAlloc(slab, vm_size, 3));
     TEST_NOT_EQUAL(NULL, slab.buf);
     TEST_EQUAL((void *) slab.shared.vm.buf, (void *) slab.buf);
     TEST_EQUAL(slab.shared.vm.reserved / sizeof(struct slab_item), slab.shared.length);
@@ -1312,22 +1314,22 @@ static struct test_Output SlabAllocTest(struct test_Environment *env)
     TEST_EQUAL(3, slab.shared.thread_count);
     for (u32 t = 0; t < 3; ++t)
     {
-        const struct ds_SlabThread *thread = slab.shared.thread + t;
-        TEST_EQUAL(DS_SLAB_COUNT_DEFAULT, thread->free.count);
+        const struct ds_TSlabThread *thread = slab.shared.thread + t;
+        TEST_EQUAL(DS_TSLAB_COUNT_DEFAULT, thread->free.count);
         TEST_EQUAL(0, thread->count_allocated);
-        for (u32 c = 0; c < thread->free.count; ++c) { TEST_EQUAL(DS_SLAB_NULL, thread->free.buf[c]); }
+        for (u32 c = 0; c < thread->free.count; ++c) { TEST_EQUAL(DS_TSLAB_NULL, thread->free.buf[c]); }
     }
 
     /* flush resets the lists and the carve count */
     slab.shared.a_count_max = 7;
     slab.shared.thread[1].free.buf[3] = 0;
     slab.shared.thread[1].count_allocated = 5;
-    ds_SlabFlush(slab);
+    ds_TSlabFlush(slab);
     TEST_EQUAL(0, slab.shared.a_count_max);
-    TEST_EQUAL(DS_SLAB_NULL, slab.shared.thread[1].free.buf[3]);
+    TEST_EQUAL(DS_TSLAB_NULL, slab.shared.thread[1].free.buf[3]);
     TEST_EQUAL(0, slab.shared.thread[1].count_allocated);
 
-    ds_SlabDealloc(slab);
+    ds_TSlabDealloc(slab);
     TEST_EQUAL(NULL, slab.buf);
     TEST_EQUAL(NULL, slab.shared.vm.buf);
     TEST_EQUAL(NULL, slab.shared.thread);
@@ -1335,7 +1337,7 @@ static struct test_Output SlabAllocTest(struct test_Environment *env)
     TEST_EQUAL(0, slab.shared.length);
 
     /* a reservation of 0 bytes fails and leaves the slab empty */
-    TEST_EQUAL(0, ds_SlabAlloc(slab, 0, 1));
+    TEST_EQUAL(0, ds_TSlabAlloc(slab, 0, 1));
     TEST_EQUAL(NULL, slab.buf);
     TEST_EQUAL(NULL, slab.shared.thread);
     (void) env;

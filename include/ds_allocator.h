@@ -28,13 +28,13 @@ Contents (in this order):
     Utilities   PowerOfTwo* utility functions; g_mem_config (page size, VM granularity and commit chunk).
     Heap        ds_Alloc/ds_Realloc/ds_Free: aligned blocks of exactly the requested size.
     VM          struct VM: reserved address space, committed in chunks on first need (Linux: by touch, Windows: MEM_COMMIT).
-    TStack      struct TStack: lock-free LIFO of node indices over a buffer of TREIBER_NODE structs.
+    TStack      struct ds_TStack: lock-free LIFO of node indices over a buffer of TREIBER_NODE structs.
     Arena       stack allocator (push, pop, records) on a heap block or inside another arena.
     Ring        ring buffer whose end wraps through mirrored virtual memory (Linux, Windows).
     CPool       ds_CPool(T): compact typed array; removal moves the last element into the hole.
     Pool        ds_Pool(T) of POOL_NODE structs: stable indices, free list, serializable.
     TPool       retired (#if 0 in ds_pool.h): rebuilt on magazines and TStack.
-Poisoning, Utilities, Heap, VM and TStack are below. The others live in ds_arena.h, ds_ring.h, ds_compact_pool.h, ds_pool.h
+Poisoning, Utilities, Heap, VM and ds_TStack are below. The others live in ds_arena.h, ds_ring.h, ds_compact_pool.h, ds_pool.h
 (Pool and TPool) and ds_slab.h, included at the end in this order; they are not included on their own.
 */
 
@@ -162,8 +162,8 @@ u32         VMCommitInternal(struct VM *vm, const u64 end);
 void        VMRelease(struct VM *vm);
 
 /*
-TStack
-======
+ds_TStack
+=========
 Intrusive Lock-free index stack (Treiber). To push struct indices onto stack, add 
 TREIBER_NODE to struct. 
 
@@ -173,70 +173,30 @@ WARNING: It it illegal to push a struct onto multiple stacks simultaneously.
 #define TREIBER_NODE    u32 treiber_next
 #define TSTACK_NULL     U32_MAX
 
-typedef u64 TStackKey;
+typedef u64 ds_TStackKey;
 
-/* Key of (index, tag), the index of a key, the tag of a key. */
-static ds_ForceInline TStackKey TStackKeyInit(const u32 index, const u32 tag);
-static ds_ForceInline u32       TStackKeyIndex(const TStackKey key);
-static ds_ForceInline u32       TStackKeyTag(const TStackKey key);
+/* Return synchronization key(index, tag) */
+static ds_ForceInline ds_TStackKey  ds_TStackKeyInit(const u32 index, const u32 tag);
+/* Return index. */
+static ds_ForceInline u32           ds_TStackKeyIndex(const ds_TStackKey key);
+/* Return tag. */
+static ds_ForceInline u32           ds_TStackKeyTag(const ds_TStackKey key);
 
-struct ds_Align(DS_CACHE_LINE) TStack
+struct ds_Align(DS_CACHE_LINE) ds_TStack
 {
-    TStackKey   a_head;
-    u8          pad[DS_CACHE_LINE - sizeof(TStackKey)];
+    ds_TStackKey   a_head;
+    u8          pad[DS_CACHE_LINE - sizeof(ds_TStackKey)];
 };
 
 /* Master: initialize empty stack. */
-static ds_ForceInline void TStackFlush(struct TStack *stack)
-{
-    stack->a_head = TSTACK_NULL;
-};
-
-/* a popped node's treiber_next is TSTACK_NULL in debug builds: a second push of a queued node asserts */
-#ifdef DS_DEBUG
-#define TStackDebugMark(_buf_, _index_)     AtomicStoreRlx32(&(_buf_)[_index_].treiber_next, TSTACK_NULL)
-#else
-#define TStackDebugMark(_buf_, _index_)
-#endif
+static ds_ForceInline void ds_TStackFlush(struct ds_TStack *stack);
 
 /* Thread-safe: Push the node at index (< TSTACK_NULL, not in any stack) onto stack. */
-#define TStackPush(_stack_, _buf_, _index_)                                             \
-do                                                                                      \
-{                                                                                       \
-    ds_Assert((_index_) < TSTACK_NULL);                                                 \
-    ds_Assert(AtomicLoadRlx32(&(_buf_)[_index_].treiber_next) == TSTACK_NULL);          \
-                                                                                        \
-    TStackKey _head_ = AtomicLoadRlx64(&(_stack_)->a_head);                             \
-    TStackKey _new_head_;                                                               \
-    do                                                                                  \
-    {                                                                                   \
-        AtomicStoreRlx32(&(_buf_)[_index_].treiber_next, TStackKeyIndex(_head_));       \
-        _new_head_ = TStackKeyInit((_index_), TStackKeyTag(_head_) + 1);                \
-    } while (!AtomicCompareExchangeRelRlx64(&(_stack_)->a_head, &_head_, _new_head_));  \
-} while (0)
+//#define ds_TStackPush(stack, buf, index)
 
 /* Thread-safe: Pop and set _index_ to the top node's index from stack on success, TSTACK_NULL on failure. */
-#define TStackTryPop(_index_, _stack_, _buf_)                                           \
-do                                                                                      \
-{                                                                                       \
-    TStackKey _head_ = AtomicLoadAcq64(&(_stack_)->a_head);                             \
-    TStackKey _new_head_;                                                               \
-    do                                                                                  \
-    {                                                                                   \
-        (_index_) = TStackKeyIndex(_head_);                                             \
-        if ((_index_) == TSTACK_NULL)                                                   \
-        {                                                                               \
-            break;                                                                      \
-        }                                                                               \
-        _new_head_ = TStackKeyInit(AtomicLoadRlx32(&(_buf_)[_index_].treiber_next),     \
-                                   TStackKeyTag(_head_) + 1);                           \
-    } while (!AtomicCompareExchangeAcqRelAcq64(&(_stack_)->a_head, &_head_, _new_head_));\
-                                                                                        \
-    if ((_index_) != TSTACK_NULL)                                                       \
-    {                                                                                   \
-        TStackDebugMark(_buf_, _index_);                                                \
-    }                                                                                   \
-} while (0)
+//#define ds_TStackTryPop(index, stack, buf)
+
 
 /* ========================= INLINED IMPLEMENTATIONS ========================= */
 
@@ -279,20 +239,71 @@ static ds_ForceInline u32 PowerOfTwoMultipleCheck(const u64 n, const u64 m)
 	return (n & (m - 1)) == 0;
 }
 
-static ds_ForceInline TStackKey TStackKeyInit(const u32 index, const u32 tag)
+static ds_ForceInline ds_TStackKey ds_TStackKeyInit(const u32 index, const u32 tag)
 {
-    return ((TStackKey) tag << 32) | index;
+    return ((ds_TStackKey) tag << 32) | index;
 }
 
-static ds_ForceInline u32 TStackKeyIndex(const TStackKey key)
+static ds_ForceInline u32 ds_TStackKeyIndex(const ds_TStackKey key)
 {
     return (u32) key;
 }
 
-static ds_ForceInline u32 TStackKeyTag(const TStackKey key)
+static ds_ForceInline u32 ds_TStackKeyTag(const ds_TStackKey key)
 {
     return (u32) (key >> 32);
 }
+
+/* a popped node's treiber_next is TSTACK_NULL in debug builds: a second push of a queued node asserts */
+#ifdef DS_DEBUG
+#define ds_TStackDebugMark(_buf_, _index_)                                              \
+    AtomicStoreRlx32(&(_buf_)[_index_].treiber_next, TSTACK_NULL)
+#else
+#define ds_TStackDebugMark(_buf_, _index_)
+#endif
+
+#define ds_TStackPush(_stack_, _buf_, _index_)                                          \
+do                                                                                      \
+{                                                                                       \
+    ds_Assert((_index_) < TSTACK_NULL);                                                 \
+    ds_Assert(AtomicLoadRlx32(&(_buf_)[_index_].treiber_next) == TSTACK_NULL);          \
+                                                                                        \
+    ds_TStackKey _head_ = AtomicLoadRlx64(&(_stack_)->a_head);                          \
+    ds_TStackKey _new_head_;                                                            \
+    do                                                                                  \
+    {                                                                                   \
+        AtomicStoreRlx32(&(_buf_)[_index_].treiber_next, ds_TStackKeyIndex(_head_));    \
+        _new_head_ = ds_TStackKeyInit((_index_), ds_TStackKeyTag(_head_) + 1);          \
+    } while (!AtomicCompareExchangeRelRlx64(&(_stack_)->a_head, &_head_, _new_head_));  \
+} while (0)
+
+#define ds_TStackTryPop(_index_, _stack_, _buf_)                                        \
+do                                                                                      \
+{                                                                                       \
+    ds_TStackKey _head_ = AtomicLoadAcq64(&(_stack_)->a_head);                          \
+    ds_TStackKey _new_head_;                                                            \
+    do                                                                                  \
+    {                                                                                   \
+        (_index_) = ds_TStackKeyIndex(_head_);                                          \
+        if ((_index_) == TSTACK_NULL)                                                   \
+        {                                                                               \
+            break;                                                                      \
+        }                                                                               \
+        _new_head_ = ds_TStackKeyInit(AtomicLoadRlx32(&(_buf_)[_index_].treiber_next),  \
+                                   ds_TStackKeyTag(_head_) + 1);                        \
+    } while (!AtomicCompareExchangeAcqRelAcq64(&(_stack_)->a_head, &_head_,               \
+                                                _new_head_));                             \
+                                                                                        \
+    if ((_index_) != TSTACK_NULL)                                                       \
+    {                                                                                   \
+        ds_TStackDebugMark(_buf_, _index_);                                             \
+    }                                                                                   \
+} while (0)
+
+static ds_ForceInline void ds_TStackFlush(struct ds_TStack *stack)
+{
+    stack->a_head = TSTACK_NULL;
+};
 
 static u32 VMCommit(struct VM *vm, const u64 end)
 {
@@ -308,6 +319,151 @@ static u32 VMCommit(struct VM *vm, const u64 end)
 #include "ds_ring.h"
 #include "ds_compact_pool.h"
 #include "ds_pool.h"
+
+/*
+ds_MagazinePow2
+===============
+//TODO cleaned up version of below
+*/
+
+struct ds_MagazineLocal
+{
+    u32 cur;        /* 0,1                                                              */
+    u32 count[2];   /* magazine count, (length of m[i] is storage->mclass_length[i])    */
+    u32 base[2];    /* magazine base in thread->index_pool.buf[]                        */
+};
+
+struct ds_Align(DS_CACHE_LINE) ds_MagazineThread
+{
+    ds_CPool(u32)           index_pool;
+    struct ds_MagazineLocal local[31];
+};
+
+struct ds_MagazineShared
+{
+    TREIBER_NODE;
+    u32 base;
+};
+
+struct ds_Align(DS_CACHE_LINE) ds_MagazineClass
+{
+    struct ds_TStack stack_full;
+    struct ds_TStack stack_empty;
+};
+
+/*
+ * Hint for how much memory a magazine should index into. Magazines with indices to
+ * smaller arrays gets capped at 64 arrays, while large array magazines stores at 
+ * least4 array indices.
+ */
+#define DS_MAGAZINE_SIZE_HINT   (16*1024)
+#define DS_MAGAZINE_LENGTH_MIN  4
+#define DS_MAGAZINE_LENGTH_MAX  64
+
+struct ds_MagazinePow2
+{
+    u32 *                       index;
+    struct ds_MagazineShared *  magazine;       
+    struct ds_MagazineThread *  thread;
+    u32                         thread_count;
+    u32                         heap_allocated;
+
+    u32                         mclass_length[31];  /* magazine length per class        */
+    struct ds_MagazineClass     mclass[31];         /* stacks of empty/full magazines   */
+
+    u32                         a_index_count;
+    u8                          pad0[DS_CACHE_LINE - sizeof(u32)];
+    u32                         a_magazine_count;
+    u8                          pad1[DS_CACHE_LINE - sizeof(u32)];
+
+    struct VM                   vm_index;
+    struct VM                   vm_magazine;
+};
+
+//TODO
+u32     ds_MagazinePow2Alloc(struct arena *mem,
+                                struct ds_MagazinePow2 *storage,
+                                const u32 thread_count,
+                                const u64 slot_size,
+                                const u32 max_array_count);
+//TODO
+void    ds_MagazinePow2Dealloc(struct ds_MagazinePow2 *storage);
+//TODO
+void    ds_MagazinePow2Flush(struct ds_MagazinePow2 *storage);
+
+/*
+Magazine API
+============
+
+//TODO: ds_Array( T ) { .length, .buf } ? ds_Slab allocates larger arrays that user asks for,
+//      so this small helper is probably useful, or we just re-use cpool...
+
+//TODO temporary architecture segment
+
+---------------------------------------------------------------
+
+(Just pseudocode, do not expect syncing here)
+
+Suppose local ops of add or remove failed (2 empty magazines, 2 filled
+magazines, respectively). Then a thread needs to grab a magazine from
+the depot:
+
+    If add object, pop full magazine m
+        If success
+            push indices of m onto local magazine
+            push m.id onto empty stack
+            return 1;
+
+        // no filled magazines left so we return 0
+        // signaling for caller to push contiguous
+        // object memory and allocate the local but
+        // empty magazine with new slots.
+        return 0;
+
+
+    If remove object, pop empty magazine m
+
+        if failure
+
+        If success;
+            push local indices onto m index base;
+            push m onto filled stack
+            clear local indices.
+            return 1;
+
+        // no empty magazines left so we alloc new
+        // magazine (This is where new magazines are
+        // allocated!)
+        
+        base = vm_magazine.push(class_index_count*sizeof(u32));
+        ds_MagazineId m = { .tag = 1, .base = base };
+        push local indices onto m index base;
+        push m onto filled stack
+        clear local indices.
+        return 1;
+
+*/
+
+
+typedef u64 ds_MagazineId;
+
+//j/* One depot per class */
+//jstruct ds_MagazineDepot
+//j{
+//j};
+//j
+//jstruct ds_MagazinePow2;
+//j{
+//j    u32                         thread_count;   
+//j    u32                         class_count;    /* Number of count-classes                  */
+//j
+//j    u32 *                       magasine_length;/* length[k] == magazine[thread][k].length  */
+//j    struct ds_Magazine **       magazine;       /* per-thread owned arrays of magazines, 
+//j                                                   grown when needed                        */
+//j    struct ds_MagazineDepot *   depot;          /* per-class depot of magazines             */
+//j};
+//j
+
 #include "ds_slab.h"
 
 

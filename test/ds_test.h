@@ -137,6 +137,7 @@ extern struct suite_Performance *rng_performance_suite;
 extern struct suite_Performance *serialize_performance_suite;
 extern struct suite_Performance *string_performance_suite;
 extern struct suite_Performance *allocator_performance_suite;
+extern struct suite_Performance *slab_performance_suite;
 extern struct suite_Performance *THashMap_performance_suite;
 extern struct suite_Performance *hierarchy_performance_suite;
 extern struct suite_Performance *jobscheduler_performance_suite;

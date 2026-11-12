@@ -16,6 +16,7 @@ add_library(DreamscapeTestAPI
 	test_serialize.c
 	test_allocator.c
 	test_allocator_correctness.c
+	test_allocator_benchmark.c
 	test_container_correctness.c
 	test_base_correctness.c
     test_hash_map.c
@@ -33,3 +34,4 @@ add_library(DreamscapeTestAPI
 add_library(Dreamscape::Test ALIAS DreamscapeTestAPI)
 target_link_libraries(DreamscapeTestAPI PRIVATE Dreamscape::Dreamscape dtoa xxHash) 
 target_include_directories(DreamscapeTestAPI INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
+

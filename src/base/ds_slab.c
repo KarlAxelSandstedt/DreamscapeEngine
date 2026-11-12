@@ -17,16 +17,18 @@
 ==========================================================================
 */
 
-ds_StaticAssert(sizeof(struct ds_SlabThread) == DS_CACHE_LINE, "");
-ds_StaticAssert(sizeof(struct ds_SlabShared) == 4*DS_CACHE_LINE, "");
+ds_StaticAssert(sizeof(struct ds_TSlabThread) == DS_CACHE_LINE, "");
+ds_StaticAssert(sizeof(struct ds_TSlabShared) == 4*DS_CACHE_LINE, "");
 
-u32 ds_SlabSharedAlloc(struct ds_SlabShared *shared, 
+u32 ds_TSlabSharedAlloc(struct ds_TSlabShared *shared,
+                       void **external,
                        const u32 thread_count,
                        const u64 slot_size,
                        const u64 vm_size)
 {
 	ds_Assert(slot_size >= sizeof(u32) && thread_count > 0);
-	*shared = (struct ds_SlabShared) { 0 };
+	*shared = (struct ds_TSlabShared) { 0 };
+	*external = NULL;
 
 	shared->vm = VMReserve(vm_size);
 	if (shared->vm.buf == NULL)
@@ -34,38 +36,39 @@ u32 ds_SlabSharedAlloc(struct ds_SlabShared *shared,
         goto failure;
 	}
 
-	shared->thread = ds_Alloc(thread_count*sizeof(struct ds_SlabThread), DS_CACHE_LINE);
+	shared->thread = ds_Alloc(thread_count*sizeof(struct ds_TSlabThread), DS_CACHE_LINE);
 	if (shared->thread == NULL)
 	{
         goto failure;
 	}
-	memset(shared->thread, 0, thread_count*sizeof(struct ds_SlabThread));
+	memset(shared->thread, 0, thread_count*sizeof(struct ds_TSlabThread));
 	shared->thread_count = thread_count;
 
 	for (u32 i = 0; i < thread_count; ++i)
 	{
-		struct ds_SlabThread *t = shared->thread + i;
-		ds_CPoolAlloc(NULL, t->free, DS_SLAB_COUNT_DEFAULT, GROWABLE);
+		struct ds_TSlabThread *t = shared->thread + i;
+		ds_CPoolAlloc(NULL, t->free, DS_TSLAB_COUNT_DEFAULT, GROWABLE);
 		if (t->free.buf == NULL)
 		{
             goto failure;
 		}
 
-		const struct slot arr = ds_CPoolPushBatch(t->free, DS_SLAB_COUNT_DEFAULT);
-		memset(arr.address, 0xff, DS_SLAB_COUNT_DEFAULT*sizeof(u32));
+		const struct slot arr = ds_CPoolPushBatch(t->free, DS_TSLAB_COUNT_DEFAULT);
+		memset(arr.address, 0xff, DS_TSLAB_COUNT_DEFAULT*sizeof(u32));
 	}
 
-	/* slot indices stay below DS_SLAB_NULL */
+	/* slot indices stay below DS_TSLAB_NULL */
 	const u64 slots = shared->vm.reserved / slot_size;
 	shared->length = (slots < U32_MAX) ? (u32) slots : U32_MAX - 1;
+	*external = shared->vm.buf;
 	return 1;
 
 failure:
-    ds_SlabSharedDealloc(shared);
+    ds_TSlabSharedDealloc(shared);
     return 0;
 }
 
-void ds_SlabSharedDealloc(struct ds_SlabShared *shared)
+void ds_TSlabSharedDealloc(struct ds_TSlabShared *shared)
 {
     if (shared->vm.buf) 
     { 
@@ -81,16 +84,22 @@ void ds_SlabSharedDealloc(struct ds_SlabShared *shared)
         ds_Free(shared->thread);
     }
 
-    *shared = (struct ds_SlabShared) { 0 };
+    *shared = (struct ds_TSlabShared) { 0 };
 }
 
-void ds_SlabSharedFlush(struct ds_SlabShared *shared)
+void ds_TSlabSharedFlush(struct ds_TSlabShared *shared)
 {
     for (u32 i = 0; i < shared->thread_count; ++i)
 	{
-		struct ds_SlabThread *t = shared->thread + i;
+		struct ds_TSlabThread *t = shared->thread + i;
 		memset(t->free.buf, 0xff, t->free.count*sizeof(u32));
         t->count_allocated = 0;
 	}
     shared->a_count_max = 0;
+}
+
+void ds_TSlabOutOfMemoryInternal(void)
+{
+    LogString(T_SYSTEM, S_FATAL, "Slab-Allocator OOM, exiting!");
+    FatalCleanupAndExit();
 }
