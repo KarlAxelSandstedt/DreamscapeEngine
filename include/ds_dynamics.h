@@ -2095,6 +2095,7 @@ struct ds_Dynamics
     ds_Pool(ds_Contact)           contact_pool;   
 	struct ds_HashMap	            contact_map;		
     struct ds_BitSet                contact_usage_set;
+    ds_TSlab(ds_TriCache)           tri_cache_slab;
 
     ds_IslandId                     island_to_split;            /* the island the next tick splits, chosen at the end of the solve (null: none) */
 	ds_Pool(ds_Island)            island_pool;	    

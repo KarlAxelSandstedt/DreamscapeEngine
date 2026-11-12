@@ -3077,7 +3077,9 @@ struct test_Output MeshSphereCasesTest(struct test_Environment *env)
     const f32 tri_size[] = { 1e-2f, 1.0f, 1e2f };
     const f32 radius_ratio[] = { 1e-3f, 1.0f, 1e3f };
     const char *point_id[] = { "face", "edge", "vertex" };
-    struct ds_ConcaveCache none = { .tri_pool.growable = GROWABLE };
+    ds_TSlab(ds_TriCache) slab;
+    TEST_EQUAL(1, ds_TSlabAlloc(slab, (u64) 16 << 20, 1));
+    struct ds_ConcaveCache none = { .tri = { .buf = NULL, .length = 0, .base = U32_MAX } };
     for (u32 si = 0; si < 3; ++si)
     for (u32 ri = 0; ri < 3; ++ri)
     for (u32 pi = 0; pi < 3; ++pi)
@@ -3104,7 +3106,7 @@ struct test_Output MeshSphereCasesTest(struct test_Environment *env)
         struct c_Shape sphere = { .type = C_SHAPE_SPHERE };
         sphere.sphere.radius = radius;
 
-        const struct c_ContactResult r = c_MeshContact(env->mem_2, &none, &mesh, &t_mesh, &sphere, &t_sphere);
+        const struct c_ContactResult r = c_MeshContact(env->mem_2, &slab, &none, &mesh, &t_mesh, &sphere, &t_sphere);
         /* n_t in the sphere's frame */
         const v3 n_t = QUnitRotate(QConj(q_sphere), QUnitRotate(t_mesh.rotation, V3(0.0f, 1.0f, 0.0f)));
         const v3 n_expected = V3Scale(n_t, (h < 0.0f) ? 1.0f : -1.0f);
@@ -3160,7 +3162,7 @@ struct test_Output MeshSphereCasesTest(struct test_Environment *env)
         struct c_Shape sphere = { .type = C_SHAPE_SPHERE };
         sphere.sphere.radius = radius;
 
-        const struct c_ContactResult r = c_MeshContact(env->mem_2, &none, &mesh, &t_mesh, &sphere, &t_sphere);
+        const struct c_ContactResult r = c_MeshContact(env->mem_2, &slab, &none, &mesh, &t_mesh, &sphere, &t_sphere);
         const v3 n_t = QUnitRotate(QConj(q_sphere), QUnitRotate(t_mesh.rotation, V3(0.0f, 1.0f, 0.0f)));
         u32 ok = (r.manifold_count == 1);
         const struct c_Manifold *m = r.contact_manifold;
@@ -3183,7 +3185,7 @@ struct test_Output MeshSphereCasesTest(struct test_Environment *env)
     }
     fprintf(stdout, "\tsphere on a triangle: 4000 random centers within the band\n");
 
-    ds_CPoolDealloc(none.tri_pool);
+    ds_TSlabDealloc(slab);
 	return output;
 }
 
@@ -3289,7 +3291,9 @@ struct mc_CapsuleCase
 static struct mc_CapsuleCase McCapsuleCase(struct arena *mem, const struct c_Shape *mesh, const f32 radius, const f32 half_height, const struct d3 center, const v3 axis)
 {
     struct mc_CapsuleCase cc;
-    struct ds_ConcaveCache none = { .tri_pool.growable = GROWABLE };
+    ds_TSlab(ds_TriCache) slab;
+    ds_TSlabAlloc(slab, (u64) 16 << 20, 1);
+    struct ds_ConcaveCache none = { .tri = { .buf = NULL, .length = 0, .base = U32_MAX } };
     const struct d3 pos_m = CtWorldPosition();
     const q q_mesh = CtRotation();
     const q q_capsule = QNormalize(QMul(q_mesh, McAxisRotation(axis)));
@@ -3301,13 +3305,13 @@ static struct mc_CapsuleCase McCapsuleCase(struct arena *mem, const struct c_Sha
     struct c_Shape capsule = { .type = C_SHAPE_CAPSULE };
     capsule.capsule.radius = radius;
     capsule.capsule.half_height = half_height;
-    cc.result = c_MeshContact(mem, &none, mesh, &t_mesh, &capsule, &t_capsule);
+    cc.result = c_MeshContact(mem, &slab, &none, mesh, &t_mesh, &capsule, &t_capsule);
     for (u32 k = 0; k < 3; ++k)
     {
         const struct d3 world = D3Add(pos_m, D3RotationMul(cc.rm, D3V3(mesh->mesh_bvh.mesh->v[k])));
         cc.tri[k] = D3RotationTMul(cc.rc, D3Sub(world, pos_c));
     }
-    ds_CPoolDealloc(none.tri_pool);
+    ds_TSlabDealloc(slab);
     return cc;
 }
 
@@ -3618,7 +3622,9 @@ struct test_Output MeshFlatGridTest(struct test_Environment *env)
     struct ds_DynamicsWorker *prev = g_dynamics_worker;
     memset(mc_worker, 0, sizeof(mc_worker));
     g_dynamics_worker = mc_worker;
-    struct ds_ConcaveCache none = { .tri_pool.growable = GROWABLE };
+    ds_TSlab(ds_TriCache) slab;
+    TEST_EQUAL(1, ds_TSlabAlloc(slab, (u64) 16 << 20, 1));
+    struct ds_ConcaveCache none = { .tri = { .buf = NULL, .length = 0, .base = U32_MAX } };
     const char *kind_id[] = { "sphere", "capsule", "box", "hull" };
     static const f32 tilt_set[] = { 0.0f, 1e-7f, 1e-5f, 1e-3f };
     for (u32 kind = 0; kind < 4; ++kind)
@@ -3742,8 +3748,8 @@ struct test_Output MeshFlatGridTest(struct test_Environment *env)
             D3Rotation(rc, q_convex);
             const struct d3 pos_c = D3Add(mesh_pos, D3RotationMul(rm, D3RotationMul(rg, center)));
             const ds_TransformWorld t_convex = { .rotation = q_convex, .position = V3F64(pos_c.x, pos_c.y, pos_c.z) };
-            ds_CPoolFlush(none.tri_pool);
-            const struct c_ContactResult res = c_MeshContact(env->mem_2, &none, &mesh, &t_mesh, &convex, &t_convex);
+            none.tri_count = 0;
+            const struct c_ContactResult res = c_MeshContact(env->mem_2, &slab, &none, &mesh, &t_mesh, &convex, &t_convex);
 
             const struct d3 down = D3RotationTMul(rc, D3RotationMul(rm, D3RotationMul(rg, D3(0.0, -1.0, 0.0))));
             u32 ok = (res.manifold_count >= 1);
@@ -3783,7 +3789,7 @@ struct test_Output MeshFlatGridTest(struct test_Environment *env)
         fprintf(stdout, "\t%s on a flat grid: 8000 touching, %.2f manifolds/query; worst |n - n_grid| / tol %.3g, |deepest - expected| / tol %.3g; ghost normals (counted) %llu\n",
             kind_id[kind], (f64) manifolds / 8000.0, worst_n, worst_depth, (unsigned long long) ghost);
     }
-    ds_CPoolDealloc(none.tri_pool);
+    ds_TSlabDealloc(slab);
     g_dynamics_worker = prev;
 	return output;
 }
@@ -3791,9 +3797,11 @@ struct test_Output MeshFlatGridTest(struct test_Environment *env)
 /* NULL if passed, else what failed */
 static const char *McTerrainCheck(struct arena *frame, u64 *manifolds, const struct c_Shape *mesh, const ds_TransformWorld *t_mesh, const struct c_Shape *convex, const ds_TransformWorld *t_convex)
 {
-    struct ds_ConcaveCache none = { .tri_pool.growable = GROWABLE }, none_t = { .tri_pool.growable = GROWABLE };
+    ds_TSlab(ds_TriCache) slab;
+    ds_TSlabAlloc(slab, (u64) 16 << 20, 1);
+    struct ds_ConcaveCache none = { .tri = { .buf = NULL, .length = 0, .base = U32_MAX } }, none_t = { .tri = { .buf = NULL, .length = 0, .base = U32_MAX } };
     const char *fail = NULL;
-    const struct c_ContactResult r = c_MeshContact(frame, &none, mesh, t_mesh, convex, t_convex);
+    const struct c_ContactResult r = c_MeshContact(frame, &slab, &none, mesh, t_mesh, convex, t_convex);
     *manifolds += r.manifold_count;
     for (u32 i = 0; i < r.manifold_count; ++i)
     {
@@ -3816,7 +3824,7 @@ static const char *McTerrainCheck(struct arena *frame, u64 *manifolds, const str
      && V3F64Sub(t_convex_t.position, t_mesh_t.position).y == V3F64Sub(t_convex->position, t_mesh->position).y
      && V3F64Sub(t_convex_t.position, t_mesh_t.position).z == V3F64Sub(t_convex->position, t_mesh->position).z)
     {
-        const struct c_ContactResult r_t = c_MeshContact(frame, &none_t, mesh, &t_mesh_t, convex, &t_convex_t);
+        const struct c_ContactResult r_t = c_MeshContact(frame, &slab, &none_t, mesh, &t_mesh_t, convex, &t_convex_t);
         u32 same = (r_t.manifold_count == r.manifold_count);
         for (u32 i = 0; same && i < r.manifold_count; ++i)
         {
@@ -3833,8 +3841,7 @@ static const char *McTerrainCheck(struct arena *frame, u64 *manifolds, const str
         }
     }
 
-    ds_CPoolDealloc(none.tri_pool);
-    ds_CPoolDealloc(none_t.tri_pool);
+    ds_TSlabDealloc(slab);
     return fail;
 }
 
@@ -4086,7 +4093,9 @@ struct test_Output MeshHullCasesTest(struct test_Environment *env)
     struct ds_DynamicsWorker *prev = g_dynamics_worker;
     memset(mc_worker, 0, sizeof(mc_worker));
     g_dynamics_worker = mc_worker;
-    struct ds_ConcaveCache none = { .tri_pool.growable = GROWABLE };
+    ds_TSlab(ds_TriCache) slab;
+    TEST_EQUAL(1, ds_TSlabAlloc(slab, (u64) 16 << 20, 1));
+    struct ds_ConcaveCache none = { .tri = { .buf = NULL, .length = 0, .base = U32_MAX } };
 
     static const f32 tri_size[] = { 1e-2f, 1.0f, 1e2f };
     const f64 sqrt2 = 1.4142135623730951, sqrt3 = 1.7320508075688772;
@@ -4141,8 +4150,8 @@ struct test_Output MeshHullCasesTest(struct test_Environment *env)
         struct ch_Hull h;
         ChHullInit(&h, &box, 1, hw, QNormalize(QMul(q_mesh, q_local)), D3Add(pos_m, D3RotationMul(rm, center)));
         const ds_TransformWorld t_mesh = { .rotation = q_mesh, .position = V3F64(pos_m.x, pos_m.y, pos_m.z) };
-        ds_CPoolFlush(none.tri_pool);
-        const struct c_ContactResult r = c_MeshContact(env->mem_2, &none, &mesh, &t_mesh, &h.shape, &h.t);
+        none.tri_count = 0;
+        const struct c_ContactResult r = c_MeshContact(env->mem_2, &slab, &none, &mesh, &t_mesh, &h.shape, &h.t);
         struct d3 t[3];
         McTriangleInHull(t, &h, rm, pos_m, mesh.mesh_bvh.mesh->v);
         const f64 tol = 1e-4*S;
@@ -4185,7 +4194,7 @@ struct test_Output MeshHullCasesTest(struct test_Environment *env)
         }
     }
 
-    ds_CPoolDealloc(none.tri_pool);
+    ds_TSlabDealloc(slab);
     g_dynamics_worker = prev;
 	return output;
 }
@@ -4207,7 +4216,9 @@ struct test_Output MeshHullRandomTest(struct test_Environment *env)
     memset(mc_worker, 0, sizeof(mc_worker));
     g_dynamics_worker = mc_worker;
     struct ds_DynamicsMetrics *metrics = &g_dynamics_worker[ds_ThreadSelfIndex()].metrics;
-    struct ds_ConcaveCache none = { .tri_pool.growable = GROWABLE };
+    ds_TSlab(ds_TriCache) slab;
+    TEST_EQUAL(1, ds_TSlabAlloc(slab, (u64) 16 << 20, 1));
+    struct ds_ConcaveCache none = { .tri = { .buf = NULL, .length = 0, .base = U32_MAX } };
     static const f64 offset[] = { 0.0, 1e-6, -1e-6, 1e-4, -1e-4, 1e-2, -1e-2 };
 
     u64 contacts = 0, separated = 0, probes = 0, evictions = 0, v_count[5] = { 0 }, touching_off = 0;
@@ -4269,8 +4280,8 @@ struct test_Output MeshHullRandomTest(struct test_Environment *env)
         McTriangleInHull(t, &h, rm, pos_m, tm);
         const f64 tol = McHullTriTol(&h, t);
 
-        ds_CPoolFlush(none.tri_pool);
-        const struct c_ContactResult r = c_MeshContact(env->mem_2, &none, &mesh, &t_mesh, &h.shape, &h.t);
+        none.tri_count = 0;
+        const struct c_ContactResult r = c_MeshContact(env->mem_2, &slab, &none, &mesh, &t_mesh, &h.shape, &h.t);
         const char *fail = McHullTriVerify(&touching_off, &r, &h, t, tol, 0.0);
         const char *stage = "first";
         contacts += (r.manifold_count != 0);
@@ -4281,7 +4292,7 @@ struct test_Output MeshHullRandomTest(struct test_Environment *env)
         {
             /* the same pose with the result as the cache: every cache reused */
             const u32 p0 = metrics->mesh_cache_probe_count, e0 = metrics->mesh_cache_eviction_count;
-            const struct c_ContactResult again = c_MeshContact(env->mem_2, &none, &mesh, &t_mesh, &h.shape, &h.t);
+            const struct c_ContactResult again = c_MeshContact(env->mem_2, &slab, &none, &mesh, &t_mesh, &h.shape, &h.t);
             probes += metrics->mesh_cache_probe_count - p0;
             evictions += metrics->mesh_cache_eviction_count - e0;
             stage = "cached, same pose";
@@ -4295,7 +4306,7 @@ struct test_Output MeshHullRandomTest(struct test_Environment *env)
             const struct d3 shift = D3Scale(D3V3(CtUnit()), 1e-3*tol / (CONTACT_TEST_TOLERANCE * F32_EPSILON));
             const struct d3 pos_moved = D3Add(pos_m, shift);
             const ds_TransformWorld t_moved = { .rotation = q_mesh, .position = V3F64(pos_moved.x, pos_moved.y, pos_moved.z) };
-            const struct c_ContactResult moved = c_MeshContact(env->mem_2, &none, &mesh, &t_moved, &h.shape, &h.t);
+            const struct c_ContactResult moved = c_MeshContact(env->mem_2, &slab, &none, &mesh, &t_moved, &h.shape, &h.t);
             McTriangleInHull(t, &h, rm, pos_moved, tm);
             stage = "cached, moved";
             fail = McHullTriVerify(&touching_off, &moved, &h, t, tol, (f64) g_numerics_config->sat_cache_tolerance);
@@ -4313,7 +4324,7 @@ struct test_Output MeshHullRandomTest(struct test_Environment *env)
         (unsigned long long) contacts, (unsigned long long) v_count[1], (unsigned long long) v_count[2], (unsigned long long) v_count[3],
         (unsigned long long) v_count[4], (unsigned long long) separated, (unsigned long long) probes, (unsigned long long) evictions, (unsigned long long) touching_off);
 
-    ds_CPoolDealloc(none.tri_pool);
+    ds_TSlabDealloc(slab);
     g_dynamics_worker = prev;
 	return output;
 }

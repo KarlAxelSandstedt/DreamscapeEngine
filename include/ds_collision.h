@@ -358,10 +358,13 @@ struct ds_TriCache
     struct SATCache     sat;
 };
 DEFINE_CPOOL_STRUCT(ds_TriCache);
+DEFINE_ARRAY_STRUCT(ds_TriCache);
+DEFINE_TSLAB(ds_TriCache);
 
 struct ds_ConcaveCache
 {
-    ds_CPool(ds_TriCache)   tri_pool;
+    ds_Array(ds_TriCache)   tri;            /* tri.length: capacity, grown by the slab, never shrunk */
+    u32                     tri_count;
 };
 
 /*
@@ -483,10 +486,11 @@ struct c_ContactResult  c_HullContact(struct arena *frame, struct ds_ConvexCache
 /*
  * mesh and convex shape: one local manifold per contacting triangle, in the convex shape's frame (n from it to the
  * mesh). The query records every candidate triangle on one of the thread's scratch arenas: more than it holds (about
- * 8,700 at the default 1 MiB) is fatal. cache is in-out and always valid (empty: a zeroed growable tri_pool); on return
- * tri_pool holds the hull's SAT entries by triangle (at most cache_count_max, never SAT_CACHE_NONE), else it is empty.
+ * 8,700 at the default 1 MiB) is fatal. cache is in-out and always valid (empty: tri_count 0, with or without an
+ * array); on return its first tri_count entries hold the hull's SAT entries by triangle (at most cache_count_max,
+ * never SAT_CACHE_NONE), else tri_count is 0. The array comes from slab and grows when the entries do not fit.
  */
-struct c_ContactResult  c_MeshContact(struct arena *frame, struct ds_ConcaveCache *cache, const struct c_Shape *mesh, const ds_TransformWorld *t_mesh, const struct c_Shape *convex, const ds_TransformWorld *t_convex);
+struct c_ContactResult  c_MeshContact(struct arena *frame, ds_TSlab(ds_TriCache) *slab, struct ds_ConcaveCache *cache, const struct c_Shape *mesh, const ds_TransformWorld *t_mesh, const struct c_Shape *convex, const ds_TransformWorld *t_convex);
 
 /********************************** RAYCASTS **********************************/
 

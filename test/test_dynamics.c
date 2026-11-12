@@ -5,6 +5,7 @@
 #include "ds_quaternion.h"
 #include "ds_collision.h"
 #include "ds_geometry.h"
+#include "ds_platform.h"
 
 /* the ticks' scratch memory: one arena for every direct tick of the suite (a server's frame arena takes that role elsewhere) */
 static struct arena *DynamicsTestTickArena(void)
@@ -585,14 +586,14 @@ static u32 SnapshotTestEqual(const struct ds_Dynamics *a, const struct ds_Dynami
             continue;
         }
 
-        const ds_CPool(ds_TriCache) *pool_a = &c_a->cache.concave.tri_pool, *pool_b = &c_b->cache.concave.tri_pool;
-        if (pool_a->count != pool_b->count)
+        const struct ds_ConcaveCache *cache_a = &c_a->cache.concave, *cache_b = &c_b->cache.concave;
+        if (cache_a->tri_count != cache_b->tri_count)
         {
             return 0;
         }
-        for (u32 e = 0; e < pool_a->count; ++e)
+        for (u32 e = 0; e < cache_a->tri_count; ++e)
         {
-            const struct ds_TriCache *ea = pool_a->buf + e, *eb = pool_b->buf + e;
+            const struct ds_TriCache *ea = cache_a->tri.buf + e, *eb = cache_b->tri.buf + e;
             if (ea->tri != eb->tri || ea->sat.type != eb->sat.type
                 || memcmp(&ea->sat.normal, &eb->sat.normal, sizeof(v3)) != 0 || memcmp(&ea->sat.depth, &eb->sat.depth, sizeof(f32)) != 0
                 || (ea->sat.type != SAT_CACHE_SEPARATION && memcmp(ea->sat.feature, eb->sat.feature, sizeof(ea->sat.feature)) != 0))
@@ -864,6 +865,196 @@ static struct test_Output DynamicsSnapshotMeshTest(struct test_Environment *env)
 
     TEST_TRUE(SnapshotMeshTestRun());
 
+	return output;
+}
+
+/*
+ * Mesh contact array sizes over a terrain run (a measurement, no checks): per tick, every mesh contact's manifold
+ * count and tri_pool count. Printed: the distribution of both, how often they change per tick (any change, and
+ * a power-of-two class change), and two memory bounds in slots: the peak over ticks of the total (what one shared
+ * buddy region needs) and the sum over counts of each count's peak (what per-size pools need). Every change is
+ * written to mesh_array_trace.txt in the cwd ("t tick" lines, then "m slot old new" / "c slot old new") to drive an
+ * allocator benchmark.
+ */
+#define MESH_STATS_TICKS        900
+#define MESH_STATS_BOXES        8       /* per side */
+#define MESH_STATS_COUNT_MAX    64      /* counts above land in the last bucket */
+
+struct mesh_ArrayStats
+{
+    u64 hist[MESH_STATS_COUNT_MAX + 1];         /* contact-ticks per count */
+    u64 change;                                 /* count changed since the previous tick */
+    u64 change_pow2;                            /* the count's power-of-two class changed */
+    u64 alloc;                                  /* 0 -> n */
+    u64 free;                                   /* n -> 0 */
+    u32 peak_per_count[MESH_STATS_COUNT_MAX + 1];   /* max over ticks of the contacts at that count */
+    u64 peak_total;                             /* max over ticks of the slots in use */
+    u64 peak_total_pow2;                        /* the same with counts rounded up to a power of two */
+    u32 tick_per_count[MESH_STATS_COUNT_MAX + 1];   /* this tick */
+};
+
+static u32 MeshStatsPow2Class(const u32 n)
+{
+    u32 k = 0;
+    while (((u32) 1 << k) < n)
+    {
+        k += 1;
+    }
+    return k;
+}
+
+static void MeshStatsRecord(struct mesh_ArrayStats *st, const u32 prev, const u32 now)
+{
+    const u32 bucket = (now < MESH_STATS_COUNT_MAX) ? now : MESH_STATS_COUNT_MAX;
+    st->hist[bucket] += 1;
+    st->tick_per_count[bucket] += 1;
+    if (prev != now)
+    {
+        st->change += 1;
+        st->change_pow2 += (MeshStatsPow2Class(prev) != MeshStatsPow2Class(now));
+        st->alloc += (prev == 0);
+        st->free += (now == 0);
+    }
+}
+
+static void MeshStatsTickEnd(struct mesh_ArrayStats *st)
+{
+    u64 total = 0, total_pow2 = 0;
+    for (u32 c = 0; c <= MESH_STATS_COUNT_MAX; ++c)
+    {
+        if (st->tick_per_count[c] > st->peak_per_count[c])
+        {
+            st->peak_per_count[c] = st->tick_per_count[c];
+        }
+        total += (u64) st->tick_per_count[c]*c;
+        total_pow2 += (u64) st->tick_per_count[c]*((c) ? ((u32) 1 << MeshStatsPow2Class(c)) : 0);
+        st->tick_per_count[c] = 0;
+    }
+    if (total > st->peak_total) { st->peak_total = total; }
+    if (total_pow2 > st->peak_total_pow2) { st->peak_total_pow2 = total_pow2; }
+}
+
+static void MeshStatsPrint(const struct mesh_ArrayStats *st, const char *name, const u64 contact_ticks, const u32 ticks)
+{
+    fprintf(stdout, "\t%s: counts (percent of mesh contact-ticks):", name);
+    for (u32 c = 0; c <= MESH_STATS_COUNT_MAX; ++c)
+    {
+        if (st->hist[c])
+        {
+            fprintf(stdout, " %u%s:%.1f", c, (c == MESH_STATS_COUNT_MAX) ? "+" : "", 100.0*(f64) st->hist[c] / (f64) contact_ticks);
+        }
+    }
+    u64 sum_of_peaks = 0, sum_of_peaks_pow2 = 0;
+    for (u32 c = 1; c <= MESH_STATS_COUNT_MAX; ++c)
+    {
+        sum_of_peaks += (u64) st->peak_per_count[c]*c;
+        sum_of_peaks_pow2 += (u64) st->peak_per_count[c]*((u32) 1 << MeshStatsPow2Class(c));
+    }
+    fprintf(stdout, "\n\t%s: changes per tick %.2f (pow2 class %.2f; 0->n %.2f, n->0 %.2f); slots: peak of total %llu (pow2 %llu), sum of per-count peaks %llu (pow2 %llu)\n",
+        name, (f64) st->change / (f64) ticks, (f64) st->change_pow2 / (f64) ticks, (f64) st->alloc / (f64) ticks, (f64) st->free / (f64) ticks,
+        (unsigned long long) st->peak_total, (unsigned long long) st->peak_total_pow2,
+        (unsigned long long) sum_of_peaks, (unsigned long long) sum_of_peaks_pow2);
+}
+
+static struct test_Output DynamicsMeshArrayStatsTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct arena mem = ArenaAlloc(NULL, 128*1024*1024);
+    struct c_ShapeDB cshape_db = { 0 };
+    c_ShapeDBAlloc(NULL, &cshape_db, 64, GROWABLE);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
+    struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&external, NSEC_PER_SEC / 60);
+    ds_DynamicsConfigPush(&pipeline);
+    pipeline.config_pending.solver.sleep_enabled = 1;
+    ds_DynamicsConfigUpdatePending(&pipeline);
+
+    /* the perf scene: the terrain on a static body at the origin, a grid of boxes dropped onto it */
+    const f32 cell = 2.0f;
+    const struct c_Shape terrain = McTerrain(&mem, cell, 0.5f, NULL);
+    const struct slot slot = c_ShapeDBAdd(&cshape_db, Utf8Inline("terrain"), &terrain);
+    const struct ds_BodyPrefab body_prefab = { .dynamic = 0 };
+    const ds_TransformWorld t_world = { .rotation = QIdentity(), .position = V3F64(0.0, 0.0, 0.0) };
+    const ds_BodyId terrain_body = ds_BodyAdd(&pipeline, &body_prefab, &t_world, 0);
+    const struct ds_ShapePrefab shape_prefab = { .cshape = slot.index, .density = 1.0f, .restitution = 0.0f, .friction = 0.8f };
+    const ds_Transform t_local = ds_TransformIdentity();
+    ds_ShapeAdd(&pipeline, &shape_prefab, &t_local, terrain_body);
+
+    u32 index = 1;
+    const f32 extent = cell*12.0f;
+    const f32 spacing = (extent - 4.0f) / (f32) (MESH_STATS_BOXES - 1);
+    for (u32 i = 0; i < MESH_STATS_BOXES; ++i)
+    {
+        for (u32 j = 0; j < MESH_STATS_BOXES; ++j)
+        {
+            const struct dynamics_TestBox box = { .position = V3(2.0f + spacing*(f32) i, 4.0f, 2.0f + spacing*(f32) j), .rotation = QNormalize(Q(0.1f*(f32) i, 0.3f, 0.1f*(f32) j, 1.0f)), .hw = V3(0.5f, 0.5f, 0.5f), .dynamic = 1 };
+            DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, &box, dynamics_test_origin[0], index++);
+        }
+    }
+
+    struct file trace = FileNull();
+    const u32 tracing = (FileTryCreateAtCwd(&mem, &trace, "mesh_array_trace.txt", 1) == FS_SUCCESS);
+    struct mesh_ArrayStats manifold = { 0 }, tri = { 0 };
+    u32 *prev_manifold = ArenaPush(&mem, 65536*sizeof(u32));
+    u32 *prev_tri = ArenaPush(&mem, 65536*sizeof(u32));
+    memset(prev_manifold, 0, 65536*sizeof(u32));
+    memset(prev_tri, 0, 65536*sizeof(u32));
+    u64 contact_ticks = 0;
+    u32 mesh_contact_max = 0;
+    char line[128];
+    for (u32 t = 0; t < MESH_STATS_TICKS; ++t)
+    {
+        SnapshotTestTick(&pipeline);
+        if (tracing)
+        {
+            const int n = snprintf(line, sizeof(line), "t %u\n", t);
+            FileWriteAppend(&trace, (const u8 *) line, (u64) n);
+        }
+
+        u32 mesh_contacts = 0;
+        ds_Assert(pipeline.contact_pool.count_max <= 65536);
+        for (u32 i = 0; i < pipeline.contact_pool.count_max; ++i)
+        {
+            const struct ds_Contact *c = pipeline.contact_pool.buf + i;
+            const u32 live = ds_PoolSlotAllocated(c) && !ds_ContactConvexCheck(c);
+            const u32 m = (live) ? c->narrowphase.manifold_count : 0;
+            const u32 k = (live) ? c->cache.concave.tri_count : 0;
+            if (live)
+            {
+                mesh_contacts += 1;
+                MeshStatsRecord(&manifold, prev_manifold[i], m);
+                MeshStatsRecord(&tri, prev_tri[i], k);
+            }
+            if (tracing && m != prev_manifold[i])
+            {
+                const int n = snprintf(line, sizeof(line), "m %u %u %u\n", i, prev_manifold[i], m);
+                FileWriteAppend(&trace, (const u8 *) line, (u64) n);
+            }
+            if (tracing && k != prev_tri[i])
+            {
+                const int n = snprintf(line, sizeof(line), "c %u %u %u\n", i, prev_tri[i], k);
+                FileWriteAppend(&trace, (const u8 *) line, (u64) n);
+            }
+            prev_manifold[i] = m;
+            prev_tri[i] = k;
+        }
+        contact_ticks += mesh_contacts;
+        if (mesh_contacts > mesh_contact_max) { mesh_contact_max = mesh_contacts; }
+        MeshStatsTickEnd(&manifold);
+        MeshStatsTickEnd(&tri);
+    }
+    FileClose(&trace);
+
+    fprintf(stdout, "\tterrain %u x %u boxes, %u ticks: at most %u mesh contacts, %u sleeping sets at the end%s\n",
+        MESH_STATS_BOXES, MESH_STATS_BOXES, MESH_STATS_TICKS, mesh_contact_max, SnapshotTestSleepingSetCount(&pipeline),
+        (tracing) ? "; trace in mesh_array_trace.txt" : "");
+    MeshStatsPrint(&manifold, "manifolds", contact_ticks, MESH_STATS_TICKS);
+    MeshStatsPrint(&tri, "tri cache", contact_ticks, MESH_STATS_TICKS);
+
+    ds_DynamicsConfigPop(&pipeline);
+    ds_DynamicsDealloc(&pipeline);
+    c_ShapeDBDealloc(&cshape_db);
+    ArenaFree(&mem);
 	return output;
 }
 
@@ -4046,6 +4237,7 @@ static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
     DynamicsRestingSlopeTest,
     DynamicsSnapshotTest,
     DynamicsSnapshotMeshTest,
+    DynamicsMeshArrayStatsTest,
     DynamicsShapeTest,
     DynamicsBodyTest,
     DynamicsContactTest,

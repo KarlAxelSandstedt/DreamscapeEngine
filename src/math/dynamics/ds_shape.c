@@ -346,7 +346,7 @@ void ds_ShapeContact(struct arena *frame, const struct ds_Dynamics *pipeline, co
     ds_ShapeWorldTransform(t_world + 1, pipeline, s[1]);
 
     struct c_ContactResult result = (c_s[other]->type == C_SHAPE_TRI_MESH)
-        ? c_MeshContact(frame, &c->cache.concave, c_s[other], &t_world[other], c_s[local], &t_world[local])
+        ? c_MeshContact(frame, &pipeline->tri_cache_slab, &c->cache.concave, c_s[other], &t_world[other], c_s[local], &t_world[local])
         : c_convex_contact_methods[c_s[local]->type][c_s[other]->type](frame, &c->cache.convex, c_s[local], &t_world[local], c_s[other], &t_world[other]);
 
 #ifdef DS_DEBUG

@@ -288,6 +288,11 @@ struct ds_Dynamics ds_DynamicsAlloc(const struct ds_DynamicsConfig *config, cons
     ds_PoolAlloc(NULL, pipeline.contact_pool, 8*initial_size, GROWABLE);
     pipeline.contact_map = ds_HashMapAlloc(NULL, 8*initial_size, 8*initial_size, GROWABLE);
     pipeline.contact_usage_set = ds_BitSetAlloc(NULL, 8*initial_size, 0, GROWABLE);
+    if (!ds_TSlabAlloc(pipeline.tri_cache_slab, g_config->vm_size_tri_cache_allocator, g_config->thread_count))
+    {
+        Log(T_SYSTEM, S_FATAL, "Out of memory in %s\n", __func__);
+        FatalCleanupAndExit();
+    }
 
 	ds_PoolAlloc(NULL, pipeline.island_pool, initial_size, GROWABLE);
     pipeline.island_high_energy_set = ds_BitSetAlloc(NULL, initial_size, 0, GROWABLE);
@@ -307,22 +312,9 @@ struct ds_Dynamics ds_DynamicsAlloc(const struct ds_DynamicsConfig *config, cons
 	return pipeline;
 }
 
-/* the mesh contacts' caches: heap pools owned by the contacts */
-static void ds_ContactCacheDeallocAll(struct ds_Dynamics *pipeline)
-{
-    for (u32 i = 0; i < pipeline->contact_pool.count_max; ++i)
-    {
-        struct ds_Contact *c = pipeline->contact_pool.buf + i;
-        if (ds_PoolSlotAllocated(c) && !ds_ContactConvexCheck(c))
-        {
-            ds_CPoolDealloc(c->cache.concave.tri_pool);
-        }
-    }
-}
-
 void ds_DynamicsDealloc(struct ds_Dynamics *pipeline)
 {
-    ds_ContactCacheDeallocAll(pipeline);
+    ds_TSlabDealloc(pipeline->tri_cache_slab);
     ds_DynamicsRuntimeDealloc(&pipeline->runtime);
 
     ds_BitSetDealloc(&pipeline->shape_dynamic_usage_set);
@@ -375,7 +367,7 @@ static void ds_DynamicsClearFrame(struct ds_Dynamics *pipeline)
 
 void ds_DynamicsFlush(struct ds_Dynamics *pipeline)
 {
-    ds_ContactCacheDeallocAll(pipeline);
+    ds_TSlabFlush(pipeline->tri_cache_slab);
     for (u32 i = 0; i < pipeline->runtime.worker_count; ++i)
     {
         ArenaFlush(pipeline->runtime.worker[i].frame_arr + 0);

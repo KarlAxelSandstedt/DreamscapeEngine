@@ -143,9 +143,12 @@ do                                                                              
 #define ds_TSlabRealloc(_slab_, _array_, _count_)                                       \
     ((union { struct ds_ArrayUntyped u; ds_TypeOf(*(_slab_).array_type) t; })           \
         { .u = ds_TSlabSharedRealloc(&(_slab_).shared, sizeof((_slab_).buf[0]),         \
-                                     (struct ds_ArrayUntyped) { (_array_).buf,          \
-                                                                (_array_).length,       \
-                                                                (_array_).base },       \
+                                     (struct ds_ArrayUntyped)                           \
+                                     {                                                  \
+                                         .buf = (_array_).buf,                          \
+                                         .length = (_array_).length,                    \
+                                         .base = (_array_).base,                        \
+                                     },                                                 \
                                      (_count_)) }).t
 
 #endif

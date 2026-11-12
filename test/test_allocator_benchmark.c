@@ -429,8 +429,8 @@ static u8 *sb_array_alloc(const u32 variant, const u32 kind, const u32 count, u3
     if (variant == SB_SLAB)
     {
         struct ds_ArrayUntyped arr;
-        if (kind == 0) { const ds_Array(sb_elem_m) a = ds_TSlabAdd(g_slab_m, count); arr = (struct ds_ArrayUntyped) { a.buf, a.length, a.base }; }
-        else           { const ds_Array(sb_elem_c) a = ds_TSlabAdd(g_slab_c, count); arr = (struct ds_ArrayUntyped) { a.buf, a.length, a.base }; }
+        if (kind == 0) { const ds_Array(sb_elem_m) a = ds_TSlabAdd(g_slab_m, count); arr = (struct ds_ArrayUntyped) { .buf = a.buf, .length = a.length, .base = a.base }; }
+        else           { const ds_Array(sb_elem_c) a = ds_TSlabAdd(g_slab_c, count); arr = (struct ds_ArrayUntyped) { .buf = a.buf, .length = a.length, .base = a.base }; }
         *index = arr.base;
         return arr.buf;
     }
@@ -477,8 +477,8 @@ static void sb_array_free(const u32 variant, const u32 kind, u8 *ptr, const u32 
     if (variant == SB_SLAB)
     {
         const u32 length = (u32) PowerOfTwoCeil(count);
-        if (kind == 0) { const ds_Array(sb_elem_m) a = { NULL, length, index }; ds_TSlabRemove(g_slab_m, a); }
-        else           { const ds_Array(sb_elem_c) a = { NULL, length, index }; ds_TSlabRemove(g_slab_c, a); }
+        if (kind == 0) { const ds_Array(sb_elem_m) a = { .buf = NULL, .length = length, .base = index }; ds_TSlabRemove(g_slab_m, a); }
+        else           { const ds_Array(sb_elem_c) a = { .buf = NULL, .length = length, .base = index }; ds_TSlabRemove(g_slab_c, a); }
     }
     else if (variant == SB_ALLOC)
     {
@@ -619,7 +619,7 @@ static void sb_set_init(struct sb_set *s, const u32 variant, const u32 set_index
                     {
                         u32 alt = sb_draw_count(&rng, kind);
                         while (alt == count) { alt = sb_draw_count(&rng, kind); }
-                        s->event[s->event_count++] = (struct sb_event) { (u16) slot, (u8) kind, (u8) count, (u8) alt };
+                        s->event[s->event_count++] = (struct sb_event) { .slot = (u16) slot, .kind = (u8) kind, .count = (u8) count, .alt = (u8) alt };
                         cur[kind][slot] = (u8) count;
                     }
                 }

@@ -130,7 +130,7 @@ struct slot
 ds_Array(T) is an array of T with its length and base: { T *buf; u32 length; u32 base; }. base is the
 array's index in the buffer it was taken from (a slab's slot index, what a serializer stores); other users
 ignore it. Defined here for the native types (DEFINE_ARRAY_NATIVE(T), T a type name) and intv
-(DEFINE_ARRAY_STRUCT(T), for struct T); an empty array is { NULL, 0, U32_MAX }. struct ds_ArrayUntyped is
+(DEFINE_ARRAY_STRUCT(T), for struct T); an empty array is { .buf = NULL, .length = 0, .base = U32_MAX }. struct ds_ArrayUntyped is
 the same layout with a void *, the form the untyped slab calls return.
 
     DEFINE_ARRAY_STRUCT(item);

@@ -1526,7 +1526,7 @@ static void TSlabParallelJob(void *args)
             {
                 const struct test_TSlabHandoff h = t->node[n];
                 ds_TStackPush(&t->handoff_free, t->node, n);
-                const ds_Array(test_TSlabItem) arr = { t->slab.buf + h.base, h.length, h.base };
+                const ds_Array(test_TSlabItem) arr = { .buf = t->slab.buf + h.base, .length = h.length, .base = h.base };
                 errors += !TSlabParallelCheck(arr.buf, arr.length, h.owner, h.serial);
                 ds_TSlabRemove(t->slab, arr);
                 AtomicAddFetchRlx32(&t->a_live, (u32) -1);
@@ -1585,7 +1585,7 @@ static struct test_Output TSlabParallelTest(struct test_Environment *env)
             break;
         }
         const struct test_TSlabHandoff h = t->node[n];
-        const ds_Array(test_TSlabItem) arr = { t->slab.buf + h.base, h.length, h.base };
+        const ds_Array(test_TSlabItem) arr = { .buf = t->slab.buf + h.base, .length = h.length, .base = h.base };
         TEST_TRUE(TSlabParallelCheck(arr.buf, arr.length, h.owner, h.serial));
         ds_TSlabRemove(t->slab, arr);
         AtomicAddFetchRlx32(&t->a_live, (u32) -1);

@@ -17,6 +17,8 @@
 ==========================================================================
 */
 
+#include "ds_init.h"
+
 /*
 Used for serializing/deserializing the physics state.
 
@@ -142,7 +144,7 @@ u64 ds_DynamicsSerializeSize(const struct ds_Dynamics *pipeline)
 		const struct ds_Contact *c = pipeline->contact_pool.buf + i;
 		if (ds_PoolSlotAllocated(c) && !ds_ContactConvexCheck(c))
 		{
-			size += ds_CPoolSerializeSize(c->cache.concave.tri_pool);
+			size += sizeof(u32) + c->cache.concave.tri_count*sizeof(struct ds_TriCache);
 		}
 	}
 
@@ -198,7 +200,8 @@ void ds_DynamicsSerialize(struct SS *ss, const struct ds_Dynamics *pipeline)
 		const struct ds_Contact *c = pipeline->contact_pool.buf + i;
 		if (ds_PoolSlotAllocated(c) && !ds_ContactConvexCheck(c))
 		{
-			ds_CPoolSerialize(ss, c->cache.concave.tri_pool);
+			SSWriteU32Le(ss, c->cache.concave.tri_count);
+			SSWrite8N(ss, (const b8 *) c->cache.concave.tri.buf, c->cache.concave.tri_count*sizeof(struct ds_TriCache));
 		}
 	}
 	ds_HashMapSerialize(ss, &pipeline->contact_map);
@@ -238,6 +241,10 @@ u32 ds_DynamicsTryDeserialize(struct arena *mem, struct SS *ss, struct ds_Dynami
 	};
 	DLLFlush(pipeline->event_list);
     ds_DynamicsRuntimeAlloc(mem, &pipeline->runtime);
+	if (!ds_TSlabAlloc(pipeline->tri_cache_slab, g_config->vm_size_tri_cache_allocator, g_config->thread_count))
+	{
+		goto failure;
+	}
 	pipeline->frames_completed = SSReadU64Le(ss);
 	if (!ds_DynamicsConfigTryDeserializeBitPacked(ss, &pipeline->config))
 	{
@@ -276,17 +283,34 @@ u32 ds_DynamicsTryDeserialize(struct arena *mem, struct SS *ss, struct ds_Dynami
 		struct ds_Contact *c = pipeline->contact_pool.buf + i;
 		if (ds_PoolSlotAllocated(c) && !ds_ContactConvexCheck(c))
 		{
-			c->cache.concave = (struct ds_ConcaveCache) { .tri_pool.growable = GROWABLE };
+			c->cache.concave = (struct ds_ConcaveCache) { .tri = { .buf = NULL, .length = 0, .base = U32_MAX }, .tri_count = 0 };
 		}
 	}
 
 	for (u32 i = 0; i < pipeline->contact_pool.count_max; ++i)
 	{
 		struct ds_Contact *c = pipeline->contact_pool.buf + i;
-		if (ds_PoolSlotAllocated(c) && !ds_ContactConvexCheck(c)
-			&& !ds_CPoolTryDeserialize(NULL, ss, c->cache.concave.tri_pool, GROWABLE))
+		if (ds_PoolSlotAllocated(c) && !ds_ContactConvexCheck(c))
 		{
-			goto failure;
+			if (SSBytesLeft(ss) < sizeof(u32))
+			{
+				goto failure;
+			}
+			const u32 count = SSReadU32Le(ss);
+			if (count > g_numerics_config->cache_count_max || count > SSBytesLeft(ss) / sizeof(struct ds_TriCache))
+			{
+				goto failure;
+			}
+			if (count > 0)
+			{
+				c->cache.concave.tri = ds_TSlabAdd(pipeline->tri_cache_slab, count);
+				if (c->cache.concave.tri.buf == NULL)
+				{
+					goto failure;
+				}
+				SSRead8N(ss, (b8 *) c->cache.concave.tri.buf, count*sizeof(struct ds_TriCache));
+				c->cache.concave.tri_count = count;
+			}
 		}
 	}
 

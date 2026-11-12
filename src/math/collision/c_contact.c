@@ -2030,11 +2030,11 @@ static void c_MeshHullTriangles(struct c_MeshContactHelper *helper, const struct
 
         /* the triangle's cache: a linear search over at most cache_count_max entries (small next to the SAT) */
         const struct SATCache *old_cache = NULL;
-        for (u32 ci = 0; ci < cache->tri_pool.count; ++ci)
+        for (u32 ci = 0; ci < cache->tri_count; ++ci)
         {
-            if (cache->tri_pool.buf[ci].tri == tri_index)
+            if (cache->tri.buf[ci].tri == tri_index)
             {
-                old_cache = &cache->tri_pool.buf[ci].sat;
+                old_cache = &cache->tri.buf[ci].sat;
                 break;
             }
         }
@@ -2055,7 +2055,7 @@ static void c_MeshHullTriangles(struct c_MeshContactHelper *helper, const struct
 }
 
 /* One manifold per record that survives the internal-edge filter; cache entries (hulls): every record's with one */
-static void c_MeshContactFinish(struct arena *frame, struct c_ContactResult *result, struct ds_ConcaveCache *cache, struct c_MeshContactHelper *helper, const u32 sat)
+static void c_MeshContactFinish(struct arena *frame, ds_TSlab(ds_TriCache) *slab, struct c_ContactResult *result, struct ds_ConcaveCache *cache, struct c_MeshContactHelper *helper, const u32 sat)
 {
     u32 contact_count = 0;
     u32 delayed_count = 0;
@@ -2128,17 +2128,29 @@ static void c_MeshContactFinish(struct arena *frame, struct c_ContactResult *res
         ds_BitSetSet(&void_bitset, v[2], 1);
     }
 
-    ds_CPoolFlush(cache->tri_pool);
+    cache->tri_count = 0;
     if (sat)
     {
-        for (u32 i = 0; i < helper->record_count && cache->tri_pool.count < g_numerics_config->cache_count_max; ++i)
+        const u32 count = U32Min(helper->record_count, g_numerics_config->cache_count_max);
+        if (count > cache->tri.length)
+        {
+            cache->tri = (cache->tri.length) ? ds_TSlabRealloc(*slab, cache->tri, count) : ds_TSlabAdd(*slab, count);
+            if (cache->tri.buf == NULL)
+            {
+                LogString(T_SYSTEM, S_FATAL, "tri cache slab full, exiting");
+                FatalCleanupAndExit();
+            }
+        }
+
+        for (u32 i = 0; i < helper->record_count && cache->tri_count < count; ++i)
         {
             const struct c_MeshTri *r = helper->record + i;
             if (r->cache.type != SAT_CACHE_NONE)
             {
-                struct ds_TriCache *entry = ds_CPoolPush(cache->tri_pool).address;
+                struct ds_TriCache *entry = cache->tri.buf + cache->tri_count;
                 entry->tri = r->tri;
                 entry->sat = r->cache;
+                cache->tri_count += 1;
             }
         }
     }
@@ -2151,10 +2163,10 @@ static void c_MeshContactFinish(struct arena *frame, struct c_ContactResult *res
  * Mesh vs convex shape (sphere, capsule, hull): one manifold per contacting triangle, local to the convex shape (n from
  * it to the mesh, v on its surface).
  */
-struct c_ContactResult c_MeshContact(struct arena *frame, struct ds_ConcaveCache *cache, const struct c_Shape *mesh, const ds_TransformWorld *t_mesh, const struct c_Shape *convex, const ds_TransformWorld *t_convex)
+struct c_ContactResult c_MeshContact(struct arena *frame, ds_TSlab(ds_TriCache) *slab, struct ds_ConcaveCache *cache, const struct c_Shape *mesh, const ds_TransformWorld *t_mesh, const struct c_Shape *convex, const ds_TransformWorld *t_convex)
 {
     ds_Assert(convex->type < C_SHAPE_TRI_MESH);
-    ds_Assert(cache->tri_pool.growable);
+    ds_Assert(cache->tri_count <= cache->tri.length);
     struct c_ContactResult result = { 0 };
     struct c_MeshContactHelper helper;
     c_MeshContactInit(&helper, mesh, t_mesh, convex, t_convex);
@@ -2164,6 +2176,6 @@ struct c_ContactResult c_MeshContact(struct arena *frame, struct ds_ConcaveCache
         case C_SHAPE_CAPSULE:   { c_MeshCapsuleTriangles(&helper, &convex->capsule); } break;
         default:                { c_MeshHullTriangles(&helper, cache, &convex->hull); } break;
     }
-    c_MeshContactFinish(frame, &result, cache, &helper, convex->type == C_SHAPE_CONVEX_HULL);
+    c_MeshContactFinish(frame, slab, &result, cache, &helper, convex->type == C_SHAPE_CONVEX_HULL);
     return result;
 }

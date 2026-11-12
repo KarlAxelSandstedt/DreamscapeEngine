@@ -331,21 +331,20 @@ u32 ds_MagazinePow2Alloc(struct arena *mem,
     for (u32 i = 0; i < storage->thread_count; ++i)
     {
         struct ds_MagazineThread *thr = storage->thread + i;
-        ds_CPoolAlloc(mem, thr->index_pool, local_length, NOT_GROWABLE);
-        if (thr->index_pool.buf == NULL)
+        thr->index = (mem) ? ArenaPushAligned(mem, local_length*sizeof(u32), DS_CACHE_LINE) : ds_Alloc(local_length*sizeof(u32), DS_CACHE_LINE);
+        if (thr->index == NULL)
         {
             ds_MagazinePow2Dealloc(storage);
             return 0;
         }
 
-        ds_CPoolPushBatch(thr->index_pool, local_length);
-        u32 base = 0;
+        u32 *index = thr->index;
         for (u32 k = 0; k < 31; ++k)
         {
-            thr->magazine[k].base[0] = base;
-            base += storage->mclass_length[k];
-            thr->magazine[k].base[1] = base;
-            base += storage->mclass_length[k];
+            thr->magazine[k].index[0] = index;
+            index += storage->mclass_length[k];
+            thr->magazine[k].index[1] = index;
+            index += storage->mclass_length[k];
         }
     }
  
@@ -356,11 +355,11 @@ u32 ds_MagazinePow2Alloc(struct arena *mem,
 
 void ds_MagazinePow2Dealloc(struct ds_MagazinePow2 *storage)
 {
-    if (storage->thread)
+    if (storage->thread && storage->heap_allocated)
     {
         for (u32 i = 0; i < storage->thread_count; ++i)
         {
-            ds_CPoolDealloc(storage->thread[i].index_pool);
+            ds_Free(storage->thread[i].index);
         }
     }
 
@@ -406,7 +405,7 @@ static u32 ds_MagazineThreadTryPush(struct ds_MagazineThread *t, const u32 mclas
         return 0;
     }
 
-    t->index_pool.buf[local->base[cur] + local->count[cur]] = index;
+    local->index[cur][local->count[cur]] = index;
     local->count[cur] += 1;
     return 1;
 }
@@ -456,14 +455,14 @@ void ds_MagazinePow2Push(struct ds_MagazinePow2 *storage, const u32 index, const
     struct ds_MagazineShared *shared = storage->magazine + m;
     ds_Assert(local->count[ local->cur ] == mclass_length);
 
-    const u32 *local_index = t->index_pool.buf + local->base[ local->cur ];
+    const u32 *local_index = local->index[ local->cur ];
     u32 *shared_index = storage->index + shared->base;
     memcpy(shared_index, local_index, mclass_length*sizeof(u32));
 
     ds_TStackPush(stack_full, storage->magazine, m);
 
     local->count[ local->cur ] = 1;
-    t->index_pool.buf[local->base[ local->cur ]] = index;
+    local->index[ local->cur ][0] = index;
 }
 
 static u32 ds_MagazineThreadTryPop(struct ds_MagazineThread *t, const u32 mclass)
@@ -476,7 +475,7 @@ static u32 ds_MagazineThreadTryPop(struct ds_MagazineThread *t, const u32 mclass
     }
 
     local->count[cur] -= 1;
-    return t->index_pool.buf[local->base[cur] + local->count[cur]];
+    return local->index[cur][local->count[cur]];
 }
 
 u32 ds_MagazinePow2TryPop(struct ds_MagazinePow2 *storage, const u32 count)
@@ -511,7 +510,7 @@ u32 ds_MagazinePow2TryPop(struct ds_MagazinePow2 *storage, const u32 count)
     {
         struct ds_MagazineShared *shared = storage->magazine + m;
 
-        u32 *local_index = t->index_pool.buf + local->base[ local->cur ];
+        u32 *local_index = local->index[ local->cur ];
         const u32 *shared_index = storage->index + shared->base;
         memcpy(local_index, shared_index, mclass_length*sizeof(u32));
 

@@ -99,7 +99,7 @@ struct slot ds_ContactTryAdd(struct ds_Dynamics *pipeline, const struct ds_Conta
     }
     else
     {
-        c->cache.concave = (struct ds_ConcaveCache) { .tri_pool.growable = GROWABLE };
+        c->cache.concave = (struct ds_ConcaveCache) { .tri = { .buf = NULL, .length = 0, .base = U32_MAX }, .tri_count = 0 };
     }
     c->com_offset = V3Zero();
 
@@ -136,9 +136,9 @@ void ds_ContactRemove(struct ds_Dynamics *pipeline, const u32 index, const u32 i
     struct ds_Shape *shape0, *shape1;
     ds_ContactKeyAddress(&body0, &shape0, &body1, &shape1, pipeline, c->key);
 	PhysicsEventContactRemoved(pipeline, body0->id, shape0->id, body1->id, shape1->id);
-    if (!ds_ContactConvexCheck(c))
+    if (!ds_ContactConvexCheck(c) && c->cache.concave.tri.length)
     {
-        ds_CPoolDealloc(c->cache.concave.tri_pool);
+        ds_TSlabRemove(pipeline->tri_cache_slab, c->cache.concave.tri);
     }
 
     ds_SolverSetWakeUp(pipeline, c->set);

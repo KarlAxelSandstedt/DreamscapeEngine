@@ -329,15 +329,15 @@ arrays of objects. The array's size depends on the magazine's class.
 
 struct ds_MagazineLocal
 {
-    u32 cur;        /* 0,1                                                              */
-    u32 count[2];   /* magazine count, (length of m[i] is storage->mclass_length[i])    */
-    u32 base[2];    /* magazine base in thread->index_pool.buf[]                        */
+    u32     cur;        /* 0,1                                                              */
+    u32     count[2];   /* magazine count, (length of m[i] is storage->mclass_length[i])    */
+    u32 *   index[2];   /* the two magazines' index arrays, in thread->index               */
 };
 
 /* Thread-owned local cache of magazines and index buffer. */
 struct ds_Align(DS_CACHE_LINE) ds_MagazineThread
 {
-    ds_CPool(u32)           index_pool;     /* indices to base of external arrays  */
+    u32 *                   index;          /* the local magazines' index arrays, back to back  */
     struct ds_MagazineLocal magazine[31];
 };
 
