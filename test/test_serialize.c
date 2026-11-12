@@ -884,8 +884,74 @@ static struct test_Output ss_compact_size_fuzz(void)
 	return output;
 }
 
+/* ds_Array: a round trip onto the heap, length 0, a cut stream, a corrupt length */
+static struct test_Output ss_array(void)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+	u64 values[12];
+	for (u32 i = 0; i < 12; ++i) { values[i] = RngU64(); }
+	const u32 length = 1 + (u32) RngU64Range(0, 11);
+	const ds_Array(u64) arr = { .buf = values, .length = length, .base = 7 };
+
+	u8 buf[128];
+	const u64 size = ds_ArraySerializeSize(arr);
+	TEST_EQUAL(sizeof(u32) + length*sizeof(u64), size);
+	struct SS ss = SSBuffered(buf, sizeof(buf));
+	ds_ArraySerialize(&ss, arr);
+	TEST_EQUAL(8*size, ss.bit_index);
+
+	ss.bit_index = 0;
+	ds_Array(u64) read;
+	TEST_EQUAL(1, ds_ArrayTryDeserialize(NULL, &ss, read));
+	TEST_EQUAL(8*size, ss.bit_index);
+	TEST_EQUAL(length, read.length);
+	TEST_EQUAL(U32_MAX, read.base);
+	TEST_EQUAL(0, memcmp(values, read.buf, length*sizeof(u64)));
+	ds_Free(read.buf);
+
+	/* the compact form writes the first count elements; the restore has length count */
+	const u32 count = (u32) RngU64Range(0, length);
+	struct SS compact = SSBuffered(buf, sizeof(buf));
+	TEST_EQUAL(sizeof(u32) + count*sizeof(u64), ds_ArrayCompactSerializeSize(arr, count));
+	ds_ArrayCompactSerialize(&compact, arr, count);
+	TEST_EQUAL(8*(sizeof(u32) + count*sizeof(u64)), compact.bit_index);
+	compact.bit_index = 0;
+	TEST_EQUAL(1, ds_ArrayTryDeserialize(NULL, &compact, read));
+	TEST_EQUAL(count, read.length);
+	TEST_EQUAL(0, memcmp(values, read.buf, count*sizeof(u64)));
+	ds_Free(read.buf);
+
+	/* length 0 writes a bare length and restores the empty array */
+	const ds_Array(u64) none = { .buf = values, .length = 0, .base = 7 };
+	struct SS zero = SSBuffered(buf, sizeof(buf));
+	ds_ArraySerialize(&zero, none);
+	TEST_EQUAL(8*sizeof(u32), zero.bit_index);
+	zero.bit_index = 0;
+	TEST_EQUAL(1, ds_ArrayTryDeserialize(NULL, &zero, read));
+	TEST_EQUAL(NULL, read.buf);
+	TEST_EQUAL(0, read.length);
+
+	/* a stream one byte short, and one whose length claims more than the stream holds */
+	ss.bit_index = 0;
+	ds_ArraySerialize(&ss, arr);
+	struct SS cut = SSBuffered(buf, size - 1);
+	TEST_EQUAL(0, ds_ArrayTryDeserialize(NULL, &cut, read));
+	TEST_EQUAL(0, cut.bit_index);
+	TEST_EQUAL(NULL, read.buf);
+	TEST_EQUAL(0, read.length);
+	struct SS corrupt = SSBuffered(buf, size);
+	SSWriteU32Le(&corrupt, length + 1);
+	corrupt.bit_index = 0;
+	TEST_EQUAL(0, ds_ArrayTryDeserialize(NULL, &corrupt, read));
+	TEST_EQUAL(0, corrupt.bit_index);
+
+	return output;
+}
+
 struct test_CorrectnessRepetition repetition_test[] =
 {
+	{ .test =  &ss_array, .count = 20, },
 	{ .test =  &ss_view, .count = 1, },
 	{ .test =  &ss_increase_size, .count = 1, },
 	{ .test =  &ss_compact_size, .count = 1, },

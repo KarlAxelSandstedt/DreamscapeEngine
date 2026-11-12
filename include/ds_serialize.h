@@ -50,8 +50,8 @@ data already in the stream corrupts it.
 The U/I/F macros wrap the b8/b16/b32/b64 functions for u, i and f values; the narrow partial macros wrap the
 64-bit functions.
 
-Sections: stream, byte access, byte array access, partial access; their inline definitions and the macro
-definitions at the bottom. Everything is inline; there is no ds_serialize.c.
+Sections: stream, byte access, byte array access, partial access, array; their inline definitions and the
+macro definitions at the bottom. Everything is inline; there is no ds_serialize.c.
 */
 
 #ifndef __DS_SERIALIZE_H__
@@ -199,6 +199,25 @@ static ds_ForceInline i64	SSReadI64Partial(struct SS *ss, const u64 bit_count);
 /* the 64-bit partial functions under narrower names; the reads cast the result */
 //#define SSWrite{U,I}{8,16,32}Partial(ss, val, bit_count)
 //#define SSRead{U,I}{8,16,32}Partial(ss, bit_count)
+
+/*************************** array ***************************/
+
+/* Bytes ds_ArrayCompactSerialize writes. */
+#define ds_ArrayCompactSerializeSize(array, count)  (sizeof(u32) + (u64) (count)*sizeof((array).buf[0]))
+/* Write the first count elements of the array to ss (at a byte boundary; it must fit). */
+#define ds_ArrayCompactSerialize(ss, array, count)  ds_ArraySerializeInternal((ss), (array).buf, (count), sizeof((array).buf[0]))
+/* Bytes ds_ArraySerialize writes. */
+#define ds_ArraySerializeSize(array)    ds_ArrayCompactSerializeSize((array), (array).length)
+/* Write the array to ss (at a byte boundary; it must fit: ds_ArraySerializeSize). */
+#define ds_ArraySerialize(ss, array)    ds_ArrayCompactSerialize((ss), (array), (array).length)
+/*
+ * Read an array from ss into mem or the heap, with the written length and base U32_MAX. 
+ * Returns 1 on success, 0 on failure. On failure, ss remains unchanged.
+ */
+#define ds_ArrayTryDeserialize(mem, ss, array)                                                  \
+	ds_ArrayTryDeserializeInternal((mem), (ss), (void **) &(array).buf, &(array).length,        \
+	                               &(array).base, sizeof((array).buf[0]))
+
 
 /*************************** stream: inline definitions ***************************/
 
@@ -857,7 +876,50 @@ static ds_ForceInline i64 SSReadI64Partial(struct SS *ss, const u64 bit_count)
 	return trunc.i;
 }
 
+/*************************** array: inline definitions ***************************/
+
+static ds_ForceInline void ds_ArraySerializeInternal(struct SS *ss, const void *buf, const u32 length, const u64 slot_size)
+{
+	ds_Assert(sizeof(u32) + length*slot_size <= SSBytesLeft(ss));
+	SSWrite32Le(ss, (b32) { .u = length });
+	SSWrite8N(ss, (const b8 *) buf, length*slot_size);
+}
+
+static ds_ForceInline u32 ds_ArrayTryDeserializeInternal(struct arena *mem, struct SS *ss, void **buf, u32 *length, u32 *base, const u64 slot_size)
+{
+	*buf = NULL;
+	*length = 0;
+	*base = U32_MAX;
+	if (SSBytesLeft(ss) < sizeof(u32))
+	{
+		return 0;
+	}
+
+	const u64 bit_index = ss->bit_index;
+	const u32 serialized_length = SSRead32Le(ss).u;
+	/* division instead of length*slot_size: a corrupt length must not overflow the check */
+	if (serialized_length > SSBytesLeft(ss) / slot_size)
+	{
+		ss->bit_index = bit_index;
+		return 0;
+	}
+
+	if (serialized_length > 0)
+	{
+		*buf = (mem) ? ArenaPush(mem, serialized_length*slot_size) : ds_Alloc(serialized_length*slot_size, DEFAULT_MEMORY_ALIGNMENT);
+		if (*buf == NULL)
+		{
+			ss->bit_index = bit_index;
+			return 0;
+		}
+		SSRead8N(ss, (b8 *) *buf, serialized_length*slot_size);
+	}
+	*length = serialized_length;
+	return 1;
+}
+
 /*************************** macro definitions ***************************/
+
 
 #define SSReadU8(ss)      	SSRead8(ss).u
 #define SSWriteU8(ss, val)     SSWrite8(ss, (b8) { .u = val })
