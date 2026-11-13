@@ -98,6 +98,12 @@ struct slot ds_ContactTryAdd(struct ds_Dynamics *pipeline, const struct ds_Conta
     {
         c->flags |= DS_CONTACT_STATIC | DS_CONTACT_STATIC_INDEX;
     }
+
+    if ((body[0]->set != SOLVER_SET_ACTIVE) != (body[1]->set != SOLVER_SET_ACTIVE))
+    {
+        c->flags |= DS_CONTACT_PARTIAL_SLEEPING;
+    }
+
     if (ds_ContactConvexCheck(c))
     {
         c->cache.convex = (struct ds_ConvexCache) { .sat.type = SAT_CACHE_NONE, .gjk.count = 0 };
@@ -433,6 +439,28 @@ void ds_ContactValidateAll(const struct ds_Dynamics *pipeline)
                 ds_Assert(c->color == CG_INVALID_COLOR);
                 ds_Assert(pipeline->manifold_buffer_pool.buf[ci].count > 0);
             }
+        }
+    }
+
+    for (u32 ci = 0; ci < pipeline->contact_pool.count_max; ++ci)
+    {
+        const struct ds_Contact *c = pipeline->contact_pool.buf + ci;
+        if (ds_PoolSlotAllocated(c))
+        {
+            const struct ds_Shape *shape[2] =
+            {
+                pipeline->shape_pool.buf + c->key.shape[0],
+                pipeline->shape_pool.buf + c->key.shape[1],
+            };
+
+            const struct ds_Body *body[2] =
+            {
+                pipeline->body_pool.buf + shape[0]->body,
+                pipeline->body_pool.buf + shape[1]->body,
+            };
+
+            const u32 partial_sleeping = ((body[0]->set != SOLVER_SET_ACTIVE) != (body[1]->set != SOLVER_SET_ACTIVE));
+            ds_Assert(((c->flags & DS_CONTACT_PARTIAL_SLEEPING) != 0) == partial_sleeping);
         }
     }
 }

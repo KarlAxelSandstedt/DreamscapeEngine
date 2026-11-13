@@ -634,6 +634,8 @@ connectivity data and where to find its simulation/compute data.
                                                            only if DS_CONTACT_STATIC.        */
 #define DS_CONTACT_STATIC           ((u32) 1 << 1)      /* One body is static                */
 #define DS_CONTACT_CONVEX           ((u32) 1 << 2)      /* Non-mesh contact.                 */
+#define DS_CONTACT_PARTIAL_SLEEPING ((u32) 1 << 3)      /* (body 0 static or sleeping) XOR
+                                                           (body 1 static or sleeping)       */
 
 #define ds_ContactStaticCheck(c)    ((c)->flags & DS_CONTACT_STATIC)
 #define ds_ContactStaticIndex(c)    ((c)->flags & DS_CONTACT_STATIC_INDEX)
