@@ -425,3 +425,167 @@ static struct suite_Performance storage_performance_slab_suite =
 };
 
 struct suite_Performance *slab_performance_suite = &storage_performance_slab_suite;
+
+/*
+TStack contention: every worker pushes one node onto one shared ds_TStack and pops one back, TS_OPS times per
+repetition, so all workers hammer the head's cache line. Variants: the engine's macros, and copies that pause
+(ds_CpuPause) after a failed compare-exchange, once or TS_PAUSE_LONG times. Per worker: the pairs, the failed
+compare-exchanges and the empty pops (retried), so a difference can be read against how often the pause ran.
+*/
+
+#define TS_OPS          100000
+#define TS_PAUSE_LONG   8
+
+struct ds_Align(DS_CACHE_LINE) ts_node { TREIBER_NODE; u8 pad[DS_CACHE_LINE - sizeof(u32)]; };
+struct ds_Align(DS_CACHE_LINE) ts_counter { u64 cas_fail, pop_miss, pairs; };
+
+enum ts_variant { TS_PLAIN, TS_PAUSE_1, TS_PAUSE_LONG_V };
+static const char *ts_variant_name[] = { "plain", "pause 1", "pause 8" };
+
+static struct ds_TStack    g_ts_stack;
+static struct ts_node      g_ts_node[64];
+static struct ts_counter   g_ts_counter[64];
+static u32                 g_ts_init_count;
+static u32                 g_ts_rep;
+static u32                 g_ts_arrived;
+static u32                 g_ts_workers;
+
+struct ts_job { u32 variant; u32 job_index; };
+
+/* ds_TStackPush / ds_TStackTryPop with _pause_ pause instructions after a failed compare-exchange */
+#define TS_PUSH_PAUSE(_stack_, _buf_, _index_, _pause_)                                 \
+do                                                                                      \
+{                                                                                       \
+    ds_TStackKey _head_ = AtomicLoadRlx64(&(_stack_)->a_head);                          \
+    for (;;)                                                                            \
+    {                                                                                   \
+        AtomicStoreRlx32(&(_buf_)[_index_].treiber_next, ds_TStackKeyIndex(_head_));    \
+        const ds_TStackKey _new_head_ = ds_TStackKeyInit((_index_), ds_TStackKeyTag(_head_) + 1); \
+        if (AtomicCompareExchangeRelRlx64(&(_stack_)->a_head, &_head_, _new_head_)) { break; } \
+        g_ts_counter[ds_ThreadSelfIndex()].cas_fail += 1;                               \
+        ds_CpuPause(_pause_);                                                           \
+    }                                                                                   \
+} while (0)
+
+#define TS_POP_PAUSE(_index_, _stack_, _buf_, _pause_)                                  \
+do                                                                                      \
+{                                                                                       \
+    ds_TStackKey _head_ = AtomicLoadAcq64(&(_stack_)->a_head);                          \
+    for (;;)                                                                            \
+    {                                                                                   \
+        (_index_) = ds_TStackKeyIndex(_head_);                                          \
+        if ((_index_) == TSTACK_NULL) { break; }                                        \
+        const ds_TStackKey _new_head_ = ds_TStackKeyInit(AtomicLoadRlx32(&(_buf_)[_index_].treiber_next), ds_TStackKeyTag(_head_) + 1); \
+        if (AtomicCompareExchangeAcqRelAcq64(&(_stack_)->a_head, &_head_, _new_head_)) { break; } \
+        g_ts_counter[ds_ThreadSelfIndex()].cas_fail += 1;                               \
+        ds_CpuPause(_pause_);                                                           \
+    }                                                                                   \
+} while (0)
+
+static void *ts_init(const u32 variant)
+{
+    if (g_ts_init_count == 0)
+    {
+        g_ts_rep = 0;
+        g_ts_arrived = 0;
+        g_ts_workers = g_config->thread_count;
+        memset(g_ts_counter, 0, sizeof(g_ts_counter));
+        for (u32 i = 0; i < 64; ++i) { g_ts_node[i].treiber_next = TSTACK_NULL; }
+        ds_TStackFlush(&g_ts_stack);
+    }
+    struct ts_job *job = malloc(sizeof(*job));
+    job->variant = variant;
+    job->job_index = g_ts_init_count;
+    g_ts_init_count += 1;
+    return job;
+}
+
+static void ts_reset(void *args)
+{
+    const struct ts_job *job = args;
+    if (job->job_index == 0) { g_ts_rep += 1; }
+}
+
+static void ts_test(void *args)
+{
+    const struct ts_job *job = args;
+    AtomicFetchAddRlx32(&g_ts_arrived, 1);
+    while (AtomicLoadAcq32(&g_ts_arrived) < g_ts_rep*g_ts_workers);
+    const u32 self = ds_ThreadSelfIndex();
+    struct ts_counter *c = g_ts_counter + self;
+    u32 node = self;
+    for (u32 i = 0; i < TS_OPS; ++i)
+    {
+        u32 popped;
+        switch (job->variant)
+        {
+            case TS_PLAIN:
+            {
+                ds_TStackPush(&g_ts_stack, g_ts_node, node);
+                do { ds_TStackTryPop(popped, &g_ts_stack, g_ts_node); c->pop_miss += (popped == TSTACK_NULL); } while (popped == TSTACK_NULL);
+            } break;
+
+            case TS_PAUSE_1:
+            {
+                TS_PUSH_PAUSE(&g_ts_stack, g_ts_node, node, 1);
+                do { TS_POP_PAUSE(popped, &g_ts_stack, g_ts_node, 1); c->pop_miss += (popped == TSTACK_NULL); } while (popped == TSTACK_NULL);
+            } break;
+
+            default:
+            {
+                TS_PUSH_PAUSE(&g_ts_stack, g_ts_node, node, TS_PAUSE_LONG);
+                do { TS_POP_PAUSE(popped, &g_ts_stack, g_ts_node, TS_PAUSE_LONG); c->pop_miss += (popped == TSTACK_NULL); } while (popped == TSTACK_NULL);
+            } break;
+        }
+        g_ts_node[popped].treiber_next = TSTACK_NULL;
+        node = popped;
+    }
+    c->pairs += TS_OPS;
+}
+
+static void ts_free(void *args)
+{
+    struct ts_job *job = args;
+    if (job->job_index == 0)
+    {
+        u64 pairs = 0, cas_fail = 0, pop_miss = 0;
+        for (u32 i = 0; i < g_ts_workers; ++i)
+        {
+            pairs += g_ts_counter[i].pairs;
+            cas_fail += g_ts_counter[i].cas_fail;
+            pop_miss += g_ts_counter[i].pop_miss;
+        }
+        fprintf(stdout, "\tTStack %s: %u workers, %u pairs per worker and repetition, %u repetitions; per pair %.3f failed CAS (plain: not counted) %.3f empty pops\n",
+                ts_variant_name[job->variant], g_ts_workers, TS_OPS, g_ts_rep, (f64) cas_fail / (f64) pairs, (f64) pop_miss / (f64) pairs);
+    }
+    g_ts_init_count -= 1;
+    free(job);
+}
+
+#define TS_INIT(name, variant) static void *ts_init_##name(void) { return ts_init(variant); }
+TS_INIT(plain, TS_PLAIN)
+TS_INIT(pause_1, TS_PAUSE_1)
+TS_INIT(pause_long, TS_PAUSE_LONG_V)
+
+#define TS_ENTRY(name, id_str) { .id = id_str, .size = 1, .test = ts_test, .test_init = ts_init_##name, .test_reset = ts_reset, .test_free = ts_free }
+
+static struct test_PerformanceParallel tstack_parallel_test[] =
+{
+    TS_ENTRY(plain, "TStackPushPop"),
+    TS_ENTRY(pause_1, "TStackPushPopPause1"),
+    TS_ENTRY(pause_long, "TStackPushPopPause8"),
+    TS_ENTRY(plain, "TStackPushPop"),
+    TS_ENTRY(pause_1, "TStackPushPopPause1"),
+    TS_ENTRY(pause_long, "TStackPushPopPause8"),
+};
+
+static struct suite_Performance storage_performance_tstack_suite =
+{
+    .id = "TStack Performance",
+    .parallel_test = tstack_parallel_test,
+    .parallel_test_count = sizeof(tstack_parallel_test) / sizeof(tstack_parallel_test[0]),
+    .serial_test = NULL,
+    .serial_test_count = 0,
+};
+
+struct suite_Performance *tstack_performance_suite = &storage_performance_tstack_suite;

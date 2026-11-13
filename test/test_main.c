@@ -364,6 +364,7 @@ void ds_TestMainCorrectness(void)
 void ds_TestMainPerformance(void)
 {
 	//run_performance_suite(jobscheduler_performance_suite);
+	run_performance_suite(tstack_performance_suite);
 	run_performance_suite(THashMap_performance_suite);
 	run_performance_suite(allocator_performance_suite);
 	run_performance_suite(slab_performance_suite);

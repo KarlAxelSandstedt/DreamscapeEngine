@@ -348,62 +348,83 @@ u32 ds_DynamicsDrawConfigTryDeserialize(struct SS *ss, struct ds_DynamicsDrawCon
 #define SNAPSHOT_DLL_NODE_SIZE          (2*sizeof(i32))
 #define SNAPSHOT_ID_SIZE                sizeof(u64)
 
+/* component by component: the LeN macros read f32 storage through a b32 pointer, which the optimizer may not honour */
+static ds_ForceInline void WriteF32N(struct SS *ss, const f32 *buf, const u32 count)
+{
+	for (u32 i = 0; i < count; ++i)
+	{
+		SSWriteF32Le(ss, buf[i]);
+	}
+}
+
+static ds_ForceInline void ReadF32N(struct SS *ss, f32 *buf, const u32 count)
+{
+	for (u32 i = 0; i < count; ++i)
+	{
+		buf[i] = SSReadF32Le(ss);
+	}
+}
+
 static ds_ForceInline void WriteV3(struct SS *ss, const v3 v)
 {
-	SSWriteF32LeN(ss, v.buf, 3);
+	WriteF32N(ss, v.buf, 3);
 }
 
 static ds_ForceInline v3 ReadV3(struct SS *ss)
 {
 	v3 v;
-	SSReadF32LeN(ss, v.buf, 3);
+	ReadF32N(ss, v.buf, 3);
 	return v;
 }
 
 static ds_ForceInline void WriteV3F64(struct SS *ss, const v3f64 v)
 {
-	SSWriteF64LeN(ss, v.buf, 3);
+	SSWriteF64Le(ss, v.x);
+	SSWriteF64Le(ss, v.y);
+	SSWriteF64Le(ss, v.z);
 }
 
 static ds_ForceInline v3f64 ReadV3F64(struct SS *ss)
 {
 	v3f64 v;
-	SSReadF64LeN(ss, v.buf, 3);
+	v.x = SSReadF64Le(ss);
+	v.y = SSReadF64Le(ss);
+	v.z = SSReadF64Le(ss);
 	return v;
 }
 
 static ds_ForceInline void WriteV4(struct SS *ss, const v4 v)
 {
-	SSWriteF32LeN(ss, v.buf, 4);
+	WriteF32N(ss, v.buf, 4);
 }
 
 static ds_ForceInline v4 ReadV4(struct SS *ss)
 {
 	v4 v;
-	SSReadF32LeN(ss, v.buf, 4);
+	ReadF32N(ss, v.buf, 4);
 	return v;
 }
 
 static ds_ForceInline void WriteQ(struct SS *ss, const q a)
 {
-	SSWriteF32LeN(ss, a.buf, 4);
+	WriteF32N(ss, a.buf, 4);
 }
 
 static ds_ForceInline q ReadQ(struct SS *ss)
 {
 	q a;
-	SSReadF32LeN(ss, a.buf, 4);
+	ReadF32N(ss, a.buf, 4);
 	return a;
 }
 
 static ds_ForceInline void WriteM3(struct SS *ss, const m3 *m)
 {
-	SSWriteF32LeN(ss, m->buf, 9);
+	WriteF32N(ss, m->buf, 9);
 }
 
 static ds_ForceInline void ReadM3(struct SS *ss, m3 *m)
 {
-	SSReadF32LeN(ss, m->buf, 9);
+	ReadF32N(ss, m->buf, 9);
 }
 
 static ds_ForceInline void WriteTransform(struct SS *ss, const ds_Transform *t)
@@ -958,7 +979,7 @@ void ds_JointSimSerialize(struct SS *ss, const struct ds_JointSim *jsim)
 		{
 			const struct ds_DistanceJoint *d = &jsim->distance;
 			SSWriteF32Le(ss, d->target);
-			SSWriteF32LeN(ss, d->range.v, 2);
+			WriteF32N(ss, d->range.v, 2);
 			SSWriteU32Le(ss, d->enable_spring);
 			SSWriteF32Le(ss, d->hertz);
 			SSWriteF32Le(ss, d->damping_ratio);
@@ -1027,7 +1048,7 @@ u32 ds_JointSimTryDeserialize(struct SS *ss, struct ds_JointSim *jsim)
 		{
 			struct ds_DistanceJoint *d = &jsim->distance;
 			d->target = SSReadF32Le(ss);
-			SSReadF32LeN(ss, d->range.v, 2);
+			ReadF32N(ss, d->range.v, 2);
 			d->enable_spring = SSReadU32Le(ss);
 			d->hertz = SSReadF32Le(ss);
 			d->damping_ratio = SSReadF32Le(ss);
@@ -1081,7 +1102,7 @@ void ds_SolverManifoldSerialize(struct SS *ss, const struct ds_SolverManifold *m
 	{
 		WriteV3(ss, manifold->anchor0[i]);
 	}
-	SSWriteF32LeN(ss, manifold->depth, 4);
+	WriteF32N(ss, manifold->depth, 4);
 	WriteV3(ss, manifold->normal);
 	SSWriteU32Le(ss, manifold->point_count);
 	for (u32 i = 0; i < 4; ++i)
@@ -1101,7 +1122,7 @@ u32 ds_SolverManifoldTryDeserialize(struct SS *ss, struct ds_SolverManifold *man
 	{
 		manifold->anchor0[i] = ReadV3(ss);
 	}
-	SSReadF32LeN(ss, manifold->depth, 4);
+	ReadF32N(ss, manifold->depth, 4);
 	manifold->normal = ReadV3(ss);
 	manifold->point_count = SSReadU32Le(ss);
 	for (u32 i = 0; i < 4; ++i)
@@ -1122,8 +1143,8 @@ void ds_ContactConstraintCacheSerialize(struct SS *ss, const struct ds_ContactCo
 {
 	WriteV3(ss, ccache->tangent[0]);
 	WriteV3(ss, ccache->tangent[1]);
-	SSWriteF32LeN(ss, ccache->tangent_impulse[0], 8);
-	SSWriteF32LeN(ss, ccache->normal_impulse, 4);
+	WriteF32N(ss, ccache->tangent_impulse[0], 8);
+	WriteF32N(ss, ccache->normal_impulse, 4);
 	for (u32 i = 0; i < 4; ++i)
 	{
 		SSWriteU32Le(ss, ccache->id[i].val);
@@ -1141,8 +1162,8 @@ u32 ds_ContactConstraintCacheTryDeserialize(struct SS *ss, struct ds_ContactCons
 
 	ccache->tangent[0] = ReadV3(ss);
 	ccache->tangent[1] = ReadV3(ss);
-	SSReadF32LeN(ss, ccache->tangent_impulse[0], 8);
-	SSReadF32LeN(ss, ccache->normal_impulse, 4);
+	ReadF32N(ss, ccache->tangent_impulse[0], 8);
+	ReadF32N(ss, ccache->normal_impulse, 4);
 	for (u32 i = 0; i < 4; ++i)
 	{
 		ccache->id[i].val = SSReadU32Le(ss);

@@ -79,9 +79,10 @@ void ds_StructureTHashMapTestReset(void *args)
             Log(T_SYSTEM, S_ERROR, "THashMap performance test: %u lookups failed", AtomicLoadRlx32(&g_lookup_mismatches));
         }
 
+        /* every chain is empty (the buckets keep their tags) */
         for (u32 i = 0; i < g_tmap.state.hash_len; ++i)
         {
-            ds_Assert(AtomicLoadRlx64(g_tmap.state.a_bucket + i) == THASH_NULL);
+            ds_Assert((AtomicLoadRlx64(g_tmap.state.a_bucket + i) & THASH_NEXT_MASK) == THASH_NULL);
         }
         ds_TPoolAlloc(NULL, *pool, g_arch_config->logical_core_count*10000, g_arch_config->logical_core_count);
         ds_THashMapFlush(g_tmap);

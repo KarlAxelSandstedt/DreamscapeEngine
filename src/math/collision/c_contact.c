@@ -2188,7 +2188,9 @@ static void SATCacheSerialize(struct SS *ss, const struct SATCache *sat)
 	SSWriteU32Le(ss, (u32) sat->type);
 	SSWriteU32LeN(ss, sat->feature, 2);
 	SSWriteF32Le(ss, sat->depth);
-	SSWriteF32LeN(ss, sat->normal.buf, 3);
+	SSWriteF32Le(ss, sat->normal.x);
+	SSWriteF32Le(ss, sat->normal.y);
+	SSWriteF32Le(ss, sat->normal.z);
 }
 
 /* the caller checked the size; an unused cache holds whatever it held, so nothing is validated */
@@ -2197,7 +2199,9 @@ static void SATCacheDeserialize(struct SS *ss, struct SATCache *sat)
 	sat->type = (enum sat_CacheType) SSReadU32Le(ss);
 	SSReadU32LeN(ss, sat->feature, 2);
 	sat->depth = SSReadF32Le(ss);
-	SSReadF32LeN(ss, sat->normal.buf, 3);
+	sat->normal.x = SSReadF32Le(ss);
+	sat->normal.y = SSReadF32Le(ss);
+	sat->normal.z = SSReadF32Le(ss);
 }
 
 u64 ds_ConvexCacheSerializeSize(const struct ds_ConvexCache *cache)
