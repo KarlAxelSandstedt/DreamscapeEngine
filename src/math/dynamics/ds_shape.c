@@ -268,58 +268,6 @@ f32 ds_ShapeDistance(v3f64 *c0, v3f64 *c1, const struct ds_Dynamics *pipeline, c
 		: c_distance_methods[c_s1->type][c_s0->type](c1, c0, c_s1, &t1, c_s0, &t0);
 }
 
-/*
- * Convert the local manifolds (result->contact_manifold, c_Manifold) in place to the solver form (result->manifold,
- * ds_SolverManifold; same size). t is the world pose of the shape the manifolds are local to. If the other shape is
- * the reference (flip), its surface points are the local ones minus the depth:
- *      n' = -n,    v' = v - depth*n
- * Points move from t's origin to body 0's center of mass com0 with one f64 subtraction:
- *      anchor0 = R*v + demote(t.position - com0)
- * Each local manifold is memcpy'd out before its memory is rewritten (character access: the compiler cannot move
- * the c_Manifold reads past the ds_SolverManifold writes); afterwards the memory is only read in the solver form
- * (arena memory takes the type of its last store).
- */
-static void ds_ContactResultToSolver(struct arena *frame, struct c_ContactResult *result, const ds_TransformWorld *t, const v3f64 com0, const u32 flip)
-{
-#ifdef DS_DEBUG
-    for (u32 i = 0; i < result->manifold_count; ++i)
-    {
-        if (!c_ManifoldCheck(result->contact_manifold + i))
-        {
-            c_ManifoldDebugPrint(result->contact_manifold + i);
-        }
-        ds_Assert(c_ManifoldCheck(result->contact_manifold + i));
-    }
-#endif
-
- 
-    const m3 rot = M3QUnit(t->rotation);
-    const v3 offset = V3F64Demote(V3F64Sub(t->position, com0));
-    const struct c_Manifold *local = result->contact_manifold;
-    struct ds_SolverManifold *solver = ArenaPush(frame, result->manifold_count*sizeof(struct ds_SolverManifold));
-    if (result->manifold_count && !solver)
-    {
-        Log(T_SYSTEM, S_FATAL, "Out of memory in %s", __func__);
-        FatalCleanupAndExit();
-    }
-
-    for (u32 mi = 0; mi < result->manifold_count; ++mi)
-    {
-        for (u32 i = 0; i < local[mi].v_count; ++i)
-        {
-            const v3 v = (flip)
-                       ? V3AddScaled(local[mi].v[i], local[mi].n, -local[mi].depth[i])
-                       : local[mi].v[i];
-            solver[mi].anchor0[i] = V3Add(M3V3Mul(rot, v), offset);
-            solver[mi].depth[i] = local[mi].depth[i];
-            solver[mi].id[i] = local[mi].id[i];
-        }
-        solver[mi].normal = M3V3Mul(rot, (flip) ? V3Negate(local[mi].n) : local[mi].n);
-        solver[mi].point_count = local[mi].v_count;
-    }
-    result->manifold = solver;
-}
-
 /* convex types precede C_SHAPE_TRI_MESH; [s0->type][s1->type] with s0 the more complex shape */
 static struct c_ContactResult  (*c_convex_contact_methods[C_SHAPE_TRI_MESH][C_SHAPE_TRI_MESH])(struct arena *, struct ds_ConvexCache *, const struct c_Shape *, const ds_TransformWorld *, const struct c_Shape *, const ds_TransformWorld *) =
 {
@@ -328,8 +276,34 @@ static struct c_ContactResult  (*c_convex_contact_methods[C_SHAPE_TRI_MESH][C_SH
 	{ c_HullSphereContact,      c_HullCapsuleContact,   c_HullContact,  },
 };
 
+/*
+ * One local manifold to the solver form; rot is the world rotation R of the shape it is local to. If the other shape
+ * is the reference (flip), its surface points are the local ones minus the depth:
+ *      n' = -n,    v' = v - depth*n
+ * Points move to body 0's center of mass com0, offset = demote(t.position - com0) with one f64 subtraction:
+ *      anchor0 = R*v + offset
+ */
 static void ds_SolverManifoldConvex(struct ds_SolverManifold *out, const struct c_Manifold *local, const m3 rot, const v3 offset, const u32 flip)
 {
+#ifdef DS_DEBUG
+    if (!c_ManifoldCheck(local))
+    {
+        c_ManifoldDebugPrint(local);
+    }
+    ds_Assert(c_ManifoldCheck(local));
+#endif
+
+    for (u32 i = 0; i < local->v_count; ++i)
+    {
+        const v3 v = (flip)
+                   ? V3AddScaled(local->v[i], local->n, -local->depth[i])
+                   : local->v[i];
+        out->anchor0[i] = V3Add(M3V3Mul(rot, v), offset);
+        out->depth[i] = local->depth[i];
+        out->id[i] = local->id[i];
+    }
+    out->normal = M3V3Mul(rot, (flip) ? V3Negate(local->n) : local->n);
+    out->point_count = local->v_count;
 }
 
 static void ds_SolverManifoldConcaveUpdate(ds_TSlab(ds_SolverManifold) *slab, struct ds_SolverManifoldBuffer *buffer, const struct c_ContactResult *result, const m3 rot, const v3 offset, const u32 flip)
@@ -381,10 +355,9 @@ void ds_ShapeContact(struct arena *tmp, struct ds_Dynamics *pipeline, const u32 
         const u32 other = 1 - local;
 
         const struct c_ContactResult result = c_convex_contact_methods[c_s[local]->type][c_s[other]->type](tmp, &c->cache.convex, c_s[local], &t_world[local], c_s[other], &t_world[other]);
-        ds_Assert(result.manifold_count <= 1);
         struct ds_SolverManifoldBuffer *buffer = pipeline->manifold_buffer_pool.buf + contact_index;
-        ds_Assert(buffer->type == SOLVER_MANIFOLD_INTERNAL);
         buffer->count = result.manifold_count;
+
         if (result.manifold_count)
         {
             const m3 rot = M3QUnit(t_world[local].rotation);
@@ -396,13 +369,11 @@ void ds_ShapeContact(struct arena *tmp, struct ds_Dynamics *pipeline, const u32 
     {
         const u32 mesh = ds_ContactStaticIndex(c);
         const u32 convex = 1 - mesh;
-        ds_Assert(c_s[mesh]->type == C_SHAPE_TRI_MESH && c_s[convex]->type < C_SHAPE_TRI_MESH);
-        local = convex;
-        const u32 flip_normal = local;
+        const u32 flip_normal = mesh;
 
         const struct c_ContactResult result = c_MeshContact(tmp, &pipeline->tri_cache_slab, &c->cache.concave, c_s[mesh], &t_world[mesh], c_s[convex], &t_world[convex]);
-        const m3 rot = M3QUnit(t_world[local].rotation);
-        const v3 offset = V3F64Demote(V3F64Sub(t_world[local].position, com[0]));
+        const m3 rot = M3QUnit(t_world[mesh].rotation);
+        const v3 offset = V3F64Demote(V3F64Sub(t_world[mesh].position, com[0]));
         ds_SolverManifoldConcaveUpdate(&pipeline->manifold_slab, pipeline->manifold_buffer_pool.buf + contact_index, &result, rot, offset, flip_normal);
     }
 
