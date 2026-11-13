@@ -428,8 +428,8 @@ struct suite_Performance *slab_performance_suite = &storage_performance_slab_sui
 
 /*
 TStack contention: every worker pushes one node onto one shared ds_TStack and pops one back, TS_OPS times per
-repetition, so all workers hammer the head's cache line. Variants: the engine's macros, and copies that pause
-(ds_CpuPause) after a failed compare-exchange, once or TS_PAUSE_LONG times. Per worker: the pairs, the failed
+repetition, so all workers hammer the head's cache line. Variants: the engine's macros (they pause once after a
+failed compare-exchange), and copies that pause once or TS_PAUSE_LONG times, to measure the count. Per worker: the pairs, the failed
 compare-exchanges and the empty pops (retried), so a difference can be read against how often the pause ran.
 */
 
@@ -440,7 +440,7 @@ struct ds_Align(DS_CACHE_LINE) ts_node { TREIBER_NODE; u8 pad[DS_CACHE_LINE - si
 struct ds_Align(DS_CACHE_LINE) ts_counter { u64 cas_fail, pop_miss, pairs; };
 
 enum ts_variant { TS_PLAIN, TS_PAUSE_1, TS_PAUSE_LONG_V };
-static const char *ts_variant_name[] = { "plain", "pause 1", "pause 8" };
+static const char *ts_variant_name[] = { "engine", "pause 1 copy", "pause 8 copy" };
 
 static struct ds_TStack    g_ts_stack;
 static struct ts_node      g_ts_node[64];
@@ -555,7 +555,7 @@ static void ts_free(void *args)
             cas_fail += g_ts_counter[i].cas_fail;
             pop_miss += g_ts_counter[i].pop_miss;
         }
-        fprintf(stdout, "\tTStack %s: %u workers, %u pairs per worker and repetition, %u repetitions; per pair %.3f failed CAS (plain: not counted) %.3f empty pops\n",
+        fprintf(stdout, "\tTStack %s: %u workers, %u pairs per worker and repetition, %u repetitions; per pair %.3f failed CAS (engine: not counted) %.3f empty pops\n",
                 ts_variant_name[job->variant], g_ts_workers, TS_OPS, g_ts_rep, (f64) cas_fail / (f64) pairs, (f64) pop_miss / (f64) pairs);
     }
     g_ts_init_count -= 1;

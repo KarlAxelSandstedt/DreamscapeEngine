@@ -269,30 +269,37 @@ do                                                                              
     ds_Assert(AtomicLoadRlx32(&(_buf_)[_index_].treiber_next) == TSTACK_NULL);          \
                                                                                         \
     ds_TStackKey _head_ = AtomicLoadRlx64(&(_stack_)->a_head);                          \
-    ds_TStackKey _new_head_;                                                            \
-    do                                                                                  \
+    for (;;)                                                                            \
     {                                                                                   \
         AtomicStoreRlx32(&(_buf_)[_index_].treiber_next, ds_TStackKeyIndex(_head_));    \
-        _new_head_ = ds_TStackKeyInit((_index_), ds_TStackKeyTag(_head_) + 1);          \
-    } while (!AtomicCompareExchangeRelRlx64(&(_stack_)->a_head, &_head_, _new_head_));  \
+        const ds_TStackKey _new_head_ = ds_TStackKeyInit((_index_), ds_TStackKeyTag(_head_) + 1); \
+        if (AtomicCompareExchangeRelRlx64(&(_stack_)->a_head, &_head_, _new_head_))     \
+        {                                                                               \
+            break;                                                                      \
+        }                                                                               \
+        ds_CpuPause(1);                                                                 \
+    }                                                                                   \
 } while (0)
 
 #define ds_TStackTryPop(_index_, _stack_, _buf_)                                        \
 do                                                                                      \
 {                                                                                       \
     ds_TStackKey _head_ = AtomicLoadAcq64(&(_stack_)->a_head);                          \
-    ds_TStackKey _new_head_;                                                            \
-    do                                                                                  \
+    for (;;)                                                                            \
     {                                                                                   \
         (_index_) = ds_TStackKeyIndex(_head_);                                          \
         if ((_index_) == TSTACK_NULL)                                                   \
         {                                                                               \
             break;                                                                      \
         }                                                                               \
-        _new_head_ = ds_TStackKeyInit(AtomicLoadRlx32(&(_buf_)[_index_].treiber_next),  \
-                                   ds_TStackKeyTag(_head_) + 1);                        \
-    } while (!AtomicCompareExchangeAcqRelAcq64(&(_stack_)->a_head, &_head_,               \
-                                                _new_head_));                             \
+        const ds_TStackKey _new_head_ = ds_TStackKeyInit(AtomicLoadRlx32(&(_buf_)[_index_].treiber_next), \
+                                                       ds_TStackKeyTag(_head_) + 1);    \
+        if (AtomicCompareExchangeAcqRelAcq64(&(_stack_)->a_head, &_head_, _new_head_))  \
+        {                                                                               \
+            break;                                                                      \
+        }                                                                               \
+        ds_CpuPause(1);                                                                 \
+    }                                                                                   \
                                                                                         \
     if ((_index_) != TSTACK_NULL)                                                       \
     {                                                                                   \
