@@ -448,16 +448,21 @@ void ds_ShapeContact(struct arena *tmp, struct ds_Dynamics *pipeline, const u32 
         const u32 contact = c_convex_contact_methods[c_s[local]->type][c_s[other]->type](&local_manifold, &c->cache.convex, c_s[local], &t_world[local], c_s[other], &t_world[other]);
         struct ds_SolverManifoldBuffer *buffer = pipeline->manifold_buffer_pool.buf + contact_index;
 
-        struct ds_SolverManifold old_manifold = buffer->manifold;
-        const ds_Array(ds_SolverManifold) old = { .buf = &old_manifold, .length = buffer->count, .base = U32_MAX };
-        buffer->count = contact;
         if (contact)
         {
+            struct ds_SolverManifold old_manifold;
+            const ds_Array(ds_SolverManifold) old = { .buf = &old_manifold, .length = buffer->count, .base = U32_MAX };
+            if (buffer->count)
+            {
+                old_manifold = buffer->manifold;
+            }
+
             const m3 rot = M3QUnit(t_world[local].rotation);
             const v3 offset = V3F64Demote(V3F64Sub(t_world[local].position, com[0]));
             ds_SolverManifoldConvex(&buffer->manifold, &local_manifold, rot, offset, flip_normal);
             ds_SolverManifoldSetCache(&buffer->manifold, old);
         }
+        buffer->count = contact;
     }
     else
     {
