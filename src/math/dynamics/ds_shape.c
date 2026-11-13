@@ -437,24 +437,26 @@ void ds_ShapeContact(struct arena *tmp, struct ds_Dynamics *pipeline, const u32 
 
         const struct c_ContactResult result = c_convex_contact_methods[c_s[local]->type][c_s[other]->type](tmp, &c->cache.convex, c_s[local], &t_world[local], c_s[other], &t_world[other]);
         struct ds_SolverManifoldBuffer *buffer = pipeline->manifold_buffer_pool.buf + contact_index;
-        buffer->count = result.manifold_count;
 
+        const ds_Array(ds_SolverManifold) old = ds_ArrayCopy(tmp, ((ds_Array(ds_SolverManifold)) { .buf = &buffer->manifold, .length = buffer->count, .base = U32_MAX }));
+        buffer->count = result.manifold_count;
         if (result.manifold_count)
         {
             const m3 rot = M3QUnit(t_world[local].rotation);
             const v3 offset = V3F64Demote(V3F64Sub(t_world[local].position, com[0]));
             ds_SolverManifoldConvex(&buffer->manifold, result.contact_manifold, rot, offset, flip_normal);
+            ds_SolverManifoldSetCache(&buffer->manifold, old);
         }
     }
     else
     {
         const u32 mesh = ds_ContactStaticIndex(c);
         const u32 convex = 1 - mesh;
-        const u32 flip_normal = mesh;
+        const u32 flip_normal = convex;
 
         const struct c_ContactResult result = c_MeshContact(tmp, &pipeline->tri_cache_slab, &c->cache.concave, c_s[mesh], &t_world[mesh], c_s[convex], &t_world[convex]);
-        const m3 rot = M3QUnit(t_world[mesh].rotation);
-        const v3 offset = V3F64Demote(V3F64Sub(t_world[mesh].position, com[0]));
+        const m3 rot = M3QUnit(t_world[convex].rotation);
+        const v3 offset = V3F64Demote(V3F64Sub(t_world[convex].position, com[0]));
         ds_SolverManifoldConcave(tmp, &pipeline->manifold_slab, pipeline->manifold_buffer_pool.buf + contact_index, &result, rot, offset, flip_normal);
     }
 
