@@ -335,227 +335,821 @@ u32 ds_DynamicsDrawConfigTryDeserialize(struct SS *ss, struct ds_DynamicsDrawCon
     return 1;
 }
 
+/*************************** fields ***************************/
+
+#define SNAPSHOT_V3_SIZE                (3*sizeof(f32))
+#define SNAPSHOT_V3F64_SIZE             (3*sizeof(f64))
+#define SNAPSHOT_V4_SIZE                (4*sizeof(f32))
+#define SNAPSHOT_Q_SIZE                 (4*sizeof(f32))
+#define SNAPSHOT_M3_SIZE                (9*sizeof(f32))
+#define SNAPSHOT_TRANSFORM_SIZE         (SNAPSHOT_Q_SIZE + SNAPSHOT_V3_SIZE)
+#define SNAPSHOT_TRANSFORM_WORLD_SIZE   (SNAPSHOT_Q_SIZE + SNAPSHOT_V3F64_SIZE)
+#define SNAPSHOT_DLL_SIZE               (3*sizeof(u32))
+#define SNAPSHOT_DLL_NODE_SIZE          (2*sizeof(i32))
+#define SNAPSHOT_ID_SIZE                sizeof(u64)
+
+static ds_ForceInline void WriteV3(struct SS *ss, const v3 v)
+{
+	SSWriteF32LeN(ss, v.buf, 3);
+}
+
+static ds_ForceInline v3 ReadV3(struct SS *ss)
+{
+	v3 v;
+	SSReadF32LeN(ss, v.buf, 3);
+	return v;
+}
+
+static ds_ForceInline void WriteV3F64(struct SS *ss, const v3f64 v)
+{
+	SSWriteF64LeN(ss, v.buf, 3);
+}
+
+static ds_ForceInline v3f64 ReadV3F64(struct SS *ss)
+{
+	v3f64 v;
+	SSReadF64LeN(ss, v.buf, 3);
+	return v;
+}
+
+static ds_ForceInline void WriteV4(struct SS *ss, const v4 v)
+{
+	SSWriteF32LeN(ss, v.buf, 4);
+}
+
+static ds_ForceInline v4 ReadV4(struct SS *ss)
+{
+	v4 v;
+	SSReadF32LeN(ss, v.buf, 4);
+	return v;
+}
+
+static ds_ForceInline void WriteQ(struct SS *ss, const q a)
+{
+	SSWriteF32LeN(ss, a.buf, 4);
+}
+
+static ds_ForceInline q ReadQ(struct SS *ss)
+{
+	q a;
+	SSReadF32LeN(ss, a.buf, 4);
+	return a;
+}
+
+static ds_ForceInline void WriteM3(struct SS *ss, const m3 *m)
+{
+	SSWriteF32LeN(ss, m->buf, 9);
+}
+
+static ds_ForceInline void ReadM3(struct SS *ss, m3 *m)
+{
+	SSReadF32LeN(ss, m->buf, 9);
+}
+
+static ds_ForceInline void WriteTransform(struct SS *ss, const ds_Transform *t)
+{
+	WriteQ(ss, t->rotation);
+	WriteV3(ss, t->position);
+}
+
+static ds_ForceInline void ReadTransform(struct SS *ss, ds_Transform *t)
+{
+	t->rotation = ReadQ(ss);
+	t->position = ReadV3(ss);
+}
+
+static ds_ForceInline void WriteTransformWorld(struct SS *ss, const ds_TransformWorld *t)
+{
+	WriteQ(ss, t->rotation);
+	WriteV3F64(ss, t->position);
+}
+
+static ds_ForceInline void ReadTransformWorld(struct SS *ss, ds_TransformWorld *t)
+{
+	t->rotation = ReadQ(ss);
+	t->position = ReadV3F64(ss);
+}
+
+static ds_ForceInline void WriteDLLNode(struct SS *ss, const struct DLLNode node)
+{
+	SSWriteI32Le(ss, node.prev);
+	SSWriteI32Le(ss, node.next);
+}
+
+static ds_ForceInline struct DLLNode ReadDLLNode(struct SS *ss)
+{
+	struct DLLNode node;
+	node.prev = SSReadI32Le(ss);
+	node.next = SSReadI32Le(ss);
+	return node;
+}
+
 /*************************** per-type serializers ***************************/
+
+#define DS_BODY_SERIALIZE_SIZE (SNAPSHOT_DLL_NODE_SIZE + SNAPSHOT_ID_SIZE + 4*sizeof(u32) + sizeof(f32) + 2*SNAPSHOT_DLL_SIZE + sizeof(f32) + sizeof(u32))
 
 u64 ds_BodySerializeSize(const struct ds_Body *body)
 {
-	//TODO
-	return 0;
+	return DS_BODY_SERIALIZE_SIZE;
 }
 
 void ds_BodySerialize(struct SS *ss, const struct ds_Body *body)
 {
-	//TODO
+	WriteDLLNode(ss, body->island_body);
+	SSWriteU64Le(ss, body->id.val);
+	SSWriteU32Le(ss, body->flags);
+	SSWriteU32Le(ss, body->island);
+	SSWriteU32Le(ss, body->set);
+	SSWriteU32Le(ss, body->sim);
+	SSWriteF32Le(ss, body->low_velocity_time);
+	DLLSerialize(ss, body->joint_list);
+	DLLSerialize(ss, body->shape_list);
+	SSWriteF32Le(ss, body->mass);
+	SSWriteU32Le(ss, body->entity);
 }
 
 u32 ds_BodyTryDeserialize(struct SS *ss, struct ds_Body *body)
 {
-	//TODO
-	return 0;
+	if (SSBytesLeft(ss) < DS_BODY_SERIALIZE_SIZE)
+	{
+		return 0;
+	}
+
+	body->island_body = ReadDLLNode(ss);
+	body->id.val = SSReadU64Le(ss);
+	body->flags = SSReadU32Le(ss);
+	body->island = SSReadU32Le(ss);
+	body->set = SSReadU32Le(ss);
+	body->sim = SSReadU32Le(ss);
+	body->low_velocity_time = SSReadF32Le(ss);
+	DLLDeserialize(ss, body->joint_list);
+	DLLDeserialize(ss, body->shape_list);
+	body->mass = SSReadF32Le(ss);
+	body->entity = SSReadU32Le(ss);
+	return 1;
 }
+
+#define DS_SHAPE_SERIALIZE_SIZE (SNAPSHOT_DLL_NODE_SIZE + SNAPSHOT_ID_SIZE + 3*sizeof(u32) + SNAPSHOT_DLL_SIZE + 2*sizeof(u32) + 4*sizeof(f32) + SNAPSHOT_TRANSFORM_SIZE)
 
 u64 ds_ShapeSerializeSize(const struct ds_Shape *shape)
 {
-	//TODO
-	return 0;
+	return DS_SHAPE_SERIALIZE_SIZE;
 }
 
 void ds_ShapeSerialize(struct SS *ss, const struct ds_Shape *shape)
 {
-	//TODO
+	WriteDLLNode(ss, shape->body_shape);
+	SSWriteU64Le(ss, shape->id.val);
+	SSWriteU32Le(ss, shape->flags);
+	SSWriteU32Le(ss, shape->body);
+	SSWriteU32Le(ss, shape->proxy);
+	DLLSerialize(ss, shape->contact_list);
+	SSWriteU32Le(ss, (u32) shape->cshape_type);
+	SSWriteU32Le(ss, shape->cshape_handle);
+	SSWriteF32Le(ss, shape->density);
+	SSWriteF32Le(ss, shape->restitution);
+	SSWriteF32Le(ss, shape->friction);
+	SSWriteF32Le(ss, shape->margin);
+	WriteTransform(ss, &shape->t_local);
 }
 
 u32 ds_ShapeTryDeserialize(struct SS *ss, struct ds_Shape *shape)
 {
-	//TODO
-	return 0;
+	if (SSBytesLeft(ss) < DS_SHAPE_SERIALIZE_SIZE)
+	{
+		return 0;
+	}
+
+	shape->body_shape = ReadDLLNode(ss);
+	shape->id.val = SSReadU64Le(ss);
+	shape->flags = SSReadU32Le(ss);
+	shape->body = SSReadU32Le(ss);
+	shape->proxy = SSReadU32Le(ss);
+	DLLDeserialize(ss, shape->contact_list);
+	shape->cshape_type = (enum c_ShapeType) SSReadU32Le(ss);
+	shape->cshape_handle = SSReadU32Le(ss);
+	shape->density = SSReadF32Le(ss);
+	shape->restitution = SSReadF32Le(ss);
+	shape->friction = SSReadF32Le(ss);
+	shape->margin = SSReadF32Le(ss);
+	ReadTransform(ss, &shape->t_local);
+	return shape->cshape_type < C_SHAPE_COUNT;
 }
+
+#define DS_JOINT_SERIALIZE_SIZE (SNAPSHOT_ID_SIZE + 2*sizeof(u32) + SNAPSHOT_DLL_NODE_SIZE + 2*sizeof(u32) + 2*SNAPSHOT_DLL_NODE_SIZE + 4*sizeof(u32))
 
 u64 ds_JointSerializeSize(const struct ds_Joint *joint)
 {
-	//TODO
-	return 0;
+	return DS_JOINT_SERIALIZE_SIZE;
 }
 
 void ds_JointSerialize(struct SS *ss, const struct ds_Joint *joint)
 {
-	//TODO
+	SSWriteU64Le(ss, joint->id.val);
+	SSWriteU32Le(ss, (u32) joint->type);
+	SSWriteU32Le(ss, joint->island);
+	WriteDLLNode(ss, joint->island_joint);
+	SSWriteU32LeN(ss, joint->body, 2);
+	WriteDLLNode(ss, joint->edge_node[0]);
+	WriteDLLNode(ss, joint->edge_node[1]);
+	SSWriteU32Le(ss, joint->set);
+	SSWriteU32Le(ss, joint->color);
+	SSWriteU32Le(ss, joint->sim);
+	SSWriteU32Le(ss, joint->collide_connected);
 }
 
 u32 ds_JointTryDeserialize(struct SS *ss, struct ds_Joint *joint)
 {
-	//TODO
-	return 0;
+	if (SSBytesLeft(ss) < DS_JOINT_SERIALIZE_SIZE)
+	{
+		return 0;
+	}
+
+	joint->id.val = SSReadU64Le(ss);
+	joint->type = (enum ds_JointType) SSReadU32Le(ss);
+	joint->island = SSReadU32Le(ss);
+	joint->island_joint = ReadDLLNode(ss);
+	SSReadU32LeN(ss, joint->body, 2);
+	joint->edge_node[0] = ReadDLLNode(ss);
+	joint->edge_node[1] = ReadDLLNode(ss);
+	joint->set = SSReadU32Le(ss);
+	joint->color = SSReadU32Le(ss);
+	joint->sim = SSReadU32Le(ss);
+	joint->collide_connected = SSReadU32Le(ss);
+	return joint->type < DS_JOINT_TYPE_COUNT;
 }
+
+/* the union member the event's type fills (the editor reads them so) */
+static u64 PhysicsEventPayloadSize(const enum ds_PhysicsEventType type)
+{
+	switch (type)
+	{
+		case PHYSICS_EVENT_CONTACT_NEW:         return SNAPSHOT_ID_SIZE;
+		case PHYSICS_EVENT_CONTACT_REMOVED:     return 4*SNAPSHOT_ID_SIZE;
+		case PHYSICS_EVENT_ISLAND_NEW:
+		case PHYSICS_EVENT_ISLAND_EXPANDED:
+		case PHYSICS_EVENT_ISLAND_REMOVED:
+		case PHYSICS_EVENT_ISLAND_AWAKE:
+		case PHYSICS_EVENT_ISLAND_ASLEEP:       return SNAPSHOT_ID_SIZE;
+		case PHYSICS_EVENT_BODY_NEW:
+		case PHYSICS_EVENT_BODY_REMOVED:        return sizeof(u32);
+		case PHYSICS_EVENT_JOINT_BREAKING:      return SNAPSHOT_ID_SIZE;
+		default:                                return 0;
+	}
+}
+
+#define DS_PHYSICS_EVENT_FIXED_SERIALIZE_SIZE (SNAPSHOT_DLL_NODE_SIZE + sizeof(u64) + sizeof(u32))
 
 u64 ds_PhysicsEventSerializeSize(const struct ds_PhysicsEvent *event)
 {
-	//TODO
-	return 0;
+	return DS_PHYSICS_EVENT_FIXED_SERIALIZE_SIZE + PhysicsEventPayloadSize(event->type);
 }
 
 void ds_PhysicsEventSerialize(struct SS *ss, const struct ds_PhysicsEvent *event)
 {
-	//TODO
+	WriteDLLNode(ss, event->node);
+	SSWriteU64Le(ss, event->ns);
+	SSWriteU32Le(ss, (u32) event->type);
+	switch (event->type)
+	{
+		case PHYSICS_EVENT_CONTACT_NEW:
+		{
+			SSWriteU64Le(ss, event->contact.val);
+		} break;
+
+		case PHYSICS_EVENT_CONTACT_REMOVED:
+		{
+			SSWriteU64Le(ss, event->contact_removed_bodies[0].val);
+			SSWriteU64Le(ss, event->contact_removed_bodies[1].val);
+			SSWriteU64Le(ss, event->contact_removed_shapes[0].val);
+			SSWriteU64Le(ss, event->contact_removed_shapes[1].val);
+		} break;
+
+		case PHYSICS_EVENT_ISLAND_NEW:
+		case PHYSICS_EVENT_ISLAND_EXPANDED:
+		case PHYSICS_EVENT_ISLAND_REMOVED:
+		case PHYSICS_EVENT_ISLAND_AWAKE:
+		case PHYSICS_EVENT_ISLAND_ASLEEP:
+		{
+			SSWriteU64Le(ss, event->island.val);
+		} break;
+
+		case PHYSICS_EVENT_BODY_NEW:
+		case PHYSICS_EVENT_BODY_REMOVED:
+		{
+			SSWriteU32Le(ss, event->entity);
+		} break;
+
+		case PHYSICS_EVENT_JOINT_BREAKING:
+		{
+			SSWriteU64Le(ss, event->joint.val);
+		} break;
+
+		default: break;
+	}
 }
 
 u32 ds_PhysicsEventTryDeserialize(struct SS *ss, struct ds_PhysicsEvent *event)
 {
-	//TODO
-	return 0;
+	memset(event, 0, sizeof(*event));
+	if (SSBytesLeft(ss) < DS_PHYSICS_EVENT_FIXED_SERIALIZE_SIZE)
+	{
+		return 0;
+	}
+
+	event->node = ReadDLLNode(ss);
+	event->ns = SSReadU64Le(ss);
+	event->type = (enum ds_PhysicsEventType) SSReadU32Le(ss);
+	if (event->type >= PHYSICS_EVENT_COUNT || SSBytesLeft(ss) < PhysicsEventPayloadSize(event->type))
+	{
+		return 0;
+	}
+
+	switch (event->type)
+	{
+		case PHYSICS_EVENT_CONTACT_NEW:
+		{
+			event->contact.val = SSReadU64Le(ss);
+		} break;
+
+		case PHYSICS_EVENT_CONTACT_REMOVED:
+		{
+			event->contact_removed_bodies[0].val = SSReadU64Le(ss);
+			event->contact_removed_bodies[1].val = SSReadU64Le(ss);
+			event->contact_removed_shapes[0].val = SSReadU64Le(ss);
+			event->contact_removed_shapes[1].val = SSReadU64Le(ss);
+		} break;
+
+		case PHYSICS_EVENT_ISLAND_NEW:
+		case PHYSICS_EVENT_ISLAND_EXPANDED:
+		case PHYSICS_EVENT_ISLAND_REMOVED:
+		case PHYSICS_EVENT_ISLAND_AWAKE:
+		case PHYSICS_EVENT_ISLAND_ASLEEP:
+		{
+			event->island.val = SSReadU64Le(ss);
+		} break;
+
+		case PHYSICS_EVENT_BODY_NEW:
+		case PHYSICS_EVENT_BODY_REMOVED:
+		{
+			event->entity = SSReadU32Le(ss);
+		} break;
+
+		case PHYSICS_EVENT_JOINT_BREAKING:
+		{
+			event->joint.val = SSReadU64Le(ss);
+		} break;
+
+		default: break;
+	}
+	return 1;
 }
+
+/* the narrowphase arrays and a concave cache's array are restored by their owners; a convex cache is part of the contact */
+#define DS_CONTACT_FIXED_SERIALIZE_SIZE (SNAPSHOT_ID_SIZE + 2*sizeof(u32) + 5*sizeof(u32) + 4*SNAPSHOT_DLL_NODE_SIZE + sizeof(u32) + SNAPSHOT_V3_SIZE)
 
 u64 ds_ContactSerializeSize(const struct ds_Contact *contact)
 {
-	//TODO
-	return 0;
+	u64 size = DS_CONTACT_FIXED_SERIALIZE_SIZE;
+	if (ds_ContactConvexCheck(contact))
+	{
+		size += ds_ConvexCacheSerializeSize(&contact->cache.convex);
+	}
+	return size;
 }
 
 void ds_ContactSerialize(struct SS *ss, const struct ds_Contact *contact)
 {
-	//TODO
+	SSWriteU64Le(ss, contact->id.val);
+	SSWriteU32LeN(ss, contact->key.shape, 2);
+	SSWriteU32Le(ss, contact->flags);
+	SSWriteU32Le(ss, contact->island);
+	SSWriteU32Le(ss, contact->set);
+	SSWriteU32Le(ss, contact->compute);
+	SSWriteU32Le(ss, contact->color);
+	WriteDLLNode(ss, contact->island_joint);
+	WriteDLLNode(ss, contact->island_contact);
+	WriteDLLNode(ss, contact->shape_contact[0]);
+	WriteDLLNode(ss, contact->shape_contact[1]);
+	SSWriteU32Le(ss, contact->narrowphase.manifold_count);
+	WriteV3(ss, contact->com_offset);
+	if (ds_ContactConvexCheck(contact))
+	{
+		ds_ConvexCacheSerialize(ss, &contact->cache.convex);
+	}
 }
 
 u32 ds_ContactTryDeserialize(struct SS *ss, struct ds_Contact *contact)
 {
-	//TODO
-	return 0;
+	if (SSBytesLeft(ss) < DS_CONTACT_FIXED_SERIALIZE_SIZE)
+	{
+		return 0;
+	}
+
+	contact->id.val = SSReadU64Le(ss);
+	SSReadU32LeN(ss, contact->key.shape, 2);
+	contact->flags = SSReadU32Le(ss);
+	contact->island = SSReadU32Le(ss);
+	contact->set = SSReadU32Le(ss);
+	contact->compute = SSReadU32Le(ss);
+	contact->color = SSReadU32Le(ss);
+	contact->island_joint = ReadDLLNode(ss);
+	contact->island_contact = ReadDLLNode(ss);
+	contact->shape_contact[0] = ReadDLLNode(ss);
+	contact->shape_contact[1] = ReadDLLNode(ss);
+	contact->narrowphase.manifold_count = SSReadU32Le(ss);
+	contact->narrowphase.manifold = NULL;
+	contact->narrowphase.tri = NULL;
+	contact->com_offset = ReadV3(ss);
+	if (ds_ContactConvexCheck(contact))
+	{
+		return ds_ConvexCacheTryDeserialize(ss, &contact->cache.convex);
+	}
+
+	contact->cache.concave = (struct ds_ConcaveCache) { .tri = { .buf = NULL, .length = 0, .base = U32_MAX }, .tri_count = 0 };
+	return 1;
 }
+
+#define DS_ISLAND_SERIALIZE_SIZE (SNAPSHOT_ID_SIZE + 3*sizeof(u32) + 3*SNAPSHOT_DLL_SIZE + SNAPSHOT_V4_SIZE)
 
 u64 ds_IslandSerializeSize(const struct ds_Island *island)
 {
-	//TODO
-	return 0;
+	return DS_ISLAND_SERIALIZE_SIZE;
 }
 
 void ds_IslandSerialize(struct SS *ss, const struct ds_Island *island)
 {
-	//TODO
+	SSWriteU64Le(ss, island->id.val);
+	SSWriteU32Le(ss, island->constraint_remove_count);
+	SSWriteU32Le(ss, island->set);
+	SSWriteU32Le(ss, island->set_island_index);
+	DLLSerialize(ss, island->body_list);
+	DLLSerialize(ss, island->contact_list);
+	DLLSerialize(ss, island->joint_list);
+	WriteV4(ss, island->color);
 }
 
 u32 ds_IslandTryDeserialize(struct SS *ss, struct ds_Island *island)
 {
-	//TODO
-	return 0;
+	if (SSBytesLeft(ss) < DS_ISLAND_SERIALIZE_SIZE)
+	{
+		return 0;
+	}
+
+	island->id.val = SSReadU64Le(ss);
+	island->constraint_remove_count = SSReadU32Le(ss);
+	island->set = SSReadU32Le(ss);
+	island->set_island_index = SSReadU32Le(ss);
+	DLLDeserialize(ss, island->body_list);
+	DLLDeserialize(ss, island->contact_list);
+	DLLDeserialize(ss, island->joint_list);
+	island->color = ReadV4(ss);
+	return 1;
 }
 
+/* per-tick frame data, rebuilt by the broadphase before it is read: one empty slot per shape */
 u64 ds_ProxyQuerySerializeSize(const struct ds_ProxyQuery *query)
 {
-	//TODO
 	return 0;
 }
 
 void ds_ProxyQuerySerialize(struct SS *ss, const struct ds_ProxyQuery *query)
 {
-	//TODO
 }
 
 u32 ds_ProxyQueryTryDeserialize(struct SS *ss, struct ds_ProxyQuery *query)
 {
-	//TODO
-	return 0;
+	*query = (struct ds_ProxyQuery) { 0 };
+	return 1;
 }
+
+#define DS_BODY_SIM_SERIALIZE_SIZE (2*sizeof(u32) + sizeof(f32) + SNAPSHOT_TRANSFORM_WORLD_SIZE + SNAPSHOT_V3_SIZE + SNAPSHOT_V3F64_SIZE + 2*SNAPSHOT_M3_SIZE)
 
 u64 ds_BodySimSerializeSize(const struct ds_BodySim *bsim)
 {
-	//TODO
-	return 0;
+	return DS_BODY_SIM_SERIALIZE_SIZE;
 }
 
 void ds_BodySimSerialize(struct SS *ss, const struct ds_BodySim *bsim)
 {
-	//TODO
+	SSWriteU32Le(ss, bsim->body);
+	SSWriteU32Le(ss, bsim->flags);
+	SSWriteF32Le(ss, bsim->inv_mass);
+	WriteTransformWorld(ss, &bsim->world);
+	WriteV3(ss, bsim->local_center_of_mass);
+	WriteV3F64(ss, bsim->world_center_of_mass);
+	WriteM3(ss, &bsim->local_inv_inertia);
+	WriteM3(ss, &bsim->world_inv_inertia);
 }
 
 u32 ds_BodySimTryDeserialize(struct SS *ss, struct ds_BodySim *bsim)
 {
-	//TODO
-	return 0;
+	if (SSBytesLeft(ss) < DS_BODY_SIM_SERIALIZE_SIZE)
+	{
+		return 0;
+	}
+
+	bsim->body = SSReadU32Le(ss);
+	bsim->flags = SSReadU32Le(ss);
+	bsim->inv_mass = SSReadF32Le(ss);
+	ReadTransformWorld(ss, &bsim->world);
+	bsim->local_center_of_mass = ReadV3(ss);
+	bsim->world_center_of_mass = ReadV3F64(ss);
+	ReadM3(ss, &bsim->local_inv_inertia);
+	ReadM3(ss, &bsim->world_inv_inertia);
+	return 1;
 }
+
+#define DS_BODY_COMPUTE_SERIALIZE_SIZE (3*SNAPSHOT_V3_SIZE + SNAPSHOT_Q_SIZE + sizeof(u32))
 
 u64 ds_BodyComputeSerializeSize(const struct ds_BodyCompute *bcomp)
 {
-	//TODO
-	return 0;
+	return DS_BODY_COMPUTE_SERIALIZE_SIZE;
 }
 
 void ds_BodyComputeSerialize(struct SS *ss, const struct ds_BodyCompute *bcomp)
 {
-	//TODO
+	WriteV3(ss, bcomp->linear_velocity);
+	WriteV3(ss, bcomp->angular_velocity);
+	WriteV3(ss, bcomp->delta_position);
+	WriteQ(ss, bcomp->rotation);
+	SSWriteU32Le(ss, bcomp->flags);
 }
 
 u32 ds_BodyComputeTryDeserialize(struct SS *ss, struct ds_BodyCompute *bcomp)
 {
-	//TODO
-	return 0;
+	if (SSBytesLeft(ss) < DS_BODY_COMPUTE_SERIALIZE_SIZE)
+	{
+		return 0;
+	}
+
+	bcomp->linear_velocity = ReadV3(ss);
+	bcomp->angular_velocity = ReadV3(ss);
+	bcomp->delta_position = ReadV3(ss);
+	bcomp->rotation = ReadQ(ss);
+	bcomp->flags = SSReadU32Le(ss);
+	return 1;
 }
+
+/* cc is rebuilt every solve; ccache is restored by the compute's owner */
+#define DS_CONTACT_COMPUTE_SERIALIZE_SIZE (4*sizeof(u32))
 
 u64 ds_ContactComputeSerializeSize(const struct ds_ContactCompute *compute)
 {
-	//TODO
-	return 0;
+	return DS_CONTACT_COMPUTE_SERIALIZE_SIZE;
 }
 
 void ds_ContactComputeSerialize(struct SS *ss, const struct ds_ContactCompute *compute)
 {
-	//TODO
+	SSWriteU32Le(ss, compute->cc_count);
+	SSWriteU32Le(ss, compute->ccache_count);
+	SSWriteU32LeN(ss, compute->body_sim, 2);
 }
 
 u32 ds_ContactComputeTryDeserialize(struct SS *ss, struct ds_ContactCompute *compute)
 {
-	//TODO
-	return 0;
+	if (SSBytesLeft(ss) < DS_CONTACT_COMPUTE_SERIALIZE_SIZE)
+	{
+		return 0;
+	}
+
+	compute->cc = NULL;
+	compute->ccache = NULL;
+	compute->cc_count = SSReadU32Le(ss);
+	compute->ccache_count = SSReadU32Le(ss);
+	SSReadU32LeN(ss, compute->body_sim, 2);
+	return 1;
+}
+
+#define DS_JOINT_SIM_FIXED_SERIALIZE_SIZE    (2*SNAPSHOT_TRANSFORM_SIZE + 2*sizeof(f32) + 2*sizeof(u32) + 2*sizeof(u32) + 3*SNAPSHOT_V3_SIZE)
+#define DS_DISTANCE_JOINT_SERIALIZE_SIZE     (3*sizeof(f32) + sizeof(u32) + 2*sizeof(f32) + SNAPSHOT_V3_SIZE + 8*sizeof(f32) + 3*sizeof(f32))
+#define DS_MOUSE_JOINT_SERIALIZE_SIZE        (SNAPSHOT_V3F64_SIZE + 4*sizeof(f32) + 2*SNAPSHOT_M3_SIZE + SNAPSHOT_V3_SIZE + SNAPSHOT_M3_SIZE + 2*sizeof(f32) + 2*SNAPSHOT_V3_SIZE)
+
+static u64 JointSimPayloadSize(const enum ds_JointType type)
+{
+	switch (type)
+	{
+		case DS_JOINT_TYPE_DISTANCE:    return DS_DISTANCE_JOINT_SERIALIZE_SIZE;
+		case DS_JOINT_TYPE_MOUSE:       return DS_MOUSE_JOINT_SERIALIZE_SIZE;
+		default:                        return 0;
+	}
 }
 
 u64 ds_JointSimSerializeSize(const struct ds_JointSim *jsim)
 {
-	//TODO
-	return 0;
+	return DS_JOINT_SIM_FIXED_SERIALIZE_SIZE + JointSimPayloadSize(jsim->type);
 }
 
 void ds_JointSimSerialize(struct SS *ss, const struct ds_JointSim *jsim)
 {
-	//TODO
+	WriteTransform(ss, &jsim->local_frame[0]);
+	WriteTransform(ss, &jsim->local_frame[1]);
+	SSWriteF32Le(ss, jsim->force_threshold);
+	SSWriteF32Le(ss, jsim->torque_threshold);
+	SSWriteU32Le(ss, jsim->joint);
+	SSWriteU32Le(ss, (u32) jsim->type);
+	SSWriteU32LeN(ss, jsim->body_sim, 2);
+	WriteV3(ss, jsim->r[0]);
+	WriteV3(ss, jsim->r[1]);
+	WriteV3(ss, jsim->com_diff);
+	switch (jsim->type)
+	{
+		case DS_JOINT_TYPE_DISTANCE:
+		{
+			const struct ds_DistanceJoint *d = &jsim->distance;
+			SSWriteF32Le(ss, d->target);
+			SSWriteF32LeN(ss, d->range.v, 2);
+			SSWriteU32Le(ss, d->enable_spring);
+			SSWriteF32Le(ss, d->hertz);
+			SSWriteF32Le(ss, d->damping_ratio);
+			WriteV3(ss, d->n);
+			SSWriteF32Le(ss, d->distance);
+			SSWriteF32Le(ss, d->normal_mass);
+			SSWriteF32Le(ss, d->soft_mass);
+			SSWriteF32Le(ss, d->target_mass);
+			SSWriteF32Le(ss, d->gamma);
+			SSWriteF32Le(ss, d->bias_velocity);
+			SSWriteF32Le(ss, d->allowed_separation_velocity_min);
+			SSWriteF32Le(ss, d->allowed_separation_velocity_max);
+			SSWriteF32Le(ss, d->impulse);
+			SSWriteF32Le(ss, d->impulse_low);
+			SSWriteF32Le(ss, d->impulse_high);
+		} break;
+
+		case DS_JOINT_TYPE_MOUSE:
+		{
+			const struct ds_MouseJoint *m = &jsim->mouse;
+			WriteV3F64(ss, m->target);
+			SSWriteF32Le(ss, m->hertz);
+			SSWriteF32Le(ss, m->damping_ratio);
+			SSWriteF32Le(ss, m->max_force);
+			SSWriteF32Le(ss, m->max_torque);
+			WriteM3(ss, &m->soft_mass);
+			WriteM3(ss, &m->gamma);
+			WriteV3(ss, m->bias_velocity);
+			WriteM3(ss, &m->angular_mass);
+			SSWriteF32Le(ss, m->max_impulse);
+			SSWriteF32Le(ss, m->max_angular_impulse);
+			WriteV3(ss, m->impulse);
+			WriteV3(ss, m->angular_impulse);
+		} break;
+
+		default: break;
+	}
 }
 
 u32 ds_JointSimTryDeserialize(struct SS *ss, struct ds_JointSim *jsim)
 {
-	//TODO
-	return 0;
+	memset(jsim, 0, sizeof(*jsim));
+	if (SSBytesLeft(ss) < DS_JOINT_SIM_FIXED_SERIALIZE_SIZE)
+	{
+		return 0;
+	}
+
+	ReadTransform(ss, &jsim->local_frame[0]);
+	ReadTransform(ss, &jsim->local_frame[1]);
+	jsim->force_threshold = SSReadF32Le(ss);
+	jsim->torque_threshold = SSReadF32Le(ss);
+	jsim->joint = SSReadU32Le(ss);
+	jsim->type = (enum ds_JointType) SSReadU32Le(ss);
+	SSReadU32LeN(ss, jsim->body_sim, 2);
+	jsim->r[0] = ReadV3(ss);
+	jsim->r[1] = ReadV3(ss);
+	jsim->com_diff = ReadV3(ss);
+	if (jsim->type >= DS_JOINT_TYPE_COUNT || SSBytesLeft(ss) < JointSimPayloadSize(jsim->type))
+	{
+		return 0;
+	}
+
+	switch (jsim->type)
+	{
+		case DS_JOINT_TYPE_DISTANCE:
+		{
+			struct ds_DistanceJoint *d = &jsim->distance;
+			d->target = SSReadF32Le(ss);
+			SSReadF32LeN(ss, d->range.v, 2);
+			d->enable_spring = SSReadU32Le(ss);
+			d->hertz = SSReadF32Le(ss);
+			d->damping_ratio = SSReadF32Le(ss);
+			d->n = ReadV3(ss);
+			d->distance = SSReadF32Le(ss);
+			d->normal_mass = SSReadF32Le(ss);
+			d->soft_mass = SSReadF32Le(ss);
+			d->target_mass = SSReadF32Le(ss);
+			d->gamma = SSReadF32Le(ss);
+			d->bias_velocity = SSReadF32Le(ss);
+			d->allowed_separation_velocity_min = SSReadF32Le(ss);
+			d->allowed_separation_velocity_max = SSReadF32Le(ss);
+			d->impulse = SSReadF32Le(ss);
+			d->impulse_low = SSReadF32Le(ss);
+			d->impulse_high = SSReadF32Le(ss);
+		} break;
+
+		case DS_JOINT_TYPE_MOUSE:
+		{
+			struct ds_MouseJoint *m = &jsim->mouse;
+			m->target = ReadV3F64(ss);
+			m->hertz = SSReadF32Le(ss);
+			m->damping_ratio = SSReadF32Le(ss);
+			m->max_force = SSReadF32Le(ss);
+			m->max_torque = SSReadF32Le(ss);
+			ReadM3(ss, &m->soft_mass);
+			ReadM3(ss, &m->gamma);
+			m->bias_velocity = ReadV3(ss);
+			ReadM3(ss, &m->angular_mass);
+			m->max_impulse = SSReadF32Le(ss);
+			m->max_angular_impulse = SSReadF32Le(ss);
+			m->impulse = ReadV3(ss);
+			m->angular_impulse = ReadV3(ss);
+		} break;
+
+		default: break;
+	}
+	return 1;
 }
+
+#define DS_SOLVER_MANIFOLD_SERIALIZE_SIZE (4*SNAPSHOT_V3_SIZE + 4*sizeof(f32) + SNAPSHOT_V3_SIZE + sizeof(u32) + 4*sizeof(u32))
 
 u64 ds_SolverManifoldSerializeSize(const struct ds_SolverManifold *manifold)
 {
-	//TODO
-	return 0;
+	return DS_SOLVER_MANIFOLD_SERIALIZE_SIZE;
 }
 
 void ds_SolverManifoldSerialize(struct SS *ss, const struct ds_SolverManifold *manifold)
 {
-	//TODO
+	for (u32 i = 0; i < 4; ++i)
+	{
+		WriteV3(ss, manifold->anchor0[i]);
+	}
+	SSWriteF32LeN(ss, manifold->depth, 4);
+	WriteV3(ss, manifold->normal);
+	SSWriteU32Le(ss, manifold->point_count);
+	for (u32 i = 0; i < 4; ++i)
+	{
+		SSWriteU32Le(ss, manifold->id[i].val);
+	}
 }
 
 u32 ds_SolverManifoldTryDeserialize(struct SS *ss, struct ds_SolverManifold *manifold)
 {
-	//TODO
-	return 0;
+	if (SSBytesLeft(ss) < DS_SOLVER_MANIFOLD_SERIALIZE_SIZE)
+	{
+		return 0;
+	}
+
+	for (u32 i = 0; i < 4; ++i)
+	{
+		manifold->anchor0[i] = ReadV3(ss);
+	}
+	SSReadF32LeN(ss, manifold->depth, 4);
+	manifold->normal = ReadV3(ss);
+	manifold->point_count = SSReadU32Le(ss);
+	for (u32 i = 0; i < 4; ++i)
+	{
+		manifold->id[i].val = SSReadU32Le(ss);
+	}
+	return manifold->point_count <= 4;
 }
+
+#define DS_CONTACT_CONSTRAINT_CACHE_SERIALIZE_SIZE (2*SNAPSHOT_V3_SIZE + 8*sizeof(f32) + 4*sizeof(f32) + 4*sizeof(u32) + 2*sizeof(u32))
 
 u64 ds_ContactConstraintCacheSerializeSize(const struct ds_ContactConstraintCache *ccache)
 {
-	//TODO
-	return 0;
+	return DS_CONTACT_CONSTRAINT_CACHE_SERIALIZE_SIZE;
 }
 
 void ds_ContactConstraintCacheSerialize(struct SS *ss, const struct ds_ContactConstraintCache *ccache)
 {
-	//TODO
+	WriteV3(ss, ccache->tangent[0]);
+	WriteV3(ss, ccache->tangent[1]);
+	SSWriteF32LeN(ss, ccache->tangent_impulse[0], 8);
+	SSWriteF32LeN(ss, ccache->normal_impulse, 4);
+	for (u32 i = 0; i < 4; ++i)
+	{
+		SSWriteU32Le(ss, ccache->id[i].val);
+	}
+	SSWriteU32Le(ss, ccache->v_count);
+	SSWriteU32Le(ss, ccache->tri);
 }
 
 u32 ds_ContactConstraintCacheTryDeserialize(struct SS *ss, struct ds_ContactConstraintCache *ccache)
 {
-	//TODO
-	return 0;
+	if (SSBytesLeft(ss) < DS_CONTACT_CONSTRAINT_CACHE_SERIALIZE_SIZE)
+	{
+		return 0;
+	}
+
+	ccache->tangent[0] = ReadV3(ss);
+	ccache->tangent[1] = ReadV3(ss);
+	SSReadF32LeN(ss, ccache->tangent_impulse[0], 8);
+	SSReadF32LeN(ss, ccache->normal_impulse, 4);
+	for (u32 i = 0; i < 4; ++i)
+	{
+		ccache->id[i].val = SSReadU32Le(ss);
+	}
+	ccache->v_count = SSReadU32Le(ss);
+	ccache->tri = SSReadU32Le(ss);
+	return ccache->v_count <= 4;
 }
 
 /*************************** pool images ***************************/
@@ -580,7 +1174,7 @@ static void SnapshotPoolFreeListSerialize(struct SS *ss, const void *buf, const 
 	ds_Assert(free_count == count_max - count);
 }
 
-/* the free list and the allocated indices must fit; the elements check themselves */
+/* the free list must fit; the elements and the indices between them check themselves */
 static u32 SnapshotPoolHeaderTryDeserialize(struct SS *ss, u32 *length, u32 *count, u32 *count_max)
 {
 	if (SSBytesLeft(ss) < 3*sizeof(u32))
@@ -591,7 +1185,7 @@ static u32 SnapshotPoolHeaderTryDeserialize(struct SS *ss, u32 *length, u32 *cou
 	*length = SSReadU32Le(ss);
 	*count = SSReadU32Le(ss);
 	*count_max = SSReadU32Le(ss);
-	return *count <= *count_max && *count_max <= *length && *length < POOL_INDEX_MASK && (u64) *count_max*sizeof(u32) <= SSBytesLeft(ss);
+	return *count <= *count_max && *count_max <= *length && *length < POOL_INDEX_MASK && (u64) (*count_max - *count)*sizeof(u32) <= SSBytesLeft(ss);
 }
 
 /*
@@ -679,6 +1273,10 @@ static u32 _T_##PoolTryDeserialize(struct SS *ss, ds_Pool(_T_) *pool)           
                                                                                                               \
 	for (u32 i = 0; i < count; ++i)                                                                           \
 	{                                                                                                         \
+		if (SSBytesLeft(ss) < sizeof(u32))                                                                    \
+		{                                                                                                     \
+			goto failure;                                                                                     \
+		}                                                                                                     \
 		const u32 index = SSReadU32Le(ss);                                                                    \
 		if (index >= count_max || pool->buf[index].pool_slot != POOL_INDEX_MASK)                              \
 		{                                                                                                     \
@@ -701,7 +1299,7 @@ failure:                                                                        
 	return 0;                                                                                                 \
 }
 
-/* a compact pool's image: length, count, then the elements */
+/* a compact pool's image: length, count, then the elements (they check themselves) */
 static u32 SnapshotCPoolHeaderTryDeserialize(struct SS *ss, u32 *length, u32 *count)
 {
 	if (SSBytesLeft(ss) < 2*sizeof(u32))
@@ -711,7 +1309,7 @@ static u32 SnapshotCPoolHeaderTryDeserialize(struct SS *ss, u32 *length, u32 *co
 
 	*length = SSReadU32Le(ss);
 	*count = SSReadU32Le(ss);
-	return *count <= *length && *count <= SSBytesLeft(ss);
+	return *count <= *length;
 }
 
 #define DEFINE_SNAPSHOT_CPOOL(_T_, _ELEM_)                                                                    \
@@ -744,8 +1342,7 @@ static u32 _T_##CPoolTryDeserialize(struct arena *mem, struct SS *ss, ds_CPool(_
 		ss->bit_index = bit_index;                                                                            \
 		return 0;                                                                                             \
 	}                                                                                                         \
-	ds_CPoolAlloc(mem, *pool, length, growable);                                                              \
-	if (pool->buf == NULL)                                                                                    \
+	if (!ds_CPoolAllocInternal(mem, (void **) &pool->buf, &pool->length, &pool->count, &pool->growable, &pool->heap_allocated, sizeof(pool->buf[0]), length, growable)) \
 	{                                                                                                         \
 		ss->bit_index = bit_index;                                                                            \
 		return 0;                                                                                             \
@@ -786,8 +1383,7 @@ static u32 U32CPoolTryDeserialize(struct arena *mem, struct SS *ss, ds_CPool(u32
 		ss->bit_index = bit_index;
 		return 0;
 	}
-	ds_CPoolAlloc(mem, *pool, length, growable);
-	if (pool->buf == NULL)
+	if (!ds_CPoolAllocInternal(mem, (void **) &pool->buf, &pool->length, &pool->count, &pool->growable, &pool->heap_allocated, sizeof(u32), length, growable))
 	{
 		ss->bit_index = bit_index;
 		return 0;

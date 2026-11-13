@@ -368,6 +368,9 @@ struct ds_ConcaveCache
     u32                     tri_count;
 };
 
+u64                     ds_ConvexCacheSerializeSize(const struct ds_ConvexCache *cache);
+void                    ds_ConvexCacheSerialize(struct SS *ss, const struct ds_ConvexCache *cache);
+u32                     ds_ConvexCacheTryDeserialize(struct SS *ss, struct ds_ConvexCache *cache);
 u64                     ds_TriCacheSerializeSize(const struct ds_TriCache *cache);
 void                    ds_TriCacheSerialize(struct SS *ss, const struct ds_TriCache *cache);
 u32                     ds_TriCacheTryDeserialize(struct SS *ss, struct ds_TriCache *cache);

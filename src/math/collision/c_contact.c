@@ -2180,19 +2180,74 @@ struct c_ContactResult c_MeshContact(struct arena *frame, ds_TSlab(ds_TriCache) 
     return result;
 }
 
+#define SAT_CACHE_SERIALIZE_SIZE    (sizeof(u32) + 2*sizeof(u32) + sizeof(f32) + 3*sizeof(f32))
+#define GJK_CACHE_SERIALIZE_SIZE    (sizeof(f32) + sizeof(u16) + 8*sizeof(u16))
+
+static void SATCacheSerialize(struct SS *ss, const struct SATCache *sat)
+{
+	SSWriteU32Le(ss, (u32) sat->type);
+	SSWriteU32LeN(ss, sat->feature, 2);
+	SSWriteF32Le(ss, sat->depth);
+	SSWriteF32LeN(ss, sat->normal.buf, 3);
+}
+
+/* the caller checked the size; an unused cache holds whatever it held, so nothing is validated */
+static void SATCacheDeserialize(struct SS *ss, struct SATCache *sat)
+{
+	sat->type = (enum sat_CacheType) SSReadU32Le(ss);
+	SSReadU32LeN(ss, sat->feature, 2);
+	sat->depth = SSReadF32Le(ss);
+	SSReadF32LeN(ss, sat->normal.buf, 3);
+}
+
+u64 ds_ConvexCacheSerializeSize(const struct ds_ConvexCache *cache)
+{
+	return SAT_CACHE_SERIALIZE_SIZE + GJK_CACHE_SERIALIZE_SIZE;
+}
+
+void ds_ConvexCacheSerialize(struct SS *ss, const struct ds_ConvexCache *cache)
+{
+	SATCacheSerialize(ss, &cache->sat);
+	SSWriteF32Le(ss, cache->gjk.metric);
+	SSWriteU16Le(ss, cache->gjk.count);
+	SSWriteU16LeN(ss, cache->gjk.index_a, 4);
+	SSWriteU16LeN(ss, cache->gjk.index_b, 4);
+}
+
+u32 ds_ConvexCacheTryDeserialize(struct SS *ss, struct ds_ConvexCache *cache)
+{
+	if (SSBytesLeft(ss) < SAT_CACHE_SERIALIZE_SIZE + GJK_CACHE_SERIALIZE_SIZE)
+	{
+		return 0;
+	}
+
+	SATCacheDeserialize(ss, &cache->sat);
+	cache->gjk.metric = SSReadF32Le(ss);
+	cache->gjk.count = SSReadU16Le(ss);
+	SSReadU16LeN(ss, cache->gjk.index_a, 4);
+	SSReadU16LeN(ss, cache->gjk.index_b, 4);
+	return 1;
+}
+
 u64 ds_TriCacheSerializeSize(const struct ds_TriCache *cache)
 {
-	//TODO
-	return 0;
+	return sizeof(u32) + SAT_CACHE_SERIALIZE_SIZE;
 }
 
 void ds_TriCacheSerialize(struct SS *ss, const struct ds_TriCache *cache)
 {
-	//TODO
+	SSWriteU32Le(ss, cache->tri);
+	SATCacheSerialize(ss, &cache->sat);
 }
 
 u32 ds_TriCacheTryDeserialize(struct SS *ss, struct ds_TriCache *cache)
 {
-	//TODO
-	return 0;
+	if (SSBytesLeft(ss) < sizeof(u32) + SAT_CACHE_SERIALIZE_SIZE)
+	{
+		return 0;
+	}
+
+	cache->tri = SSReadU32Le(ss);
+	SATCacheDeserialize(ss, &cache->sat);
+	return 1;
 }
