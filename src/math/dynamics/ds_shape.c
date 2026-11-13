@@ -306,8 +306,89 @@ static void ds_SolverManifoldConvex(struct ds_SolverManifold *out, const struct 
     out->point_count = local->v_count;
 }
 
-static void ds_SolverManifoldConcaveUpdate(ds_TSlab(ds_SolverManifold) *slab, struct ds_SolverManifoldBuffer *buffer, const struct c_ContactResult *result, const m3 rot, const v3 offset, const u32 flip)
+static void ds_SolverManifoldSetCache(struct ds_SolverManifold *m, const ds_Array(ds_SolverManifold) old)
 {
+    m->tangent[0] = V3Zero();
+    m->tangent[1] = V3Zero();
+    memset(m->normal_impulse, 0, sizeof(m->normal_impulse));
+    memset(m->tangent_impulse, 0, sizeof(m->tangent_impulse));
+
+    const struct ds_SolverManifold *o = NULL;
+    for (u32 t = 0; t < old.length; ++t)
+    {
+        if (m->tri == old.buf[t].tri)
+        {
+            o = old.buf + t;
+            break;
+        }
+    }
+
+    if (o)
+    {
+        m->tangent[0] = o->tangent[0];
+        m->tangent[1] = o->tangent[1];
+        u32 claimed = 0;
+        for (u32 p = 0; p < m->point_count; ++p)
+        {
+            for (u32 k = 0; k < o->point_count; ++k)
+            {
+                if (!(claimed & (1u << k)) && c_PointIdEqual(m->id[p], o->id[k]))
+                {
+                    claimed |= 1u << k;
+                    m->normal_impulse[p] = o->normal_impulse[k];
+                    m->tangent_impulse[p][0] = o->tangent_impulse[k][0];
+                    m->tangent_impulse[p][1] = o->tangent_impulse[k][1];
+                    break;
+                }
+            }
+        }
+    }
+}
+
+static void ds_SolverManifoldConcave(struct arena *tmp, ds_TSlab(ds_SolverManifold) *slab, struct ds_SolverManifoldBuffer *buffer, const struct c_ContactResult *result, const m3 rot, const v3 offset, const u32 flip)
+{
+    if (result->manifold_count == 0)
+    {
+        if (buffer->type == SOLVER_MANIFOLD_EXTERNAL)
+        {
+            ds_TSlabRemove(*slab, buffer->manifold_array);
+        }
+        buffer->count = 0; 
+        buffer->type = SOLVER_MANIFOLD_INTERNAL;
+        return;
+    }
+
+    ds_Array(ds_SolverManifold) new = 
+    {
+        .buf = (buffer->type == SOLVER_MANIFOLD_INTERNAL) ? &buffer->manifold : buffer->manifold_array.buf,
+        .length = buffer->count,
+    };
+    const ds_Array(ds_SolverManifold) old = ds_ArrayCopy(tmp, new);
+
+    const u32 capacity = (buffer->type == SOLVER_MANIFOLD_INTERNAL) ? 1 : buffer->manifold_array.length;
+    const u32 grow = capacity < result->manifold_count;
+    if (grow)
+    {
+        new = ds_TSlabAdd(*slab, result->manifold_count);
+    }
+
+    for (u32 i = 0; i < result->manifold_count; ++i)
+    {
+        new.buf[i].tri = result->tri[i];
+        ds_SolverManifoldConvex(new.buf + i, result->contact_manifold + i, rot, offset, flip);
+        ds_SolverManifoldSetCache(new.buf + i, old);
+    }
+    
+    buffer->count = result->manifold_count;
+    if (grow)
+    {
+        if (buffer->type == SOLVER_MANIFOLD_EXTERNAL)
+        {
+            ds_TSlabRemove(*slab, buffer->manifold_array);
+        }
+        buffer->type = SOLVER_MANIFOLD_EXTERNAL;
+        buffer->manifold_array = new;
+    }
 }
 
 /*
@@ -374,7 +455,7 @@ void ds_ShapeContact(struct arena *tmp, struct ds_Dynamics *pipeline, const u32 
         const struct c_ContactResult result = c_MeshContact(tmp, &pipeline->tri_cache_slab, &c->cache.concave, c_s[mesh], &t_world[mesh], c_s[convex], &t_world[convex]);
         const m3 rot = M3QUnit(t_world[mesh].rotation);
         const v3 offset = V3F64Demote(V3F64Sub(t_world[mesh].position, com[0]));
-        ds_SolverManifoldConcaveUpdate(&pipeline->manifold_slab, pipeline->manifold_buffer_pool.buf + contact_index, &result, rot, offset, flip_normal);
+        ds_SolverManifoldConcave(tmp, &pipeline->manifold_slab, pipeline->manifold_buffer_pool.buf + contact_index, &result, rot, offset, flip_normal);
     }
 
     ArenaPopRecord(tmp);
