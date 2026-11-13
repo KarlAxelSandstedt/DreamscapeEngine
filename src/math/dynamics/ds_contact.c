@@ -377,6 +377,32 @@ void ds_ContactValidateAll(const struct ds_Dynamics *pipeline)
         ds_Assert(pipeline->manifold_buffer_pool.buf[ci].count == 0);
     }
 
+    const struct ds_SolverSet *disabled = pipeline->solver_set_pool.buf + SOLVER_SET_DISABLED;
+    for (u32 i = 0; i < disabled->contact_pool.count; ++i)
+    {
+        const u32 ci = disabled->contact_pool.buf[i];
+        const struct ds_Contact *c = pipeline->contact_pool.buf + ci;
+		ds_Assert(ds_PoolSlotAllocated(c));
+        ds_Assert(c->compute == i);
+        ds_Assert(c->set == SOLVER_SET_DISABLED);
+        ds_Assert(c->color == CG_INVALID_COLOR);
+        ds_Assert(pipeline->manifold_buffer_pool.buf[ci].count == 0);
+
+        const struct ds_Shape *shape[2] =
+        {
+            pipeline->shape_pool.buf + c->key.shape[0],
+            pipeline->shape_pool.buf + c->key.shape[1],
+        };
+
+        const struct ds_Body *body[2] =
+        {
+            pipeline->body_pool.buf + shape[0]->body,
+            pipeline->body_pool.buf + shape[1]->body,
+        };
+
+        ds_Assert(body[0]->set != SOLVER_SET_ACTIVE && body[1]->set != SOLVER_SET_ACTIVE);
+    }
+
     for (u32 color_index = 0; color_index < CG_COLOR_COUNT; ++color_index)
     {
         const struct ds_CGraphColor *color = pipeline->cgraph.color + color_index;
