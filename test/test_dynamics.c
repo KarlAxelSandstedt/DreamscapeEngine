@@ -72,7 +72,7 @@ the bottom box sleeps again into the freed slot; disabling sleeping wakes everyt
 
 Parking (DynamicsParkingTest): a sleeping island's non-touching contacts whose other body is static or asleep sit
 in the disabled set with the partial sleeping bit clear and return to the active set on a wake; a contact created
-between a sleeping and a static shape starts there.
+between two sleeping bodies starts there; a shape added to a sleeping body wakes it.
 
 Static shape add (DynamicsStaticShapeAddTest): a static wall added into a sleeping box, and into an awake resting
 box, has its contact at once (active, the box awake) and touching after a tick.
@@ -1745,8 +1745,8 @@ static u32 DynamicsTestContactIndex(const struct ds_Dynamics *pipeline, const ds
  * bit clear, the touching ones name their island's set, and the active set holds no contact. Waking the lone box
  * returns its wall contact to the active set with the bit set (static XOR awake); waking the plank's island returns
  * the boxes' contact with the bit clear and its touching contacts to the graph. Both islands sleep and park again.
- * A shape added to the sleeping lone box beside the wall gets its wall contact straight in the disabled set at the
- * next broadphase, and the box stays asleep.
+ * A contact created between two sleeping bodies starts in the disabled set; a shape added to the sleeping lone box
+ * wakes it, and its wall contacts are active with the bit set.
  */
 static struct test_Output DynamicsParkingTest(struct test_Environment *env)
 {
@@ -1839,21 +1839,29 @@ static struct test_Output DynamicsParkingTest(struct test_Environment *env)
     disabled = pipeline.solver_set_pool.buf + SOLVER_SET_DISABLED;
     TEST_NOT_ZERO(active->contact_pool.count == 0 && disabled->contact_pool.count == 2);
 
-    /* a shape added to the sleeping lone box beside the wall: its wall contact starts disabled, the box sleeps on */
+    /* a contact created between two sleeping bodies (the lone box and the plank) starts disabled with the bit clear */
+    const struct ds_Body *plank = ds_BodyLookup(&pipeline, id[4]).address;
+    TEST_NOT_ZERO(DynamicsTestContactIndex(&pipeline, id[5], id[4]) == U32_MAX);
+    const u32 lone_plank = ds_ContactTryAdd(&pipeline, ds_ContactKeyCanonical(lone->shape_list.first, plank->shape_list.first)).index;
+    TEST_NOT_ZERO(lone_plank != U32_MAX);
+    c = pipeline.contact_pool.buf + lone_plank;
+    TEST_NOT_ZERO(c->set == SOLVER_SET_DISABLED && !ds_ContactPartialSleepingCheck(c));
+    ds_ContactValidateAll(&pipeline);
+
+    /* a shape added to the sleeping lone box beside the wall wakes it: its wall contacts are active with the bit set */
     const struct c_Shape src = { .type = C_SHAPE_CONVEX_HULL, .hull = DcelBox(&mem, hw) };
     const struct slot cshape = c_ShapeDBAdd(&cshape_db, Utf8Format(&mem, "box_upper"), &src);
     const struct ds_ShapePrefab shape_prefab = { .cshape = cshape.index, .density = 1.0f, .friction = 0.5f };
     const ds_Transform t_local = { .rotation = QIdentity(), .position = V3(0.0f, 1.03f, 0.0f) };
     const ds_ShapeId upper = ds_ShapeAdd(&pipeline, &shape_prefab, &t_local, id[5]);
-    const u32 lone_set = lone->set;
+    TEST_NOT_ZERO(lone->set == SOLVER_SET_ACTIVE && box->set >= SOLVER_SET_SLEEPING_FIRST);
     SnapshotTestTick(&pipeline);
     const u32 upper_wall = ds_ContactKeyLookup(&pipeline, ds_ContactKeyCanonical(ds_ShapeLookup(&pipeline, upper).index, wall->shape_list.first)).index;
-    TEST_NOT_ZERO(upper_wall != U32_MAX && lone->set == lone_set);
+    TEST_NOT_ZERO(upper_wall != U32_MAX);
     c = pipeline.contact_pool.buf + upper_wall;
-    TEST_NOT_ZERO(c->set == SOLVER_SET_DISABLED && !ds_ContactPartialSleepingCheck(c));
-    active = pipeline.solver_set_pool.buf + SOLVER_SET_ACTIVE;
-    disabled = pipeline.solver_set_pool.buf + SOLVER_SET_DISABLED;
-    TEST_NOT_ZERO(active->contact_pool.count == 0 && disabled->contact_pool.count == 3);
+    TEST_NOT_ZERO(c->set == SOLVER_SET_ACTIVE && ds_ContactPartialSleepingCheck(c));
+    c = pipeline.contact_pool.buf + lone_wall;
+    TEST_NOT_ZERO(c->set == SOLVER_SET_ACTIVE && ds_ContactPartialSleepingCheck(c));
     ds_ContactValidateAll(&pipeline);
 
     ds_DynamicsConfigPop(&pipeline);

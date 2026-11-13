@@ -83,6 +83,7 @@ ds_ShapeId ds_ShapeAdd(struct ds_Dynamics *pipeline, const struct ds_ShapePrefab
 	struct aabb bbox_proxy = ds_ShapeWorldBbox(pipeline, shape);
     if (ds_BodyDynamicCheck(body))
     {
+        ds_SolverSetWakeUp(pipeline, body->set);
 		bbox_proxy.min = V3AddConstant(bbox_proxy.min, -shape->margin);
 		bbox_proxy.max = V3AddConstant(bbox_proxy.max, shape->margin);
         ds_BitSetSet(&pipeline->shape_dynamic_usage_set, shape_slot.index, 1);
