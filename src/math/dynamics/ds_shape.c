@@ -402,10 +402,9 @@ static void ds_SolverManifoldConcave(struct arena *tmp, ds_TSlab(ds_SolverManifo
 }
 
 /*
- * The pipeline's contact entry. The narrowphase returns manifolds local to one shape of the pair (c_*Contact: s0;
- * c_MeshContact: the convex shape). local and other are the contact key indices of that shape and of the other one.
- * local is the more complex shape (higher type; equal types: the contact key's order), except in mesh pairs: the
- * mesh has the highest type, but c_MeshContact returns manifolds local to the convex shape.
+ * The pipeline's contact entry: writes the contact's com_offset, narrowphase cache and solver manifolds
+ * (manifold_buffer_pool) with their warm start impulses. A convex pair's manifold is local to the more complex
+ * shape (higher type; equal types: the contact key's order), a mesh pair's manifolds to the convex shape.
  */
 void ds_ShapeContact(struct arena *tmp, struct ds_Dynamics *pipeline, const u32 contact_index)
 {

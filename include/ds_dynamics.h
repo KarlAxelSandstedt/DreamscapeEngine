@@ -618,18 +618,17 @@ void		            ds_ContactValidateAll(const struct ds_Dynamics *pipeline);
 ds_Contact
 ==========
 Every touching and non-touching contact is a persistent ds_Contact. The structure stores general
-connectivity data and where to find its simulation/compute data. 
+connectivity data and where to find its simulation/compute data. Its narrowphase cache and solver
+manifolds (manifold_buffer_pool, same index) stay with it in every state.
 
-    :: Every non-touching contact have a link (<->) stored in the active set (disabled set if both
-       bodies are static or sleeping) and no compute data. It it not associated with an island. Any
-       ds_SatCache that belongs to the contact is alive for 2 frames and is renewed every frame.
+    :: Every non-touching contact has a link (<->) in the active set (the disabled set if both bodies
+       are static or sleeping), no compute data and no island.
 
-    :: All contacts in an Awake island are stored in the constraint graph with a link (<->) and
-       compute data. Any ds_SatCache that belongs to the contact is alive for 2 frames and is
-       renewed every frame.
+    :: All contacts in an awake island are stored in the constraint graph with a link (<->) and
+       compute data.
 
     :: All contacts in a sleeping island name the island's sleeping set (contact->set), without a
-       link (<->) or compute data. Any ds_SatCache that belongs to the contact is moved onto the heap. 
+       link (<->) or compute data.
 */
 #define DS_CONTACT_STATIC_INDEX     ((u32) 1 << 0)      /* Static body's key index Applicable
                                                            only if DS_CONTACT_STATIC.        */
@@ -1132,9 +1131,9 @@ void        ds_SolverSetRemove(struct ds_Dynamics *pipeline, const u32 index);
 /* Empty the given ds_SolverSet's pools; their memory is kept */
 void        ds_SolverSetFlush(struct ds_Dynamics *pipeline, const u32 index);
 /*
- * Wake up the given sleeping ds_SolverSet: its contacts go back into the constraint graph, its bodies and
- * islands into the active set with zero velocity and a reset sleep timer, and the set is removed. A fixed set
- * or SOLVER_SET_NULL: no-op.
+ * Wake up the given sleeping ds_SolverSet: its contacts go back into the constraint graph; its bodies' disabled
+ * contacts, its bodies (zero velocity, reset sleep timer) and islands into the active set; the set is removed.
+ * A fixed set or SOLVER_SET_NULL: no-op.
  */
 void        ds_SolverSetWakeUp(struct ds_Dynamics *pipeline, const u32 index);
 /* Move the given active island into a new sleeping set. No-op while sleeping is disabled. */
