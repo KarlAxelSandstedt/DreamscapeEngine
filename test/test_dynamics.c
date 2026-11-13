@@ -5027,6 +5027,117 @@ DYNAMICS_PERF_SOLVE_INIT_SPECIAL(DynamicsPerfPositionStaticTerrainSpecInit,  DYN
 /* bytes per repetition: filled in from the first run's counts (see the report in agent_notes) */
 #define DYNAMICS_PERF_PREP_BYTES    1
 
+/*
+ * A sleeping pile: a ground box carrying a grid of box columns 2 cm apart, ticked until every body sleeps. One
+ * repetition is one tick of the sleeping pipeline; the columns' non-touching contacts are what the narrowphase
+ * walks (active set) or skips (disabled set).
+ */
+#define DYNAMICS_PERF_PILE_SIDE     24
+#define DYNAMICS_PERF_PILE_HEIGHT   4
+
+struct dynamics_PerfSleepingPile
+{
+    struct arena                mem;
+    struct c_ShapeDB            cshape_db;
+    struct ds_DynamicsExternal  external;
+    struct ds_Dynamics          pipeline;
+};
+
+static f64 DynamicsPerfSleepingPileChecksum(const struct ds_Dynamics *pipeline)
+{
+    f64 sum = 0.0;
+    for (u32 i = 0; i < pipeline->body_pool.count_max; ++i)
+    {
+        const struct ds_Body *body = pipeline->body_pool.buf + i;
+        if (ds_PoolSlotAllocated(body) && ds_BodyDynamicCheck(body))
+        {
+            const struct ds_SolverSet *set = pipeline->solver_set_pool.buf + body->set;
+            const struct ds_BodySim *sim = set->body_sim_pool.buf + body->sim;
+            sum += sim->world.position.x + 2.0*sim->world.position.y + 3.0*sim->world.position.z;
+        }
+    }
+    return sum;
+}
+
+static void DynamicsPerfSleepingPileReport(const char *when, const struct ds_Dynamics *pipeline)
+{
+    const struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
+    const struct ds_SolverSet *disabled = pipeline->solver_set_pool.buf + SOLVER_SET_DISABLED;
+    u32 graph = 0;
+    for (u32 i = 0; i < CG_COLOR_COUNT; ++i)
+    {
+        graph += pipeline->cgraph.color[i].contact_pool.count;
+    }
+    fprintf(stdout, "\t%s: %u awake bodies, %u contacts (%u active set, %u disabled set, %u graph), checksum %.17g\n",
+            when, active->body_sim_pool.count, pipeline->contact_pool.count, active->contact_pool.count,
+            disabled->contact_pool.count, graph, DynamicsPerfSleepingPileChecksum(pipeline));
+}
+
+static void *DynamicsPerfSleepingPileInit(void)
+{
+    struct dynamics_PerfSleepingPile *in = malloc(sizeof(*in));
+    memset(in, 0, sizeof(*in));
+    in->mem = ArenaAlloc(NULL, 256*1024*1024);
+    c_ShapeDBAlloc(NULL, &in->cshape_db, 32, GROWABLE);
+    in->external = (struct ds_DynamicsExternal) { .cshape_db = &in->cshape_db };
+    in->pipeline = ds_DynamicsAllocDefault(&in->external, NSEC_PER_SEC / 60);
+    struct ds_Dynamics *pipeline = &in->pipeline;
+    ds_DynamicsConfigPush(pipeline);
+    pipeline->config_pending.solver.sleep_enabled = 1;
+    ds_DynamicsConfigUpdatePending(pipeline);
+
+    const f32 pitch = 1.02f;
+    const f32 offset = -0.5f*pitch*(f32) (DYNAMICS_PERF_PILE_SIDE - 1);
+    const struct dynamics_TestBox ground = { .position = V3(0.0f, -1.0f, 0.0f), .rotation = QIdentity(), .hw = V3(32.0f, 1.0f, 32.0f), .dynamic = 0, .friction = 0.6f };
+    u32 index = 0;
+    DynamicsTestBoxAdd(&in->mem, pipeline, &in->cshape_db, &ground, (v3f64) { 0 }, index++);
+    for (u32 i = 0; i < DYNAMICS_PERF_PILE_SIDE; ++i)
+    {
+        for (u32 j = 0; j < DYNAMICS_PERF_PILE_SIDE; ++j)
+        {
+            for (u32 k = 0; k < DYNAMICS_PERF_PILE_HEIGHT; ++k)
+            {
+                const struct dynamics_TestBox box = { .position = V3(offset + pitch*(f32) i, 0.5f + (f32) k, offset + pitch*(f32) j), .rotation = QIdentity(), .hw = V3(0.5f, 0.5f, 0.5f), .dynamic = 1, .friction = 0.6f };
+                DynamicsTestBoxAdd(&in->mem, pipeline, &in->cshape_db, &box, (v3f64) { 0 }, index++);
+            }
+        }
+    }
+
+    u32 t;
+    for (t = 0; t < 3000 && pipeline->solver_set_pool.buf[SOLVER_SET_ACTIVE].body_sim_pool.count; ++t)
+    {
+        SnapshotTestTick(pipeline);
+    }
+    fprintf(stdout, "\t%u boxes, settled for %u ticks\n", index - 1, t);
+    DynamicsPerfSleepingPileReport("asleep", pipeline);
+    return in;
+}
+
+static void DynamicsPerfSleepingPileReset(void *args)
+{
+    struct dynamics_PerfSleepingPile *in = args;
+    ds_DynamicsConfigPush(&in->pipeline);
+    ds_PoolFlush(in->pipeline.event_pool);
+    DLLFlush(in->pipeline.event_list);
+}
+
+static void DynamicsPerfSleepingPileTest(void *args)
+{
+    struct dynamics_PerfSleepingPile *in = args;
+    ds_DynamicsTick(DynamicsTestTickArena(), &in->pipeline, NSEC_PER_SEC / 60);
+}
+
+static void DynamicsPerfSleepingPileFree(void *args)
+{
+    struct dynamics_PerfSleepingPile *in = args;
+    DynamicsPerfSleepingPileReport("after the repetitions", &in->pipeline);
+    ds_DynamicsConfigPop(&in->pipeline);
+    ds_DynamicsDealloc(&in->pipeline);
+    c_ShapeDBDealloc(&in->cshape_db);
+    ArenaFree(&in->mem);
+    free(in);
+}
+
 struct test_PerformanceSerial dynamics_serial_test[] =
 {
     { .id = "contact_prep_pyramid", .size = DYNAMICS_PERF_PREP_BYTES, .test = &DynamicsPerfPrepTest, .test_init = &DynamicsPerfPrepInit, .test_reset = &DynamicsPerfPrepReset, .test_free = &DynamicsPerfPrepFree },
@@ -5046,6 +5157,7 @@ struct test_PerformanceSerial dynamics_serial_test[] =
     DYNAMICS_PERF_SOLVE_TEST("position_static_terrain_static", DynamicsPerfPositionStaticTerrainSpecInit),
     DYNAMICS_PERF_SOLVE_TEST("position_dynamic_terrain",       DynamicsPerfPositionDynamicTerrainInit),
     DYNAMICS_PERF_SOLVE_TEST("position_serial_terrain",        DynamicsPerfPositionSerialTerrainInit),
+    { .id = "sleeping_pile_tick", .size = 1, .test = &DynamicsPerfSleepingPileTest, .test_init = &DynamicsPerfSleepingPileInit, .test_reset = &DynamicsPerfSleepingPileReset, .test_free = &DynamicsPerfSleepingPileFree },
 };
 
 struct suite_Performance m_dynamics_performance_suite =
