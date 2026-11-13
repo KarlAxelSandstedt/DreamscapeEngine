@@ -25,8 +25,7 @@ The engine's basic types, usable from every header (needs only stdint.h and ds_d
 Contents (in this order):
     Scalars     u8..u64, i8..i64, f32, f64; unions b8..b64 reinterpret the bits; limits U*_MAX, I*_MAX
                 (plain literals) and I*_MIN (typed constant expressions); U32/U64/I32/I64 Min, Max, Clamp.
-    Allocator   struct slot { address, index }, what pool adds return; empty_slot = { NULL, U32_MAX };
-                ds_Array(T) { buf, length, base }, what slab adds return; DEFINE_ARRAY_NATIVE/STRUCT(T).
+    Allocator   struct slot { address, index }, what pool adds return; empty_slot = { NULL, U32_MAX }.
     Math        q (quaternion, w the real part), v2..v4 (f32), v3f64 (world positions), integer vectors
                 v{2,3,4}{u32,u64,i32,i64}; x, y, z, w alias buf[0..3]. Constructors V3(x, y, z), Q(...), ...
                 Matrices m2..m4 are column-major; M2..M4 take their arguments in column-major order.
@@ -126,55 +125,6 @@ struct slot
 
 #define empty_slot	(struct slot) { .address = NULL, .index = U32_MAX }
 
-/*
-ds_Array(T) is an array of T with its length and base: { T *buf; u32 length; u32 base; }. base is the
-array's index in the buffer it was taken from (a slab's slot index, what a serializer stores); other users
-ignore it. Defined here for the native types (DEFINE_ARRAY_NATIVE(T), T a type name) and intv
-(DEFINE_ARRAY_STRUCT(T), for struct T); an empty array is { .buf = NULL, .length = 0, .base = U32_MAX }. struct ds_ArrayUntyped is
-the same layout with a void *, the form the untyped slab calls return.
-
-    DEFINE_ARRAY_STRUCT(item);
-    ds_Array(item) items = ds_TSlabAdd(slab, 3);
-    for (u32 i = 0; i < items.length; ++i) { ... items.buf[i] ... }
-*/
-
-#define ds_Array(T) ds_Array_ ## T
-
-#define DEFINE_ARRAY_NATIVE(T)      \
-typedef struct ds_Array(T)          \
-{                                   \
-	T *         buf;                \
-	u32         length;             \
-	u32         base;               \
-} ds_Array(T)
-
-#define DEFINE_ARRAY_STRUCT(T)      \
-typedef struct ds_Array(T)          \
-{                                   \
-	struct T *  buf;                \
-	u32         length;             \
-	u32         base;               \
-} ds_Array(T)
-
-struct ds_ArrayUntyped
-{
-	void *      buf;
-	u32         length;
-	u32         base;
-};
-
-#define ds_ArrayEmpty()	((struct ds_ArrayUntyped) { .buf = NULL, .length = 0, .base = U32_MAX })
-
-DEFINE_ARRAY_NATIVE(u8);
-DEFINE_ARRAY_NATIVE(u16);
-DEFINE_ARRAY_NATIVE(u32);
-DEFINE_ARRAY_NATIVE(u64);
-DEFINE_ARRAY_NATIVE(i8);
-DEFINE_ARRAY_NATIVE(i16);
-DEFINE_ARRAY_NATIVE(i32);
-DEFINE_ARRAY_NATIVE(i64);
-DEFINE_ARRAY_NATIVE(f32);
-DEFINE_ARRAY_NATIVE(f64);
 
 /************** Math Types **************/
 
@@ -237,9 +187,6 @@ typedef union v4
     };
 	f32 buf[4];
 } v4;
-DEFINE_ARRAY_NATIVE(v2);
-DEFINE_ARRAY_NATIVE(v3);
-DEFINE_ARRAY_NATIVE(v4);
 
 typedef union v2u32
 {
@@ -471,7 +418,6 @@ typedef struct intv
 		f32	v[2];
 	};
 } intv;
-DEFINE_ARRAY_STRUCT(intv);
 #define Intv(_low, _high) (intv) { .low = (_low), .high = (_high) }
 
 typedef struct
@@ -594,7 +540,6 @@ enum severity_id
 	S_FATAL,
 	S_COUNT
 };
-
 
 
 /************** Common Types: inline definitions **************/

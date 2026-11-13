@@ -1,4 +1,5 @@
 #include "ds_allocator.c"
+#include "ds_array.c"
 #include "ds_string.c"
 #include "ds_error.c"
 #include "ds_semaphore.c"

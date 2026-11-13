@@ -326,6 +326,7 @@ static u32 VMCommit(struct VM *vm, const u64 end)
 #include "ds_ring.h"
 #include "ds_compact_pool.h"
 #include "ds_pool.h"
+#include "ds_array.h"
 
 /*
 ds_MagazinePow2
