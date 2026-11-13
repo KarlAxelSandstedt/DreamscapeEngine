@@ -297,7 +297,7 @@ enum sat_CacheType
 	SAT_CACHE_SEPARATION,   /* Seperation axis found    */
 	SAT_CACHE_CONTACT_FV,   /* Face-Vertex Contact      */
 	SAT_CACHE_CONTACT_EE,   /* Edge-Edge Contact        */
-	SAT_CACHE_NONE,         /* Nothing to cache (fallback contact); never stored in a c_ContactResult */
+	SAT_CACHE_NONE,         /* Nothing to cache (fallback contact); never stored in a ds_ConcaveCache */
 	SAT_CACHE_COUNT,
 };
 
@@ -407,8 +407,8 @@ v[i] - depth[i] n. The c_*Contact functions return local manifolds, in the refer
     convex pairs    one manifold; s0 is the reference (n from s0 to s1)
     c_MeshContact   one manifold per contacting triangle; the convex shape is the reference (n from it to the
                     mesh)
-ds_ShapeContact converts each to the solver form (ds_SolverManifold, ds_dynamics.h). The result's arrays are pushed
-onto frame.
+ds_ShapeContact converts each to the solver form (ds_SolverManifold, ds_dynamics.h). tri is set by c_MeshContact
+only.
 
 Point ids: the solver's warm start matches a manifold's points to the previous tick's by id. Contract: an id is
 unique within its manifold, and a point keeps its id across ticks while the same features produce it; a feature
@@ -459,7 +459,9 @@ struct c_Manifold
 	v3 	        n;		    /* Contact normal: Points away from reference       */
 	u32 	    v_count;    /* Contact point count                              */
 	c_PointId   id[4];      /* contact point geometric identifier               */
+	u32         tri;
 };
+DEFINE_ARRAY_STRUCT(c_Manifold);
 
 /* Print manifold to file stderr */
 void 	c_ManifoldDebugPrint(const struct c_Manifold *cm);
@@ -468,28 +470,21 @@ u32     c_ManifoldCheck(const struct c_Manifold *cm);
 /* Transform the manifold */
 void	c_ManifoldTransform(struct c_Manifold *dst, const struct c_Manifold *src, const m3 rot, const v3 translation);
 
-struct c_ContactResult
-{
-    u32                         manifold_count;     /* Number of stored manifolds               */
-    struct c_Manifold *         contact_manifold;   /* local manifolds (if any)                 */
-    u32 *                       tri;                /* mesh: manifold i's triangle (else NULL)  */
-};
-
-/* convex pairs: one local manifold in s0's frame (n from s0 to s1); cache is in-out and always valid, hull pairs use it */
-struct c_ContactResult  c_SphereContact(struct arena *frame, struct ds_ConvexCache *cache, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
-struct c_ContactResult  c_CapsuleSphereContact(struct arena *frame, struct ds_ConvexCache *cache, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
-struct c_ContactResult  c_CapsuleContact(struct arena *frame, struct ds_ConvexCache *cache, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
-struct c_ContactResult  c_HullSphereContact(struct arena *frame, struct ds_ConvexCache *cache, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
-struct c_ContactResult  c_HullCapsuleContact(struct arena *frame, struct ds_ConvexCache *cache, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
-struct c_ContactResult  c_HullContact(struct arena *frame, struct ds_ConvexCache *cache, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
+/* convex pairs: returns 0 or 1, out the local manifold in s0's frame (n from s0 to s1); cache is in-out, hull pairs use it */
+u32                     c_SphereContact(struct c_Manifold *out, struct ds_ConvexCache *cache, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
+u32                     c_CapsuleSphereContact(struct c_Manifold *out, struct ds_ConvexCache *cache, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
+u32                     c_CapsuleContact(struct c_Manifold *out, struct ds_ConvexCache *cache, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
+u32                     c_HullSphereContact(struct c_Manifold *out, struct ds_ConvexCache *cache, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
+u32                     c_HullCapsuleContact(struct c_Manifold *out, struct ds_ConvexCache *cache, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
+u32                     c_HullContact(struct c_Manifold *out, struct ds_ConvexCache *cache, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
 /*
- * mesh and convex shape: one local manifold per contacting triangle, in the convex shape's frame (n from it to the
- * mesh). The query records every candidate triangle on one of the thread's scratch arenas: more than it holds (about
- * 8,700 at the default 1 MiB) is fatal. cache is in-out and always valid (empty: tri_count 0, with or without an
+ * mesh and convex shape: one local manifold per contacting triangle (tri), in the convex shape's frame (n from it to
+ * the mesh), pushed onto tmp. The query records every candidate triangle on one of the thread's scratch arenas:
+ * more than it holds (about 8,700 at the default 1 MiB) is fatal. cache is in-out and always valid (empty: tri_count 0, with or without an
  * array); on return its first tri_count entries hold the hull's SAT entries by triangle (at most cache_count_max,
  * never SAT_CACHE_NONE), else tri_count is 0. The array comes from slab and grows when the entries do not fit.
  */
-struct c_ContactResult  c_MeshContact(struct arena *frame, ds_TSlab(ds_TriCache) *slab, struct ds_ConcaveCache *cache, const struct c_Shape *mesh, const ds_TransformWorld *t_mesh, const struct c_Shape *convex, const ds_TransformWorld *t_convex);
+ds_Array(c_Manifold)    c_MeshContact(struct arena *tmp, ds_TSlab(ds_TriCache) *slab, struct ds_ConcaveCache *cache, const struct c_Shape *mesh, const ds_TransformWorld *t_mesh, const struct c_Shape *convex, const ds_TransformWorld *t_convex);
 
 /********************************** RAYCASTS **********************************/
 
