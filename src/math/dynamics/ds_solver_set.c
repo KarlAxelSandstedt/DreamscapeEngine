@@ -166,11 +166,6 @@ void ds_SolverSetWakeUp(struct ds_Dynamics *pipeline, const u32 index)
     ds_Assert(ds_PoolSlotAllocated(set));
     ds_Assert(set->island_pool.count == 1);
 
-    for (u32 i = 0; i < set->contact_pool.count; ++i)
-    {
-        ds_ContactWakeUp(pipeline, set->contact_pool.buf[i]);
-    }
-
     for (u32 i = 0; i < set->joint_sim_pool.count; ++i)
     {
         struct ds_JointSim *old_sim = set->joint_sim_pool.buf + i;
@@ -198,6 +193,29 @@ void ds_SolverSetWakeUp(struct ds_Dynamics *pipeline, const u32 index)
         compute->flags = body->flags;
 	    compute->linear_velocity = V3Zero();
 	    compute->angular_velocity = V3Zero();
+
+        struct ds_Shape *shape;
+        for (i32 si = body->shape_list.first; si != DLL_SENTINEL; si = shape->body_shape.next)
+        {
+            shape = pipeline->shape_pool.buf + si;
+            i32 ci = shape->contact_list.first;
+            while (ci != DLL_SENTINEL)
+            {
+                struct ds_Contact *c = pipeline->contact_pool.buf + ci;
+                const u32 neighbour_index = ((u32) si == c->key.shape[0]);
+                const i32 ci_next = c->shape_contact[1-neighbour_index].next;
+                c->flags ^= DS_CONTACT_PARTIAL_SLEEPING;
+                if (c->set == index)
+                {
+                    ds_ContactWakeUp(pipeline, ci);
+                }
+                else if (c->set == SOLVER_SET_DISABLED)
+                {
+                    ds_SolverSetContactNonTouchingSetSwitch(pipeline, ci);
+                }
+                ci = ci_next;
+            }
+        }
     }
 
     for (u32 i = 0; i < set->island_pool.count; ++i)
@@ -276,14 +294,6 @@ void ds_SolverSetSleep(struct ds_Dynamics *pipeline, const u32 island_index)
         joint->sim = slot.index;
     }
 
-    struct ds_Contact *contact = NULL;
-    for (u32 i = island->contact_list.first; (i32) i != DLL_SENTINEL; i = contact->island_contact.next)
-    {
-        contact = pipeline->contact_pool.buf + i;
-        ds_Assert(contact->island == island_index);
-        ds_ContactSleep(pipeline, i, island->set);
-    }
-
     struct ds_Body *body = NULL;
     for (u32 i = island->body_list.first; (i32) i != DLL_SENTINEL; i = body->island_body.next)
     {
@@ -291,6 +301,37 @@ void ds_SolverSetSleep(struct ds_Dynamics *pipeline, const u32 island_index)
         ds_Assert(body->island == island_index);
         ds_Assert(body->set == SOLVER_SET_ACTIVE);
         ds_SolverSetMoveBody(pipeline, i, island->set);
+
+        struct ds_Shape *shape;
+        for (i32 si = body->shape_list.first; si != DLL_SENTINEL; si = shape->body_shape.next)
+        {
+            shape = pipeline->shape_pool.buf + si;
+            i32 ci = shape->contact_list.first;
+            while (ci != DLL_SENTINEL)
+            {
+                struct ds_Contact *c = pipeline->contact_pool.buf + ci;
+                const u32 neighbour_index = ((u32) si == c->key.shape[0]);
+                const i32 ci_next = c->shape_contact[1-neighbour_index].next;
+                c->flags ^= DS_CONTACT_PARTIAL_SLEEPING;
+                
+                /* Contact must be partially or fully sleeping here */
+                if (!ds_ContactPartialSleepingCheck(c))
+                {
+                    if (c->set == SOLVER_SET_NULL)
+                    {
+                        ds_Assert(c->island == island_index);
+                        ds_ContactSleep(pipeline, ci, island->set);
+                    }
+                    else
+                    {
+                        ds_Assert(c->set == SOLVER_SET_ACTIVE);
+                        ds_SolverSetContactNonTouchingSetSwitch(pipeline, ci);
+                    }
+                }
+
+                ci = ci_next;
+            }
+        }
     }
 }
 
@@ -379,3 +420,29 @@ void ds_SolverSetMoveBody(struct ds_Dynamics *pipeline, const u32 body_index, co
     body->sim = slot.index;
 }
 
+void ds_SolverSetContactNonTouchingSetSwitch(struct ds_Dynamics *pipeline, const u32 contact)
+{
+    struct ds_Contact *c = pipeline->contact_pool.buf + contact;
+    ds_Assert(c->color == CG_INVALID_COLOR);
+    ds_Assert(c->set == SOLVER_SET_ACTIVE || c->set == SOLVER_SET_DISABLED);
+
+    const u32 new_set_index = (c->set == SOLVER_SET_ACTIVE)
+                            ? SOLVER_SET_DISABLED
+                            : SOLVER_SET_ACTIVE;
+    struct ds_SolverSet *old_set = pipeline->solver_set_pool.buf + c->set;
+    struct ds_SolverSet *new_set = pipeline->solver_set_pool.buf + new_set_index;
+
+    ds_CPoolRemoveAndSwap(old_set->contact_pool, c->compute);
+    if (c->compute < old_set->contact_pool.count)
+    {
+        const u32 moved_index = old_set->contact_pool.buf[ c->compute ];
+        struct ds_Contact *moved = pipeline->contact_pool.buf + moved_index;
+        ds_Assert(moved->set == c->set);
+        ds_Assert(moved->compute == old_set->contact_pool.count);
+        moved->compute = c->compute;
+    }
+
+    c->set = new_set_index;
+    c->compute = ds_CPoolPush(new_set->contact_pool).index;
+    new_set->contact_pool.buf[ c->compute ] = contact;
+}

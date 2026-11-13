@@ -640,6 +640,7 @@ connectivity data and where to find its simulation/compute data.
 #define ds_ContactStaticCheck(c)    ((c)->flags & DS_CONTACT_STATIC)
 #define ds_ContactStaticIndex(c)    ((c)->flags & DS_CONTACT_STATIC_INDEX)
 #define ds_ContactConvexCheck(c)    ((c)->flags & DS_CONTACT_CONVEX)
+#define ds_ContactPartialSleepingCheck(c) ((c)->flags & DS_CONTACT_PARTIAL_SLEEPING)
 
 struct ds_Contact
 {
@@ -1147,6 +1148,8 @@ void        ds_SolverSetValidate(const struct ds_Dynamics *pipeline, const u32 s
 
 /* Internal: Move the body's simulation state to the given set (assumes the body is not in it); into the active set with zero velocity */
 void        ds_SolverSetMoveBody(struct ds_Dynamics *pipeline, const u32 body, const u32 set);
+/* Internal: Move the non-touching contact between SOLVER_SET_ACTIVE and SOLVER_SET_DISABLED */
+void        ds_SolverSetContactNonTouchingSetSwitch(struct ds_Dynamics *pipeline, const u32 contact);
 
 
 /*
