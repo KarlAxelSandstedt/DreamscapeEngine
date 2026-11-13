@@ -1377,6 +1377,41 @@ static struct test_Output SlabAllocTest(struct test_Environment *env)
 	return output;
 }
 
+/* ds_TPool: single slots over the slab; the magazine hands a removed slot back, a full pool returns empty_slot */
+static struct test_Output TPoolTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+    ds_TPool(slab_item) pool;
+    TEST_EQUAL(1, ds_TPoolAlloc(NULL, pool, 8, 1));
+
+    struct slot slot[8];
+    for (u32 i = 0; i < 8; ++i)
+    {
+        slot[i] = ds_TPoolAdd(pool);
+        TEST_EQUAL(i, slot[i].index);
+        TEST_EQUAL((void *) (pool.buf + i), slot[i].address);
+        ((struct slab_item *) slot[i].address)->a = i;
+    }
+    TEST_EQUAL(NULL, ds_TPoolAdd(pool).address);
+    TEST_EQUAL(U32_MAX, ds_TPoolAdd(pool).index);
+
+    /* removed slots come back before the region is touched again: 3 then 5, LIFO out of the magazine */
+    ds_TPoolRemove(pool, 3);
+    ds_TPoolRemove(pool, 5);
+    TEST_EQUAL(5, ds_TPoolAdd(pool).index);
+    TEST_EQUAL(3, ds_TPoolAdd(pool).index);
+    TEST_EQUAL(NULL, ds_TPoolAdd(pool).address);
+
+    ds_TPoolFlush(pool);
+    TEST_EQUAL(0, pool.shared.a_count_max);
+    TEST_EQUAL(0, ds_TPoolAdd(pool).index);
+
+    ds_TPoolDealloc(pool);
+    TEST_EQUAL(NULL, pool.buf);
+    (void) env;
+	return output;
+}
+
 /* ds_TSlabRealloc: the no-op band, growth with the copy, shrink with the first elements, release */
 static struct test_Output TSlabReallocTest(struct test_Environment *env)
 {
@@ -1792,6 +1827,7 @@ static struct test_Output (*allocator_tests[])(struct test_Environment *) =
     CPoolPushBatchTest,
     VMTest,
     SlabAllocTest,
+    TPoolTest,
     TSlabReallocTest,
     TSlabArrayDeserializeTest,
     TSlabParallelTest,

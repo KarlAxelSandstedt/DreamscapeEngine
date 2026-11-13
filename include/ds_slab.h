@@ -80,6 +80,30 @@ Slab API
     // Fails if the slab is full or ss holds no valid array (the array is empty, count 0, 
     // ss's position unchanged).
     u32 ds_TSlabArrayTryDeserialize(ss, slab, array, count)
+
+TPool API
+=========
+A ds_TSlab(T) that adds and removes single slots: ds_TPool(T) is ds_TSlab(T), DEFINE_TPOOL(T) is
+DEFINE_TSLAB(T) (after DEFINE_ARRAY_STRUCT(T)). Slot index i is at pool.buf[i].
+
+    ds_TPool(item) pool;
+    ds_TPoolAlloc(NULL, pool, length, thread_count);
+    const struct slot slot = ds_TPoolAdd(pool);
+    ds_TPoolRemove(pool, slot.index);
+    ds_TPoolDealloc(pool);
+
+    // Master: ds_TSlabAlloc, ds_TSlabDealloc, ds_TSlabFlush.
+    u32  ds_TPoolAlloc(mem, pool, length, thread_count)
+    void ds_TPoolDealloc(pool)
+    void ds_TPoolFlush(pool)
+
+    // Thread-safe:
+    // Add a slot and return { address, index }; on failure empty_slot.
+    struct slot ds_TPoolAdd(pool)
+
+    // Thread-safe:
+    // Remove a slot.
+    void ds_TPoolRemove(pool, index)
 */
 
 #define DS_TSLAB_NULL            U32_MAX
@@ -95,6 +119,7 @@ struct ds_Align(DS_CACHE_LINE) ds_TSlabShared
 };
 
 #define ds_TSlab(T) ds_TSlab_ ## T
+#define ds_TPool(T) ds_TSlab(T)
 
 #define DEFINE_TSLAB(T)                                                                 \
 typedef struct ds_TSlab(T)                                                              \
@@ -132,6 +157,9 @@ u32     ds_TSlabSharedArrayTryDeserialize(struct SS *ss,
                                           struct ds_ArrayUntyped *array,
                                           u32 *count,
                                           const u64 slot_size);
+
+/* Internal: see ds_TPoolAdd. */
+static ds_ForceInline struct slot ds_TSlabSharedAddSlot(struct ds_TSlabShared *shared, const u64 slot_size);
 
 /* Internal: log and exit; the Log API is not visible here */
 ds_NoReturn void ds_TSlabOutOfMemoryInternal(void);
@@ -175,5 +203,25 @@ do                                                                              
     ds_TSlabSharedArrayTryDeserialize((_ss_), &(_slab_).shared,                         \
                                       (struct ds_ArrayUntyped *) &(_array_), (_count_), \
                                       sizeof((_slab_).buf[0]))
+
+/****************************** TPool inline definitions ******************************/
+
+static ds_ForceInline struct slot ds_TSlabSharedAddSlot(struct ds_TSlabShared *shared, const u64 slot_size)
+{
+    const struct ds_ArrayUntyped arr = ds_TSlabSharedAdd(shared, slot_size, 1);
+    return (struct slot) { .address = arr.buf, .index = arr.base };
+}
+
+#define DEFINE_TPOOL(T)     DEFINE_TSLAB(T)
+
+#define ds_TPoolAlloc(_mem_, _pool_, _length_, _thread_count_)                          \
+    ds_TSlabAlloc((_mem_), (_pool_), (_length_), (_thread_count_))
+#define ds_TPoolDealloc(_pool_)     ds_TSlabDealloc(_pool_)
+#define ds_TPoolFlush(_pool_)       ds_TSlabFlush(_pool_)
+
+#define ds_TPoolAdd(_pool_)         ds_TSlabSharedAddSlot(&(_pool_).shared, sizeof((_pool_).buf[0]))
+
+#define ds_TPoolRemove(_pool_, _index_)                                                 \
+    ds_TSlabSharedRemove(&(_pool_).shared, sizeof((_pool_).buf[0]), (_index_), 1)
 
 #endif

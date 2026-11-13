@@ -33,7 +33,7 @@ Contents (in this order):
     Ring        ring buffer whose end wraps through mirrored virtual memory (Linux, Windows).
     CPool       ds_CPool(T): compact typed array; removal moves the last element into the hole.
     Pool        ds_Pool(T) of POOL_NODE structs: stable indices, free list, serializable.
-    TPool       retired (#if 0 in ds_pool.h): rebuilt on magazines and TStack.
+    TPool       ds_TPool(T) (ds_slab.h): a ds_TSlab(T) adding and removing single slots.
 Poisoning, Utilities, Heap, VM and ds_TStack are below. The others live in ds_arena.h, ds_ring.h, ds_compact_pool.h, ds_pool.h
 (Pool and TPool) and ds_slab.h, included at the end in this order; they are not included on their own.
 */
@@ -418,17 +418,6 @@ void    ds_MagazinePow2Push(struct ds_MagazinePow2 *storage, const u32 index, co
  */
 u32     ds_MagazinePow2TryPop(struct ds_MagazinePow2 *storage, const u32 count_power_of_two);
 
-
-/*
-Magazine API
-============
-
-//TODO: ds_Array( T ) { .length, .buf } ? ds_Slab allocates larger arrays that user asks for,
-//      so this small helper is probably useful, or we just re-use cpool...
-
-//TODO: Serialization API?
-//TODO: Memusage API
-*/
 
 #include "ds_slab.h"
 
