@@ -2179,3 +2179,20 @@ struct c_ContactResult c_MeshContact(struct arena *frame, ds_TSlab(ds_TriCache) 
     c_MeshContactFinish(frame, slab, &result, cache, &helper, convex->type == C_SHAPE_CONVEX_HULL);
     return result;
 }
+
+u64 ds_TriCacheSerializeSize(const struct ds_TriCache *cache)
+{
+	//TODO
+	return 0;
+}
+
+void ds_TriCacheSerialize(struct SS *ss, const struct ds_TriCache *cache)
+{
+	//TODO
+}
+
+u32 ds_TriCacheTryDeserialize(struct SS *ss, struct ds_TriCache *cache)
+{
+	//TODO
+	return 0;
+}

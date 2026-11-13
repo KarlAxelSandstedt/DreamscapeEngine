@@ -83,6 +83,7 @@ struct BVHQuerySet
 
 /* free allocated resources */
 void 		        BVHFree(struct BVH *tree);
+/* WARNING: Platform-dependent. */
 /* Return the required size when serializing the bvh. */
 u64                 BVHSerializeSize(const struct BVH *bvh);
 /* Serialize the bvh (aligned). WARNING: Assumes bvh fits in the stream. */
@@ -366,6 +367,10 @@ struct ds_ConcaveCache
     ds_Array(ds_TriCache)   tri;            /* tri.length: capacity, grown by the slab, never shrunk */
     u32                     tri_count;
 };
+
+u64                     ds_TriCacheSerializeSize(const struct ds_TriCache *cache);
+void                    ds_TriCacheSerialize(struct SS *ss, const struct ds_TriCache *cache);
+u32                     ds_TriCacheTryDeserialize(struct SS *ss, struct ds_TriCache *cache);
 
 /*
  * touch band width in units of the rounding noise eps * L. Hull faces must be flat well within it: planes (SAT,

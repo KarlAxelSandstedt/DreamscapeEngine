@@ -680,22 +680,6 @@ void        ds_ContactSleep(struct arena *mem_sleep, struct ds_Dynamics *pipelin
 /* Internal: Return bytes required to store contact narrowphase results */
 u64         ds_ContactMemoryRequirement(const struct ds_Dynamics *pipeline, const u32 contact);
 struct ds_ContactCompute;
-/* Internal: Return the required size when serializing the contact's narrowphase arrays. */
-u64         ds_ContactNarrowphaseSerializeSize(const struct ds_Dynamics *pipeline, const u32 contact);
-/* Internal: Serialize the contact's narrowphase arrays. WARNING: Assumes they fit in the stream. */
-void        ds_ContactNarrowphaseSerialize(struct SS *ss, const struct ds_Dynamics *pipeline, const u32 contact);
-/* Internal: Read the contact's narrowphase arrays into worker frames (awake contacts). Returns 1 on success and 0 on failure. */
-u32         ds_ContactNarrowphaseFrameTryDeserialize(struct SS *ss, struct ds_Dynamics *pipeline, const u32 contact);
-/* Internal: Read the contact's narrowphase arrays into mem (sleeping contacts). Returns 1 on success and 0 on failure. */
-u32         ds_ContactNarrowphaseHeapTryDeserialize(struct arena *mem, struct SS *ss, struct ds_Dynamics *pipeline, const u32 contact);
-/* Internal: Return the required size when serializing the compute's ccache. */
-u64         ds_ContactComputeCacheSerializeSize(const struct ds_ContactCompute *compute);
-/* Internal: Serialize the compute's ccache. WARNING: Assumes it fits in the stream. */
-void        ds_ContactComputeCacheSerialize(struct SS *ss, const struct ds_ContactCompute *compute);
-/* Internal: Read the compute's ccache into worker frames (awake contacts). Returns 1 on success and 0 on failure. */
-u32         ds_ContactComputeCacheFrameTryDeserialize(struct SS *ss, struct ds_ContactCompute *compute, struct ds_Dynamics *pipeline);
-/* Internal: Read the compute's ccache into mem (sleeping contacts). Returns 1 on success and 0 on failure. */
-u32         ds_ContactComputeCacheHeapTryDeserialize(struct arena *mem, struct SS *ss, struct ds_ContactCompute *compute);
 
 
 /*
@@ -1161,15 +1145,6 @@ void        ds_SolverSetWakeUp(struct ds_Dynamics *pipeline, const u32 index);
 void        ds_SolverSetSleep(struct ds_Dynamics *pipeline, const u32 island);
 /* Return the arena size ds_SolverSetSleep needs for the given island */
 u64         ds_SolverSetSleepMemoryRequirement(const struct ds_Dynamics *pipeline, const u32 island);
-/* Return the required size when serializing the set (memory, pools and its contacts' frame data). */
-u64         ds_SolverSetSerializeSize(const struct ds_Dynamics *pipeline, const u32 set);
-/* Serialize the set (aligned). WARNING: Assumes set fits in the stream. */
-void        ds_SolverSetSerialize(struct SS *ss, const struct ds_Dynamics *pipeline, const u32 set);
-/*
- * Deserialize into the allocated, zeroed set slot. The contact pool and the worker frames must already be
- * restored. Returns 1 on success and 0 on failure; on failure the slot is zeroed again.
- */
-u32         ds_SolverSetTryDeserialize(struct SS *ss, struct ds_Dynamics *pipeline, const u32 set);
 /* Debug validation for the given set */
 void        ds_SolverSetValidate(const struct ds_Dynamics *pipeline, const u32 set_index);
 
@@ -1374,12 +1349,6 @@ struct ds_CGraphColor
     ds_CPool(ds_JointSim)           joint_sim_pool;
 };
 
-/* Return the required size when serializing the color (pools, body bitset and its contacts' frame data). */
-u64                     ds_CGraphColorSerializeSize(const struct ds_Dynamics *pipeline, const u32 color);
-/* Serialize the color (aligned). WARNING: Assumes color fits in the stream. */
-void                    ds_CGraphColorSerialize(struct SS *ss, const struct ds_Dynamics *pipeline, const u32 color);
-/* Deserialize the color. The contact pool and the worker frames must already be restored. Returns 1 on success and 0 on failure. */
-u32                     ds_CGraphColorTryDeserialize(struct SS *ss, struct ds_Dynamics *pipeline, const u32 color);
 
 
 #define CG_COLOR_COUNT          24
@@ -1629,12 +1598,6 @@ struct ds_CGraph
 void                    ds_CGraphAlloc(struct ds_Dynamics *pipeline, const u32 initial_count);
 /* Deallocate the pipeline's constraint graph */
 void                    ds_CGraphDealloc(struct ds_Dynamics *pipeline);
-/* Return the required size when serializing the constraint graph. */
-u64                     ds_CGraphSerializeSize(const struct ds_Dynamics *pipeline);
-/* Serialize the constraint graph (aligned). WARNING: Assumes graph fits in the stream. */
-void                    ds_CGraphSerialize(struct SS *ss, const struct ds_Dynamics *pipeline);
-/* Deserialize the constraint graph. The contact pool and the worker frames must already be restored. Returns 1 on success and 0 on failure. */
-u32                     ds_CGraphTryDeserialize(struct SS *ss, struct ds_Dynamics *pipeline);
 /* Flush the pipeline's constraint graph data */
 void                    ds_CGraphFlush(struct ds_Dynamics *pipeline);
 /* Validate the state of the pipeline's constraint graph */
@@ -2111,15 +2074,6 @@ struct ds_Dynamics ds_DynamicsAllocDefault(const struct ds_DynamicsExternal *ext
 struct ds_Dynamics ds_DynamicsAlloc(const struct ds_DynamicsConfig *config, const struct ds_DynamicsExternal *external, const u64 ns_tick);
 /* Deallocate pipeline resources. */
 void 			ds_DynamicsDealloc(struct ds_Dynamics *pipeline);
-/* Return the required size when serializing the pipeline. */
-u64             ds_DynamicsSerializeSize(const struct ds_Dynamics *pipeline);
-/* Serialize the pipeline (aligned). WARNING: Assumes pipeline fits in the stream. */
-void            ds_DynamicsSerialize(struct SS *ss, const struct ds_Dynamics *pipeline);
-/*
- * Deserialize a pipeline from stream and allocate resources on the heap. (Optional: runtime allocated
- * on mem if != NULL). Return 1 on success, or 0 on failure. On failure, stream and mem is restored. 
- */
-u32             ds_DynamicsTryDeserialize(struct arena *mem, struct SS *ss, struct ds_Dynamics *pipeline, const struct ds_DynamicsExternal *external);
 /* Flush pipeline resources, and reset frame counter. */
 void			ds_DynamicsFlush(struct ds_Dynamics *pipeline);
 /* Simulate one frame of ns_tick. ds_DynamicsConfig must be pushed.  */
@@ -2151,15 +2105,91 @@ void            ds_DynamicsPrintUsage(const struct ds_Dynamics *pipeline);
 /**************** PHYISCS PIPELINE INTERNAL API ****************/
 
 
+/**************** ds_snapshot.c: serialization (platform-independent: little-endian field by field) ****************/
+
+/* per type: the bytes the element takes, the element written, the element read */
+u64             ds_BodySerializeSize(const struct ds_Body *body);
+void            ds_BodySerialize(struct SS *ss, const struct ds_Body *body);
+u32             ds_BodyTryDeserialize(struct SS *ss, struct ds_Body *body);
+u64             ds_ShapeSerializeSize(const struct ds_Shape *shape);
+void            ds_ShapeSerialize(struct SS *ss, const struct ds_Shape *shape);
+u32             ds_ShapeTryDeserialize(struct SS *ss, struct ds_Shape *shape);
+u64             ds_JointSerializeSize(const struct ds_Joint *joint);
+void            ds_JointSerialize(struct SS *ss, const struct ds_Joint *joint);
+u32             ds_JointTryDeserialize(struct SS *ss, struct ds_Joint *joint);
+u64             ds_PhysicsEventSerializeSize(const struct ds_PhysicsEvent *event);
+void            ds_PhysicsEventSerialize(struct SS *ss, const struct ds_PhysicsEvent *event);
+u32             ds_PhysicsEventTryDeserialize(struct SS *ss, struct ds_PhysicsEvent *event);
+u64             ds_ContactSerializeSize(const struct ds_Contact *contact);
+void            ds_ContactSerialize(struct SS *ss, const struct ds_Contact *contact);
+u32             ds_ContactTryDeserialize(struct SS *ss, struct ds_Contact *contact);
+u64             ds_IslandSerializeSize(const struct ds_Island *island);
+void            ds_IslandSerialize(struct SS *ss, const struct ds_Island *island);
+u32             ds_IslandTryDeserialize(struct SS *ss, struct ds_Island *island);
+u64             ds_ProxyQuerySerializeSize(const struct ds_ProxyQuery *query);
+void            ds_ProxyQuerySerialize(struct SS *ss, const struct ds_ProxyQuery *query);
+u32             ds_ProxyQueryTryDeserialize(struct SS *ss, struct ds_ProxyQuery *query);
+u64             ds_BodySimSerializeSize(const struct ds_BodySim *bsim);
+void            ds_BodySimSerialize(struct SS *ss, const struct ds_BodySim *bsim);
+u32             ds_BodySimTryDeserialize(struct SS *ss, struct ds_BodySim *bsim);
+u64             ds_BodyComputeSerializeSize(const struct ds_BodyCompute *bcomp);
+void            ds_BodyComputeSerialize(struct SS *ss, const struct ds_BodyCompute *bcomp);
+u32             ds_BodyComputeTryDeserialize(struct SS *ss, struct ds_BodyCompute *bcomp);
+u64             ds_ContactComputeSerializeSize(const struct ds_ContactCompute *compute);
+void            ds_ContactComputeSerialize(struct SS *ss, const struct ds_ContactCompute *compute);
+u32             ds_ContactComputeTryDeserialize(struct SS *ss, struct ds_ContactCompute *compute);
+u64             ds_JointSimSerializeSize(const struct ds_JointSim *jsim);
+void            ds_JointSimSerialize(struct SS *ss, const struct ds_JointSim *jsim);
+u32             ds_JointSimTryDeserialize(struct SS *ss, struct ds_JointSim *jsim);
+u64             ds_SolverManifoldSerializeSize(const struct ds_SolverManifold *manifold);
+void            ds_SolverManifoldSerialize(struct SS *ss, const struct ds_SolverManifold *manifold);
+u32             ds_SolverManifoldTryDeserialize(struct SS *ss, struct ds_SolverManifold *manifold);
+u64             ds_ContactConstraintCacheSerializeSize(const struct ds_ContactConstraintCache *ccache);
+void            ds_ContactConstraintCacheSerialize(struct SS *ss, const struct ds_ContactConstraintCache *ccache);
+u32             ds_ContactConstraintCacheTryDeserialize(struct SS *ss, struct ds_ContactConstraintCache *ccache);
+
+/* Internal: Return the required size when serializing the contact's narrowphase arrays. */
+u64             ds_ContactNarrowphaseSerializeSize(const struct ds_Dynamics *pipeline, const u32 contact);
+/* Internal: Serialize the contact's narrowphase arrays. WARNING: Assumes they fit in the stream. */
+void            ds_ContactNarrowphaseSerialize(struct SS *ss, const struct ds_Dynamics *pipeline, const u32 contact);
+/* Internal: Read the contact's narrowphase arrays onto mem (sleeping contacts) or, mem NULL, into worker frames (awake contacts). Returns 1 on success and 0 on failure. */
+u32             ds_ContactNarrowphaseTryDeserialize(struct arena *mem, struct SS *ss, struct ds_Dynamics *pipeline, const u32 contact);
+/* Internal: Return the required size when serializing the compute's ccache. */
+u64             ds_ContactComputeCacheSerializeSize(const struct ds_ContactCompute *compute);
+/* Internal: Serialize the compute's ccache. WARNING: Assumes it fits in the stream. */
+void            ds_ContactComputeCacheSerialize(struct SS *ss, const struct ds_ContactCompute *compute);
+/* Internal: Read the compute's ccache onto mem (sleeping contacts) or, mem NULL, into worker frames (awake contacts). Returns 1 on success and 0 on failure. */
+u32             ds_ContactComputeCacheTryDeserialize(struct arena *mem, struct SS *ss, struct ds_ContactCompute *compute, struct ds_Dynamics *pipeline);
+/* Return the required size when serializing the set (memory, pools and its contacts' frame data). */
+u64             ds_SolverSetSerializeSize(const struct ds_Dynamics *pipeline, const u32 set);
+/* Serialize the set (aligned). WARNING: Assumes set fits in the stream. */
+void            ds_SolverSetSerialize(struct SS *ss, const struct ds_Dynamics *pipeline, const u32 set);
 /*
- * Internal: Read size bytes of frame data into a random worker frame (the next one if it is full) and set *dst.
- * Spreading the data leaves room in every worker frame, so a restore inside a tick doesn't starve a worker of
- * frame memory. The worker is chosen by a local generator seeded by the stream position, so the thread's numbers
- * are untouched. Returns 1 on success and 0 on failure.
+ * Deserialize into the allocated, zeroed set slot. The contact pool and the worker frames must already be
+ * restored. Returns 1 on success and 0 on failure; on failure the slot is zeroed again.
  */
-u32                         ds_DynamicsFrameDataTryDeserialize(struct SS *ss, void **dst, struct ds_Dynamics *pipeline, const u64 size);
-/* Internal: Read size bytes of heap data (a sleeping set's arena) into mem and set *dst. Returns 1 on success and 0 on failure. */
-u32                         ds_DynamicsHeapDataTryDeserialize(struct arena *mem, struct SS *ss, void **dst, const u64 size);
+u32             ds_SolverSetTryDeserialize(struct SS *ss, struct ds_Dynamics *pipeline, const u32 set);
+/* Return the required size when serializing the color (pools, body bitset and its contacts' frame data). */
+u64             ds_CGraphColorSerializeSize(const struct ds_Dynamics *pipeline, const u32 color);
+/* Serialize the color (aligned). WARNING: Assumes color fits in the stream. */
+void            ds_CGraphColorSerialize(struct SS *ss, const struct ds_Dynamics *pipeline, const u32 color);
+/* Deserialize the color. The contact pool and the worker frames must already be restored. Returns 1 on success and 0 on failure. */
+u32             ds_CGraphColorTryDeserialize(struct SS *ss, struct ds_Dynamics *pipeline, const u32 color);
+/* Return the required size when serializing the constraint graph. */
+u64             ds_CGraphSerializeSize(const struct ds_Dynamics *pipeline);
+/* Serialize the constraint graph (aligned). WARNING: Assumes graph fits in the stream. */
+void            ds_CGraphSerialize(struct SS *ss, const struct ds_Dynamics *pipeline);
+/* Deserialize the constraint graph. The contact pool and the worker frames must already be restored. Returns 1 on success and 0 on failure. */
+u32             ds_CGraphTryDeserialize(struct SS *ss, struct ds_Dynamics *pipeline);
+/* Return the required size when serializing the pipeline. */
+u64             ds_DynamicsSerializeSize(const struct ds_Dynamics *pipeline);
+/* Serialize the pipeline (aligned). WARNING: Assumes pipeline fits in the stream. */
+void            ds_DynamicsSerialize(struct SS *ss, const struct ds_Dynamics *pipeline);
+/*
+ * Deserialize a pipeline from stream and allocate resources on the heap. (Optional: runtime allocated
+ * on mem if != NULL). Return 1 on success, or 0 on failure. On failure, stream and mem is restored. 
+ */
+u32             ds_DynamicsTryDeserialize(struct arena *mem, struct SS *ss, struct ds_Dynamics *pipeline, const struct ds_DynamicsExternal *external);
 
 /* push physics event into pipeline memory and return pointer to allocated event */
 struct ds_PhysicsEvent *	ds_PhysicsEventPush(struct ds_Dynamics *pipeline);

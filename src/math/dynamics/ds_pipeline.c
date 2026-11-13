@@ -54,10 +54,6 @@ void ds_DynamicsConfigPop(struct ds_Dynamics *pipeline)
     g_solver_config = NULL;
 }
 
-#define DS_DYNAMICS_CONFIG_VERSION  2u
-/* version + initial_size, then the solver and numerics configs */
-#define DS_DYNAMICS_CONFIG_FIXED_BITS (32 + 32)
-
 struct ds_DynamicsConfig ds_DynamicsConfigDerive(const struct ds_DynamicsConfig *pending)
 {
     struct ds_DynamicsConfig config = *pending;
@@ -80,44 +76,6 @@ struct ds_DynamicsConfig ds_DynamicsConfigDefault(void)
 
     config = ds_DynamicsConfigDerive(&config);
     return config;
-}
-
-u64 ds_DynamicsConfigSerializeBitPackedSize(const struct ds_DynamicsConfig *config)
-{
-    return DS_DYNAMICS_CONFIG_FIXED_BITS
-         + ds_SolverConfigSerializeBitPackedSize(&config->solver)
-         + ds_NumericsConfigSerializeBitPackedSize(&config->numerics);
-}
-
-void ds_DynamicsConfigSerializeBitPacked(struct SS *ss, const struct ds_DynamicsConfig *config)
-{
-    ds_Assert(ds_DynamicsConfigSerializeBitPackedSize(config) <= SSBitsLeft(ss));
-
-    SSWriteU64Partial(ss, DS_DYNAMICS_CONFIG_VERSION, 32);
-    SSWriteU64Partial(ss, config->initial_size, 32);
-    ds_SolverConfigSerializeBitPacked(ss, &config->solver);
-    ds_NumericsConfigSerializeBitPacked(ss, &config->numerics);
-}
-
-u32 ds_DynamicsConfigTryDeserializeBitPacked(struct SS *ss, struct ds_DynamicsConfig *config)
-{
-    struct SS ss_mut = *ss;
-    *config = (struct ds_DynamicsConfig) { 0 };
-    if (SSBitsLeft(&ss_mut) < DS_DYNAMICS_CONFIG_FIXED_BITS || SSReadU64Partial(&ss_mut, 32) != DS_DYNAMICS_CONFIG_VERSION)
-    {
-        return 0;
-    }
-
-    config->initial_size = (u32) SSReadU64Partial(&ss_mut, 32);
-    if (!ds_SolverConfigTryDeserializeBitPacked(&ss_mut, &config->solver) || !ds_NumericsConfigTryDeserializeBitPacked(&ss_mut, &config->numerics))
-    {
-        *config = (struct ds_DynamicsConfig) { 0 };
-        return 0;
-    }
-
-    *config = ds_DynamicsConfigDerive(config);
-    *ss = ss_mut;
-    return 1;
 }
 
 void ds_DynamicsConfigUpdatePending(struct ds_Dynamics *pipeline)

@@ -26,7 +26,6 @@
 #include "ds_quaternion.h"
 
 #include "ds_dynamics.h"
-#include "ds_snapshot.c"
 #include "ds_pipeline.c"
 #include "ds_metrics.c"
 #include "ds_contact.c"
@@ -39,3 +38,4 @@
 #include "ds_constraint_graph.c"
 #include "ds_solver_set.c"
 #include "ds_dynamics_draw.c"
+#include "ds_snapshot.c"
