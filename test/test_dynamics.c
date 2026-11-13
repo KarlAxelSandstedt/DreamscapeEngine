@@ -1017,7 +1017,7 @@ static struct test_Output DynamicsMeshArrayStatsTest(struct test_Environment *en
         {
             const struct ds_Contact *c = pipeline.contact_pool.buf + i;
             const u32 live = ds_PoolSlotAllocated(c) && !ds_ContactConvexCheck(c);
-            const u32 m = (live) ? c->narrowphase.manifold_count : 0;
+            const u32 m = (live) ? c->manifold_count : 0;
             const u32 k = (live) ? c->cache.concave.tri_count : 0;
             if (live)
             {
@@ -1397,7 +1397,7 @@ static struct test_Output DynamicsContactTest(struct test_Environment *env)
     const struct ds_Shape *shape1 = pipeline.shape_pool.buf + s1;
     const struct ds_Shape *shape2 = pipeline.shape_pool.buf + s2;
     TEST_NOT_ZERO(shape1->contact_list.count == 2 && shape2->contact_list.count == 2);
-    TEST_NOT_ZERO(c->narrowphase.manifold_count > 0 && c->set == SOLVER_SET_NULL && c->color != CG_INVALID_COLOR);
+    TEST_NOT_ZERO(c->manifold_count > 0 && c->set == SOLVER_SET_NULL && c->color != CG_INVALID_COLOR);
     TEST_NOT_ZERO(b1->island == b2->island && c->island == b1->island);
     TEST_NOT_ZERO(pipeline.contact_pool.count == 3);
 
@@ -3691,9 +3691,9 @@ static void DynamicsWarmSceneRun(struct ds_DynamicsMetrics *sum, const struct dy
             for (u32 i = 0; i < color->contact_pool.count; ++i)
             {
                 const struct ds_Contact *c = pipeline.contact_pool.buf + color->contact_pool.buf[i];
-                for (u32 mi = 0; mi < c->narrowphase.manifold_count; ++mi)
+                for (u32 mi = 0; mi < c->manifold_count; ++mi)
                 {
-                    const struct ds_SolverManifold *m = c->narrowphase.manifold + mi;
+                    const struct ds_SolverManifold *m = c->manifold_arr.buf + mi;
                     u32 duplicate = 0;
                     for (u32 a = 0; a < m->point_count; ++a)
                     {
@@ -4350,10 +4350,10 @@ static void *DynamicsPerfPrepInit(void)
         {
             const struct ds_Contact *c = in->pipeline.contact_pool.buf + color->contact_pool.buf[i];
             in->contact_count += 1;
-            in->manifold_count += c->narrowphase.manifold_count;
-            for (u32 m = 0; m < c->narrowphase.manifold_count; ++m)
+            in->manifold_count += c->manifold_count;
+            for (u32 m = 0; m < c->manifold_count; ++m)
             {
-                in->point_count += c->narrowphase.manifold[m].point_count;
+                in->point_count += c->manifold_arr.buf[m].point_count;
             }
         }
     }

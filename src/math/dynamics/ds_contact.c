@@ -76,7 +76,6 @@ struct slot ds_ContactTryAdd(struct ds_Dynamics *pipeline, const struct ds_Conta
     c->key = key;
     c->island = U32_MAX;
     c->id = ds_ContactIdNextGeneration(c->id);
-    c->narrowphase = (struct c_ContactResult) { 0 };
     const struct ds_Body *body[2] = { pipeline->body_pool.buf + shape[0]->body, pipeline->body_pool.buf + shape[1]->body };
     ds_Assert(ds_BodyDynamicCheck(body[0]) || ds_BodyDynamicCheck(body[1]));
     c->flags = 0;
@@ -335,30 +334,14 @@ u64 ds_ContactMemoryRequirement(const struct ds_Dynamics *pipeline, const u32 co
     const struct ds_CGraphColor *color = pipeline->cgraph.color + c->color;
     const struct ds_ContactCompute *compute = color->contact_compute_pool.buf + c->compute;
 
-    const u64 mem_req_manifold = c->narrowphase.manifold_count*sizeof(struct ds_SolverManifold);
-    const u64 mem_req_compute = compute->ccache_count*sizeof(struct ds_ContactConstraintCache);
-
-    u64 mem_req_tri = 0;
-    if (c->narrowphase.tri)
-    {
-        mem_req_tri = c->narrowphase.manifold_count*sizeof(u32);
-    }
-
-    return mem_req_manifold + mem_req_tri + mem_req_compute;
+    return compute->ccache_count*sizeof(struct ds_ContactConstraintCache);
 }
 
 void ds_ContactWakeUp(struct arena *frame, struct ds_Dynamics *pipeline, const u32 contact_index)
 {
     struct ds_Contact *c = pipeline->contact_pool.buf + contact_index;
     ds_Assert(c->set >= SOLVER_SET_SLEEPING_FIRST && c->color == CG_INVALID_COLOR);
-
-    ds_Assert(c->narrowphase.manifold_count);
-    c->narrowphase.manifold = ArenaPushAlignedMemcpy(frame, c->narrowphase.manifold, c->narrowphase.manifold_count*sizeof(struct ds_SolverManifold), 1);
-
-    if (c->narrowphase.tri)
-    {
-        c->narrowphase.tri = ArenaPushAlignedMemcpy(frame, c->narrowphase.tri, c->narrowphase.manifold_count*sizeof(u32), 1);
-    }
+    ds_Assert(c->manifold_count);
 
     ds_CGraphContactAdd(frame, pipeline, c);
 }
@@ -383,16 +366,7 @@ void ds_ContactSleep(struct arena *mem_sleep, struct ds_Dynamics *pipeline, cons
                           ? ArenaPushAlignedMemcpy(mem_sleep, compute->ccache, mem_req_compute, 1)
                           : NULL;
 
-    ds_CGraphContactRemove(pipeline, c); 
-
-    const u64 mem_req_manifold = c->narrowphase.manifold_count*sizeof(struct ds_SolverManifold);
-    c->narrowphase.manifold = ArenaPushAlignedMemcpy(mem_sleep, c->narrowphase.manifold, mem_req_manifold, 1);
-
-    if (c->narrowphase.tri)
-    {
-        const u64 mem_req_tri = c->narrowphase.manifold_count*sizeof(u32);
-        c->narrowphase.tri = ArenaPushAlignedMemcpy(mem_sleep, c->narrowphase.tri, mem_req_tri, 1);
-    }
+    ds_CGraphContactRemove(pipeline, c);
 
     c->set = set_index;
     c->compute = ds_CPoolPush(set->contact_pool).index;
@@ -411,7 +385,7 @@ void ds_ContactValidateAll(const struct ds_Dynamics *pipeline)
         ds_Assert(c->compute == i);
         ds_Assert(c->set == SOLVER_SET_ACTIVE);
         ds_Assert(c->color == CG_INVALID_COLOR);
-        ds_Assert(c->narrowphase.manifold_count == 0);
+        ds_Assert(c->manifold_count == 0);
     }
 
     for (u32 color_index = 0; color_index < CG_COLOR_COUNT; ++color_index)
@@ -425,7 +399,7 @@ void ds_ContactValidateAll(const struct ds_Dynamics *pipeline)
             ds_Assert(c->compute == i);
             ds_Assert(c->set == SOLVER_SET_NULL);
             ds_Assert(c->color == color_index);
-            ds_Assert(c->narrowphase.manifold_count > 0);
+            ds_Assert(c->manifold_count > 0);
         }
     }
 
@@ -442,7 +416,7 @@ void ds_ContactValidateAll(const struct ds_Dynamics *pipeline)
                 ds_Assert(c->compute == i);
                 ds_Assert(c->set == set_index);
                 ds_Assert(c->color == CG_INVALID_COLOR);
-                ds_Assert(c->narrowphase.manifold_count > 0);
+                ds_Assert(c->manifold_count > 0);
             }
         }
     }

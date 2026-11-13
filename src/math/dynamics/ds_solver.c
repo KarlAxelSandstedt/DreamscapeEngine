@@ -316,7 +316,7 @@ void ds_ContactConstraintInitRange(struct ds_Dynamics *pipeline, const u32 color
             ((ccomp->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_bcomp : active->body_compute_pool.buf + ccomp->body_sim[1]),
         };
 
-        ccomp->cc_count = c->narrowphase.manifold_count;
+        ccomp->cc_count = c->manifold_count;
         ccomp->cc = ArenaPushPacked(frame, ccomp->cc_count*sizeof(struct ds_ContactConstraint));
         if (!ccomp->cc)
         {
@@ -326,7 +326,7 @@ void ds_ContactConstraintInitRange(struct ds_Dynamics *pipeline, const u32 color
 
         for (u32 cci = 0; cci < ccomp->cc_count; ++cci)
         {
-            const struct ds_SolverManifold *m = c->narrowphase.manifold + cci;
+            const struct ds_SolverManifold *m = c->manifold_arr.buf + cci;
 
     	    struct ds_ContactConstraint *cc = ccomp->cc + cci;
 
@@ -450,13 +450,13 @@ void ds_ContactConstraintWarmupRange(struct ds_Dynamics *pipeline, const u32 col
         {
     	    struct ds_ContactConstraint *cc = ccomp->cc + cci;
             struct ds_ContactConstraintCache *ccache = ccomp->ccache;
-            const struct ds_SolverManifold *m = c->narrowphase.manifold + cci;
-            if (c->narrowphase.tri)
+            const struct ds_SolverManifold *m = c->manifold_arr.buf + cci;
+            if (!ds_ContactConvexCheck(c))
             {
                 ccache = NULL;
                 for (u32 t = 0; t < ccomp->ccache_count; ++t)
                 {
-                    if (c->narrowphase.tri[cci] == ccomp->ccache[t].tri)
+                    if (m->tri == ccomp->ccache[t].tri)
                     {
                         ccache = ccomp->ccache + t;
                         break;
@@ -717,18 +717,22 @@ void ds_PositionConstraintInitAndCacheImpulsesRange(struct ds_Dynamics *pipeline
 		    FatalCleanupAndExit();
         }
 
+        ds_Assert(c->manifold_count == ccomp->cc_count);
         for (u32 cci = 0; cci < ccomp->cc_count; ++cci)
         {
             struct ds_ContactConstraint *cc = ccomp->cc + cci;
             struct ds_ContactConstraintCache *ccache = ccomp->ccache + cci;
+            struct ds_SolverManifold *pm = c->manifold_arr.buf + cci;
 
-            ccache->tri = (c->narrowphase.tri)
-                        ? c->narrowphase.tri[cci] 
-                        : 0;
+            ccache->tri = (ds_ContactConvexCheck(c))
+                        ? 0
+                        : pm->tri;
 
 		    ccache->v_count = cc->ccp_count;
 		    ccache->tangent[0] = cc->tangent[0];
 		    ccache->tangent[1] = cc->tangent[1];
+            pm->tangent[0] = cc->tangent[0];
+            pm->tangent[1] = cc->tangent[1];
 
             /*
              * The levers are world vectors of the step's start rotation R_s: r = R_s r_b. The position solver
@@ -741,17 +745,19 @@ void ds_PositionConstraintInitAndCacheImpulsesRange(struct ds_Dynamics *pipeline
                 QConj(sim[0]->world.rotation),
                 QConj(sim[1]->world.rotation),
             };
-            const struct ds_SolverManifold *m = c->narrowphase.manifold + cci;
 		    for (u32 ccpi = 0; ccpi < cc->ccp_count; ++ccpi)
 		    {
                 struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
                 ccp->r[0] = QUnitRotate(sim_inv_rotation[0], ccp->r[0]);
                 ccp->r[1] = QUnitRotate(sim_inv_rotation[1], ccp->r[1]);
 
-		    	ccache->id[ccpi] = m->id[ccpi];
+		    	ccache->id[ccpi] = pm->id[ccpi];
 		    	ccache->normal_impulse[ccpi] = ccp->normal_impulse;
 		    	ccache->tangent_impulse[ccpi][0] = ccp->tangent_impulse[0];
 		    	ccache->tangent_impulse[ccpi][1] = ccp->tangent_impulse[1];
+                pm->normal_impulse[ccpi] = ccp->normal_impulse;
+                pm->tangent_impulse[ccpi][0] = ccp->tangent_impulse[0];
+                pm->tangent_impulse[ccpi][1] = ccp->tangent_impulse[1];
             }
         }
     }

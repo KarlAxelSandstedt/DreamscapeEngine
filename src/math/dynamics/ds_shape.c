@@ -281,6 +281,18 @@ f32 ds_ShapeDistance(v3f64 *c0, v3f64 *c1, const struct ds_Dynamics *pipeline, c
  */
 static void ds_ContactResultToSolver(struct arena *frame, struct c_ContactResult *result, const ds_TransformWorld *t, const v3f64 com0, const u32 flip)
 {
+#ifdef DS_DEBUG
+    for (u32 i = 0; i < result->manifold_count; ++i)
+    {
+        if (!c_ManifoldCheck(result->contact_manifold + i))
+        {
+            c_ManifoldDebugPrint(result->contact_manifold + i);
+        }
+        ds_Assert(c_ManifoldCheck(result->contact_manifold + i));
+    }
+#endif
+
+ 
     const m3 rot = M3QUnit(t->rotation);
     const v3 offset = V3F64Demote(V3F64Sub(t->position, com0));
     const struct c_Manifold *local = result->contact_manifold;
@@ -316,14 +328,24 @@ static struct c_ContactResult  (*c_convex_contact_methods[C_SHAPE_TRI_MESH][C_SH
 	{ c_HullSphereContact,      c_HullCapsuleContact,   c_HullContact,  },
 };
 
+static void ds_SolverManifoldConvex(struct ds_SolverManifold *out, const struct c_Manifold *local, const m3 rot, const v3 offset, const u32 flip)
+{
+}
+
+static void ds_SolverManifoldConcave(struct ds_SolverManifold *out, const struct c_ContactResult *result, const m3 rot, const v3 offset, const u32 flip)
+{
+}
+
 /*
  * The pipeline's contact entry. The narrowphase returns manifolds local to one shape of the pair (c_*Contact: s0;
  * c_MeshContact: the convex shape). local and other are the contact key indices of that shape and of the other one.
  * local is the more complex shape (higher type; equal types: the contact key's order), except in mesh pairs: the
  * mesh has the highest type, but c_MeshContact returns manifolds local to the convex shape.
  */
-void ds_ShapeContact(struct arena *frame, const struct ds_Dynamics *pipeline, const u32 contact_index)
+void ds_ShapeContact(struct arena *tmp, struct ds_Dynamics *pipeline, const u32 contact_index)
 {
+    ArenaPushRecord(tmp);
+
     struct ds_Contact *c = pipeline->contact_pool.buf + contact_index;
 
     const struct ds_Shape *s[2] =
@@ -338,36 +360,10 @@ void ds_ShapeContact(struct arena *frame, const struct ds_Dynamics *pipeline, co
         c_ShapeDBShape(pipeline->external->cshape_db, s[1]->cshape_handle),
     };
 
-    const u32 more_complex = (c_s[0]->type >= c_s[1]->type)
-                           ? 0
-                           : 1;
-    const u32 local = (c_s[more_complex]->type == C_SHAPE_TRI_MESH)
-                    ? 1 - more_complex
-                    : more_complex;
-    const u32 other = 1 - local;
-    ds_Assert(c_s[local]->type < C_SHAPE_TRI_MESH);
-
     ds_TransformWorld t_world[2];
     ds_ShapeWorldTransform(t_world + 0, pipeline, s[0]);
     ds_ShapeWorldTransform(t_world + 1, pipeline, s[1]);
 
-    struct c_ContactResult result = (c_s[other]->type == C_SHAPE_TRI_MESH)
-        ? c_MeshContact(frame, &pipeline->tri_cache_slab, &c->cache.concave, c_s[other], &t_world[other], c_s[local], &t_world[local])
-        : c_convex_contact_methods[c_s[local]->type][c_s[other]->type](frame, &c->cache.convex, c_s[local], &t_world[local], c_s[other], &t_world[other]);
-
-#ifdef DS_DEBUG
-    /* the local manifolds, before the conversion below overwrites them */
-    for (u32 i = 0; i < result.manifold_count; ++i)
-    {
-        if (!c_ManifoldCheck(result.contact_manifold + i))
-        {
-            c_ManifoldDebugPrint(result.contact_manifold + i);
-        }
-        ds_Assert(c_ManifoldCheck(result.contact_manifold + i));
-    }
-#endif
-
-    const u32 flip = local;
     v3f64 com[2];
     for (u32 i = 0; i < 2; ++i)
     {
@@ -375,10 +371,82 @@ void ds_ShapeContact(struct arena *frame, const struct ds_Dynamics *pipeline, co
         const struct ds_SolverSet *set = pipeline->solver_set_pool.buf + body->set;
         com[i] = ds_BodySimWorldCenterOfMass(set->body_sim_pool.buf + body->sim);
     }
-    ds_ContactResultToSolver(frame, &result, &t_world[local], com[0], flip);
-
-	c->narrowphase = result;
     c->com_offset = V3F64Demote(V3F64Sub(com[1], com[0]));
+
+    u32 local;
+    if (ds_ContactConvexCheck(c))
+    {
+        local = (c_s[0]->type >= c_s[1]->type) ? 0 : 1;
+        const u32 flip_normal = local;
+        const u32 other = 1 - local;
+
+        const struct c_ContactResult result = c_convex_contact_methods[c_s[local]->type][c_s[other]->type](tmp, &c->cache.convex, c_s[local], &t_world[local], c_s[other], &t_world[other]);
+        ds_Assert(result.manifold_count <= 1);
+        if (result.manifold_count == 0)
+        {
+            if (c->manifold_arr.length)
+            {
+                ds_TSlabRemove(pipeline->manifold_slab, c->manifold_arr);
+                c->manifold_arr = (ds_Array(ds_SolverManifold)) { .buf = NULL, .length = 0, .base = U32_MAX };
+            }
+        }
+        else if (result.manifold_count > c->manifold_arr.length)
+        {
+            c->manifold_arr = ds_TSlabAdd(pipeline->manifold_slab, result.manifold_count);
+            if (c->manifold_arr.buf == NULL)
+            {
+                LogString(T_SYSTEM, S_FATAL, "manifold slab full, exiting");
+                FatalCleanupAndExit();
+            }
+        }
+        c->manifold_count = result.manifold_count;
+
+        if (result.manifold_count)
+        {
+            const m3 rot = M3QUnit(t_world[local].rotation);
+            const v3 offset = V3F64Demote(V3F64Sub(t_world[local].position, com[0]));
+            ds_SolverManifoldConvex(c->manifold_arr.buf, result.contact_manifold, rot, offset, flip_normal);
+        }
+    }
+    else
+    {
+        const u32 mesh = ds_ContactStaticIndex(c);
+        const u32 convex = 1 - mesh;
+        ds_Assert(c_s[mesh]->type == C_SHAPE_TRI_MESH && c_s[convex]->type < C_SHAPE_TRI_MESH);
+        local = convex;
+        const u32 flip_normal = local;
+
+        const struct c_ContactResult result = c_MeshContact(tmp, &pipeline->tri_cache_slab, &c->cache.concave, c_s[mesh], &t_world[mesh], c_s[convex], &t_world[convex]);
+        if (result.manifold_count == 0)
+        {
+            if (c->manifold_arr.length)
+            {
+                ds_TSlabRemove(pipeline->manifold_slab, c->manifold_arr);
+                c->manifold_arr = (ds_Array(ds_SolverManifold)) { .buf = NULL, .length = 0, .base = U32_MAX };
+            }
+        }
+        else if (result.manifold_count > c->manifold_arr.length)
+        {
+            if (c->manifold_arr.length)
+            {
+                ds_TSlabRemove(pipeline->manifold_slab, c->manifold_arr);
+            }
+
+            c->manifold_arr = ds_TSlabAdd(pipeline->manifold_slab, result.manifold_count);
+            if (c->manifold_arr.buf == NULL)
+            {
+                LogString(T_SYSTEM, S_FATAL, "manifold slab full, exiting");
+                FatalCleanupAndExit();
+            }
+        }
+        c->manifold_count = result.manifold_count;
+
+        const m3 rot = M3QUnit(t_world[local].rotation);
+        const v3 offset = V3F64Demote(V3F64Sub(t_world[local].position, com[0]));
+        ds_SolverManifoldConcave(c->manifold_arr.buf, &result, rot, offset, flip_normal);
+    }
+
+    ArenaPopRecord(tmp);
 }
 
 f32 ds_ShapeRaycastParameter(const struct ds_Dynamics *pipeline, const struct ds_Shape *shape, const struct rayWorld *ray)

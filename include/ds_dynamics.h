@@ -386,7 +386,7 @@ Assumptions:
  * The pipeline's contact entry: the pair's contact local to one shape (convex pairs: the more complex shape,
  * c_*Contact; mesh pairs: the convex shape, c_MeshContact), converted to the solver form (ds_SolverManifold).
  */
-void        ds_ShapeContact(struct arena *frame, const struct ds_Dynamics *pipeline, const u32 contact_index);
+void        ds_ShapeContact(struct arena *frame, struct ds_Dynamics *pipeline, const u32 contact_index);
 /*
  * Return the smallest t >= 0 at which ray.origin + t*ray.dir is on the shape's surface (the first surface hit,
  * two-sided, see ds_collision.h), or F32_INFINITY. The ray is in world space. Precondition: |ray->dir|^2 > 0
@@ -565,9 +565,29 @@ struct ds_SolverManifold
     v3      tangent[2];
     f32     tangent_impulse[4][2];
     f32     normal_impulse[4];
+    u32     tri;
 };
 DEFINE_ARRAY_STRUCT(ds_SolverManifold);
 DEFINE_TSLAB(ds_SolverManifold);
+
+
+enum ds_SolverManifoldBufferType
+{
+    SOLVER_MANIFOLD_INTERNAL,   /* Buffer stores 1 manifold locally                 */
+    SOLVER_MANIFOLD_EXTERNAL,   /* Buffer stores >= 2 manifolds in slab allocator   */
+};
+
+struct ds_SolverManifoldBuffer
+{
+    enum ds_SolverManifoldBufferType    type;
+    u32                                 count;  /* Manifold count in buffer */
+    union
+    {
+        struct ds_SolverManifold        manifold;
+        ds_Array(ds_SolverManifold)     manifold_array;
+    };
+};
+DEFINE_CPOOL_STRUCT(ds_SolverManifoldBuffer);
 
 /*
 ds_ContactKey
@@ -637,13 +657,6 @@ struct ds_Contact
     struct DLLNode              island_contact;     /* island->contact_list node                */
     struct DLLNode              shape_contact[2];   /* [i] is part of shape i's contact list    */
 
-    /* 
-     * The following data is regenerated per-frame and is alive for 2 frames. All data is 
-     * pushed onto thread's current frame arena (double buffered). If the contact is sleeping,
-     * the narrowphase is stored on the heap.
-     */
-    struct c_ContactResult      narrowphase;        /* manifold: solver form (ds_ShapeContact converted the
-                                                       narrowphase's contact_manifold in place)            */
     ds_Array(ds_SolverManifold) manifold_arr;
     u32                         manifold_count;
     union
@@ -2063,6 +2076,7 @@ struct ds_Dynamics
 	 *
 	 * i.e. the smaller index owns slot 0 and the larger index owns slot 1.  */
     ds_Pool(ds_Contact)           contact_pool;   
+    ds_CPool(ds_SolverManifoldBuffer)   manifold_buffer_pool;
 	struct ds_HashMap	            contact_map;		
     struct ds_BitSet                contact_usage_set;
     ds_TSlab(ds_TriCache)           tri_cache_slab;
@@ -2156,12 +2170,6 @@ u64             ds_ContactConstraintCacheSerializeSize(const struct ds_ContactCo
 void            ds_ContactConstraintCacheSerialize(struct SS *ss, const struct ds_ContactConstraintCache *ccache);
 u32             ds_ContactConstraintCacheTryDeserialize(struct SS *ss, struct ds_ContactConstraintCache *ccache);
 
-/* Internal: Return the required size when serializing the contact's narrowphase arrays. */
-u64             ds_ContactNarrowphaseSerializeSize(const struct ds_Dynamics *pipeline, const u32 contact);
-/* Internal: Serialize the contact's narrowphase arrays. WARNING: Assumes they fit in the stream. */
-void            ds_ContactNarrowphaseSerialize(struct SS *ss, const struct ds_Dynamics *pipeline, const u32 contact);
-/* Internal: Read the contact's narrowphase arrays onto mem (sleeping contacts) or, mem NULL, into worker frames (awake contacts). Returns 1 on success and 0 on failure. */
-u32             ds_ContactNarrowphaseTryDeserialize(struct arena *mem, struct SS *ss, struct ds_Dynamics *pipeline, const u32 contact);
 /* Internal: Return the required size when serializing the compute's ccache. */
 u64             ds_ContactComputeCacheSerializeSize(const struct ds_ContactCompute *compute);
 /* Internal: Serialize the compute's ccache. WARNING: Assumes it fits in the stream. */

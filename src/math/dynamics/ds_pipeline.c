@@ -242,6 +242,7 @@ struct ds_Dynamics ds_DynamicsAlloc(const struct ds_DynamicsConfig *config, cons
 	ds_PoolAlloc(NULL, pipeline.event_pool, 256, GROWABLE);
 
     ds_PoolAlloc(NULL, pipeline.contact_pool, 8*initial_size, GROWABLE);
+    ds_CPoolAlloc(NULL, pipeline.manifold_buffer_pool, 8*initial_size, GROWABLE);
     pipeline.contact_map = ds_HashMapAlloc(NULL, 8*initial_size, 8*initial_size, GROWABLE);
     pipeline.contact_usage_set = ds_BitSetAlloc(NULL, 8*initial_size, 0, GROWABLE);
     const u64 tri_cache_slots = g_config->vm_size_tri_cache_allocator / sizeof(struct ds_TriCache);
@@ -288,6 +289,7 @@ void ds_DynamicsDealloc(struct ds_Dynamics *pipeline)
 	BVHFree(&pipeline->dynamic_bvh);
 	BVHFree(&pipeline->static_bvh);
     ds_PoolDealloc(pipeline->contact_pool);
+    ds_CPoolDealloc(pipeline->manifold_buffer_pool);
     ds_HashMapDealloc(&pipeline->contact_map);
     ds_BitSetDealloc(&pipeline->contact_usage_set);
 	ds_PoolDealloc(pipeline->island_pool);
@@ -358,6 +360,7 @@ void ds_DynamicsFlush(struct ds_Dynamics *pipeline)
     }
 
     ds_PoolFlush(pipeline->contact_pool);
+    ds_CPoolFlush(pipeline->manifold_buffer_pool);
     ds_HashMapFlush(&pipeline->contact_map);
     ds_BitSetClear(&pipeline->contact_usage_set, 0);
 
@@ -503,7 +506,7 @@ u32 ds_NarrowJobPhaseDispatch(const ds_JobId job)
                 {
                     const u32 ci = color->contact_pool.buf[si];
                     ds_ShapeContact(frame, pipeline, ci);
-                    if (pipeline->contact_pool.buf[ci].narrowphase.manifold_count == 0)
+                    if (pipeline->contact_pool.buf[ci].manifold_count == 0)
                     {
                         ds_BitSetSet(promote_demote_set, ci, 1);
                     }
@@ -525,7 +528,7 @@ u32 ds_NarrowJobPhaseDispatch(const ds_JobId job)
             {
                 const u32 ci = active->contact_pool.buf[si];
                 ds_ShapeContact(frame, pipeline, ci);
-                if (pipeline->contact_pool.buf[ci].narrowphase.manifold_count > 0)
+                if (pipeline->contact_pool.buf[ci].manifold_count > 0)
                 {
                     ds_BitSetSet(promote_demote_set, ci, 1);
                 }
@@ -715,7 +718,7 @@ static void CollisionDetection(struct ds_Dynamics *pipeline)
             while (ds_BitBlockHasNext(&it))
             {
                 const u32 ci = (u32) ds_BitBlockNext(&it);
-                (pipeline->contact_pool.buf[ci].narrowphase.manifold_count > 0)
+                (pipeline->contact_pool.buf[ci].manifold_count > 0)
                     ? ds_ContactPromote(pipeline, ci)
                     : ds_ContactDemote(pipeline, ci);
             }
