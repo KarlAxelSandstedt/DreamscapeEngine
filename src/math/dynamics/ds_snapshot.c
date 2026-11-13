@@ -348,109 +348,6 @@ u32 ds_DynamicsDrawConfigTryDeserialize(struct SS *ss, struct ds_DynamicsDrawCon
 #define SNAPSHOT_DLL_NODE_SIZE          (2*sizeof(i32))
 #define SNAPSHOT_ID_SIZE                sizeof(u64)
 
-/* component by component: the LeN macros read f32 storage through a b32 pointer, which the optimizer may not honour */
-static ds_ForceInline void WriteF32N(struct SS *ss, const f32 *buf, const u32 count)
-{
-	for (u32 i = 0; i < count; ++i)
-	{
-		SSWriteF32Le(ss, buf[i]);
-	}
-}
-
-static ds_ForceInline void ReadF32N(struct SS *ss, f32 *buf, const u32 count)
-{
-	for (u32 i = 0; i < count; ++i)
-	{
-		buf[i] = SSReadF32Le(ss);
-	}
-}
-
-static ds_ForceInline void WriteV3(struct SS *ss, const v3 v)
-{
-	WriteF32N(ss, v.buf, 3);
-}
-
-static ds_ForceInline v3 ReadV3(struct SS *ss)
-{
-	v3 v;
-	ReadF32N(ss, v.buf, 3);
-	return v;
-}
-
-static ds_ForceInline void WriteV3F64(struct SS *ss, const v3f64 v)
-{
-	SSWriteF64Le(ss, v.x);
-	SSWriteF64Le(ss, v.y);
-	SSWriteF64Le(ss, v.z);
-}
-
-static ds_ForceInline v3f64 ReadV3F64(struct SS *ss)
-{
-	v3f64 v;
-	v.x = SSReadF64Le(ss);
-	v.y = SSReadF64Le(ss);
-	v.z = SSReadF64Le(ss);
-	return v;
-}
-
-static ds_ForceInline void WriteV4(struct SS *ss, const v4 v)
-{
-	WriteF32N(ss, v.buf, 4);
-}
-
-static ds_ForceInline v4 ReadV4(struct SS *ss)
-{
-	v4 v;
-	ReadF32N(ss, v.buf, 4);
-	return v;
-}
-
-static ds_ForceInline void WriteQ(struct SS *ss, const q a)
-{
-	WriteF32N(ss, a.buf, 4);
-}
-
-static ds_ForceInline q ReadQ(struct SS *ss)
-{
-	q a;
-	ReadF32N(ss, a.buf, 4);
-	return a;
-}
-
-static ds_ForceInline void WriteM3(struct SS *ss, const m3 *m)
-{
-	WriteF32N(ss, m->buf, 9);
-}
-
-static ds_ForceInline void ReadM3(struct SS *ss, m3 *m)
-{
-	ReadF32N(ss, m->buf, 9);
-}
-
-static ds_ForceInline void WriteTransform(struct SS *ss, const ds_Transform *t)
-{
-	WriteQ(ss, t->rotation);
-	WriteV3(ss, t->position);
-}
-
-static ds_ForceInline void ReadTransform(struct SS *ss, ds_Transform *t)
-{
-	t->rotation = ReadQ(ss);
-	t->position = ReadV3(ss);
-}
-
-static ds_ForceInline void WriteTransformWorld(struct SS *ss, const ds_TransformWorld *t)
-{
-	WriteQ(ss, t->rotation);
-	WriteV3F64(ss, t->position);
-}
-
-static ds_ForceInline void ReadTransformWorld(struct SS *ss, ds_TransformWorld *t)
-{
-	t->rotation = ReadQ(ss);
-	t->position = ReadV3F64(ss);
-}
-
 static ds_ForceInline void WriteDLLNode(struct SS *ss, const struct DLLNode node)
 {
 	SSWriteI32Le(ss, node.prev);
@@ -531,7 +428,7 @@ void ds_ShapeSerialize(struct SS *ss, const struct ds_Shape *shape)
 	SSWriteF32Le(ss, shape->restitution);
 	SSWriteF32Le(ss, shape->friction);
 	SSWriteF32Le(ss, shape->margin);
-	WriteTransform(ss, &shape->t_local);
+	ds_TransformSerialize(ss, &shape->t_local);
 }
 
 u32 ds_ShapeTryDeserialize(struct SS *ss, struct ds_Shape *shape)
@@ -553,7 +450,7 @@ u32 ds_ShapeTryDeserialize(struct SS *ss, struct ds_Shape *shape)
 	shape->restitution = SSReadF32Le(ss);
 	shape->friction = SSReadF32Le(ss);
 	shape->margin = SSReadF32Le(ss);
-	ReadTransform(ss, &shape->t_local);
+	ds_TransformDeserialize(ss, &shape->t_local);
 	return shape->cshape_type < C_SHAPE_COUNT;
 }
 
@@ -752,7 +649,7 @@ void ds_ContactSerialize(struct SS *ss, const struct ds_Contact *contact)
 	WriteDLLNode(ss, contact->island_contact);
 	WriteDLLNode(ss, contact->shape_contact[0]);
 	WriteDLLNode(ss, contact->shape_contact[1]);
-	WriteV3(ss, contact->com_offset);
+	V3Serialize(ss, contact->com_offset);
 	if (ds_ContactConvexCheck(contact))
 	{
 		ds_ConvexCacheSerialize(ss, &contact->cache.convex);
@@ -777,7 +674,7 @@ u32 ds_ContactTryDeserialize(struct SS *ss, struct ds_Contact *contact)
 	contact->island_contact = ReadDLLNode(ss);
 	contact->shape_contact[0] = ReadDLLNode(ss);
 	contact->shape_contact[1] = ReadDLLNode(ss);
-	contact->com_offset = ReadV3(ss);
+	V3Deserialize(ss, &contact->com_offset);
 	if (ds_ContactConvexCheck(contact))
 	{
 		return ds_ConvexCacheTryDeserialize(ss, &contact->cache.convex);
@@ -803,7 +700,7 @@ void ds_IslandSerialize(struct SS *ss, const struct ds_Island *island)
 	DLLSerialize(ss, island->body_list);
 	DLLSerialize(ss, island->contact_list);
 	DLLSerialize(ss, island->joint_list);
-	WriteV4(ss, island->color);
+	V4Serialize(ss, island->color);
 }
 
 u32 ds_IslandTryDeserialize(struct SS *ss, struct ds_Island *island)
@@ -820,7 +717,7 @@ u32 ds_IslandTryDeserialize(struct SS *ss, struct ds_Island *island)
 	DLLDeserialize(ss, island->body_list);
 	DLLDeserialize(ss, island->contact_list);
 	DLLDeserialize(ss, island->joint_list);
-	island->color = ReadV4(ss);
+	V4Deserialize(ss, &island->color);
 	return 1;
 }
 
@@ -852,11 +749,11 @@ void ds_BodySimSerialize(struct SS *ss, const struct ds_BodySim *bsim)
 	SSWriteU32Le(ss, bsim->body);
 	SSWriteU32Le(ss, bsim->flags);
 	SSWriteF32Le(ss, bsim->inv_mass);
-	WriteTransformWorld(ss, &bsim->world);
-	WriteV3(ss, bsim->local_center_of_mass);
-	WriteV3F64(ss, bsim->world_center_of_mass);
-	WriteM3(ss, &bsim->local_inv_inertia);
-	WriteM3(ss, &bsim->world_inv_inertia);
+	ds_TransformWorldSerialize(ss, &bsim->world);
+	V3Serialize(ss, bsim->local_center_of_mass);
+	V3F64Serialize(ss, bsim->world_center_of_mass);
+	M3Serialize(ss, bsim->local_inv_inertia);
+	M3Serialize(ss, bsim->world_inv_inertia);
 }
 
 u32 ds_BodySimTryDeserialize(struct SS *ss, struct ds_BodySim *bsim)
@@ -869,11 +766,11 @@ u32 ds_BodySimTryDeserialize(struct SS *ss, struct ds_BodySim *bsim)
 	bsim->body = SSReadU32Le(ss);
 	bsim->flags = SSReadU32Le(ss);
 	bsim->inv_mass = SSReadF32Le(ss);
-	ReadTransformWorld(ss, &bsim->world);
-	bsim->local_center_of_mass = ReadV3(ss);
-	bsim->world_center_of_mass = ReadV3F64(ss);
-	ReadM3(ss, &bsim->local_inv_inertia);
-	ReadM3(ss, &bsim->world_inv_inertia);
+	ds_TransformWorldDeserialize(ss, &bsim->world);
+	V3Deserialize(ss, &bsim->local_center_of_mass);
+	V3F64Deserialize(ss, &bsim->world_center_of_mass);
+	M3Deserialize(ss, &bsim->local_inv_inertia);
+	M3Deserialize(ss, &bsim->world_inv_inertia);
 	return 1;
 }
 
@@ -886,10 +783,10 @@ u64 ds_BodyComputeSerializeSize(const struct ds_BodyCompute *bcomp)
 
 void ds_BodyComputeSerialize(struct SS *ss, const struct ds_BodyCompute *bcomp)
 {
-	WriteV3(ss, bcomp->linear_velocity);
-	WriteV3(ss, bcomp->angular_velocity);
-	WriteV3(ss, bcomp->delta_position);
-	WriteQ(ss, bcomp->rotation);
+	V3Serialize(ss, bcomp->linear_velocity);
+	V3Serialize(ss, bcomp->angular_velocity);
+	V3Serialize(ss, bcomp->delta_position);
+	QSerialize(ss, bcomp->rotation);
 	SSWriteU32Le(ss, bcomp->flags);
 }
 
@@ -900,10 +797,10 @@ u32 ds_BodyComputeTryDeserialize(struct SS *ss, struct ds_BodyCompute *bcomp)
 		return 0;
 	}
 
-	bcomp->linear_velocity = ReadV3(ss);
-	bcomp->angular_velocity = ReadV3(ss);
-	bcomp->delta_position = ReadV3(ss);
-	bcomp->rotation = ReadQ(ss);
+	V3Deserialize(ss, &bcomp->linear_velocity);
+	V3Deserialize(ss, &bcomp->angular_velocity);
+	V3Deserialize(ss, &bcomp->delta_position);
+	QDeserialize(ss, &bcomp->rotation);
 	bcomp->flags = SSReadU32Le(ss);
 	return 1;
 }
@@ -956,27 +853,27 @@ u64 ds_JointSimSerializeSize(const struct ds_JointSim *jsim)
 
 void ds_JointSimSerialize(struct SS *ss, const struct ds_JointSim *jsim)
 {
-	WriteTransform(ss, &jsim->local_frame[0]);
-	WriteTransform(ss, &jsim->local_frame[1]);
+	ds_TransformSerialize(ss, &jsim->local_frame[0]);
+	ds_TransformSerialize(ss, &jsim->local_frame[1]);
 	SSWriteF32Le(ss, jsim->force_threshold);
 	SSWriteF32Le(ss, jsim->torque_threshold);
 	SSWriteU32Le(ss, jsim->joint);
 	SSWriteU32Le(ss, (u32) jsim->type);
 	SSWriteU32LeN(ss, jsim->body_sim, 2);
-	WriteV3(ss, jsim->r[0]);
-	WriteV3(ss, jsim->r[1]);
-	WriteV3(ss, jsim->com_diff);
+	V3Serialize(ss, jsim->r[0]);
+	V3Serialize(ss, jsim->r[1]);
+	V3Serialize(ss, jsim->com_diff);
 	switch (jsim->type)
 	{
 		case DS_JOINT_TYPE_DISTANCE:
 		{
 			const struct ds_DistanceJoint *d = &jsim->distance;
 			SSWriteF32Le(ss, d->target);
-			WriteF32N(ss, d->range.v, 2);
+			SSWriteF32LeN(ss, d->range.v, 2);
 			SSWriteU32Le(ss, d->enable_spring);
 			SSWriteF32Le(ss, d->hertz);
 			SSWriteF32Le(ss, d->damping_ratio);
-			WriteV3(ss, d->n);
+			V3Serialize(ss, d->n);
 			SSWriteF32Le(ss, d->distance);
 			SSWriteF32Le(ss, d->normal_mass);
 			SSWriteF32Le(ss, d->soft_mass);
@@ -993,19 +890,19 @@ void ds_JointSimSerialize(struct SS *ss, const struct ds_JointSim *jsim)
 		case DS_JOINT_TYPE_MOUSE:
 		{
 			const struct ds_MouseJoint *m = &jsim->mouse;
-			WriteV3F64(ss, m->target);
+			V3F64Serialize(ss, m->target);
 			SSWriteF32Le(ss, m->hertz);
 			SSWriteF32Le(ss, m->damping_ratio);
 			SSWriteF32Le(ss, m->max_force);
 			SSWriteF32Le(ss, m->max_torque);
-			WriteM3(ss, &m->soft_mass);
-			WriteM3(ss, &m->gamma);
-			WriteV3(ss, m->bias_velocity);
-			WriteM3(ss, &m->angular_mass);
+			M3Serialize(ss, m->soft_mass);
+			M3Serialize(ss, m->gamma);
+			V3Serialize(ss, m->bias_velocity);
+			M3Serialize(ss, m->angular_mass);
 			SSWriteF32Le(ss, m->max_impulse);
 			SSWriteF32Le(ss, m->max_angular_impulse);
-			WriteV3(ss, m->impulse);
-			WriteV3(ss, m->angular_impulse);
+			V3Serialize(ss, m->impulse);
+			V3Serialize(ss, m->angular_impulse);
 		} break;
 
 		default: break;
@@ -1020,16 +917,16 @@ u32 ds_JointSimTryDeserialize(struct SS *ss, struct ds_JointSim *jsim)
 		return 0;
 	}
 
-	ReadTransform(ss, &jsim->local_frame[0]);
-	ReadTransform(ss, &jsim->local_frame[1]);
+	ds_TransformDeserialize(ss, &jsim->local_frame[0]);
+	ds_TransformDeserialize(ss, &jsim->local_frame[1]);
 	jsim->force_threshold = SSReadF32Le(ss);
 	jsim->torque_threshold = SSReadF32Le(ss);
 	jsim->joint = SSReadU32Le(ss);
 	jsim->type = (enum ds_JointType) SSReadU32Le(ss);
 	SSReadU32LeN(ss, jsim->body_sim, 2);
-	jsim->r[0] = ReadV3(ss);
-	jsim->r[1] = ReadV3(ss);
-	jsim->com_diff = ReadV3(ss);
+	V3Deserialize(ss, &jsim->r[0]);
+	V3Deserialize(ss, &jsim->r[1]);
+	V3Deserialize(ss, &jsim->com_diff);
 	if (jsim->type >= DS_JOINT_TYPE_COUNT || SSBytesLeft(ss) < JointSimPayloadSize(jsim->type))
 	{
 		return 0;
@@ -1041,11 +938,11 @@ u32 ds_JointSimTryDeserialize(struct SS *ss, struct ds_JointSim *jsim)
 		{
 			struct ds_DistanceJoint *d = &jsim->distance;
 			d->target = SSReadF32Le(ss);
-			ReadF32N(ss, d->range.v, 2);
+			SSReadF32LeN(ss, d->range.v, 2);
 			d->enable_spring = SSReadU32Le(ss);
 			d->hertz = SSReadF32Le(ss);
 			d->damping_ratio = SSReadF32Le(ss);
-			d->n = ReadV3(ss);
+			V3Deserialize(ss, &d->n);
 			d->distance = SSReadF32Le(ss);
 			d->normal_mass = SSReadF32Le(ss);
 			d->soft_mass = SSReadF32Le(ss);
@@ -1062,19 +959,19 @@ u32 ds_JointSimTryDeserialize(struct SS *ss, struct ds_JointSim *jsim)
 		case DS_JOINT_TYPE_MOUSE:
 		{
 			struct ds_MouseJoint *m = &jsim->mouse;
-			m->target = ReadV3F64(ss);
+			V3F64Deserialize(ss, &m->target);
 			m->hertz = SSReadF32Le(ss);
 			m->damping_ratio = SSReadF32Le(ss);
 			m->max_force = SSReadF32Le(ss);
 			m->max_torque = SSReadF32Le(ss);
-			ReadM3(ss, &m->soft_mass);
-			ReadM3(ss, &m->gamma);
-			m->bias_velocity = ReadV3(ss);
-			ReadM3(ss, &m->angular_mass);
+			M3Deserialize(ss, &m->soft_mass);
+			M3Deserialize(ss, &m->gamma);
+			V3Deserialize(ss, &m->bias_velocity);
+			M3Deserialize(ss, &m->angular_mass);
 			m->max_impulse = SSReadF32Le(ss);
 			m->max_angular_impulse = SSReadF32Le(ss);
-			m->impulse = ReadV3(ss);
-			m->angular_impulse = ReadV3(ss);
+			V3Deserialize(ss, &m->impulse);
+			V3Deserialize(ss, &m->angular_impulse);
 		} break;
 
 		default: break;
@@ -1082,7 +979,7 @@ u32 ds_JointSimTryDeserialize(struct SS *ss, struct ds_JointSim *jsim)
 	return 1;
 }
 
-#define DS_SOLVER_MANIFOLD_SERIALIZE_SIZE (4*SNAPSHOT_V3_SIZE + 4*sizeof(f32) + SNAPSHOT_V3_SIZE + sizeof(u32) + 4*sizeof(u32) + 2*SNAPSHOT_V3_SIZE + 8*sizeof(f32) + 4*sizeof(f32) + sizeof(u32))
+#define DS_SOLVER_MANIFOLD_SERIALIZE_SIZE (4*SNAPSHOT_V3_SIZE + 4*sizeof(f32) + SNAPSHOT_V3_SIZE + sizeof(u32) + 4*sizeof(u32) + 4*SNAPSHOT_V3_SIZE + 4*sizeof(f32) + sizeof(u32))
 
 u64 ds_SolverManifoldSerializeSize(const struct ds_SolverManifold *manifold)
 {
@@ -1093,19 +990,20 @@ void ds_SolverManifoldSerialize(struct SS *ss, const struct ds_SolverManifold *m
 {
 	for (u32 i = 0; i < 4; ++i)
 	{
-		WriteV3(ss, manifold->anchor0[i]);
+		V3Serialize(ss, manifold->anchor0[i]);
 	}
-	WriteF32N(ss, manifold->depth, 4);
-	WriteV3(ss, manifold->normal);
+	SSWriteF32LeN(ss, manifold->depth, 4);
+	V3Serialize(ss, manifold->normal);
 	SSWriteU32Le(ss, manifold->point_count);
 	for (u32 i = 0; i < 4; ++i)
 	{
 		SSWriteU32Le(ss, manifold->id[i].val);
 	}
-	WriteV3(ss, manifold->tangent[0]);
-	WriteV3(ss, manifold->tangent[1]);
-	WriteF32N(ss, manifold->tangent_impulse[0], 8);
-	WriteF32N(ss, manifold->normal_impulse, 4);
+	for (u32 i = 0; i < 4; ++i)
+	{
+		V3Serialize(ss, manifold->tangent_impulse[i]);
+	}
+	SSWriteF32LeN(ss, manifold->normal_impulse, 4);
 	SSWriteU32Le(ss, manifold->tri);
 }
 
@@ -1118,19 +1016,20 @@ u32 ds_SolverManifoldTryDeserialize(struct SS *ss, struct ds_SolverManifold *man
 
 	for (u32 i = 0; i < 4; ++i)
 	{
-		manifold->anchor0[i] = ReadV3(ss);
+		V3Deserialize(ss, &manifold->anchor0[i]);
 	}
-	ReadF32N(ss, manifold->depth, 4);
-	manifold->normal = ReadV3(ss);
+	SSReadF32LeN(ss, manifold->depth, 4);
+	V3Deserialize(ss, &manifold->normal);
 	manifold->point_count = SSReadU32Le(ss);
 	for (u32 i = 0; i < 4; ++i)
 	{
 		manifold->id[i].val = SSReadU32Le(ss);
 	}
-	manifold->tangent[0] = ReadV3(ss);
-	manifold->tangent[1] = ReadV3(ss);
-	ReadF32N(ss, manifold->tangent_impulse[0], 8);
-	ReadF32N(ss, manifold->normal_impulse, 4);
+	for (u32 i = 0; i < 4; ++i)
+	{
+		V3Deserialize(ss, &manifold->tangent_impulse[i]);
+	}
+	SSReadF32LeN(ss, manifold->normal_impulse, 4);
 	manifold->tri = SSReadU32Le(ss);
 	return manifold->point_count <= 4;
 }

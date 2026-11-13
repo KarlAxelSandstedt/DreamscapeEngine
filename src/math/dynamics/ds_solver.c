@@ -453,7 +453,7 @@ void ds_ContactConstraintWarmupRange(struct ds_Dynamics *pipeline, const u32 col
             for (u32 ccpi = 0; ccpi < cc->ccp_count; ++ccpi)
             {
                 struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
-                const v3 old_tangent_impulse = V3AddScaled(V3Scale(m->tangent[0], m->tangent_impulse[ccpi][0]), m->tangent[1], m->tangent_impulse[ccpi][1]);
+                const v3 old_tangent_impulse = m->tangent_impulse[ccpi];
 
                 ccp->normal_impulse = m->normal_impulse[ccpi];
                 const f32 impulse_bound = cc->friction * ccp->normal_impulse;
@@ -675,8 +675,6 @@ void ds_PositionConstraintInitAndCacheImpulsesRange(struct ds_Dynamics *pipeline
             struct ds_ContactConstraint *cc = ccomp->cc + cci;
             struct ds_SolverManifold *pm = manifold.buf + cci;
 
-            pm->tangent[0] = cc->tangent[0];
-            pm->tangent[1] = cc->tangent[1];
 
             /*
              * The levers are world vectors of the step's start rotation R_s: r = R_s r_b. The position solver
@@ -696,8 +694,7 @@ void ds_PositionConstraintInitAndCacheImpulsesRange(struct ds_Dynamics *pipeline
                 ccp->r[1] = QUnitRotate(sim_inv_rotation[1], ccp->r[1]);
 
                 pm->normal_impulse[ccpi] = ccp->normal_impulse;
-                pm->tangent_impulse[ccpi][0] = ccp->tangent_impulse[0];
-                pm->tangent_impulse[ccpi][1] = ccp->tangent_impulse[1];
+                pm->tangent_impulse[ccpi] = V3AddScaled(V3Scale(cc->tangent[0], ccp->tangent_impulse[0]), cc->tangent[1], ccp->tangent_impulse[1]);
             }
         }
     }

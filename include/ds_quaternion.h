@@ -77,6 +77,10 @@ static ds_ForceInline void QSerializeBitPacked(struct SS *ss, const q a);
 static ds_ForceInline void QDeserializeBitPacked(struct SS *ss, q *a);
 /* Returns 1 on success. On failure return 0 (bad stream) and reset the stream position. */
 static ds_ForceInline u32 QTryDeserializeBitPacked(struct SS *ss, q *a);
+/* Serialize a byte-aligned (little-endian). WARNING: Assumes a fits in the stream. */
+static ds_ForceInline void QSerialize(struct SS *ss, const q a);
+/* Deserialize byte-aligned a. WARNING: Assumes a fits in the stream. */
+static ds_ForceInline void QDeserialize(struct SS *ss, q *a);
 /*
  * Return quaternion representing rotation around (non-normalized) axis with given angle (radians, right-hand rule);
  * a zero axis gives NaN. Uses the C library's sin/cos.
@@ -159,6 +163,22 @@ static ds_ForceInline u32 QTryDeserializeBitPacked(struct SS *ss, q *a)
 
 	QDeserializeBitPacked(ss, a);
 	return 1;
+}
+
+static ds_ForceInline void QSerialize(struct SS *ss, const q a)
+{
+	SSWriteF32Le(ss, a.x);
+	SSWriteF32Le(ss, a.y);
+	SSWriteF32Le(ss, a.z);
+	SSWriteF32Le(ss, a.w);
+}
+
+static ds_ForceInline void QDeserialize(struct SS *ss, q *a)
+{
+	a->x = SSReadF32Le(ss);
+	a->y = SSReadF32Le(ss);
+	a->z = SSReadF32Le(ss);
+	a->w = SSReadF32Le(ss);
 }
 
 static ds_ForceInline q QAxisAngle(const v3 axis, const f32 angle)

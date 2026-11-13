@@ -93,6 +93,10 @@ static inline void ds_TransformSerializeBitPacked(struct SS *ss, const ds_Transf
 static inline void ds_TransformDeserializeBitPacked(struct SS *ss, ds_Transform *transform);
 /* Returns 1 on success. On failure return 0 (bad stream) and reset the stream position. */
 static inline u32 ds_TransformTryDeserializeBitPacked(struct SS *ss, ds_Transform *transform);
+/* Serialize the transform byte-aligned. WARNING: Assumes transform fits in the stream. */
+static inline void ds_TransformSerialize(struct SS *ss, const ds_Transform *transform);
+/* Deserialize the byte-aligned transform. WARNING: Assumes transform fits in the stream. */
+static inline void ds_TransformDeserialize(struct SS *ss, ds_Transform *transform);
 
 /*
  * Return target's pose in reference's frame (reference^-1 * target): rel maps points from target's frame
@@ -131,6 +135,10 @@ static inline void ds_TransformWorldSerializeBitPacked(struct SS *ss, const ds_T
 static inline void ds_TransformWorldDeserializeBitPacked(struct SS *ss, ds_TransformWorld *transform);
 /* Returns 1 on success. On failure return 0 (bad stream) and reset the stream position. */
 static inline u32 ds_TransformWorldTryDeserializeBitPacked(struct SS *ss, ds_TransformWorld *transform);
+/* Serialize the transform byte-aligned. WARNING: Assumes transform fits in the stream. */
+static inline void ds_TransformWorldSerialize(struct SS *ss, const ds_TransformWorld *transform);
+/* Deserialize the byte-aligned transform. WARNING: Assumes transform fits in the stream. */
+static inline void ds_TransformWorldDeserialize(struct SS *ss, ds_TransformWorld *transform);
 
 /* Return transform as a world pose (lossless) */
 static inline ds_TransformWorld ds_TransformPromote(const ds_Transform *transform);
@@ -203,6 +211,18 @@ static inline u32 ds_TransformTryDeserializeBitPacked(struct SS *ss, ds_Transfor
     return 1;
 }
 
+static inline void ds_TransformSerialize(struct SS *ss, const ds_Transform *transform)
+{
+    QSerialize(ss, transform->rotation);
+    V3Serialize(ss, transform->position);
+}
+
+static inline void ds_TransformDeserialize(struct SS *ss, ds_Transform *transform)
+{
+    QDeserialize(ss, &transform->rotation);
+    V3Deserialize(ss, &transform->position);
+}
+
 static inline ds_Transform ds_TransformRelative(const ds_Transform *reference, const ds_Transform *target)
 {
     const q inv = QConj(reference->rotation);
@@ -263,6 +283,18 @@ static inline u32 ds_TransformWorldTryDeserializeBitPacked(struct SS *ss, ds_Tra
 
     ds_TransformWorldDeserializeBitPacked(ss, transform);
     return 1;
+}
+
+static inline void ds_TransformWorldSerialize(struct SS *ss, const ds_TransformWorld *transform)
+{
+    QSerialize(ss, transform->rotation);
+    V3F64Serialize(ss, transform->position);
+}
+
+static inline void ds_TransformWorldDeserialize(struct SS *ss, ds_TransformWorld *transform)
+{
+    QDeserialize(ss, &transform->rotation);
+    V3F64Deserialize(ss, &transform->position);
 }
 
 static inline ds_TransformWorld ds_TransformPromote(const ds_Transform *transform)

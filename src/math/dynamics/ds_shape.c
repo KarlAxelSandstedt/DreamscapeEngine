@@ -308,8 +308,6 @@ static void ds_SolverManifoldConvex(struct ds_SolverManifold *out, const struct 
 
 static void ds_SolverManifoldSetCache(struct ds_SolverManifold *m, const ds_Array(ds_SolverManifold) old)
 {
-    m->tangent[0] = V3Zero();
-    m->tangent[1] = V3Zero();
     memset(m->normal_impulse, 0, sizeof(m->normal_impulse));
     memset(m->tangent_impulse, 0, sizeof(m->tangent_impulse));
 
@@ -327,8 +325,6 @@ static void ds_SolverManifoldSetCache(struct ds_SolverManifold *m, const ds_Arra
     {
         struct ds_DynamicsMetrics *metrics = &g_dynamics_worker[ds_ThreadSelfIndex()].metrics;
         metrics->warm_point_count += m->point_count;
-        m->tangent[0] = o->tangent[0];
-        m->tangent[1] = o->tangent[1];
         u32 claimed = 0;
         for (u32 p = 0; p < m->point_count; ++p)
         {
@@ -339,8 +335,7 @@ static void ds_SolverManifoldSetCache(struct ds_SolverManifold *m, const ds_Arra
                     claimed |= 1u << k;
                     metrics->warm_match_id += 1;
                     m->normal_impulse[p] = o->normal_impulse[k];
-                    m->tangent_impulse[p][0] = o->tangent_impulse[k][0];
-                    m->tangent_impulse[p][1] = o->tangent_impulse[k][1];
+                    m->tangent_impulse[p] = o->tangent_impulse[k];
                     break;
                 }
             }

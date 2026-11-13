@@ -102,6 +102,13 @@ static ds_ForceInline m4 M4QUnit(const q a);
 f32 M3Inverse(m3 *inv, const m3 a);
 f32 M4Inverse(m4 *inv, const m4 a);
 
+/********************************** serialization ***********************************/
+
+/* Serialize m byte-aligned (little-endian, column by column). WARNING: Assumes m fits in the stream. */
+static ds_ForceInline void M3Serialize(struct SS *ss, const m3 m);
+/* Deserialize byte-aligned m. WARNING: Assumes m fits in the stream. */
+static ds_ForceInline void M3Deserialize(struct SS *ss, m3 *m);
+
 /************************************* printing *************************************/
 
 /* print text and the matrix, row by row, to stdout (debugging) */
@@ -277,6 +284,22 @@ static inline void M4Print(const char *text, const m4 m)
 		m.col[0].y, m.col[1].y, m.col[2].y, m.col[3].y,
 		m.col[0].z, m.col[1].z, m.col[2].z, m.col[3].z,
 		m.col[0].w, m.col[1].w, m.col[2].w, m.col[3].w);
+}
+
+/************************ serialization: inline definitions *************************/
+
+static ds_ForceInline void M3Serialize(struct SS *ss, const m3 m)
+{
+	V3Serialize(ss, m.col[0]);
+	V3Serialize(ss, m.col[1]);
+	V3Serialize(ss, m.col[2]);
+}
+
+static ds_ForceInline void M3Deserialize(struct SS *ss, m3 *m)
+{
+	V3Deserialize(ss, &m->col[0]);
+	V3Deserialize(ss, &m->col[1]);
+	V3Deserialize(ss, &m->col[2]);
 }
 
 #ifdef __cplusplus

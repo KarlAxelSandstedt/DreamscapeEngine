@@ -542,7 +542,7 @@ ds_SolverManifold
 =================
 A contact manifold in the solver's form: ds_ShapeContact converts the narrowphase's local manifolds
 (c_*Contact, c_MeshContact) into the contact's ds_SolverManifoldBuffer, kept across ticks with the impulses
-the warm start reads (tangent basis, impulses; tri: mesh triangle). Body 0 is the body of the contact key's
+the warm start reads (world tangent impulses, normal impulses; tri: mesh triangle). Body 0 is the body of the contact key's
 shape[0] (the reference), body 1 the body of shape[1]. Every vector is f32 in world axes, and none is a world
 position: points are offsets from a body's center of mass.
 
@@ -562,8 +562,7 @@ struct ds_SolverManifold
     v3      normal;         /* unit, from body 0 to body 1                                            */
     u32     point_count;
     c_PointId id[4];        /* point ids                                                              */
-    v3      tangent[2];
-    f32     tangent_impulse[4][2];
+    v3      tangent_impulse[4];
     f32     normal_impulse[4];
     u32     tri;
 };

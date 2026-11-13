@@ -225,6 +225,14 @@ static ds_ForceInline void V3F64DeserializeBitPacked(struct SS *ss, v3f64 *v);
 /* Returns 1 on success. On failure return 0 (bad stream) and reset the stream position. */
 static ds_ForceInline u32 V3TryDeserializeBitPacked(struct SS *ss, v3 *v);
 static ds_ForceInline u32 V3F64TryDeserializeBitPacked(struct SS *ss, v3f64 *v);
+/* Serialize v byte-aligned (little-endian). WARNING: Assumes v fits in the stream. */
+static ds_ForceInline void V3Serialize(struct SS *ss, const v3 v);
+static ds_ForceInline void V3F64Serialize(struct SS *ss, const v3f64 v);
+static ds_ForceInline void V4Serialize(struct SS *ss, const v4 v);
+/* Deserialize byte-aligned v. WARNING: Assumes v fits in the stream. */
+static ds_ForceInline void V3Deserialize(struct SS *ss, v3 *v);
+static ds_ForceInline void V3F64Deserialize(struct SS *ss, v3f64 *v);
+static ds_ForceInline void V4Deserialize(struct SS *ss, v4 *v);
 
 /************************************* printing *************************************/
 
@@ -822,6 +830,50 @@ static ds_ForceInline u32 V3F64TryDeserializeBitPacked(struct SS *ss, v3f64 *v)
 
 	V3F64DeserializeBitPacked(ss, v);
 	return 1;
+}
+
+static ds_ForceInline void V3Serialize(struct SS *ss, const v3 v)
+{
+	SSWriteF32Le(ss, v.x);
+	SSWriteF32Le(ss, v.y);
+	SSWriteF32Le(ss, v.z);
+}
+
+static ds_ForceInline void V3F64Serialize(struct SS *ss, const v3f64 v)
+{
+	SSWriteF64Le(ss, v.x);
+	SSWriteF64Le(ss, v.y);
+	SSWriteF64Le(ss, v.z);
+}
+
+static ds_ForceInline void V4Serialize(struct SS *ss, const v4 v)
+{
+	SSWriteF32Le(ss, v.x);
+	SSWriteF32Le(ss, v.y);
+	SSWriteF32Le(ss, v.z);
+	SSWriteF32Le(ss, v.w);
+}
+
+static ds_ForceInline void V3Deserialize(struct SS *ss, v3 *v)
+{
+	v->x = SSReadF32Le(ss);
+	v->y = SSReadF32Le(ss);
+	v->z = SSReadF32Le(ss);
+}
+
+static ds_ForceInline void V3F64Deserialize(struct SS *ss, v3f64 *v)
+{
+	v->x = SSReadF64Le(ss);
+	v->y = SSReadF64Le(ss);
+	v->z = SSReadF64Le(ss);
+}
+
+static ds_ForceInline void V4Deserialize(struct SS *ss, v4 *v)
+{
+	v->x = SSReadF32Le(ss);
+	v->y = SSReadF32Le(ss);
+	v->z = SSReadF32Le(ss);
+	v->w = SSReadF32Le(ss);
 }
 
 /*************************** printing: inline definitions ***************************/
