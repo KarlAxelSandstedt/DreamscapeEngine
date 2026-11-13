@@ -32,8 +32,6 @@ void ds_DynamicsStaticAssert(void)
     ds_StaticAssert(sizeof(struct ds_RemovalJob) == DS_CACHE_LINE, "");
     ds_StaticAssert(sizeof(struct ds_RebuildJobPhase) % DS_CACHE_LINE == 0, "");
     ds_StaticAssert(sizeof(struct ds_DynamicsWorker) % DS_CACHE_LINE == 0, "");
-    /* ds_ShapeContact converts c_ContactResult.contact_manifold in place into .manifold */
-    ds_StaticAssert(sizeof(struct ds_SolverManifold) == sizeof(struct c_Manifold), "");
 }
 
 const struct ds_DynamicsConfig *g_dynamics_config = NULL;

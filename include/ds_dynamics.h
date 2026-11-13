@@ -562,6 +562,9 @@ struct ds_SolverManifold
     v3      normal;         /* unit, from body 0 to body 1                                            */
     u32     point_count;
     c_PointId id[4];        /* point ids                                                              */
+    v3      tangent[2];
+    f32     tangent_impulse[4][2];
+    f32     normal_impulse[4];
 };
 
 /*

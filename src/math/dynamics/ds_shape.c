@@ -279,27 +279,33 @@ f32 ds_ShapeDistance(v3f64 *c0, v3f64 *c1, const struct ds_Dynamics *pipeline, c
  * the c_Manifold reads past the ds_SolverManifold writes); afterwards the memory is only read in the solver form
  * (arena memory takes the type of its last store).
  */
-static void ds_ContactResultToSolver(struct c_ContactResult *result, const ds_TransformWorld *t, const v3f64 com0, const u32 flip)
+static void ds_ContactResultToSolver(struct arena *frame, struct c_ContactResult *result, const ds_TransformWorld *t, const v3f64 com0, const u32 flip)
 {
     const m3 rot = M3QUnit(t->rotation);
     const v3 offset = V3F64Demote(V3F64Sub(t->position, com0));
+    const struct c_Manifold *local = result->contact_manifold;
+    struct ds_SolverManifold *solver = ArenaPush(frame, result->manifold_count*sizeof(struct ds_SolverManifold));
+    if (result->manifold_count && !solver)
+    {
+        Log(T_SYSTEM, S_FATAL, "Out of memory in %s", __func__);
+        FatalCleanupAndExit();
+    }
+
     for (u32 mi = 0; mi < result->manifold_count; ++mi)
     {
-        struct c_Manifold local;
-        memcpy(&local, result->contact_manifold + mi, sizeof(local));
-        struct ds_SolverManifold *solver = result->manifold + mi;
-        for (u32 i = 0; i < local.v_count; ++i)
+        for (u32 i = 0; i < local[mi].v_count; ++i)
         {
             const v3 v = (flip)
-                       ? V3AddScaled(local.v[i], local.n, -local.depth[i])
-                       : local.v[i];
-            solver->anchor0[i] = V3Add(M3V3Mul(rot, v), offset);
-            solver->depth[i] = local.depth[i];
-            solver->id[i] = local.id[i];
+                       ? V3AddScaled(local[mi].v[i], local[mi].n, -local[mi].depth[i])
+                       : local[mi].v[i];
+            solver[mi].anchor0[i] = V3Add(M3V3Mul(rot, v), offset);
+            solver[mi].depth[i] = local[mi].depth[i];
+            solver[mi].id[i] = local[mi].id[i];
         }
-        solver->normal = M3V3Mul(rot, (flip) ? V3Negate(local.n) : local.n);
-        solver->point_count = local.v_count;
+        solver[mi].normal = M3V3Mul(rot, (flip) ? V3Negate(local[mi].n) : local[mi].n);
+        solver[mi].point_count = local[mi].v_count;
     }
+    result->manifold = solver;
 }
 
 /* convex types precede C_SHAPE_TRI_MESH; [s0->type][s1->type] with s0 the more complex shape */
@@ -369,7 +375,7 @@ void ds_ShapeContact(struct arena *frame, const struct ds_Dynamics *pipeline, co
         const struct ds_SolverSet *set = pipeline->solver_set_pool.buf + body->set;
         com[i] = ds_BodySimWorldCenterOfMass(set->body_sim_pool.buf + body->sim);
     }
-    ds_ContactResultToSolver(&result, &t_world[local], com[0], flip);
+    ds_ContactResultToSolver(frame, &result, &t_world[local], com[0], flip);
 
 	c->narrowphase = result;
     c->com_offset = V3F64Demote(V3F64Sub(com[1], com[0]));
