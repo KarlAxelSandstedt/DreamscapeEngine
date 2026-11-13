@@ -64,11 +64,15 @@ boxes dropped onto a relief terrain (mesh contacts): a copy's mesh contacts hold
 entry for entry (a separation entry's feature ids are not written, so they are not compared). A restore points the dynamics globals at the copy, so the test points
 them back at the original (ds_DynamicsConfigPush) before calling into it outside a tick.
 
-Solver sets (DynamicsSleepTest): a two-box stack and a lone box fall asleep into one set each (one island, the
-bodies' simulation state without compute state, the contacts with their caches, all in the set's arena; the
-active set empty). Waking a fixed set or the null index does nothing. Removing the top box wakes the stack's
+Solver sets (DynamicsSleepTest): a two-box stack and a lone box fall asleep into one set each (one island and the
+bodies' simulation state without compute state in the set's arena, the contacts only naming the set; the active
+set empty). Waking a fixed set or the null index does nothing. Removing the top box wakes the stack's
 set (slot freed, the bottom box active with compute state and a reset sleep timer, the lone box still asleep);
 the bottom box sleeps again into the freed slot; disabling sleeping wakes everything.
+
+Parking (DynamicsParkingTest): a sleeping island's non-touching contacts whose other body is static or asleep sit
+in the disabled set with the partial sleeping bit clear and return to the active set on a wake; a contact created
+between a sleeping and a static shape starts there.
 
 Constraint graph (DynamicsGraphTest): a three-box row and a slab carrying nine boxes, more than the dynamic
 colours. After a tick every contact is coloured and the invariants hold (GraphTestCheck: static colours hold
@@ -1714,6 +1718,140 @@ static struct test_Output DynamicsWakeByContactTest(struct test_Environment *env
     TEST_NOT_ZERO(SnapshotTestSleepingSetCount(&pipeline) == 1);
     ds_SolverSetValidate(&pipeline, bottom->set);
     ds_IslandValidateAll(&pipeline);
+
+    ds_DynamicsConfigPop(&pipeline);
+    ds_DynamicsDealloc(&pipeline);
+    c_ShapeDBDealloc(&cshape_db);
+    ds_SDBDealloc(prefab_db);
+    ArenaFree(&mem);
+    return output;
+}
+
+/* Index of the contact between the first shapes of the two bodies; U32_MAX if there is none */
+static u32 DynamicsTestContactIndex(const struct ds_Dynamics *pipeline, const ds_BodyId body0, const ds_BodyId body1)
+{
+    const struct ds_Body *b0 = ds_BodyLookup(pipeline, body0).address;
+    const struct ds_Body *b1 = ds_BodyLookup(pipeline, body1).address;
+    return ds_ContactKeyLookup(pipeline, ds_ContactKeyCanonical(b0->shape_list.first, b1->shape_list.first)).index;
+}
+
+/*
+ * Parking: a sleeping island's non-touching contacts whose other body is static or asleep leave the active set for
+ * the disabled set. Two boxes 3 cm apart under a plank (one island; the boxes' contact does not touch) and a box 3 cm
+ * from a static wall (its own island) fall asleep: both non-touching contacts are disabled with the partial sleeping
+ * bit clear, the touching ones name their island's set, and the active set holds no contact. Waking the lone box
+ * returns its wall contact to the active set with the bit set (static XOR awake); waking the plank's island returns
+ * the boxes' contact with the bit clear and its touching contacts to the graph. Both islands sleep and park again.
+ * A shape added to the sleeping lone box beside the wall gets its wall contact straight in the disabled set at the
+ * next broadphase, and the box stays asleep.
+ */
+static struct test_Output DynamicsParkingTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct arena mem = ArenaAlloc(NULL, 64*1024*1024);
+    struct c_ShapeDB cshape_db = { 0 };
+    c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
+    ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
+    ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
+    struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&external, NSEC_PER_SEC / 60);
+    ds_DynamicsConfigPush(&pipeline);
+    pipeline.config_pending.solver.sleep_enabled = 1;
+    ds_DynamicsConfigUpdatePending(&pipeline);
+
+    /* ground, wall, two boxes 3 cm apart under a plank, a lone box 3 cm from the wall */
+    const v3 hw = V3(0.5f, 0.5f, 0.5f);
+    const struct dynamics_TestBox scene[6] =
+    {
+        { .position = V3(0.0f, -1.0f, 0.0f), .rotation = QIdentity(), .hw = V3(16.0f, 1.0f, 16.0f), .dynamic = 0, .friction = 0.5f },
+        { .position = V3(3.0f, 1.0f, 0.0f), .rotation = QIdentity(), .hw = V3(0.5f, 1.0f, 1.0f), .dynamic = 0, .friction = 0.5f },
+        { .position = V3(-0.515f, 0.5f, 0.0f), .rotation = QIdentity(), .hw = hw, .dynamic = 1, .friction = 0.5f },
+        { .position = V3(0.515f, 0.5f, 0.0f), .rotation = QIdentity(), .hw = hw, .dynamic = 1, .friction = 0.5f },
+        { .position = V3(0.0f, 1.25f, 0.0f), .rotation = QIdentity(), .hw = V3(1.0f, 0.25f, 0.5f), .dynamic = 1, .friction = 0.5f },
+        { .position = V3(1.97f, 0.5f, 0.0f), .rotation = QIdentity(), .hw = hw, .dynamic = 1, .friction = 0.5f },
+    };
+    ds_BodyId id[6];
+    for (u32 i = 0; i < 6; ++i)
+    {
+        id[i] = DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, scene + i, (v3f64) { 0 }, i);
+    }
+    const struct ds_Body *wall = ds_BodyLookup(&pipeline, id[1]).address;
+    const struct ds_Body *box = ds_BodyLookup(&pipeline, id[2]).address;
+    const struct ds_Body *lone = ds_BodyLookup(&pipeline, id[5]).address;
+
+    u32 t;
+    for (t = 0; t < 600 && (box->set < SOLVER_SET_SLEEPING_FIRST || lone->set < SOLVER_SET_SLEEPING_FIRST); ++t)
+    {
+        SnapshotTestTick(&pipeline);
+    }
+    TEST_NOT_ZERO(t < 600 && box->set != lone->set);
+
+    /* the non-touching contacts are disabled with the bit clear; the touching box-plank contact names the island's set */
+    const u32 boxes = DynamicsTestContactIndex(&pipeline, id[2], id[3]);
+    const u32 lone_wall = DynamicsTestContactIndex(&pipeline, id[5], id[1]);
+    const u32 box_plank = DynamicsTestContactIndex(&pipeline, id[2], id[4]);
+    TEST_NOT_ZERO(boxes != U32_MAX && lone_wall != U32_MAX && box_plank != U32_MAX);
+    const struct ds_Contact *c = pipeline.contact_pool.buf + boxes;
+    TEST_NOT_ZERO(c->set == SOLVER_SET_DISABLED && !ds_ContactPartialSleepingCheck(c) && pipeline.manifold_buffer_pool.buf[boxes].count == 0);
+    c = pipeline.contact_pool.buf + lone_wall;
+    TEST_NOT_ZERO(c->set == SOLVER_SET_DISABLED && !ds_ContactPartialSleepingCheck(c) && pipeline.manifold_buffer_pool.buf[lone_wall].count == 0);
+    c = pipeline.contact_pool.buf + box_plank;
+    TEST_NOT_ZERO(c->set == box->set && !ds_ContactPartialSleepingCheck(c));
+    const struct ds_SolverSet *active = pipeline.solver_set_pool.buf + SOLVER_SET_ACTIVE;
+    const struct ds_SolverSet *disabled = pipeline.solver_set_pool.buf + SOLVER_SET_DISABLED;
+    TEST_NOT_ZERO(active->contact_pool.count == 0 && disabled->contact_pool.count == 2);
+    ds_ContactValidateAll(&pipeline);
+
+    /* waking the lone box returns its wall contact to the active set with the bit set */
+    ds_SolverSetWakeUp(&pipeline, lone->set);
+    c = pipeline.contact_pool.buf + lone_wall;
+    TEST_NOT_ZERO(lone->set == SOLVER_SET_ACTIVE && c->set == SOLVER_SET_ACTIVE && ds_ContactPartialSleepingCheck(c));
+    c = pipeline.contact_pool.buf + boxes;
+    TEST_NOT_ZERO(c->set == SOLVER_SET_DISABLED);
+    ds_ContactValidateAll(&pipeline);
+
+    /* waking the plank's island returns the boxes' contact with the bit clear, and its touching contacts to the graph */
+    ds_SolverSetWakeUp(&pipeline, box->set);
+    c = pipeline.contact_pool.buf + boxes;
+    TEST_NOT_ZERO(box->set == SOLVER_SET_ACTIVE && c->set == SOLVER_SET_ACTIVE && !ds_ContactPartialSleepingCheck(c));
+    c = pipeline.contact_pool.buf + box_plank;
+    TEST_NOT_ZERO(c->set == SOLVER_SET_NULL && c->color != CG_INVALID_COLOR);
+    active = pipeline.solver_set_pool.buf + SOLVER_SET_ACTIVE;
+    disabled = pipeline.solver_set_pool.buf + SOLVER_SET_DISABLED;
+    TEST_NOT_ZERO(active->contact_pool.count == 2 && disabled->contact_pool.count == 0);
+    ds_ContactValidateAll(&pipeline);
+
+    /* both islands sleep and park again */
+    for (t = 0; t < 600 && (box->set < SOLVER_SET_SLEEPING_FIRST || lone->set < SOLVER_SET_SLEEPING_FIRST); ++t)
+    {
+        SnapshotTestTick(&pipeline);
+    }
+    TEST_NOT_ZERO(t < 600);
+    c = pipeline.contact_pool.buf + boxes;
+    TEST_NOT_ZERO(c->set == SOLVER_SET_DISABLED && !ds_ContactPartialSleepingCheck(c));
+    c = pipeline.contact_pool.buf + lone_wall;
+    TEST_NOT_ZERO(c->set == SOLVER_SET_DISABLED && !ds_ContactPartialSleepingCheck(c));
+    active = pipeline.solver_set_pool.buf + SOLVER_SET_ACTIVE;
+    disabled = pipeline.solver_set_pool.buf + SOLVER_SET_DISABLED;
+    TEST_NOT_ZERO(active->contact_pool.count == 0 && disabled->contact_pool.count == 2);
+
+    /* a shape added to the sleeping lone box beside the wall: its wall contact starts disabled, the box sleeps on */
+    const struct c_Shape src = { .type = C_SHAPE_CONVEX_HULL, .hull = DcelBox(&mem, hw) };
+    const struct slot cshape = c_ShapeDBAdd(&cshape_db, Utf8Format(&mem, "box_upper"), &src);
+    const struct ds_ShapePrefab shape_prefab = { .cshape = cshape.index, .density = 1.0f, .friction = 0.5f };
+    const ds_Transform t_local = { .rotation = QIdentity(), .position = V3(0.0f, 1.03f, 0.0f) };
+    const ds_ShapeId upper = ds_ShapeAdd(&pipeline, &shape_prefab, &t_local, id[5]);
+    const u32 lone_set = lone->set;
+    SnapshotTestTick(&pipeline);
+    const u32 upper_wall = ds_ContactKeyLookup(&pipeline, ds_ContactKeyCanonical(ds_ShapeLookup(&pipeline, upper).index, wall->shape_list.first)).index;
+    TEST_NOT_ZERO(upper_wall != U32_MAX && lone->set == lone_set);
+    c = pipeline.contact_pool.buf + upper_wall;
+    TEST_NOT_ZERO(c->set == SOLVER_SET_DISABLED && !ds_ContactPartialSleepingCheck(c));
+    active = pipeline.solver_set_pool.buf + SOLVER_SET_ACTIVE;
+    disabled = pipeline.solver_set_pool.buf + SOLVER_SET_DISABLED;
+    TEST_NOT_ZERO(active->contact_pool.count == 0 && disabled->contact_pool.count == 3);
+    ds_ContactValidateAll(&pipeline);
 
     ds_DynamicsConfigPop(&pipeline);
     ds_DynamicsDealloc(&pipeline);
@@ -4255,6 +4393,7 @@ static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
     DynamicsIslandTest,
     DynamicsSleepTest,
     DynamicsWakeByContactTest,
+    DynamicsParkingTest,
     DynamicsGraphTest,
     DynamicsJointTest,
     DynamicsJointIslandTest,

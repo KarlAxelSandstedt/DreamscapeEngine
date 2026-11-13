@@ -1494,7 +1494,7 @@ void ds_DynamicsSerialize(struct SS *ss, const struct ds_Dynamics *pipeline)
 	ds_Assert(ds_DynamicsSerializeSize(pipeline) <= SSBytesLeft(ss));
 
 #ifdef DS_ASSERT_DEBUG
-	/* every contact has an owner: a cgraph color or a solver set */
+	/* every contact has an owner: a cgraph color, a solver set's contact_pool or the sleeping set it names */
 	u32 owned_contacts = 0;
 	for (u32 i = 0; i < CG_COLOR_COUNT; ++i)
 	{
@@ -1504,6 +1504,11 @@ void ds_DynamicsSerialize(struct SS *ss, const struct ds_Dynamics *pipeline)
 	{
 		const struct ds_SolverSet *set = pipeline->solver_set_pool.buf + i;
 		owned_contacts += (ds_PoolSlotAllocated(set)) ? set->contact_pool.count : 0;
+	}
+	for (u32 i = 0; i < pipeline->contact_pool.count_max; ++i)
+	{
+		const struct ds_Contact *c = pipeline->contact_pool.buf + i;
+		owned_contacts += (ds_PoolSlotAllocated(c) && c->set != SOLVER_SET_NULL && c->set >= SOLVER_SET_SLEEPING_FIRST);
 	}
 	ds_Assert(owned_contacts == pipeline->contact_pool.count);
 #endif
