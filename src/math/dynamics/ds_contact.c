@@ -349,24 +349,11 @@ void ds_ContactWakeUp(struct ds_Dynamics *pipeline, const u32 contact_index)
 
 void ds_ContactSleep(struct ds_Dynamics *pipeline, const u32 contact, const u32 set_index)
 {
-    struct ds_SolverSet *set = pipeline->solver_set_pool.buf + set_index;
     struct ds_Contact *c = pipeline->contact_pool.buf + contact;
-    struct ds_CGraphColor *color = pipeline->cgraph.color + c->color;
-    struct ds_ContactCompute *compute = color->contact_compute_pool.buf + c->compute;
-
-    const struct slot compute_slot = ds_CPoolPush(set->contact_compute_pool);
-    struct ds_ContactCompute *sleep_compute = compute_slot.address;
-    sleep_compute->cc = NULL;
-    sleep_compute->cc_count = 0;
-    sleep_compute->body_sim[0] = compute->body_sim[0];
-    sleep_compute->body_sim[1] = compute->body_sim[1];
-
     ds_CGraphContactRemove(pipeline, c);
 
     c->set = set_index;
-    c->compute = ds_CPoolPush(set->contact_pool).index;
-    set->contact_pool.buf[ c->compute ] = contact;
-    ds_Assert(c->compute == compute_slot.index);
+    c->compute = U32_MAX;
 }
 
 void ds_ContactValidateAll(const struct ds_Dynamics *pipeline)
@@ -424,24 +411,6 @@ void ds_ContactValidateAll(const struct ds_Dynamics *pipeline)
         }
     }
 
-    for (u32 set_index = SOLVER_SET_SLEEPING_FIRST; set_index < pipeline->solver_set_pool.count_max; ++set_index)
-    {
-        const struct ds_SolverSet *set = pipeline->solver_set_pool.buf + set_index;
-        if (ds_PoolSlotAllocated(set))
-        {
-            for (u32 i = 0; i < set->contact_pool.count; ++i)
-            {
-                const u32 ci = set->contact_pool.buf[i];
-                const struct ds_Contact *c = pipeline->contact_pool.buf + ci;
-		        ds_Assert(ds_PoolSlotAllocated(c));
-                ds_Assert(c->compute == i);
-                ds_Assert(c->set == set_index);
-                ds_Assert(c->color == CG_INVALID_COLOR);
-                ds_Assert(pipeline->manifold_buffer_pool.buf[ci].count > 0);
-            }
-        }
-    }
-
     for (u32 ci = 0; ci < pipeline->contact_pool.count_max; ++ci)
     {
         const struct ds_Contact *c = pipeline->contact_pool.buf + ci;
@@ -461,6 +430,17 @@ void ds_ContactValidateAll(const struct ds_Dynamics *pipeline)
 
             const u32 partial_sleeping = ((body[0]->set != SOLVER_SET_ACTIVE) != (body[1]->set != SOLVER_SET_ACTIVE));
             ds_Assert(((c->flags & DS_CONTACT_PARTIAL_SLEEPING) != 0) == partial_sleeping);
+
+            if (c->set != SOLVER_SET_NULL && c->set >= SOLVER_SET_SLEEPING_FIRST)
+            {
+                ds_Assert(c->set < pipeline->solver_set_pool.count_max);
+                ds_Assert(ds_PoolSlotAllocated(pipeline->solver_set_pool.buf + c->set));
+                ds_Assert(c->compute == U32_MAX);
+                ds_Assert(c->color == CG_INVALID_COLOR);
+                ds_Assert(pipeline->manifold_buffer_pool.buf[ci].count > 0);
+                ds_Assert(body[0]->set == c->set || body[0]->set == SOLVER_SET_STATIC);
+                ds_Assert(body[1]->set == c->set || body[1]->set == SOLVER_SET_STATIC);
+            }
         }
     }
 }

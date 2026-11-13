@@ -174,9 +174,6 @@ void ds_CGraphContactAdd(struct ds_Dynamics *pipeline, struct ds_Contact *contac
 {
     ds_Assert(contact->set != SOLVER_SET_NULL)
     ds_Assert(contact->color == CG_INVALID_COLOR);
-    
-    const struct ds_SolverSet *set = pipeline->solver_set_pool.buf + contact->set;
-    const struct ds_ContactCompute *sleep_ccomp = set->contact_compute_pool.buf + contact->compute;
 
     const struct ds_Shape *shape[2] =
     {
@@ -195,12 +192,6 @@ void ds_CGraphContactAdd(struct ds_Dynamics *pipeline, struct ds_Contact *contac
     struct ds_ContactCompute *ccomp = ccomp_slot.address;
     memset(ccomp, 0, sizeof(*ccomp)); 
     ds_Assert(ccomp_slot.index == contact->compute);
-
-    if (contact->set >= SOLVER_SET_SLEEPING_FIRST)
-    {
-        ccomp->body_sim[0] = sleep_ccomp->body_sim[0];
-        ccomp->body_sim[1] = sleep_ccomp->body_sim[1];
-    }
 
     contact->set = SOLVER_SET_NULL;
 }

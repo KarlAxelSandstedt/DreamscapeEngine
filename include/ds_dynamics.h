@@ -619,16 +619,16 @@ ds_Contact
 Every touching and non-touching contact is a persistent ds_Contact. The structure stores general
 connectivity data and where to find its simulation/compute data. 
 
-    :: Every non-touching contact have a link (<->) stored in the active set, and have no compute
-       data attached to it. It it not associated with an island. Any ds_SatCache that belongs to 
-       the contact is alive for 2 frames and is renewed every frame.
+    :: Every non-touching contact have a link (<->) stored in the active set (disabled set if both
+       bodies are static or sleeping) and no compute data. It it not associated with an island. Any
+       ds_SatCache that belongs to the contact is alive for 2 frames and is renewed every frame.
 
     :: All contacts in an Awake island are stored in the constraint graph with a link (<->) and
        compute data. Any ds_SatCache that belongs to the contact is alive for 2 frames and is
        renewed every frame.
 
-    :: All contacts in a sleeping island are stored in the island's sleeping set, with a link (<->)
-       and compute data. Any ds_SatCache that belongs to the contact is moved onto the heap. 
+    :: All contacts in a sleeping island name the island's sleeping set (contact->set), without a
+       link (<->) or compute data. Any ds_SatCache that belongs to the contact is moved onto the heap. 
 */
 #define DS_CONTACT_STATIC_INDEX     ((u32) 1 << 0)      /* Static body's key index Applicable
                                                            only if DS_CONTACT_STATIC.        */
@@ -1063,21 +1063,21 @@ DEFINE_CPOOL_STRUCT(ds_JointSim);
 ds_SolverSet
 ============
 A solver set holds the simulation state of a group of islands: the bodies' simulation state (ds_BodySim) and,
-in the active set only, their solver state (ds_BodyCompute), the contacts' solver caches (ds_ContactCompute)
-and the joints' simulation state (ds_JointSim), in compact pools. The owners index them: body->sim,
+in the active set only, their solver state (ds_BodyCompute), the non-touching contacts' indices and the
+joints' simulation state (ds_JointSim), in compact pools. The owners index them: body->sim,
 contact->compute and joint->sim are slots in the pools of the set named by body->set, contact->set and
 joint->set; island->set_island_index is the island's slot in its set's island_pool. A compact pool's removal
 moves the last element into the hole, and the moved owner's slot is updated with it.
 
 The fixed sets live on the heap with growable pools:
-SOLVER_SET_DISABLED: reserved for bodies taken out of the simulation; unused so far.
+SOLVER_SET_DISABLED: non-touching contacts whose bodies are static or sleeping; reserved for disabled bodies.
 SOLVER_SET_STATIC: the static bodies' simulation state; no compute state, no islands, no contacts.
 SOLVER_SET_ACTIVE: every simulated island with its bodies' simulation and compute state. Its contacts are in
-    the constraint graph's colours (contact->set is SOLVER_SET_NULL there); its contact_pool holds only the
-    contacts not promoted yet.
+    the constraint graph's colours (contact->set is SOLVER_SET_NULL there); its contact_pool holds the
+    non-touching contacts with an awake body.
 SOLVER_SET_SLEEPING_FIRST and up: one set per sleeping island, created by ds_SolverSetSleep in one heap arena
-    (mem) sized by ds_SolverSetSleepMemoryRequirement: the pools; contacts keep their manifold buffers.
-    ds_SolverSetWakeUp moves the contacts back into the graph and frees the set; the slot is reused.
+    (mem) sized by ds_SolverSetSleepMemoryRequirement. Its touching contacts only name it (compute U32_MAX)
+    and keep their manifold buffers; ds_SolverSetWakeUp moves them into the graph and frees the set for reuse.
 
 Only the pipeline sleeps and wakes islands: at the end of SolveConstraints an island whose bodies have all
 rested for sleep_time_threshold and that is not flagged for a split goes to sleep; a set wakes when one of its
@@ -1109,11 +1109,8 @@ struct ds_SolverSet
     /* Body solver computation state (the active set only) */
     ds_CPool(ds_BodyCompute)    body_compute_pool;
 
-    /* Contact indices: a sleeping set's contacts; the active set's contacts not promoted into the constraint graph */
+    /* Contact indices: the active set's contacts not promoted into the constraint graph; the disabled set's parked contacts */
     ds_CPool(u32)               contact_pool;
-    
-    /* A sleeping set's contact solver caches, in contact_pool's order */
-    ds_CPool(ds_ContactCompute) contact_compute_pool;
 
     /* A sleeping or disabled set's joints, out of the constraint graph */
     ds_CPool(ds_JointSim)       joint_sim_pool;
@@ -1128,7 +1125,7 @@ DEFINE_POOL(ds_SolverSet);
  * Allocate and set up a ds_SolverSet. The pools are allocated on mem_set (fixed size; the set keeps the arena
  * as its mem) or, with mem_set NULL, on the heap (growable). A pool with initial count 0 is left empty.
  */
-struct slot ds_SolverSetAdd(struct arena *mem_set, struct ds_Dynamics *pipeline, const u32 initial_body_sim_count, const u32 initial_body_compute_count, const u32 initial_contact_count, const u32 initial_contact_compute_count,  const u32 initial_joint_count, const u32 initial_island_count);
+struct slot ds_SolverSetAdd(struct arena *mem_set, struct ds_Dynamics *pipeline, const u32 initial_body_sim_count, const u32 initial_body_compute_count, const u32 initial_contact_count, const u32 initial_joint_count, const u32 initial_island_count);
 /* Deallocate the given ds_SolverSet: its arena, or its heap pools */
 void        ds_SolverSetRemove(struct ds_Dynamics *pipeline, const u32 index);
 /* Empty the given ds_SolverSet's pools; their memory is kept */

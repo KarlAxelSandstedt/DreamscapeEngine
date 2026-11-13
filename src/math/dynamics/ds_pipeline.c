@@ -265,9 +265,9 @@ struct ds_Dynamics ds_DynamicsAlloc(const struct ds_DynamicsConfig *config, cons
     ds_CGraphAlloc(&pipeline, 4096);
 
     ds_PoolAlloc(NULL, pipeline.solver_set_pool, 4096, GROWABLE);
-    const struct slot set_disabled = ds_SolverSetAdd(NULL, &pipeline, 0, 0, 4096, 0, 0, 0);
-    const struct slot set_static = ds_SolverSetAdd(NULL, &pipeline, 256, 0, 0, 0, 0, 0);
-    const struct slot set_active = ds_SolverSetAdd(NULL, &pipeline, 4096, 4096, 4096, 0, 0, 4096);
+    const struct slot set_disabled = ds_SolverSetAdd(NULL, &pipeline, 0, 0, 4096, 0, 0);
+    const struct slot set_static = ds_SolverSetAdd(NULL, &pipeline, 256, 0, 0, 0, 0);
+    const struct slot set_active = ds_SolverSetAdd(NULL, &pipeline, 4096, 4096, 4096, 0, 4096);
     ds_Assert(set_disabled.index == SOLVER_SET_DISABLED);
     ds_Assert(set_static.index == SOLVER_SET_STATIC);
     ds_Assert(set_active.index == SOLVER_SET_ACTIVE);

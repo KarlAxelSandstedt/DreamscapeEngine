@@ -1230,7 +1230,6 @@ u64 ds_SolverSetSerializeSize(const struct ds_Dynamics *pipeline, const u32 set_
 		+ ds_BodySimCPoolSerializeSize(&set->body_sim_pool)
 		+ ds_BodyComputeCPoolSerializeSize(&set->body_compute_pool)
 		+ U32CPoolSerializeSize(&set->contact_pool)
-		+ ds_ContactComputeCPoolSerializeSize(&set->contact_compute_pool)
 		+ ds_JointSimCPoolSerializeSize(&set->joint_sim_pool)
 		+ U32CPoolSerializeSize(&set->island_pool);
 
@@ -1248,7 +1247,6 @@ void ds_SolverSetSerialize(struct SS *ss, const struct ds_Dynamics *pipeline, co
 	ds_BodySimCPoolSerialize(ss, &set->body_sim_pool);
 	ds_BodyComputeCPoolSerialize(ss, &set->body_compute_pool);
 	U32CPoolSerialize(ss, &set->contact_pool);
-	ds_ContactComputeCPoolSerialize(ss, &set->contact_compute_pool);
 	ds_JointSimCPoolSerialize(ss, &set->joint_sim_pool);
 	U32CPoolSerialize(ss, &set->island_pool);
 
@@ -1298,7 +1296,6 @@ u32 ds_SolverSetTryDeserialize(struct SS *ss, struct ds_Dynamics *pipeline, cons
 	if (!ds_BodySimCPoolTryDeserialize(mem, ss, &set->body_sim_pool, growable)
 		|| !ds_BodyComputeCPoolTryDeserialize(mem, ss, &set->body_compute_pool, growable)
 		|| !U32CPoolTryDeserialize(mem, ss, &set->contact_pool, growable)
-		|| !ds_ContactComputeCPoolTryDeserialize(mem, ss, &set->contact_compute_pool, growable)
 		|| !ds_JointSimCPoolTryDeserialize(mem, ss, &set->joint_sim_pool, growable)
 		|| !U32CPoolTryDeserialize(mem, ss, &set->island_pool, growable))
 	{
@@ -1327,7 +1324,6 @@ failure:
 		ds_CPoolDealloc(set->body_sim_pool);
 		ds_CPoolDealloc(set->body_compute_pool);
 		ds_CPoolDealloc(set->contact_pool);
-		ds_CPoolDealloc(set->contact_compute_pool);
 		ds_CPoolDealloc(set->joint_sim_pool);
 		ds_CPoolDealloc(set->island_pool);
 	}

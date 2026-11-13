@@ -508,6 +508,18 @@ static u32 SnapshotTestSleepingSetCount(const struct ds_Dynamics *pipeline)
     return count;
 }
 
+/* Number of allocated contacts whose contact->set is the given set */
+static u32 DynamicsTestSetContactCount(const struct ds_Dynamics *pipeline, const u32 set_index)
+{
+    u32 count = 0;
+    for (u32 i = 0; i < pipeline->contact_pool.count_max; ++i)
+    {
+        const struct ds_Contact *c = pipeline->contact_pool.buf + i;
+        count += (ds_PoolSlotAllocated(c) && c->set == set_index);
+    }
+    return count;
+}
+
 /* Wake every sleeping set in index order; returns how many there were. Leaves pipeline pushed. */
 static u32 SnapshotTestWakeAll(struct ds_Dynamics *pipeline)
 {
@@ -1554,7 +1566,7 @@ static struct test_Output DynamicsSleepTest(struct test_Environment *env)
     TEST_NOT_ZERO(top->set == bottom->set && bottom->set != lone->set);
     TEST_NOT_ZERO(SnapshotTestSleepingSetCount(&pipeline) == 2);
 
-    /* the active set is empty; each sleeping set holds one island, its bodies' simulation state without compute state, and its contacts with their caches, in one arena */
+    /* the active set is empty; each sleeping set holds one island and its bodies' simulation state without compute state, in one arena; its contacts only name it */
     const struct ds_SolverSet *active = pipeline.solver_set_pool.buf + SOLVER_SET_ACTIVE;
     TEST_NOT_ZERO(active->island_pool.count == 0 && active->body_sim_pool.count == 0 && active->body_compute_pool.count == 0);
     for (u32 i = SOLVER_SET_SLEEPING_FIRST; i < pipeline.solver_set_pool.count_max; ++i)
@@ -1568,14 +1580,14 @@ static struct test_Output DynamicsSleepTest(struct test_Environment *env)
         const struct ds_Island *island = pipeline.island_pool.buf + set->island_pool.buf[0];
         TEST_NOT_ZERO(island->set == i && island->set_island_index == 0);
         TEST_NOT_ZERO(set->body_sim_pool.count == island->body_list.count && set->body_compute_pool.count == 0);
-        TEST_NOT_ZERO(set->contact_pool.count == island->contact_list.count && set->contact_compute_pool.count == island->contact_list.count);
+        TEST_NOT_ZERO(set->contact_pool.count == 0 && DynamicsTestSetContactCount(&pipeline, i) == island->contact_list.count);
         ds_SolverSetValidate(&pipeline, i);
     }
     ds_IslandValidateAll(&pipeline);
     const struct ds_SolverSet *stack_set = pipeline.solver_set_pool.buf + bottom->set;
     const struct ds_SolverSet *lone_set = pipeline.solver_set_pool.buf + lone->set;
-    TEST_NOT_ZERO(stack_set->body_sim_pool.count == 2 && stack_set->contact_pool.count == 2);
-    TEST_NOT_ZERO(lone_set->body_sim_pool.count == 1 && lone_set->contact_pool.count == 1);
+    TEST_NOT_ZERO(stack_set->body_sim_pool.count == 2 && DynamicsTestSetContactCount(&pipeline, bottom->set) == 2);
+    TEST_NOT_ZERO(lone_set->body_sim_pool.count == 1 && DynamicsTestSetContactCount(&pipeline, lone->set) == 1);
     TEST_NOT_ZERO(stack_set->body_sim_pool.buf[bottom->sim].body == bottom_index);
 
     /* waking a set that is not sleeping is a no-op */
@@ -1665,8 +1677,7 @@ static struct test_Output DynamicsWakeByContactTest(struct test_Environment *env
     }
     TEST_NOT_ZERO(t < 600 && top->set == bottom->set);
     const u32 stack_set_index = bottom->set;
-    const struct ds_SolverSet *stack_set = pipeline.solver_set_pool.buf + stack_set_index;
-    TEST_NOT_ZERO(stack_set->contact_pool.count == 2);
+    TEST_NOT_ZERO(DynamicsTestSetContactCount(&pipeline, stack_set_index) == 2);
 
     /* asleep: nothing is dirty after a tick, and the sleeping contacts stay */
     for (t = 0; t < 60; ++t)
@@ -1679,7 +1690,7 @@ static struct test_Output DynamicsWakeByContactTest(struct test_Environment *env
         dirty_bits |= pipeline.shape_dirty_set.bits[block];
     }
     TEST_NOT_ZERO(dirty_bits == 0);
-    TEST_NOT_ZERO(bottom->set == stack_set_index && stack_set->contact_pool.count == 2);
+    TEST_NOT_ZERO(bottom->set == stack_set_index && DynamicsTestSetContactCount(&pipeline, stack_set_index) == 2);
 
     /* the dropped box has the largest body index: its own query must report the pair with the sleeping top box */
     id[3] = DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, scene + 3, (v3f64) { 0 }, 3);
