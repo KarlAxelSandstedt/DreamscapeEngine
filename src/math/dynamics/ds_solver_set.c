@@ -163,13 +163,12 @@ void ds_SolverSetWakeUp(struct ds_Dynamics *pipeline, const u32 index)
 
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
     struct ds_SolverSet *set = pipeline->solver_set_pool.buf + index;
-    struct arena *frame = pipeline->runtime.worker[ds_ThreadSelfIndex()].frame;
     ds_Assert(ds_PoolSlotAllocated(set));
     ds_Assert(set->island_pool.count == 1);
 
     for (u32 i = 0; i < set->contact_pool.count; ++i)
     {
-        ds_ContactWakeUp(frame, pipeline, set->contact_pool.buf[i]);
+        ds_ContactWakeUp(pipeline, set->contact_pool.buf[i]);
     }
 
     for (u32 i = 0; i < set->joint_sim_pool.count; ++i)
@@ -224,13 +223,6 @@ u64 ds_SolverSetSleepMemoryRequirement(const struct ds_Dynamics *pipeline, const
     memory_requirement += ds_CPoolAllocMemoryRequirement(island->contact_list.count, sizeof(struct ds_ContactCompute));
     memory_requirement += ds_CPoolAllocMemoryRequirement(island->joint_list.count, sizeof(struct ds_JointSim));
     memory_requirement += ds_CPoolAllocMemoryRequirement(1, sizeof(u32));
-    
-    const struct ds_Contact *c;
-    for (i32 ci = island->contact_list.first; ci != DLL_SENTINEL; ci = c->island_contact.next)
-    {
-        c = pipeline->contact_pool.buf + ci;
-        memory_requirement += ds_ContactMemoryRequirement(pipeline, ci);
-    }
 
     return memory_requirement;
 }
@@ -289,7 +281,7 @@ void ds_SolverSetSleep(struct ds_Dynamics *pipeline, const u32 island_index)
     {
         contact = pipeline->contact_pool.buf + i;
         ds_Assert(contact->island == island_index);
-        ds_ContactSleep(&set->mem, pipeline, i, island->set);
+        ds_ContactSleep(pipeline, i, island->set);
     }
 
     struct ds_Body *body = NULL;

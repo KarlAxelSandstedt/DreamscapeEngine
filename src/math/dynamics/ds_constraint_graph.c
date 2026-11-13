@@ -170,7 +170,7 @@ void ds_CGraphJointRemove(struct ds_Dynamics *pipeline, struct ds_Joint *joint)
     joint->color = CG_INVALID_COLOR;
 }
 
-void ds_CGraphContactAdd(struct arena *frame, struct ds_Dynamics *pipeline, struct ds_Contact *contact)
+void ds_CGraphContactAdd(struct ds_Dynamics *pipeline, struct ds_Contact *contact)
 {
     ds_Assert(contact->set != SOLVER_SET_NULL)
     ds_Assert(contact->color == CG_INVALID_COLOR);
@@ -198,13 +198,8 @@ void ds_CGraphContactAdd(struct arena *frame, struct ds_Dynamics *pipeline, stru
 
     if (contact->set >= SOLVER_SET_SLEEPING_FIRST)
     {
-        const u64 mem_req_compute = sleep_ccomp->ccache_count*sizeof(struct ds_ContactConstraintCache);
         ccomp->body_sim[0] = sleep_ccomp->body_sim[0];
         ccomp->body_sim[1] = sleep_ccomp->body_sim[1];
-        ccomp->ccache_count = sleep_ccomp->ccache_count;
-        ccomp->ccache = (sleep_ccomp->ccache_count)
-                              ? ArenaPushAlignedMemcpy(frame, sleep_ccomp->ccache, mem_req_compute, 1)
-                              : NULL;
     }
 
     contact->set = SOLVER_SET_NULL;

@@ -694,31 +694,10 @@ void        ds_ContactPromote(struct ds_Dynamics *pipeline, const u32 contact);
 /* Internal: Demote contact to non-touching active set from color in constraint graph */
 void        ds_ContactDemote(struct ds_Dynamics *pipeline, const u32 contact);
 /* Internal: Wakeup contact from sleeping set */
-void        ds_ContactWakeUp(struct arena *frame, struct ds_Dynamics *pipeline, const u32 contact);
+void        ds_ContactWakeUp(struct ds_Dynamics *pipeline, const u32 contact);
 /* Internal: Put contact to sleep in sleeping set */
-void        ds_ContactSleep(struct arena *mem_sleep, struct ds_Dynamics *pipeline, const u32 contact, const u32 set);
-/* Internal: Return bytes required to store contact narrowphase results */
-u64         ds_ContactMemoryRequirement(const struct ds_Dynamics *pipeline, const u32 contact);
+void        ds_ContactSleep(struct ds_Dynamics *pipeline, const u32 contact, const u32 set);
 struct ds_ContactCompute;
-
-
-/*
-ds_ContactConstraintCache
-=========================
-Stores data needed for warming up the constraint in the next frame. 
-*/
-struct ds_ContactConstraintCache
-{
-	v3 			        tangent[2];                 /* the contact basis the tangent impulses
-                                                           are in                               */
-	f32 			        tangent_impulse[4][2];
-	f32 			        normal_impulse[4];	        /* contact_solver solution to contact 
-                                                           constraint, or 0.0f                  */
-    c_PointId               id[4];                      /* the points' ids: the warm start
-                                                           matches by them                      */
-    u32                     v_count;                    /* Number of vertices in cache          */
-    u32                     tri;                        /* 0 if non-mesh contact                */
-};
 
 
 /*
@@ -729,9 +708,7 @@ Contact constraint data between two shapes. Note that mesh contacts may store mu
 struct ds_ContactCompute
 {
     struct ds_ContactConstraint *       cc;
-    struct ds_ContactConstraintCache *  ccache;
     u32                                 cc_count;
-    u32                                 ccache_count;
     u32                                 body_sim[2];    /* body->sim values of the two bodies in contact   */
 };
 DEFINE_CPOOL_STRUCT(ds_ContactCompute);
@@ -1632,7 +1609,7 @@ void                    ds_CGraphJointRemove(struct ds_Dynamics *pipeline, struc
  * Add contact to constraint graph (And unset the contact set index WITHOUT removing it from the set). Any cached
  * data in sleeper sets is copied onto the frame. 
  */
-void                    ds_CGraphContactAdd(struct arena *frame, struct ds_Dynamics *pipeline, struct ds_Contact *contact);
+void                    ds_CGraphContactAdd(struct ds_Dynamics *pipeline, struct ds_Contact *contact);
 /* Remove the contact from the constraint graph; the last contact of its colour takes its slot (compute index updated). */
 void                    ds_CGraphContactRemove(struct ds_Dynamics *pipeline, struct ds_Contact *contact);
 
@@ -2166,16 +2143,6 @@ u32             ds_JointSimTryDeserialize(struct SS *ss, struct ds_JointSim *jsi
 u64             ds_SolverManifoldSerializeSize(const struct ds_SolverManifold *manifold);
 void            ds_SolverManifoldSerialize(struct SS *ss, const struct ds_SolverManifold *manifold);
 u32             ds_SolverManifoldTryDeserialize(struct SS *ss, struct ds_SolverManifold *manifold);
-u64             ds_ContactConstraintCacheSerializeSize(const struct ds_ContactConstraintCache *ccache);
-void            ds_ContactConstraintCacheSerialize(struct SS *ss, const struct ds_ContactConstraintCache *ccache);
-u32             ds_ContactConstraintCacheTryDeserialize(struct SS *ss, struct ds_ContactConstraintCache *ccache);
-
-/* Internal: Return the required size when serializing the compute's ccache. */
-u64             ds_ContactComputeCacheSerializeSize(const struct ds_ContactCompute *compute);
-/* Internal: Serialize the compute's ccache. WARNING: Assumes it fits in the stream. */
-void            ds_ContactComputeCacheSerialize(struct SS *ss, const struct ds_ContactCompute *compute);
-/* Internal: Read the compute's ccache onto mem (sleeping contacts) or, mem NULL, into worker frames (awake contacts). Returns 1 on success and 0 on failure. */
-u32             ds_ContactComputeCacheTryDeserialize(struct arena *mem, struct SS *ss, struct ds_ContactCompute *compute, struct ds_Dynamics *pipeline);
 /* Return the required size when serializing the set (memory, pools and its contacts' frame data). */
 u64             ds_SolverSetSerializeSize(const struct ds_Dynamics *pipeline, const u32 set);
 /* Serialize the set (aligned). WARNING: Assumes set fits in the stream. */

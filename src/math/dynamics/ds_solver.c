@@ -668,29 +668,13 @@ void ds_PositionConstraintInitAndCacheImpulsesRange(struct ds_Dynamics *pipeline
             ((ccomp->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_bcomp : active->body_compute_pool.buf + ccomp->body_sim[1]),
         };
 
-        ccomp->ccache_count = ccomp->cc_count;
-        ccomp->ccache = ArenaPushPacked(frame, ccomp->ccache_count*sizeof(struct ds_ContactConstraintCache));
-        if (!ccomp->ccache)
-        {
-		    Log(T_SYSTEM, S_FATAL, "Out of memory in %s\n", __func__);
-		    FatalCleanupAndExit();
-        }
-
         const ds_Array(ds_SolverManifold) manifold = ds_SolverManifoldArray(pipeline, color->contact_pool.buf[ci]);
         ds_Assert(manifold.length == ccomp->cc_count);
         for (u32 cci = 0; cci < ccomp->cc_count; ++cci)
         {
             struct ds_ContactConstraint *cc = ccomp->cc + cci;
-            struct ds_ContactConstraintCache *ccache = ccomp->ccache + cci;
             struct ds_SolverManifold *pm = manifold.buf + cci;
 
-            ccache->tri = (ds_ContactConvexCheck(c))
-                        ? 0
-                        : pm->tri;
-
-		    ccache->v_count = cc->ccp_count;
-		    ccache->tangent[0] = cc->tangent[0];
-		    ccache->tangent[1] = cc->tangent[1];
             pm->tangent[0] = cc->tangent[0];
             pm->tangent[1] = cc->tangent[1];
 
@@ -711,10 +695,6 @@ void ds_PositionConstraintInitAndCacheImpulsesRange(struct ds_Dynamics *pipeline
                 ccp->r[0] = QUnitRotate(sim_inv_rotation[0], ccp->r[0]);
                 ccp->r[1] = QUnitRotate(sim_inv_rotation[1], ccp->r[1]);
 
-		    	ccache->id[ccpi] = pm->id[ccpi];
-		    	ccache->normal_impulse[ccpi] = ccp->normal_impulse;
-		    	ccache->tangent_impulse[ccpi][0] = ccp->tangent_impulse[0];
-		    	ccache->tangent_impulse[ccpi][1] = ccp->tangent_impulse[1];
                 pm->normal_impulse[ccpi] = ccp->normal_impulse;
                 pm->tangent_impulse[ccpi][0] = ccp->tangent_impulse[0];
                 pm->tangent_impulse[ccpi][1] = ccp->tangent_impulse[1];

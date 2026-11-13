@@ -257,7 +257,7 @@ void ds_ContactPromote(struct ds_Dynamics *pipeline, const u32 contact)
     ds_Assert(c->set == SOLVER_SET_ACTIVE);
 
     const u32 compute = c->compute;
-    ds_CGraphContactAdd(NULL, pipeline, c);
+    ds_CGraphContactAdd(pipeline, c);
 
     ds_CPoolRemoveAndSwap(active->contact_pool, compute);
     if (compute < active->contact_pool.count)
@@ -332,44 +332,28 @@ void ds_ContactDemote(struct ds_Dynamics *pipeline, const u32 contact)
     active->contact_pool.buf[ c->compute ] = contact;
 }
 
-u64 ds_ContactMemoryRequirement(const struct ds_Dynamics *pipeline, const u32 contact)
-{
-    const struct ds_Contact *c = pipeline->contact_pool.buf + contact;
-    ds_Assert(c->color != CG_INVALID_COLOR);
-    const struct ds_CGraphColor *color = pipeline->cgraph.color + c->color;
-    const struct ds_ContactCompute *compute = color->contact_compute_pool.buf + c->compute;
-
-    return compute->ccache_count*sizeof(struct ds_ContactConstraintCache);
-}
-
-void ds_ContactWakeUp(struct arena *frame, struct ds_Dynamics *pipeline, const u32 contact_index)
+void ds_ContactWakeUp(struct ds_Dynamics *pipeline, const u32 contact_index)
 {
     struct ds_Contact *c = pipeline->contact_pool.buf + contact_index;
     ds_Assert(c->set >= SOLVER_SET_SLEEPING_FIRST && c->color == CG_INVALID_COLOR);
     ds_Assert(pipeline->manifold_buffer_pool.buf[contact_index].count);
 
-    ds_CGraphContactAdd(frame, pipeline, c);
+    ds_CGraphContactAdd(pipeline, c);
 }
 
-void ds_ContactSleep(struct arena *mem_sleep, struct ds_Dynamics *pipeline, const u32 contact, const u32 set_index)
+void ds_ContactSleep(struct ds_Dynamics *pipeline, const u32 contact, const u32 set_index)
 {
-    ds_Assert(ds_ContactMemoryRequirement(pipeline, contact) <= mem_sleep->mem_left);
     struct ds_SolverSet *set = pipeline->solver_set_pool.buf + set_index;
     struct ds_Contact *c = pipeline->contact_pool.buf + contact;
     struct ds_CGraphColor *color = pipeline->cgraph.color + c->color;
     struct ds_ContactCompute *compute = color->contact_compute_pool.buf + c->compute;
 
-    const u64 mem_req_compute = compute->ccache_count*sizeof(struct ds_ContactConstraintCache);
     const struct slot compute_slot = ds_CPoolPush(set->contact_compute_pool);
     struct ds_ContactCompute *sleep_compute = compute_slot.address;
     sleep_compute->cc = NULL;
     sleep_compute->cc_count = 0;
-    sleep_compute->ccache_count = compute->ccache_count;
     sleep_compute->body_sim[0] = compute->body_sim[0];
     sleep_compute->body_sim[1] = compute->body_sim[1];
-    sleep_compute->ccache = (compute->ccache_count)
-                          ? ArenaPushAlignedMemcpy(mem_sleep, compute->ccache, mem_req_compute, 1)
-                          : NULL;
 
     ds_CGraphContactRemove(pipeline, c);
 

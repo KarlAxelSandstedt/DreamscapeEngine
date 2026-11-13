@@ -909,7 +909,7 @@ u32 ds_BodyComputeTryDeserialize(struct SS *ss, struct ds_BodyCompute *bcomp)
 }
 
 /* cc is rebuilt every solve; ccache is restored by the compute's owner */
-#define DS_CONTACT_COMPUTE_SERIALIZE_SIZE (4*sizeof(u32))
+#define DS_CONTACT_COMPUTE_SERIALIZE_SIZE (3*sizeof(u32))
 
 u64 ds_ContactComputeSerializeSize(const struct ds_ContactCompute *compute)
 {
@@ -919,7 +919,6 @@ u64 ds_ContactComputeSerializeSize(const struct ds_ContactCompute *compute)
 void ds_ContactComputeSerialize(struct SS *ss, const struct ds_ContactCompute *compute)
 {
 	SSWriteU32Le(ss, compute->cc_count);
-	SSWriteU32Le(ss, compute->ccache_count);
 	SSWriteU32LeN(ss, compute->body_sim, 2);
 }
 
@@ -931,9 +930,7 @@ u32 ds_ContactComputeTryDeserialize(struct SS *ss, struct ds_ContactCompute *com
 	}
 
 	compute->cc = NULL;
-	compute->ccache = NULL;
 	compute->cc_count = SSReadU32Le(ss);
-	compute->ccache_count = SSReadU32Le(ss);
 	SSReadU32LeN(ss, compute->body_sim, 2);
 	return 1;
 }
@@ -1138,47 +1135,6 @@ u32 ds_SolverManifoldTryDeserialize(struct SS *ss, struct ds_SolverManifold *man
 	return manifold->point_count <= 4;
 }
 
-#define DS_CONTACT_CONSTRAINT_CACHE_SERIALIZE_SIZE (2*SNAPSHOT_V3_SIZE + 8*sizeof(f32) + 4*sizeof(f32) + 4*sizeof(u32) + 2*sizeof(u32))
-
-u64 ds_ContactConstraintCacheSerializeSize(const struct ds_ContactConstraintCache *ccache)
-{
-	return DS_CONTACT_CONSTRAINT_CACHE_SERIALIZE_SIZE;
-}
-
-void ds_ContactConstraintCacheSerialize(struct SS *ss, const struct ds_ContactConstraintCache *ccache)
-{
-	WriteV3(ss, ccache->tangent[0]);
-	WriteV3(ss, ccache->tangent[1]);
-	WriteF32N(ss, ccache->tangent_impulse[0], 8);
-	WriteF32N(ss, ccache->normal_impulse, 4);
-	for (u32 i = 0; i < 4; ++i)
-	{
-		SSWriteU32Le(ss, ccache->id[i].val);
-	}
-	SSWriteU32Le(ss, ccache->v_count);
-	SSWriteU32Le(ss, ccache->tri);
-}
-
-u32 ds_ContactConstraintCacheTryDeserialize(struct SS *ss, struct ds_ContactConstraintCache *ccache)
-{
-	if (SSBytesLeft(ss) < DS_CONTACT_CONSTRAINT_CACHE_SERIALIZE_SIZE)
-	{
-		return 0;
-	}
-
-	ccache->tangent[0] = ReadV3(ss);
-	ccache->tangent[1] = ReadV3(ss);
-	ReadF32N(ss, ccache->tangent_impulse[0], 8);
-	ReadF32N(ss, ccache->normal_impulse, 4);
-	for (u32 i = 0; i < 4; ++i)
-	{
-		ccache->id[i].val = SSReadU32Le(ss);
-	}
-	ccache->v_count = SSReadU32Le(ss);
-	ccache->tri = SSReadU32Le(ss);
-	return ccache->v_count <= 4;
-}
-
 /*************************** pool images ***************************/
 
 static u64 U32CPoolSerializeSize(const ds_CPool(u32) *pool)
@@ -1243,79 +1199,6 @@ DEFINE_CPOOL_SERIALIZE(ds_ContactCompute, ds_ContactCompute)
 DEFINE_CPOOL_SERIALIZE(ds_JointSim, ds_JointSim)
 
 /*************************** contact data ***************************/
-
-/*
- * Push size bytes for restored contact data: onto mem (a sleeping set's arena), or with mem NULL into a random
- * worker frame (the next one if it is full). Spreading the data leaves room in every worker frame, so a restore
- * inside a tick doesn't starve a worker of frame memory. The worker is chosen by a local generator seeded by the
- * stream position, so the thread's numbers are untouched. Returns NULL when nothing fits.
- */
-static void *SnapshotPush(struct arena *mem, struct ds_Dynamics *pipeline, const struct SS *ss, const u64 size)
-{
-	if (mem)
-	{
-		return ArenaPushAligned(mem, size, 1);
-	}
-
-	struct rng rng;
-	RngLocalInit(&rng, ss->bit_index);
-	const u32 start = (u32) RngLocalU64Range(&rng, 0, pipeline->runtime.worker_count - 1);
-	void *dst = NULL;
-	for (u32 i = 0; i < pipeline->runtime.worker_count && !dst; ++i)
-	{
-		dst = ArenaPushAligned(pipeline->runtime.worker[(start + i) % pipeline->runtime.worker_count].frame, size, 1);
-	}
-	return dst;
-}
-
-u64 ds_ContactComputeCacheSerializeSize(const struct ds_ContactCompute *compute)
-{
-	u64 size = 0;
-	for (u32 i = 0; i < compute->ccache_count; ++i)
-	{
-		size += ds_ContactConstraintCacheSerializeSize(compute->ccache + i);
-	}
-	return size;
-}
-
-void ds_ContactComputeCacheSerialize(struct SS *ss, const struct ds_ContactCompute *compute)
-{
-	for (u32 i = 0; i < compute->ccache_count; ++i)
-	{
-		ds_ContactConstraintCacheSerialize(ss, compute->ccache + i);
-	}
-}
-
-u32 ds_ContactComputeCacheTryDeserialize(struct arena *mem, struct SS *ss, struct ds_ContactCompute *compute, struct ds_Dynamics *pipeline)
-{
-	/* cc is rebuilt every solve */
-	compute->cc = NULL;
-	compute->ccache = NULL;
-	if (compute->ccache_count == 0)
-	{
-		return 1;
-	}
-
-	if (compute->ccache_count > SSBytesLeft(ss))
-	{
-		return 0;
-	}
-
-	compute->ccache = SnapshotPush(mem, pipeline, ss, (u64) compute->ccache_count*sizeof(struct ds_ContactConstraintCache));
-	if (compute->ccache == NULL)
-	{
-		return 0;
-	}
-
-	for (u32 i = 0; i < compute->ccache_count; ++i)
-	{
-		if (!ds_ContactConstraintCacheTryDeserialize(ss, compute->ccache + i))
-		{
-			return 0;
-		}
-	}
-	return 1;
-}
 
 /* a concave contact's tri cache: tri_count, then the entries */
 static u64 ContactTriCacheSerializeSize(const struct ds_Contact *c)
@@ -1446,11 +1329,6 @@ u64 ds_SolverSetSerializeSize(const struct ds_Dynamics *pipeline, const u32 set_
 		+ ds_JointSimCPoolSerializeSize(&set->joint_sim_pool)
 		+ U32CPoolSerializeSize(&set->island_pool);
 
-	for (u32 i = 0; i < set->contact_compute_pool.count; ++i)
-	{
-		size += ds_ContactComputeCacheSerializeSize(set->contact_compute_pool.buf + i);
-	}
-
 	return size;
 }
 
@@ -1469,10 +1347,6 @@ void ds_SolverSetSerialize(struct SS *ss, const struct ds_Dynamics *pipeline, co
 	ds_JointSimCPoolSerialize(ss, &set->joint_sim_pool);
 	U32CPoolSerialize(ss, &set->island_pool);
 
-	for (u32 i = 0; i < set->contact_compute_pool.count; ++i)
-	{
-		ds_ContactComputeCacheSerialize(ss, set->contact_compute_pool.buf + i);
-	}
 }
 
 static void ds_SolverSetClear(struct ds_SolverSet *set)
@@ -1535,14 +1409,6 @@ u32 ds_SolverSetTryDeserialize(struct SS *ss, struct ds_Dynamics *pipeline, cons
 		}
 	}
 
-	for (u32 i = 0; i < set->contact_compute_pool.count; ++i)
-	{
-		if (!ds_ContactComputeCacheTryDeserialize(mem, ss, set->contact_compute_pool.buf + i, pipeline))
-		{
-			goto failure;
-		}
-	}
-
 	return 1;
 
 failure:
@@ -1575,11 +1441,6 @@ u64 ds_CGraphColorSerializeSize(const struct ds_Dynamics *pipeline, const u32 co
 		+ ds_ContactComputeCPoolSerializeSize(&color->contact_compute_pool)
 		+ ds_BitSetSerializeSize(&color->body_bitset);
 
-	for (u32 i = 0; i < color->contact_compute_pool.count; ++i)
-	{
-		size += ds_ContactComputeCacheSerializeSize(color->contact_compute_pool.buf + i);
-	}
-
 	return size;
 }
 
@@ -1593,10 +1454,6 @@ void ds_CGraphColorSerialize(struct SS *ss, const struct ds_Dynamics *pipeline, 
 	ds_ContactComputeCPoolSerialize(ss, &color->contact_compute_pool);
 	ds_BitSetSerialize(ss, &color->body_bitset);
 
-	for (u32 i = 0; i < color->contact_compute_pool.count; ++i)
-	{
-		ds_ContactComputeCacheSerialize(ss, color->contact_compute_pool.buf + i);
-	}
 }
 
 u32 ds_CGraphColorTryDeserialize(struct SS *ss, struct ds_Dynamics *pipeline, const u32 color_index)
@@ -1617,14 +1474,6 @@ u32 ds_CGraphColorTryDeserialize(struct SS *ss, struct ds_Dynamics *pipeline, co
 	{
 		const u32 contact = color->contact_pool.buf[i];
 		if (contact >= pipeline->contact_pool.count_max || !ds_PoolSlotAllocated(pipeline->contact_pool.buf + contact))
-		{
-			goto failure;
-		}
-	}
-
-	for (u32 i = 0; i < color->contact_compute_pool.count; ++i)
-	{
-		if (!ds_ContactComputeCacheTryDeserialize(NULL, ss, color->contact_compute_pool.buf + i, pipeline))
 		{
 			goto failure;
 		}
