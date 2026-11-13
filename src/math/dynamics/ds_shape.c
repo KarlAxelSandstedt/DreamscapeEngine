@@ -325,6 +325,8 @@ static void ds_SolverManifoldSetCache(struct ds_SolverManifold *m, const ds_Arra
 
     if (o)
     {
+        struct ds_DynamicsMetrics *metrics = &g_dynamics_worker[ds_ThreadSelfIndex()].metrics;
+        metrics->warm_point_count += m->point_count;
         m->tangent[0] = o->tangent[0];
         m->tangent[1] = o->tangent[1];
         u32 claimed = 0;
@@ -335,6 +337,7 @@ static void ds_SolverManifoldSetCache(struct ds_SolverManifold *m, const ds_Arra
                 if (!(claimed & (1u << k)) && c_PointIdEqual(m->id[p], o->id[k]))
                 {
                     claimed |= 1u << k;
+                    metrics->warm_match_id += 1;
                     m->normal_impulse[p] = o->normal_impulse[k];
                     m->tangent_impulse[p][0] = o->tangent_impulse[k][0];
                     m->tangent_impulse[p][1] = o->tangent_impulse[k][1];

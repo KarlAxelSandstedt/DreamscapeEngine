@@ -426,13 +426,11 @@ void ds_ContactConstraintWarmupRange(struct ds_Dynamics *pipeline, const u32 col
 {
     ProfZone;
 
-    struct ds_DynamicsMetrics *metrics = &g_dynamics_worker[ds_ThreadSelfIndex()].metrics;
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
     struct ds_CGraph *cg = &pipeline->cgraph;
     struct ds_CGraphColor *color = cg->color + color_index;
     for (u32 ci = low; ci < high; ++ci)
 	{			
-        const struct ds_Contact *c = pipeline->contact_pool.buf + color->contact_pool.buf[ci];
         struct ds_ContactCompute *ccomp = color->contact_compute_pool.buf + ci;
 
         struct ds_BodySim *sim[2] =
@@ -451,76 +449,35 @@ void ds_ContactConstraintWarmupRange(struct ds_Dynamics *pipeline, const u32 col
         for (u32 cci = 0; cci < ccomp->cc_count; ++cci)
         {
     	    struct ds_ContactConstraint *cc = ccomp->cc + cci;
-            struct ds_ContactConstraintCache *ccache = ccomp->ccache;
             const struct ds_SolverManifold *m = manifold.buf + cci;
-            if (!ds_ContactConvexCheck(c))
+            for (u32 ccpi = 0; ccpi < cc->ccp_count; ++ccpi)
             {
-                ccache = NULL;
-                for (u32 t = 0; t < ccomp->ccache_count; ++t)
-                {
-                    if (m->tri == ccomp->ccache[t].tri)
-                    {
-                        ccache = ccomp->ccache + t;
-                        break;
-                    }
-                }
-            }
-            
-            if (ccache)
-            {
-                /*
-                 * A point takes the impulse of the cached point with its id (the first unclaimed one: ids are
-                 * unique per manifold), applied along the new basis with the fresh levers.
-                 */
-                u32 claimed = 0;    /* cached points already matched: bit k */
+                struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
+                const v3 old_tangent_impulse = V3AddScaled(V3Scale(m->tangent[0], m->tangent_impulse[ccpi][0]), m->tangent[1], m->tangent_impulse[ccpi][1]);
 
-                for (u32 ccpi = 0; ccpi < cc->ccp_count; ++ccpi)
-                {
-                	struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
+                ccp->normal_impulse = m->normal_impulse[ccpi];
+                const f32 impulse_bound = cc->friction * ccp->normal_impulse;
+                ccp->tangent_impulse[0] = V3Dot(cc->tangent[0], old_tangent_impulse);
+                ccp->tangent_impulse[1] = V3Dot(cc->tangent[1], old_tangent_impulse);
+                ccp->tangent_impulse[0] = F32Clamp(ccp->tangent_impulse[0], -impulse_bound, impulse_bound);
+                ccp->tangent_impulse[1] = F32Clamp(ccp->tangent_impulse[1], -impulse_bound, impulse_bound);
 
-                    u32 best = U32_MAX;
-	            	for (u32 k = 0; k < ccache->v_count; ++k)
-	            	{
-                        if (!(claimed & (1u << k)) && c_PointIdEqual(m->id[ccpi], ccache->id[k]))
-                        {
-                            best = k;
-                            claimed |= 1u << k;
-                            break;
-                        }
-                    }
+                v3 total_cached_impulse = V3Scale(cc->normal, ccp->normal_impulse);
+                total_cached_impulse = V3AddScaled(total_cached_impulse, cc->tangent[0], ccp->tangent_impulse[0]);
+                total_cached_impulse = V3AddScaled(total_cached_impulse, cc->tangent[1], ccp->tangent_impulse[1]);
 
-                    metrics->warm_point_count += 1;
-                    metrics->warm_match_id += (best != U32_MAX);
-	            	if (best != U32_MAX)
-	            	{
-	            		const v3 old_tangent_impulse = V3AddScaled(V3Scale(ccache->tangent[0], ccache->tangent_impulse[best][0]),
-	            		                                           ccache->tangent[1], ccache->tangent_impulse[best][1]);
+                bcomp[0]->linear_velocity = V3AddScaled(bcomp[0]->linear_velocity, total_cached_impulse, -sim[0]->inv_mass);
+                bcomp[1]->linear_velocity = V3AddScaled(bcomp[1]->linear_velocity, total_cached_impulse, sim[1]->inv_mass);
 
-	            		ccp->normal_impulse = ccache->normal_impulse[best];
-	                    const f32 impulse_bound = cc->friction * ccp->normal_impulse;
-	            		ccp->tangent_impulse[0] = V3Dot(cc->tangent[0], old_tangent_impulse);
-	            		ccp->tangent_impulse[1] = V3Dot(cc->tangent[1], old_tangent_impulse);
-	            		ccp->tangent_impulse[0] = F32Clamp(ccp->tangent_impulse[0], -impulse_bound, impulse_bound);
-	            		ccp->tangent_impulse[1] = F32Clamp(ccp->tangent_impulse[1], -impulse_bound, impulse_bound);
+                const v3 delta_w0 = M3V3Mul(sim[0]->world_inv_inertia, V3Cross(ccp->r[0], total_cached_impulse));
+                bcomp[0]->angular_velocity = V3Sub(bcomp[0]->angular_velocity, delta_w0);
 
-	            		v3 total_cached_impulse = V3Scale(cc->normal, ccp->normal_impulse);
-	            		total_cached_impulse = V3AddScaled(total_cached_impulse, cc->tangent[0], ccp->tangent_impulse[0]);
-	            		total_cached_impulse = V3AddScaled(total_cached_impulse, cc->tangent[1], ccp->tangent_impulse[1]);
-
-	            		bcomp[0]->linear_velocity = V3AddScaled(bcomp[0]->linear_velocity, total_cached_impulse, -sim[0]->inv_mass);
-	            		bcomp[1]->linear_velocity = V3AddScaled(bcomp[1]->linear_velocity, total_cached_impulse, sim[1]->inv_mass);
-
-	            		const v3 delta_w0 = M3V3Mul(sim[0]->world_inv_inertia, V3Cross(ccp->r[0], total_cached_impulse));
-	            		bcomp[0]->angular_velocity = V3Sub(bcomp[0]->angular_velocity, delta_w0);
-
-	            		const v3 delta_w1 = M3V3Mul(sim[1]->world_inv_inertia, V3Cross(ccp->r[1], total_cached_impulse));
-	            		bcomp[1]->angular_velocity = V3Add(bcomp[1]->angular_velocity, delta_w1);
-	            	}
-                }
+                const v3 delta_w1 = M3V3Mul(sim[1]->world_inv_inertia, V3Cross(ccp->r[1], total_cached_impulse));
+                bcomp[1]->angular_velocity = V3Add(bcomp[1]->angular_velocity, delta_w1);
             }
         }
     }
-    
+
     ProfZoneEnd;
 }
 
