@@ -51,114 +51,37 @@ void BVHFree(struct BVH *bvh)
 	MQADealloc(&bvh->cost_queue);
 }
 
-/*
- * The node pool's image, little-endian field by field: length, count, count_max, the free list in order, then every
- * allocated node as its index, bt_child[2], bt_parent and bbox. The free list and the indices are checked as
- * ds_PoolTryDeserialize checks them: every index in [0, count_max) is written once.
- */
+/* a node: bt_child[2], bt_parent and bbox, little-endian */
 #define BVH_NODE_SERIALIZE_SIZE (3*sizeof(u32) + 6*sizeof(f32))
 
-static u64 BVHNodePoolSerializeSize(const ds_Pool(BVHNode) *pool)
+static u64 BVHNodeSerializeSize(const struct BVHNode *node)
 {
-	return 3*sizeof(u32) + (u64) pool->count_max*sizeof(u32) + (u64) pool->count*BVH_NODE_SERIALIZE_SIZE;
+	return BVH_NODE_SERIALIZE_SIZE;
 }
 
-static void BVHNodePoolSerialize(struct SS *ss, const ds_Pool(BVHNode) *pool)
+static void BVHNodeSerialize(struct SS *ss, const struct BVHNode *node)
 {
-	SSWriteU32Le(ss, pool->length);
-	SSWriteU32Le(ss, pool->count);
-	SSWriteU32Le(ss, pool->count_max);
-
-	u32 free_count = 0;
-	for (u32 i = pool->next_free; i != POOL_INDEX_MASK; i = pool->buf[i].pool_slot & POOL_INDEX_MASK)
-	{
-		SSWriteU32Le(ss, i);
-		free_count += 1;
-	}
-	ds_Assert(free_count == pool->count_max - pool->count);
-
-	for (u32 i = 0; i < pool->count_max; ++i)
-	{
-		const struct BVHNode *node = pool->buf + i;
-		if (ds_PoolSlotAllocated(node))
-		{
-			SSWriteU32Le(ss, i);
-			SSWriteU32LeN(ss, node->bt_child, 2);
-			SSWriteU32Le(ss, node->bt_parent);
-			SSWriteF32LeN(ss, node->bbox.min.buf, 3);
-			SSWriteF32LeN(ss, node->bbox.max.buf, 3);
-		}
-	}
+	SSWriteU32LeN(ss, node->bt_child, 2);
+	SSWriteU32Le(ss, node->bt_parent);
+	SSWriteF32LeN(ss, node->bbox.min.buf, 3);
+	SSWriteF32LeN(ss, node->bbox.max.buf, 3);
 }
 
-/* on failure the pool is deallocated (an arena pool: left to the caller's pop) and the stream is restored */
-static u32 BVHNodePoolTryDeserialize(struct arena *mem, struct SS *ss, ds_Pool(BVHNode) *pool, const u32 growable)
+static u32 BVHNodeTryDeserialize(struct SS *ss, struct BVHNode *node)
 {
-	const u64 bit_index = ss->bit_index;
-	if (SSBytesLeft(ss) < 3*sizeof(u32))
+	if (SSBytesLeft(ss) < BVH_NODE_SERIALIZE_SIZE)
 	{
 		return 0;
 	}
 
-	const u32 length = SSReadU32Le(ss);
-	const u32 count = SSReadU32Le(ss);
-	const u32 count_max = SSReadU32Le(ss);
-	if (count > count_max || count_max > length || length >= POOL_INDEX_MASK
-		|| (u64) (count_max - count)*sizeof(u32) + (u64) count*(sizeof(u32) + BVH_NODE_SERIALIZE_SIZE) > SSBytesLeft(ss)
-		|| !ds_PoolAlloc(mem, *pool, length, growable))
-	{
-		ss->bit_index = bit_index;
-		return 0;
-	}
-
-	/* pool_slot starts as POOL_INDEX_MASK, a state no finished slot has (allocated: 0, free: mask bit set) */
-	for (u32 i = 0; i < count_max; ++i)
-	{
-		UnpoisonAddress(&pool->buf[i].pool_slot, sizeof(u32));
-		pool->buf[i].pool_slot = POOL_INDEX_MASK;
-	}
-
-	u32 *prev_link = &pool->next_free;
-	for (u32 i = 0; i < count_max - count; ++i)
-	{
-		const u32 index = SSReadU32Le(ss);
-		if (index >= count_max || pool->buf[index].pool_slot != POOL_INDEX_MASK)
-		{
-			goto failure;
-		}
-
-		/* end of the list until a successor is linked */
-		u32 *link = &pool->buf[index].pool_slot;
-		*link = POOL_ALLOCATION_MASK | POOL_INDEX_MASK;
-		*prev_link = (prev_link == &pool->next_free) ? index : (POOL_ALLOCATION_MASK | index);
-		prev_link = link;
-	}
-
-	for (u32 i = 0; i < count; ++i)
-	{
-		const u32 index = SSReadU32Le(ss);
-		if (index >= count_max || pool->buf[index].pool_slot != POOL_INDEX_MASK)
-		{
-			goto failure;
-		}
-
-		struct BVHNode *node = pool->buf + index;
-		UnpoisonAddress(node, sizeof(*node));
-		SSReadU32LeN(ss, node->bt_child, 2);
-		node->bt_parent = SSReadU32Le(ss);
-		SSReadF32LeN(ss, node->bbox.min.buf, 3);
-		SSReadF32LeN(ss, node->bbox.max.buf, 3);
-		node->pool_slot = 0;
-	}
-	pool->count = count;
-	pool->count_max = count_max;
+	SSReadU32LeN(ss, node->bt_child, 2);
+	node->bt_parent = SSReadU32Le(ss);
+	SSReadF32LeN(ss, node->bbox.min.buf, 3);
+	SSReadF32LeN(ss, node->bbox.max.buf, 3);
 	return 1;
-
-failure:
-	ds_PoolDealloc(*pool);
-	ss->bit_index = bit_index;
-	return 0;
 }
+
+DEFINE_POOL_SERIALIZE(BVHNode, BVHNode)
 
 u64 BVHSerializeSize(const struct BVH *bvh)
 {

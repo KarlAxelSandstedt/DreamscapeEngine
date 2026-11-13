@@ -17,10 +17,8 @@
 ==========================================================================
 */
 
-void ds_PoolSerializeInternal(struct SS *ss, const void *buf, const u32 length, const u32 count, const u32 count_max, const u32 next_free, const u64 slot_size, const u64 pool_slot_offset)
+void ds_PoolSerializeFreeListInternal(struct SS *ss, const void *buf, const u32 length, const u32 count, const u32 count_max, const u32 next_free, const u64 slot_size, const u64 pool_slot_offset)
 {
-	ds_Assert(3*sizeof(u32) + (u64) (count_max - count)*sizeof(u32) + (u64) count*slot_size <= SSBytesLeft(ss));
-
 	const u8 *base = buf;
 	SSWriteU32Le(ss, length);
 	SSWriteU32Le(ss, count);
@@ -33,7 +31,14 @@ void ds_PoolSerializeInternal(struct SS *ss, const void *buf, const u32 length, 
 		free_count += 1;
 	}
 	ds_Assert(free_count == count_max - count);
+}
 
+void ds_PoolSerializeInternal(struct SS *ss, const void *buf, const u32 length, const u32 count, const u32 count_max, const u32 next_free, const u64 slot_size, const u64 pool_slot_offset)
+{
+	ds_Assert(3*sizeof(u32) + (u64) (count_max - count)*sizeof(u32) + (u64) count*slot_size <= SSBytesLeft(ss));
+
+	ds_PoolSerializeFreeListInternal(ss, buf, length, count, count_max, next_free, slot_size, pool_slot_offset);
+	const u8 *base = buf;
 	for (u32 i = 0; i < count_max; ++i)
 	{
 		const u8 *slot = base + i*slot_size;
@@ -219,39 +224,29 @@ void ds_TPoolGrowInternal(struct ds_TPoolState *state, void **block, const u32 i
 
 #endif
 
-u32 ds_PoolTryDeserializeInternal(struct arena *mem, struct SS *ss, u32 *heap_allocated, void **buf, u32 *length, u32 *count, u32 *count_max, u32 *next_free, u32 *growable, const u64 slot_size, const u64 pool_slot_offset, const u32 alloc_growable)
+/* the free list must fit; the slots are checked by their reader */
+u32 ds_PoolTryDeserializeHeaderInternal(struct SS *ss, u32 *length, u32 *count, u32 *count_max)
 {
-	const u64 bit_index = ss->bit_index;
-	const u64 mem_left = (mem) ? mem->mem_left : 0;
-	*heap_allocated = 0;
-	*buf = NULL;
 	if (SSBytesLeft(ss) < 3*sizeof(u32))
 	{
-		goto failure;
+		return 0;
 	}
 
-	const u32 serialized_length = SSReadU32Le(ss);
-	const u32 serialized_count = SSReadU32Le(ss);
-	const u32 serialized_count_max = SSReadU32Le(ss);
+	*length = SSReadU32Le(ss);
+	*count = SSReadU32Le(ss);
+	*count_max = SSReadU32Le(ss);
+	return *count <= *count_max && *count_max <= *length && *length < POOL_INDEX_MASK && (u64) (*count_max - *count)*sizeof(u32) <= SSBytesLeft(ss);
+}
 
-	/* divisions instead of multiplications: corrupt counts must not overflow the checks */
-	const u64 free_count = (u64) serialized_count_max - serialized_count;
-	const u64 bytes_left = SSBytesLeft(ss);
-	if (serialized_count > serialized_count_max || serialized_count_max > serialized_length
-		|| serialized_length >= POOL_INDEX_MASK || free_count > bytes_left / sizeof(u32)
-		|| serialized_count > (bytes_left - free_count*sizeof(u32)) / slot_size
-		|| !ds_PoolAllocInternal(mem, heap_allocated, buf, length, count, count_max, next_free, growable, slot_size, serialized_length, alloc_growable))
-	{
-		goto failure;
-	}
-
-	/*
-	 * indices are written into the pool buffer, so each one must be in range and appear once (free list
-	 * and allocated slots together cover [0, count_max)): pool_slot starts as POOL_INDEX_MASK, a state no
-	 * finished slot has (allocated: 0, free: mask bit set), and a second visit fails the deserialization
-	 */
-	u8 *base = *buf;
-	for (u32 i = 0; i < serialized_count_max; ++i)
+/*
+ * indices are written into the pool buffer, so each one must be in range and appear once (free list
+ * and allocated slots together cover [0, count_max)): pool_slot starts as POOL_INDEX_MASK, a state no
+ * finished slot has (allocated: 0, free: mask bit set), and a second visit fails the deserialization
+ */
+u32 ds_PoolTryDeserializeFreeListInternal(struct SS *ss, void *buf, u32 *next_free, const u32 count, const u32 count_max, const u64 slot_size, const u64 pool_slot_offset)
+{
+	u8 *base = buf;
+	for (u32 i = 0; i < count_max; ++i)
 	{
 		u32 *pool_slot = (u32 *) (base + i*slot_size + pool_slot_offset);
 		UnpoisonAddress(pool_slot, sizeof(u32));
@@ -259,18 +254,18 @@ u32 ds_PoolTryDeserializeInternal(struct arena *mem, struct SS *ss, u32 *heap_al
 	}
 
 	u32 *prev_link = next_free;
-	for (u64 i = 0; i < free_count; ++i)
+	for (u32 i = 0; i < count_max - count; ++i)
 	{
 		const u32 index = SSReadU32Le(ss);
-		if (index >= serialized_count_max)
+		if (index >= count_max)
 		{
-			goto failure;
+			return 0;
 		}
 
 		u32 *link = (u32 *) (base + index*slot_size + pool_slot_offset);
 		if (*link != POOL_INDEX_MASK)
 		{
-			goto failure;
+			return 0;
 		}
 
 		/* end of the list until a successor is linked */
@@ -278,7 +273,31 @@ u32 ds_PoolTryDeserializeInternal(struct arena *mem, struct SS *ss, u32 *heap_al
 		*prev_link = (prev_link == next_free) ? index : (POOL_ALLOCATION_MASK | index);
 		prev_link = link;
 	}
+	return 1;
+}
 
+u32 ds_PoolTryDeserializeInternal(struct arena *mem, struct SS *ss, u32 *heap_allocated, void **buf, u32 *length, u32 *count, u32 *count_max, u32 *next_free, u32 *growable, const u64 slot_size, const u64 pool_slot_offset, const u32 alloc_growable)
+{
+	const u64 bit_index = ss->bit_index;
+	const u64 mem_left = (mem) ? mem->mem_left : 0;
+	*heap_allocated = 0;
+	*buf = NULL;
+	u32 serialized_length, serialized_count, serialized_count_max;
+	if (!ds_PoolTryDeserializeHeaderInternal(ss, &serialized_length, &serialized_count, &serialized_count_max))
+	{
+		goto failure;
+	}
+
+	/* division instead of count*slot_size: a corrupt count must not overflow the check */
+	const u64 free_count = (u64) serialized_count_max - serialized_count;
+	if (serialized_count > (SSBytesLeft(ss) - free_count*sizeof(u32)) / slot_size
+		|| !ds_PoolAllocInternal(mem, heap_allocated, buf, length, count, count_max, next_free, growable, slot_size, serialized_length, alloc_growable)
+		|| !ds_PoolTryDeserializeFreeListInternal(ss, *buf, next_free, serialized_count, serialized_count_max, slot_size, pool_slot_offset))
+	{
+		goto failure;
+	}
+
+	u8 *base = *buf;
 	for (u32 i = 0; i < serialized_count; ++i)
 	{
 		struct SS peek = *ss;

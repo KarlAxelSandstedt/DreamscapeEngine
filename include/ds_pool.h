@@ -95,12 +95,20 @@ than once):
     // is empty, ss's position unchanged).
     u32             ds_PoolTryDeserialize(mem, ss, pool, growable)
 
+    // Element-wise: define static T##PoolSerializeSize(const ds_Pool(T) *), T##PoolSerialize(ss, pool) and
+    // T##PoolTryDeserialize(mem, ss, pool, growable) (as the three above, pool a pointer) over the element
+    // functions ELEM##SerializeSize(const struct T *), ELEM##Serialize(ss, const struct T *) and
+    // ELEM##TryDeserialize(ss, struct T *) (1 on success): the counts and the free list little-endian,
+    // then every allocated slot as its index and element.
+    DEFINE_POOL_SERIALIZE(T, ELEM)
+
 ::: Stub slot and serialized format :::
 
 buf[-1] is a stub slot, so index -1 (DS_STUB_INDEX) is addressable: intrusive lists over pools
 (ds_list.h) use it as their sentinel. Serialized format (LE): u32 length, count, count_max; the
 count_max - count free indices in free-list order; the count allocated slots as raw bytes, each with
-pool_slot replaced by its index.
+pool_slot replaced by its index. DEFINE_POOL_SERIALIZE writes the same counts and free list, then each
+allocated slot as u32 index + element.
 */
 
 #define POOL_NODE 	        u32 pool_slot
@@ -134,6 +142,10 @@ buf's type that never reads buf (it may be uninitialized, e.g. before ds_PoolTry
 u32  ds_PoolAllocInternal(struct arena *mem, u32 *heap_allocated, void **buf, u32 *length, u32 *count, u32 *count_max, u32 *next_free, u32 *growable, const u64 slot_size, const u32 alloc_length, const u32 alloc_growable);
 /* Internal: grow a full growable pool (the cold path of ds_PoolAdd). */
 void ds_PoolGrowInternal(void **buf, u32 *length, const u64 slot_size);
+/* Internal: the image's counts and free list (see DEFINE_POOL_SERIALIZE); the deserializers return 1 on success. */
+void ds_PoolSerializeFreeListInternal(struct SS *ss, const void *buf, const u32 length, const u32 count, const u32 count_max, const u32 next_free, const u64 slot_size, const u64 pool_slot_offset);
+u32  ds_PoolTryDeserializeHeaderInternal(struct SS *ss, u32 *length, u32 *count, u32 *count_max);
+u32  ds_PoolTryDeserializeFreeListInternal(struct SS *ss, void *buf, u32 *next_free, const u32 count, const u32 count_max, const u64 slot_size, const u64 pool_slot_offset);
 /* Internal: see ds_PoolSerialize. */
 void ds_PoolSerializeInternal(struct SS *ss, const void *buf, const u32 length, const u32 count, const u32 count_max, const u32 next_free, const u64 slot_size, const u64 pool_slot_offset);
 /* Internal: see ds_PoolTryDeserialize. */
@@ -201,6 +213,78 @@ do                                                                              
 	                              &(pool).length, &(pool).count, &(pool).count_max, &(pool).next_free,  \
 	                              &(pool).growable, sizeof((pool).buf[0]), ds_PoolSlotOffset(pool),     \
 	                              (__growable))
+
+#define DEFINE_POOL_SERIALIZE(T, ELEM)                                                                  \
+static u64 T##PoolSerializeSize(const ds_Pool(T) *pool)                                                 \
+{                                                                                                       \
+	u64 size = 3*sizeof(u32) + (u64) pool->count_max*sizeof(u32);                                       \
+	for (u32 i = 0; i < pool->count_max; ++i)                                                           \
+	{                                                                                                   \
+		if (ds_PoolSlotAllocated(pool->buf + i))                                                        \
+		{                                                                                               \
+			size += ELEM##SerializeSize(pool->buf + i);                                                 \
+		}                                                                                               \
+	}                                                                                                   \
+	return size;                                                                                        \
+}                                                                                                       \
+                                                                                                        \
+static void T##PoolSerialize(struct SS *ss, const ds_Pool(T) *pool)                                     \
+{                                                                                                       \
+	ds_PoolSerializeFreeListInternal(ss, pool->buf, pool->length, pool->count, pool->count_max,         \
+	                                 pool->next_free, sizeof(pool->buf[0]), ds_PoolSlotOffset(*pool));  \
+	for (u32 i = 0; i < pool->count_max; ++i)                                                           \
+	{                                                                                                   \
+		if (ds_PoolSlotAllocated(pool->buf + i))                                                        \
+		{                                                                                               \
+			SSWriteU32Le(ss, i);                                                                        \
+			ELEM##Serialize(ss, pool->buf + i);                                                         \
+		}                                                                                               \
+	}                                                                                                   \
+}                                                                                                       \
+                                                                                                        \
+static u32 T##PoolTryDeserialize(struct arena *mem, struct SS *ss, ds_Pool(T) *pool, const u32 growable) \
+{                                                                                                       \
+	const u64 bit_index = ss->bit_index;                                                                \
+	u32 length, count, count_max;                                                                       \
+	if (!ds_PoolTryDeserializeHeaderInternal(ss, &length, &count, &count_max)                           \
+		|| !ds_PoolAlloc(mem, *pool, length, growable))                                                 \
+	{                                                                                                   \
+		ss->bit_index = bit_index;                                                                      \
+		return 0;                                                                                       \
+	}                                                                                                   \
+	if (!ds_PoolTryDeserializeFreeListInternal(ss, pool->buf, &pool->next_free, count, count_max,       \
+	                                           sizeof(pool->buf[0]), ds_PoolSlotOffset(*pool)))        \
+	{                                                                                                   \
+		goto failure;                                                                                   \
+	}                                                                                                   \
+                                                                                                        \
+	for (u32 i = 0; i < count; ++i)                                                                     \
+	{                                                                                                   \
+		if (SSBytesLeft(ss) < sizeof(u32))                                                              \
+		{                                                                                               \
+			goto failure;                                                                               \
+		}                                                                                               \
+		const u32 index = SSReadU32Le(ss);                                                              \
+		if (index >= count_max || pool->buf[index].pool_slot != POOL_INDEX_MASK)                        \
+		{                                                                                               \
+			goto failure;                                                                               \
+		}                                                                                               \
+		UnpoisonAddress(pool->buf + index, sizeof(pool->buf[0]));                                       \
+		if (!ELEM##TryDeserialize(ss, pool->buf + index))                                               \
+		{                                                                                               \
+			goto failure;                                                                               \
+		}                                                                                               \
+		pool->buf[index].pool_slot = 0;                                                                 \
+	}                                                                                                   \
+	pool->count = count;                                                                                \
+	pool->count_max = count_max;                                                                        \
+	return 1;                                                                                           \
+                                                                                                        \
+failure:                                                                                                \
+	ds_PoolDealloc(*pool);                                                                              \
+	ss->bit_index = bit_index;                                                                          \
+	return 0;                                                                                           \
+}
 
 #if 0 /* TPool: retired, rebuilt on magazines and TStack */
 /*

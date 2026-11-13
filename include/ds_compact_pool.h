@@ -99,11 +99,17 @@ The macros (pool is a ds_CPool(T) lvalue; arguments may be evaluated more than o
     // success; 0 if mem is full or ss holds no valid CPool (the pool is empty, ss's position unchanged).
     u32             ds_CPoolTryDeserialize(mem, ss, pool, growable)
 
+    // Element-wise: define static T##CPoolSerializeSize(const ds_CPool(T) *), T##CPoolSerialize(ss, pool)
+    // and T##CPoolTryDeserialize(mem, ss, pool, growable) (as the three above, pool a pointer) over the
+    // element functions ELEM##SerializeSize(const T *), ELEM##Serialize(ss, const T *) and
+    // ELEM##TryDeserialize(ss, T *) (1 on success): length and count little-endian, then the elements.
+    DEFINE_CPOOL_SERIALIZE(T, ELEM)
+
 ::: Stub slot and serialized format :::
 
 buf[-1] is a stub slot: pushes onto a full fixed pool write into it, harmlessly, and intrusive lists over
 pools (ds_list.h) use index -1 (DS_STUB_INDEX) as their sentinel. Length 0 allocates nothing.
-The allocation (stub included) is cache-line aligned. Serialized format (LE): u32 length, u32 count, then the count elements as raw bytes.
+The allocation (stub included) is cache-line aligned. Serialized format (LE): u32 length, u32 count, then the count elements as raw bytes (DEFINE_CPOOL_SERIALIZE: through their element functions).
 */
 
 #define DS_STUB_INDEX               -1
@@ -232,6 +238,8 @@ do                                                                              
 #define ds_CPoolTopAddress( pool ) ((pool).buf + (i32) (pool).count - 1)
 
 struct SS;
+/* Internal: the image's length and count (see DEFINE_CPOOL_SERIALIZE). Returns 1 if they are consistent. */
+u32  ds_CPoolTryDeserializeHeaderInternal(struct SS *ss, u32 *length, u32 *count);
 /* Internal: see ds_CPoolSerialize. */
 void ds_CPoolSerializeInternal(struct SS *ss, const void *buf, const u32 length, const u32 count, const u64 slot_size);
 /* Internal: see ds_CPoolTryDeserialize. */
@@ -243,6 +251,54 @@ u32  ds_CPoolTryDeserializeInternal(struct arena *mem, struct SS *ss, void **buf
     ds_CPoolTryDeserializeInternal((mem), (ss), (void **) &(pool).buf, &(pool).length,          \
                                    &(pool).count, &(pool).growable, &(pool).heap_allocated,     \
                                    sizeof((pool).buf[0]), (__growable))
+
+#define DEFINE_CPOOL_SERIALIZE(T, ELEM)                                                 \
+static u64 T##CPoolSerializeSize(const ds_CPool(T) *pool)                               \
+{                                                                                       \
+    u64 size = 2*sizeof(u32);                                                           \
+    for (u32 i = 0; i < pool->count; ++i)                                               \
+    {                                                                                   \
+        size += ELEM##SerializeSize(pool->buf + i);                                     \
+    }                                                                                   \
+    return size;                                                                        \
+}                                                                                       \
+                                                                                        \
+static void T##CPoolSerialize(struct SS *ss, const ds_CPool(T) *pool)                   \
+{                                                                                       \
+    SSWriteU32Le(ss, pool->length);                                                     \
+    SSWriteU32Le(ss, pool->count);                                                      \
+    for (u32 i = 0; i < pool->count; ++i)                                               \
+    {                                                                                   \
+        ELEM##Serialize(ss, pool->buf + i);                                             \
+    }                                                                                   \
+}                                                                                       \
+                                                                                        \
+static u32 T##CPoolTryDeserialize(struct arena *mem, struct SS *ss, ds_CPool(T) *pool, const u32 growable) \
+{                                                                                       \
+    const u64 bit_index = ss->bit_index;                                                \
+    u32 length, count;                                                                  \
+    if (!ds_CPoolTryDeserializeHeaderInternal(ss, &length, &count)                      \
+        || !ds_CPoolAllocInternal(mem, (void **) &pool->buf, &pool->length, &pool->count, \
+                                  &pool->growable, &pool->heap_allocated,               \
+                                  sizeof(pool->buf[0]), length, growable))              \
+    {                                                                                   \
+        ss->bit_index = bit_index;                                                      \
+        return 0;                                                                       \
+    }                                                                                   \
+                                                                                        \
+    UnpoisonAddress(pool->buf, count*sizeof(pool->buf[0]));                             \
+    for (u32 i = 0; i < count; ++i)                                                     \
+    {                                                                                   \
+        if (!ELEM##TryDeserialize(ss, pool->buf + i))                                   \
+        {                                                                               \
+            ds_CPoolDealloc(*pool);                                                     \
+            ss->bit_index = bit_index;                                                  \
+            return 0;                                                                   \
+        }                                                                               \
+    }                                                                                   \
+    pool->count = count;                                                                \
+    return 1;                                                                           \
+}
 
 /******************************** CPool inline definitions ********************************/
 

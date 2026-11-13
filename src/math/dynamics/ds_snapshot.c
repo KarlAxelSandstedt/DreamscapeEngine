@@ -1154,214 +1154,6 @@ u32 ds_ContactConstraintCacheTryDeserialize(struct SS *ss, struct ds_ContactCons
 
 /*************************** pool images ***************************/
 
-/*
- * A pool's image: length, count, count_max, the free list in order, then every allocated slot as its index and
- * element. The free list and the index of every slot are checked as ds_PoolTryDeserialize checks them.
- */
-static void SnapshotPoolFreeListSerialize(struct SS *ss, const void *buf, const u32 length, const u32 count, const u32 count_max, const u32 next_free, const u64 slot_size, const u64 slot_offset)
-{
-	const u8 *base = buf;
-	SSWriteU32Le(ss, length);
-	SSWriteU32Le(ss, count);
-	SSWriteU32Le(ss, count_max);
-
-	u32 free_count = 0;
-	for (u32 i = next_free; i != POOL_INDEX_MASK; i = *(const u32 *) (base + i*slot_size + slot_offset) & POOL_INDEX_MASK)
-	{
-		SSWriteU32Le(ss, i);
-		free_count += 1;
-	}
-	ds_Assert(free_count == count_max - count);
-}
-
-/* the free list must fit; the elements and the indices between them check themselves */
-static u32 SnapshotPoolHeaderTryDeserialize(struct SS *ss, u32 *length, u32 *count, u32 *count_max)
-{
-	if (SSBytesLeft(ss) < 3*sizeof(u32))
-	{
-		return 0;
-	}
-
-	*length = SSReadU32Le(ss);
-	*count = SSReadU32Le(ss);
-	*count_max = SSReadU32Le(ss);
-	return *count <= *count_max && *count_max <= *length && *length < POOL_INDEX_MASK && (u64) (*count_max - *count)*sizeof(u32) <= SSBytesLeft(ss);
-}
-
-/*
- * every index in [0, count_max) is written once: pool_slot starts as POOL_INDEX_MASK, a state no finished slot has
- * (allocated: 0, free: mask bit set), and a second visit fails the deserialization
- */
-static u32 SnapshotPoolFreeListTryDeserialize(struct SS *ss, void *buf, u32 *next_free, const u32 count, const u32 count_max, const u64 slot_size, const u64 slot_offset)
-{
-	u8 *base = buf;
-	for (u32 i = 0; i < count_max; ++i)
-	{
-		u32 *pool_slot = (u32 *) (base + i*slot_size + slot_offset);
-		UnpoisonAddress(pool_slot, sizeof(u32));
-		*pool_slot = POOL_INDEX_MASK;
-	}
-
-	u32 *prev_link = next_free;
-	for (u32 i = 0; i < count_max - count; ++i)
-	{
-		const u32 index = SSReadU32Le(ss);
-		if (index >= count_max)
-		{
-			return 0;
-		}
-
-		u32 *link = (u32 *) (base + index*slot_size + slot_offset);
-		if (*link != POOL_INDEX_MASK)
-		{
-			return 0;
-		}
-
-		/* end of the list until a successor is linked */
-		*link = POOL_ALLOCATION_MASK | POOL_INDEX_MASK;
-		*prev_link = (prev_link == next_free) ? index : (POOL_ALLOCATION_MASK | index);
-		prev_link = link;
-	}
-	return 1;
-}
-
-#define DEFINE_SNAPSHOT_POOL(_T_, _ELEM_)                                                                     \
-static u64 _T_##PoolSerializeSize(const ds_Pool(_T_) *pool)                                                   \
-{                                                                                                             \
-	u64 size = 3*sizeof(u32) + (u64) pool->count_max*sizeof(u32);                                             \
-	for (u32 i = 0; i < pool->count_max; ++i)                                                                 \
-	{                                                                                                         \
-		if (ds_PoolSlotAllocated(pool->buf + i))                                                              \
-		{                                                                                                     \
-			size += _ELEM_##SerializeSize(pool->buf + i);                                                     \
-		}                                                                                                     \
-	}                                                                                                         \
-	return size;                                                                                              \
-}                                                                                                             \
-                                                                                                              \
-static void _T_##PoolSerialize(struct SS *ss, const ds_Pool(_T_) *pool)                                       \
-{                                                                                                             \
-	SnapshotPoolFreeListSerialize(ss, pool->buf, pool->length, pool->count, pool->count_max, pool->next_free, sizeof(pool->buf[0]), ds_PoolSlotOffset(*pool)); \
-	for (u32 i = 0; i < pool->count_max; ++i)                                                                 \
-	{                                                                                                         \
-		if (ds_PoolSlotAllocated(pool->buf + i))                                                              \
-		{                                                                                                     \
-			SSWriteU32Le(ss, i);                                                                              \
-			_ELEM_##Serialize(ss, pool->buf + i);                                                             \
-		}                                                                                                     \
-	}                                                                                                         \
-}                                                                                                             \
-                                                                                                              \
-static u32 _T_##PoolTryDeserialize(struct SS *ss, ds_Pool(_T_) *pool)                                         \
-{                                                                                                             \
-	const u64 bit_index = ss->bit_index;                                                                      \
-	u32 length, count, count_max;                                                                             \
-	if (!SnapshotPoolHeaderTryDeserialize(ss, &length, &count, &count_max))                                   \
-	{                                                                                                         \
-		ss->bit_index = bit_index;                                                                            \
-		return 0;                                                                                             \
-	}                                                                                                         \
-	if (!ds_PoolAlloc(NULL, *pool, length, GROWABLE))                                                         \
-	{                                                                                                         \
-		ss->bit_index = bit_index;                                                                            \
-		return 0;                                                                                             \
-	}                                                                                                         \
-	if (!SnapshotPoolFreeListTryDeserialize(ss, pool->buf, &pool->next_free, count, count_max, sizeof(pool->buf[0]), ds_PoolSlotOffset(*pool))) \
-	{                                                                                                         \
-		goto failure;                                                                                         \
-	}                                                                                                         \
-                                                                                                              \
-	for (u32 i = 0; i < count; ++i)                                                                           \
-	{                                                                                                         \
-		if (SSBytesLeft(ss) < sizeof(u32))                                                                    \
-		{                                                                                                     \
-			goto failure;                                                                                     \
-		}                                                                                                     \
-		const u32 index = SSReadU32Le(ss);                                                                    \
-		if (index >= count_max || pool->buf[index].pool_slot != POOL_INDEX_MASK)                              \
-		{                                                                                                     \
-			goto failure;                                                                                     \
-		}                                                                                                     \
-		UnpoisonAddress(pool->buf + index, sizeof(pool->buf[0]));                                             \
-		if (!_ELEM_##TryDeserialize(ss, pool->buf + index))                                                   \
-		{                                                                                                     \
-			goto failure;                                                                                     \
-		}                                                                                                     \
-		pool->buf[index].pool_slot = 0;                                                                       \
-	}                                                                                                         \
-	pool->count = count;                                                                                      \
-	pool->count_max = count_max;                                                                              \
-	return 1;                                                                                                 \
-                                                                                                              \
-failure:                                                                                                      \
-	ds_PoolDealloc(*pool);                                                                                    \
-	ss->bit_index = bit_index;                                                                                \
-	return 0;                                                                                                 \
-}
-
-/* a compact pool's image: length, count, then the elements (they check themselves) */
-static u32 SnapshotCPoolHeaderTryDeserialize(struct SS *ss, u32 *length, u32 *count)
-{
-	if (SSBytesLeft(ss) < 2*sizeof(u32))
-	{
-		return 0;
-	}
-
-	*length = SSReadU32Le(ss);
-	*count = SSReadU32Le(ss);
-	return *count <= *length;
-}
-
-#define DEFINE_SNAPSHOT_CPOOL(_T_, _ELEM_)                                                                    \
-static u64 _T_##CPoolSerializeSize(const ds_CPool(_T_) *pool)                                                 \
-{                                                                                                             \
-	u64 size = 2*sizeof(u32);                                                                                 \
-	for (u32 i = 0; i < pool->count; ++i)                                                                     \
-	{                                                                                                         \
-		size += _ELEM_##SerializeSize(pool->buf + i);                                                         \
-	}                                                                                                         \
-	return size;                                                                                              \
-}                                                                                                             \
-                                                                                                              \
-static void _T_##CPoolSerialize(struct SS *ss, const ds_CPool(_T_) *pool)                                     \
-{                                                                                                             \
-	SSWriteU32Le(ss, pool->length);                                                                           \
-	SSWriteU32Le(ss, pool->count);                                                                            \
-	for (u32 i = 0; i < pool->count; ++i)                                                                     \
-	{                                                                                                         \
-		_ELEM_##Serialize(ss, pool->buf + i);                                                                 \
-	}                                                                                                         \
-}                                                                                                             \
-                                                                                                              \
-static u32 _T_##CPoolTryDeserialize(struct arena *mem, struct SS *ss, ds_CPool(_T_) *pool, const u32 growable) \
-{                                                                                                             \
-	const u64 bit_index = ss->bit_index;                                                                      \
-	u32 length, count;                                                                                        \
-	if (!SnapshotCPoolHeaderTryDeserialize(ss, &length, &count))                                              \
-	{                                                                                                         \
-		ss->bit_index = bit_index;                                                                            \
-		return 0;                                                                                             \
-	}                                                                                                         \
-	if (!ds_CPoolAllocInternal(mem, (void **) &pool->buf, &pool->length, &pool->count, &pool->growable, &pool->heap_allocated, sizeof(pool->buf[0]), length, growable)) \
-	{                                                                                                         \
-		ss->bit_index = bit_index;                                                                            \
-		return 0;                                                                                             \
-	}                                                                                                         \
-                                                                                                              \
-	UnpoisonAddress(pool->buf, count*sizeof(pool->buf[0]));                                                   \
-	for (u32 i = 0; i < count; ++i)                                                                           \
-	{                                                                                                         \
-		if (!_ELEM_##TryDeserialize(ss, pool->buf + i))                                                       \
-		{                                                                                                     \
-			ds_CPoolDealloc(*pool);                                                                           \
-			ss->bit_index = bit_index;                                                                        \
-			return 0;                                                                                         \
-		}                                                                                                     \
-	}                                                                                                         \
-	pool->count = count;                                                                                      \
-	return 1;                                                                                                 \
-}
-
 static u64 U32CPoolSerializeSize(const ds_CPool(u32) *pool)
 {
 	return 2*sizeof(u32) + (u64) pool->count*sizeof(u32);
@@ -1378,7 +1170,7 @@ static u32 U32CPoolTryDeserialize(struct arena *mem, struct SS *ss, ds_CPool(u32
 {
 	const u64 bit_index = ss->bit_index;
 	u32 length, count;
-	if (!SnapshotCPoolHeaderTryDeserialize(ss, &length, &count) || (u64) count*sizeof(u32) > SSBytesLeft(ss))
+	if (!ds_CPoolTryDeserializeHeaderInternal(ss, &length, &count) || (u64) count*sizeof(u32) > SSBytesLeft(ss))
 	{
 		ss->bit_index = bit_index;
 		return 0;
@@ -1410,18 +1202,18 @@ static u32 SolverSetSlotTryDeserialize(struct SS *ss, struct ds_SolverSet *set)
 	return 1;
 }
 
-DEFINE_SNAPSHOT_POOL(ds_Body, ds_Body)
-DEFINE_SNAPSHOT_POOL(ds_Shape, ds_Shape)
-DEFINE_SNAPSHOT_POOL(ds_Joint, ds_Joint)
-DEFINE_SNAPSHOT_POOL(ds_PhysicsEvent, ds_PhysicsEvent)
-DEFINE_SNAPSHOT_POOL(ds_Contact, ds_Contact)
-DEFINE_SNAPSHOT_POOL(ds_Island, ds_Island)
-DEFINE_SNAPSHOT_POOL(ds_SolverSet, SolverSetSlot)
-DEFINE_SNAPSHOT_CPOOL(ds_ProxyQuery, ds_ProxyQuery)
-DEFINE_SNAPSHOT_CPOOL(ds_BodySim, ds_BodySim)
-DEFINE_SNAPSHOT_CPOOL(ds_BodyCompute, ds_BodyCompute)
-DEFINE_SNAPSHOT_CPOOL(ds_ContactCompute, ds_ContactCompute)
-DEFINE_SNAPSHOT_CPOOL(ds_JointSim, ds_JointSim)
+DEFINE_POOL_SERIALIZE(ds_Body, ds_Body)
+DEFINE_POOL_SERIALIZE(ds_Shape, ds_Shape)
+DEFINE_POOL_SERIALIZE(ds_Joint, ds_Joint)
+DEFINE_POOL_SERIALIZE(ds_PhysicsEvent, ds_PhysicsEvent)
+DEFINE_POOL_SERIALIZE(ds_Contact, ds_Contact)
+DEFINE_POOL_SERIALIZE(ds_Island, ds_Island)
+DEFINE_POOL_SERIALIZE(ds_SolverSet, SolverSetSlot)
+DEFINE_CPOOL_SERIALIZE(ds_ProxyQuery, ds_ProxyQuery)
+DEFINE_CPOOL_SERIALIZE(ds_BodySim, ds_BodySim)
+DEFINE_CPOOL_SERIALIZE(ds_BodyCompute, ds_BodyCompute)
+DEFINE_CPOOL_SERIALIZE(ds_ContactCompute, ds_ContactCompute)
+DEFINE_CPOOL_SERIALIZE(ds_JointSim, ds_JointSim)
 
 /*************************** contact data ***************************/
 
@@ -2049,18 +1841,18 @@ u32 ds_DynamicsTryDeserialize(struct arena *mem, struct SS *ss, struct ds_Dynami
 	}
 
 	/* the contact pool precedes its owners, which check their contact indices against it */
-	if (!ds_BodyPoolTryDeserialize(ss, &pipeline->body_pool)
+	if (!ds_BodyPoolTryDeserialize(NULL, ss, &pipeline->body_pool, GROWABLE)
 		|| !ds_BitSetTryDeserialize(NULL, ss, &pipeline->body_usage_set, GROWABLE)
-		|| !ds_JointPoolTryDeserialize(ss, &pipeline->joint_pool)
-		|| !ds_ShapePoolTryDeserialize(ss, &pipeline->shape_pool)
+		|| !ds_JointPoolTryDeserialize(NULL, ss, &pipeline->joint_pool, GROWABLE)
+		|| !ds_ShapePoolTryDeserialize(NULL, ss, &pipeline->shape_pool, GROWABLE)
 		|| !ds_BitSetTryDeserialize(NULL, ss, &pipeline->shape_dynamic_usage_set, GROWABLE)
 		|| !BVHTryDeserialize(NULL, ss, &pipeline->dynamic_bvh, GROWABLE)
 		|| !BVHTryDeserialize(NULL, ss, &pipeline->static_bvh, GROWABLE)
 		|| !ds_BitSetTryDeserialize(NULL, ss, &pipeline->shape_dirty_set, GROWABLE)
 		|| !ds_ProxyQueryCPoolTryDeserialize(NULL, ss, &pipeline->dirty_shape_query, GROWABLE)
-		|| !ds_PhysicsEventPoolTryDeserialize(ss, &pipeline->event_pool)
+		|| !ds_PhysicsEventPoolTryDeserialize(NULL, ss, &pipeline->event_pool, GROWABLE)
 		|| !DLLTryDeserialize(ss, pipeline->event_list)
-		|| !ds_ContactPoolTryDeserialize(ss, &pipeline->contact_pool))
+		|| !ds_ContactPoolTryDeserialize(NULL, ss, &pipeline->contact_pool, GROWABLE))
 	{
 		goto failure;
 	}
@@ -2091,10 +1883,10 @@ u32 ds_DynamicsTryDeserialize(struct arena *mem, struct SS *ss, struct ds_Dynami
 
 	if (!ds_HashMapTryDeserialize(NULL, ss, &pipeline->contact_map, GROWABLE)
 		|| !ds_BitSetTryDeserialize(NULL, ss, &pipeline->contact_usage_set, GROWABLE)
-		|| !ds_IslandPoolTryDeserialize(ss, &pipeline->island_pool)
+		|| !ds_IslandPoolTryDeserialize(NULL, ss, &pipeline->island_pool, GROWABLE)
 		|| !ds_BitSetTryDeserialize(NULL, ss, &pipeline->island_high_energy_set, GROWABLE)
 		|| !ds_CGraphTryDeserialize(ss, pipeline)
-		|| !ds_SolverSetPoolTryDeserialize(ss, &pipeline->solver_set_pool))
+		|| !ds_SolverSetPoolTryDeserialize(NULL, ss, &pipeline->solver_set_pool, GROWABLE))
 	{
 		goto failure;
 	}

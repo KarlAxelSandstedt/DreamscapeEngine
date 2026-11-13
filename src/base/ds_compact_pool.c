@@ -58,6 +58,18 @@ void ds_CPoolSerializeInternal(struct SS *ss, const void *buf, const u32 length,
 	SSWrite8N(ss, (const b8 *) buf, count*slot_size);
 }
 
+u32 ds_CPoolTryDeserializeHeaderInternal(struct SS *ss, u32 *length, u32 *count)
+{
+	if (SSBytesLeft(ss) < 2*sizeof(u32))
+	{
+		return 0;
+	}
+
+	*length = SSReadU32Le(ss);
+	*count = SSReadU32Le(ss);
+	return *count <= *length;
+}
+
 u32 ds_CPoolTryDeserializeInternal(struct arena *mem, struct SS *ss, void **buf, u32 *length, u32 *count, u32 *growable, u32 *heap_allocated, const u64 slot_size, const u32 alloc_growable)
 {
 	*buf = NULL;
@@ -65,16 +77,11 @@ u32 ds_CPoolTryDeserializeInternal(struct arena *mem, struct SS *ss, void **buf,
 	*count = 0;
 	*growable = alloc_growable;
 	*heap_allocated = 0;
-	if (SSBytesLeft(ss) < 2*sizeof(u32))
-	{
-		return 0;
-	}
 
 	const u64 bit_index = ss->bit_index;
-	const u32 serialized_length = SSReadU32Le(ss);
-	const u32 serialized_count = SSReadU32Le(ss);
+	u32 serialized_length, serialized_count;
 	/* division instead of count*slot_size: a corrupt count must not overflow the check */
-	if (serialized_count > serialized_length || serialized_count > SSBytesLeft(ss) / slot_size)
+	if (!ds_CPoolTryDeserializeHeaderInternal(ss, &serialized_length, &serialized_count) || serialized_count > SSBytesLeft(ss) / slot_size)
 	{
 		ss->bit_index = bit_index;
 		return 0;
