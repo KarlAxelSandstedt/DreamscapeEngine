@@ -252,11 +252,12 @@ static u32 r_InternalShapeTouching(const struct ds_Dynamics *pipeline, const u32
 	for (i32 ci = shape->contact_list.first; ci != DLL_SENTINEL; )
 	{
 		const struct ds_Contact *contact = pipeline->contact_pool.buf + ci;
+		const ds_Array(ds_SolverManifold) manifold = ds_SolverManifoldArray(pipeline, (u32) ci);
 		const u32 side = (contact->key.shape[0] == shape_index) ? 0 : 1;
 		ci = contact->shape_contact[side].next;
-		for (u32 m = 0; m < contact->manifold_count; ++m)
+		for (u32 m = 0; m < manifold.length; ++m)
 		{
-			if (contact->manifold_arr.buf[m].point_count)
+			if (manifold.buf[m].point_count)
 			{
 				return 1;
 			}

@@ -73,6 +73,12 @@ struct slot ds_ContactTryAdd(struct ds_Dynamics *pipeline, const struct ds_Conta
     }
     ds_BitSetSet(&pipeline->contact_usage_set, contact_slot.index, 1);
 
+    if (pipeline->manifold_buffer_pool.count <= contact_slot.index)
+    {
+        ds_CPoolPushBatch(pipeline->manifold_buffer_pool, contact_slot.index + 1 - pipeline->manifold_buffer_pool.count);
+    }
+    pipeline->manifold_buffer_pool.buf[contact_slot.index] = (struct ds_SolverManifoldBuffer) { .type = SOLVER_MANIFOLD_INTERNAL, .count = 0 };
+
     c->key = key;
     c->island = U32_MAX;
     c->id = ds_ContactIdNextGeneration(c->id);
@@ -100,8 +106,6 @@ struct slot ds_ContactTryAdd(struct ds_Dynamics *pipeline, const struct ds_Conta
     {
         c->cache.concave = (struct ds_ConcaveCache) { .tri = { .buf = NULL, .length = 0, .base = U32_MAX }, .tri_count = 0 };
     }
-    c->manifold_arr = (ds_Array(ds_SolverManifold)) { .buf = NULL, .length = 0, .base = U32_MAX };
-    c->manifold_count = 0;
     c->com_offset = V3Zero();
 
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
@@ -142,9 +146,10 @@ void ds_ContactRemove(struct ds_Dynamics *pipeline, const u32 index, const u32 i
         ds_TSlabRemove(pipeline->tri_cache_slab, c->cache.concave.tri);
     }
 
-    if (c->manifold_arr.length)
+    const struct ds_SolverManifoldBuffer *buffer = pipeline->manifold_buffer_pool.buf + index;
+    if (buffer->type == SOLVER_MANIFOLD_EXTERNAL)
     {
-        ds_TSlabRemove(pipeline->manifold_slab, c->manifold_arr);
+        ds_TSlabRemove(pipeline->manifold_slab, buffer->manifold_array);
     }
 
     ds_SolverSetWakeUp(pipeline, c->set);
@@ -341,7 +346,7 @@ void ds_ContactWakeUp(struct arena *frame, struct ds_Dynamics *pipeline, const u
 {
     struct ds_Contact *c = pipeline->contact_pool.buf + contact_index;
     ds_Assert(c->set >= SOLVER_SET_SLEEPING_FIRST && c->color == CG_INVALID_COLOR);
-    ds_Assert(c->manifold_count);
+    ds_Assert(pipeline->manifold_buffer_pool.buf[contact_index].count);
 
     ds_CGraphContactAdd(frame, pipeline, c);
 }
@@ -385,7 +390,7 @@ void ds_ContactValidateAll(const struct ds_Dynamics *pipeline)
         ds_Assert(c->compute == i);
         ds_Assert(c->set == SOLVER_SET_ACTIVE);
         ds_Assert(c->color == CG_INVALID_COLOR);
-        ds_Assert(c->manifold_count == 0);
+        ds_Assert(pipeline->manifold_buffer_pool.buf[ci].count == 0);
     }
 
     for (u32 color_index = 0; color_index < CG_COLOR_COUNT; ++color_index)
@@ -399,7 +404,7 @@ void ds_ContactValidateAll(const struct ds_Dynamics *pipeline)
             ds_Assert(c->compute == i);
             ds_Assert(c->set == SOLVER_SET_NULL);
             ds_Assert(c->color == color_index);
-            ds_Assert(c->manifold_count > 0);
+            ds_Assert(pipeline->manifold_buffer_pool.buf[ci].count > 0);
         }
     }
 
@@ -416,7 +421,7 @@ void ds_ContactValidateAll(const struct ds_Dynamics *pipeline)
                 ds_Assert(c->compute == i);
                 ds_Assert(c->set == set_index);
                 ds_Assert(c->color == CG_INVALID_COLOR);
-                ds_Assert(c->manifold_count > 0);
+                ds_Assert(pipeline->manifold_buffer_pool.buf[ci].count > 0);
             }
         }
     }

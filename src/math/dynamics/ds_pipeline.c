@@ -506,7 +506,7 @@ u32 ds_NarrowJobPhaseDispatch(const ds_JobId job)
                 {
                     const u32 ci = color->contact_pool.buf[si];
                     ds_ShapeContact(frame, pipeline, ci);
-                    if (pipeline->contact_pool.buf[ci].manifold_count == 0)
+                    if (pipeline->manifold_buffer_pool.buf[ci].count == 0)
                     {
                         ds_BitSetSet(promote_demote_set, ci, 1);
                     }
@@ -528,7 +528,7 @@ u32 ds_NarrowJobPhaseDispatch(const ds_JobId job)
             {
                 const u32 ci = active->contact_pool.buf[si];
                 ds_ShapeContact(frame, pipeline, ci);
-                if (pipeline->contact_pool.buf[ci].manifold_count > 0)
+                if (pipeline->manifold_buffer_pool.buf[ci].count > 0)
                 {
                     ds_BitSetSet(promote_demote_set, ci, 1);
                 }
@@ -718,7 +718,7 @@ static void CollisionDetection(struct ds_Dynamics *pipeline)
             while (ds_BitBlockHasNext(&it))
             {
                 const u32 ci = (u32) ds_BitBlockNext(&it);
-                (pipeline->contact_pool.buf[ci].manifold_count > 0)
+                (pipeline->manifold_buffer_pool.buf[ci].count > 0)
                     ? ds_ContactPromote(pipeline, ci)
                     : ds_ContactDemote(pipeline, ci);
             }

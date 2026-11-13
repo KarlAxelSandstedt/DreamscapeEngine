@@ -332,7 +332,7 @@ static void ds_SolverManifoldConvex(struct ds_SolverManifold *out, const struct 
 {
 }
 
-static void ds_SolverManifoldConcave(struct ds_SolverManifold *out, const struct c_ContactResult *result, const m3 rot, const v3 offset, const u32 flip)
+static void ds_SolverManifoldConcaveUpdate(ds_TSlab(ds_SolverManifold) *slab, struct ds_SolverManifoldBuffer *buffer, const struct c_ContactResult *result, const m3 rot, const v3 offset, const u32 flip)
 {
 }
 
@@ -382,30 +382,14 @@ void ds_ShapeContact(struct arena *tmp, struct ds_Dynamics *pipeline, const u32 
 
         const struct c_ContactResult result = c_convex_contact_methods[c_s[local]->type][c_s[other]->type](tmp, &c->cache.convex, c_s[local], &t_world[local], c_s[other], &t_world[other]);
         ds_Assert(result.manifold_count <= 1);
-        if (result.manifold_count == 0)
-        {
-            if (c->manifold_arr.length)
-            {
-                ds_TSlabRemove(pipeline->manifold_slab, c->manifold_arr);
-                c->manifold_arr = (ds_Array(ds_SolverManifold)) { .buf = NULL, .length = 0, .base = U32_MAX };
-            }
-        }
-        else if (result.manifold_count > c->manifold_arr.length)
-        {
-            c->manifold_arr = ds_TSlabAdd(pipeline->manifold_slab, result.manifold_count);
-            if (c->manifold_arr.buf == NULL)
-            {
-                LogString(T_SYSTEM, S_FATAL, "manifold slab full, exiting");
-                FatalCleanupAndExit();
-            }
-        }
-        c->manifold_count = result.manifold_count;
-
+        struct ds_SolverManifoldBuffer *buffer = pipeline->manifold_buffer_pool.buf + contact_index;
+        ds_Assert(buffer->type == SOLVER_MANIFOLD_INTERNAL);
+        buffer->count = result.manifold_count;
         if (result.manifold_count)
         {
             const m3 rot = M3QUnit(t_world[local].rotation);
             const v3 offset = V3F64Demote(V3F64Sub(t_world[local].position, com[0]));
-            ds_SolverManifoldConvex(c->manifold_arr.buf, result.contact_manifold, rot, offset, flip_normal);
+            ds_SolverManifoldConvex(&buffer->manifold, result.contact_manifold, rot, offset, flip_normal);
         }
     }
     else
@@ -417,33 +401,9 @@ void ds_ShapeContact(struct arena *tmp, struct ds_Dynamics *pipeline, const u32 
         const u32 flip_normal = local;
 
         const struct c_ContactResult result = c_MeshContact(tmp, &pipeline->tri_cache_slab, &c->cache.concave, c_s[mesh], &t_world[mesh], c_s[convex], &t_world[convex]);
-        if (result.manifold_count == 0)
-        {
-            if (c->manifold_arr.length)
-            {
-                ds_TSlabRemove(pipeline->manifold_slab, c->manifold_arr);
-                c->manifold_arr = (ds_Array(ds_SolverManifold)) { .buf = NULL, .length = 0, .base = U32_MAX };
-            }
-        }
-        else if (result.manifold_count > c->manifold_arr.length)
-        {
-            if (c->manifold_arr.length)
-            {
-                ds_TSlabRemove(pipeline->manifold_slab, c->manifold_arr);
-            }
-
-            c->manifold_arr = ds_TSlabAdd(pipeline->manifold_slab, result.manifold_count);
-            if (c->manifold_arr.buf == NULL)
-            {
-                LogString(T_SYSTEM, S_FATAL, "manifold slab full, exiting");
-                FatalCleanupAndExit();
-            }
-        }
-        c->manifold_count = result.manifold_count;
-
         const m3 rot = M3QUnit(t_world[local].rotation);
         const v3 offset = V3F64Demote(V3F64Sub(t_world[local].position, com[0]));
-        ds_SolverManifoldConcave(c->manifold_arr.buf, &result, rot, offset, flip_normal);
+        ds_SolverManifoldConcaveUpdate(&pipeline->manifold_slab, pipeline->manifold_buffer_pool.buf + contact_index, &result, rot, offset, flip_normal);
     }
 
     ArenaPopRecord(tmp);

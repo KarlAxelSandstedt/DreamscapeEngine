@@ -777,8 +777,6 @@ u32 ds_ContactTryDeserialize(struct SS *ss, struct ds_Contact *contact)
 	contact->island_contact = ReadDLLNode(ss);
 	contact->shape_contact[0] = ReadDLLNode(ss);
 	contact->shape_contact[1] = ReadDLLNode(ss);
-	contact->manifold_arr = (ds_Array(ds_SolverManifold)) { .buf = NULL, .length = 0, .base = U32_MAX };
-	contact->manifold_count = 0;
 	contact->com_offset = ReadV3(ss);
 	if (ds_ContactConvexCheck(contact))
 	{
@@ -1376,29 +1374,31 @@ static u32 ContactTriCacheTryDeserialize(struct SS *ss, struct ds_Dynamics *pipe
 	return 1;
 }
 
-static u64 ContactManifoldSerializeSize(const struct ds_Contact *c)
+static u64 ContactManifoldSerializeSize(const struct ds_Dynamics *pipeline, const u32 contact)
 {
+	const ds_Array(ds_SolverManifold) manifold = ds_SolverManifoldArray(pipeline, contact);
 	u64 size = sizeof(u32);
-	for (u32 i = 0; i < c->manifold_count; ++i)
+	for (u32 i = 0; i < manifold.length; ++i)
 	{
-		size += ds_SolverManifoldSerializeSize(c->manifold_arr.buf + i);
+		size += ds_SolverManifoldSerializeSize(manifold.buf + i);
 	}
 	return size;
 }
 
-static void ContactManifoldSerialize(struct SS *ss, const struct ds_Contact *c)
+static void ContactManifoldSerialize(struct SS *ss, const struct ds_Dynamics *pipeline, const u32 contact)
 {
-	SSWriteU32Le(ss, c->manifold_count);
-	for (u32 i = 0; i < c->manifold_count; ++i)
+	const ds_Array(ds_SolverManifold) manifold = ds_SolverManifoldArray(pipeline, contact);
+	SSWriteU32Le(ss, manifold.length);
+	for (u32 i = 0; i < manifold.length; ++i)
 	{
-		ds_SolverManifoldSerialize(ss, c->manifold_arr.buf + i);
+		ds_SolverManifoldSerialize(ss, manifold.buf + i);
 	}
 }
 
-/* the array must be empty */
-static u32 ContactManifoldTryDeserialize(struct SS *ss, struct ds_Dynamics *pipeline, struct ds_Contact *c)
+/* the buffer must be INTERNAL and empty; more than one manifold go into a slab array (EXTERNAL) */
+static u32 ContactManifoldTryDeserialize(struct SS *ss, struct ds_Dynamics *pipeline, struct ds_SolverManifoldBuffer *buffer)
 {
-	ds_Assert(c->manifold_arr.buf == NULL && c->manifold_count == 0);
+	ds_Assert(buffer->type == SOLVER_MANIFOLD_INTERNAL && buffer->count == 0);
 	if (SSBytesLeft(ss) < sizeof(u32))
 	{
 		return 0;
@@ -1410,25 +1410,26 @@ static u32 ContactManifoldTryDeserialize(struct SS *ss, struct ds_Dynamics *pipe
 		return 0;
 	}
 
-	if (count == 0)
+	struct ds_SolverManifold *manifold = &buffer->manifold;
+	if (count > 1)
 	{
-		return 1;
-	}
-
-	c->manifold_arr = ds_TSlabAdd(pipeline->manifold_slab, count);
-	if (c->manifold_arr.buf == NULL)
-	{
-		return 0;
+		buffer->manifold_array = ds_TSlabAdd(pipeline->manifold_slab, count);
+		if (buffer->manifold_array.buf == NULL)
+		{
+			return 0;
+		}
+		buffer->type = SOLVER_MANIFOLD_EXTERNAL;
+		manifold = buffer->manifold_array.buf;
 	}
 
 	for (u32 i = 0; i < count; ++i)
 	{
-		if (!ds_SolverManifoldTryDeserialize(ss, c->manifold_arr.buf + i))
+		if (!ds_SolverManifoldTryDeserialize(ss, manifold + i))
 		{
 			return 0;
 		}
 	}
-	c->manifold_count = count;
+	buffer->count = count;
 	return 1;
 }
 
@@ -1723,7 +1724,7 @@ u64 ds_DynamicsSerializeSize(const struct ds_Dynamics *pipeline)
 		const struct ds_Contact *c = pipeline->contact_pool.buf + i;
 		if (ds_PoolSlotAllocated(c))
 		{
-			size += ContactManifoldSerializeSize(c);
+			size += ContactManifoldSerializeSize(pipeline, i);
 		}
 	}
 
@@ -1789,7 +1790,7 @@ void ds_DynamicsSerialize(struct SS *ss, const struct ds_Dynamics *pipeline)
 		const struct ds_Contact *c = pipeline->contact_pool.buf + i;
 		if (ds_PoolSlotAllocated(c))
 		{
-			ContactManifoldSerialize(ss, c);
+			ContactManifoldSerialize(ss, pipeline, i);
 		}
 	}
 	ds_HashMapSerialize(ss, &pipeline->contact_map);
@@ -1915,10 +1916,20 @@ u32 ds_DynamicsTryDeserialize(struct arena *mem, struct SS *ss, struct ds_Dynami
 		}
 	}
 
+	ds_CPoolAlloc(NULL, pipeline->manifold_buffer_pool, pipeline->contact_pool.length, GROWABLE);
+	if (pipeline->contact_pool.count_max)
+	{
+		ds_CPoolPushBatch(pipeline->manifold_buffer_pool, pipeline->contact_pool.count_max);
+	}
 	for (u32 i = 0; i < pipeline->contact_pool.count_max; ++i)
 	{
-		struct ds_Contact *c = pipeline->contact_pool.buf + i;
-		if (ds_PoolSlotAllocated(c) && !ContactManifoldTryDeserialize(ss, pipeline, c))
+		pipeline->manifold_buffer_pool.buf[i] = (struct ds_SolverManifoldBuffer) { .type = SOLVER_MANIFOLD_INTERNAL, .count = 0 };
+	}
+
+	for (u32 i = 0; i < pipeline->contact_pool.count_max; ++i)
+	{
+		const struct ds_Contact *c = pipeline->contact_pool.buf + i;
+		if (ds_PoolSlotAllocated(c) && !ContactManifoldTryDeserialize(ss, pipeline, pipeline->manifold_buffer_pool.buf + i))
 		{
 			goto failure;
 		}

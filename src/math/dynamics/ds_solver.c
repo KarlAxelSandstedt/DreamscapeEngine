@@ -316,7 +316,8 @@ void ds_ContactConstraintInitRange(struct ds_Dynamics *pipeline, const u32 color
             ((ccomp->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_bcomp : active->body_compute_pool.buf + ccomp->body_sim[1]),
         };
 
-        ccomp->cc_count = c->manifold_count;
+        const ds_Array(ds_SolverManifold) manifold = ds_SolverManifoldArray(pipeline, color->contact_pool.buf[ci]);
+        ccomp->cc_count = manifold.length;
         ccomp->cc = ArenaPushPacked(frame, ccomp->cc_count*sizeof(struct ds_ContactConstraint));
         if (!ccomp->cc)
         {
@@ -326,7 +327,7 @@ void ds_ContactConstraintInitRange(struct ds_Dynamics *pipeline, const u32 color
 
         for (u32 cci = 0; cci < ccomp->cc_count; ++cci)
         {
-            const struct ds_SolverManifold *m = c->manifold_arr.buf + cci;
+            const struct ds_SolverManifold *m = manifold.buf + cci;
 
     	    struct ds_ContactConstraint *cc = ccomp->cc + cci;
 
@@ -446,11 +447,12 @@ void ds_ContactConstraintWarmupRange(struct ds_Dynamics *pipeline, const u32 col
             ((ccomp->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_bcomp : active->body_compute_pool.buf + ccomp->body_sim[1]),
         };
 
+        const ds_Array(ds_SolverManifold) manifold = ds_SolverManifoldArray(pipeline, color->contact_pool.buf[ci]);
         for (u32 cci = 0; cci < ccomp->cc_count; ++cci)
         {
     	    struct ds_ContactConstraint *cc = ccomp->cc + cci;
             struct ds_ContactConstraintCache *ccache = ccomp->ccache;
-            const struct ds_SolverManifold *m = c->manifold_arr.buf + cci;
+            const struct ds_SolverManifold *m = manifold.buf + cci;
             if (!ds_ContactConvexCheck(c))
             {
                 ccache = NULL;
@@ -717,12 +719,13 @@ void ds_PositionConstraintInitAndCacheImpulsesRange(struct ds_Dynamics *pipeline
 		    FatalCleanupAndExit();
         }
 
-        ds_Assert(c->manifold_count == ccomp->cc_count);
+        const ds_Array(ds_SolverManifold) manifold = ds_SolverManifoldArray(pipeline, color->contact_pool.buf[ci]);
+        ds_Assert(manifold.length == ccomp->cc_count);
         for (u32 cci = 0; cci < ccomp->cc_count; ++cci)
         {
             struct ds_ContactConstraint *cc = ccomp->cc + cci;
             struct ds_ContactConstraintCache *ccache = ccomp->ccache + cci;
-            struct ds_SolverManifold *pm = c->manifold_arr.buf + cci;
+            struct ds_SolverManifold *pm = manifold.buf + cci;
 
             ccache->tri = (ds_ContactConvexCheck(c))
                         ? 0

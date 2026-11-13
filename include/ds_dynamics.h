@@ -589,6 +589,8 @@ struct ds_SolverManifoldBuffer
 };
 DEFINE_CPOOL_STRUCT(ds_SolverManifoldBuffer);
 
+static ds_ForceInline ds_Array(ds_SolverManifold) ds_SolverManifoldArray(const struct ds_Dynamics *pipeline, const u32 contact);
+
 /*
 ds_ContactKey
 =============
@@ -657,8 +659,6 @@ struct ds_Contact
     struct DLLNode              island_contact;     /* island->contact_list node                */
     struct DLLNode              shape_contact[2];   /* [i] is part of shape i's contact list    */
 
-    ds_Array(ds_SolverManifold) manifold_arr;
-    u32                         manifold_count;
     union
     {
         struct ds_ConvexCache   convex;
@@ -2218,6 +2218,19 @@ void                        ds_ContactDrawRange(struct ds_Dynamics *pipeline, co
 void                        ds_BodyDrawRange(struct ds_Dynamics *pipeline, const u32 low, const u32 high);
 /* Internal: after the solve: every awake joint's anchors, forces and segment; sims through the body, the sleep pass has run */
 void                        ds_DynamicsDrawFrameEnd(struct ds_Dynamics *pipeline);
+
+/**************** ds_SolverManifoldBuffer: inline definitions ****************/
+
+static ds_ForceInline ds_Array(ds_SolverManifold) ds_SolverManifoldArray(const struct ds_Dynamics *pipeline, const u32 contact)
+{
+    struct ds_SolverManifoldBuffer *buffer = pipeline->manifold_buffer_pool.buf + contact;
+    return (ds_Array(ds_SolverManifold))
+    {
+        .buf = (buffer->type == SOLVER_MANIFOLD_INTERNAL) ? &buffer->manifold : buffer->manifold_array.buf,
+        .length = buffer->count,
+        .base = U32_MAX,
+    };
+}
 
 /**************** ds_BreakageOption: inline definitions ****************/
 

@@ -1017,7 +1017,7 @@ static struct test_Output DynamicsMeshArrayStatsTest(struct test_Environment *en
         {
             const struct ds_Contact *c = pipeline.contact_pool.buf + i;
             const u32 live = ds_PoolSlotAllocated(c) && !ds_ContactConvexCheck(c);
-            const u32 m = (live) ? c->manifold_count : 0;
+            const u32 m = (live) ? pipeline.manifold_buffer_pool.buf[i].count : 0;
             const u32 k = (live) ? c->cache.concave.tri_count : 0;
             if (live)
             {
@@ -1397,7 +1397,7 @@ static struct test_Output DynamicsContactTest(struct test_Environment *env)
     const struct ds_Shape *shape1 = pipeline.shape_pool.buf + s1;
     const struct ds_Shape *shape2 = pipeline.shape_pool.buf + s2;
     TEST_NOT_ZERO(shape1->contact_list.count == 2 && shape2->contact_list.count == 2);
-    TEST_NOT_ZERO(c->manifold_count > 0 && c->set == SOLVER_SET_NULL && c->color != CG_INVALID_COLOR);
+    TEST_NOT_ZERO(pipeline.manifold_buffer_pool.buf[found.index].count > 0 && c->set == SOLVER_SET_NULL && c->color != CG_INVALID_COLOR);
     TEST_NOT_ZERO(b1->island == b2->island && c->island == b1->island);
     TEST_NOT_ZERO(pipeline.contact_pool.count == 3);
 
@@ -3690,10 +3690,10 @@ static void DynamicsWarmSceneRun(struct ds_DynamicsMetrics *sum, const struct dy
             const struct ds_CGraphColor *color = pipeline.cgraph.color + ci;
             for (u32 i = 0; i < color->contact_pool.count; ++i)
             {
-                const struct ds_Contact *c = pipeline.contact_pool.buf + color->contact_pool.buf[i];
-                for (u32 mi = 0; mi < c->manifold_count; ++mi)
+                const ds_Array(ds_SolverManifold) manifold = ds_SolverManifoldArray(&pipeline, color->contact_pool.buf[i]);
+                for (u32 mi = 0; mi < manifold.length; ++mi)
                 {
-                    const struct ds_SolverManifold *m = c->manifold_arr.buf + mi;
+                    const struct ds_SolverManifold *m = manifold.buf + mi;
                     u32 duplicate = 0;
                     for (u32 a = 0; a < m->point_count; ++a)
                     {
@@ -4348,12 +4348,12 @@ static void *DynamicsPerfPrepInit(void)
         const struct ds_CGraphColor *color = in->pipeline.cgraph.color + ci;
         for (u32 i = 0; i < color->contact_pool.count; ++i)
         {
-            const struct ds_Contact *c = in->pipeline.contact_pool.buf + color->contact_pool.buf[i];
+            const ds_Array(ds_SolverManifold) manifold = ds_SolverManifoldArray(&in->pipeline, color->contact_pool.buf[i]);
             in->contact_count += 1;
-            in->manifold_count += c->manifold_count;
-            for (u32 m = 0; m < c->manifold_count; ++m)
+            in->manifold_count += manifold.length;
+            for (u32 m = 0; m < manifold.length; ++m)
             {
-                in->point_count += c->manifold_arr.buf[m].point_count;
+                in->point_count += manifold.buf[m].point_count;
             }
         }
     }
