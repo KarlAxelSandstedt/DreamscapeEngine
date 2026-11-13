@@ -20,46 +20,57 @@
 ds_StaticAssert(offsetof(struct ds_TSlabShared, magazine) % DS_CACHE_LINE == 0, "");
 ds_StaticAssert(offsetof(struct ds_TSlabShared, vm) % DS_CACHE_LINE == 0, "");
 
-u32 ds_TSlabSharedAlloc(struct ds_TSlabShared *shared,
-                       void **external,
-                       const u32 thread_count,
-                       const u64 slot_size,
-                       const u64 vm_size)
+u32 ds_TSlabSharedAlloc(struct arena *mem, struct ds_TSlabShared *shared, void **external, const u32 thread_count, const u64 slot_size, const u32 length)
 {
 	ds_Assert(slot_size > 0 && thread_count > 0);
 	*shared = (struct ds_TSlabShared) { 0 };
 	*external = NULL;
 
-	shared->vm = VMReserve(vm_size);
-	if (shared->vm.buf == NULL)
+	if (length == 0 || length == U32_MAX)
 	{
-        goto failure;
+		goto failure;
 	}
 
-	/* slot indices stay below DS_TSLAB_NULL */
-	const u64 slots = shared->vm.reserved / slot_size;
-	shared->length = (slots < U32_MAX) ? (u32) slots : U32_MAX - 1;
-
-	/* an array takes at least one slot: the slot count bounds the arrays alive at once */
-	if (!ds_MagazinePow2Alloc(NULL, &shared->magazine, thread_count, slot_size, shared->length))
+	const u64 size = (u64) length*slot_size;
+	if (mem)
 	{
-        goto failure;
+		u8 *buf = ArenaPushAligned(mem, size, DS_CACHE_LINE);
+		if (buf == NULL)
+		{
+			goto failure;
+		}
+		shared->vm = (struct VM) { .buf = buf, .reserved = size, .a_committed = size };
+	}
+	else
+	{
+		shared->vm = VMReserve(size);
+		if (shared->vm.buf == NULL)
+		{
+			goto failure;
+		}
+		shared->heap_allocated = 1;
+	}
+	shared->length = length;
+
+	if (!ds_MagazinePow2Alloc(mem, &shared->magazine, thread_count, slot_size, length))
+	{
+		goto failure;
 	}
 
 	*external = shared->vm.buf;
 	return 1;
 
 failure:
-    ds_TSlabSharedDealloc(shared);
-    return 0;
+	ds_TSlabSharedDealloc(shared);
+	return 0;
 }
 
 void ds_TSlabSharedDealloc(struct ds_TSlabShared *shared)
 {
     ds_MagazinePow2Dealloc(&shared->magazine);
-    if (shared->vm.buf) 
-    { 
-        VMRelease(&shared->vm); 
+    if (shared->heap_allocated)
+    {
+        VMRelease(&shared->vm);
     }
 
     *shared = (struct ds_TSlabShared) { 0 };

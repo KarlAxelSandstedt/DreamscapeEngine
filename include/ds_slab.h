@@ -40,14 +40,16 @@ Slab API
     DEFINE_TSLAB(item);
 
     ds_TSlab(item) slab;
-    ds_TSlabAlloc(slab, vm_size, thread_count);
+    ds_TSlabAlloc(NULL, slab, length, thread_count);
     ds_TSlabFlush(slab);
     ds_TSlabDealloc(slab);
 
 
-    // Master: 
-    // Reserve >= vm_size memory and initialize allocator.
-    void ds_TSlabAlloc(slab, vm_size, thread_count)
+    // Master:
+    // If mem == NULL, reserve memory and initialize allocator.
+    // If mem != NULL, allocate memory and initialize allocator. 
+    // Returns 1 on success; 0 on failure.
+    u32 ds_TSlabAlloc(mem, slab, length, thread_count)
 
     // Master: 
     // Release any memory held by allocator
@@ -89,6 +91,7 @@ struct ds_Align(DS_CACHE_LINE) ds_TSlabShared
     struct VM               vm;
     struct ds_MagazinePow2  magazine;
     u32                     length;
+    u32                     heap_allocated;
 };
 
 #define ds_TSlab(T) ds_TSlab_ ## T
@@ -101,11 +104,12 @@ typedef struct ds_TSlab(T)                                                      
     ds_Array(T) *           array_type;     /* never set: the type of ds_TSlabAdd */   \
 } ds_TSlab(T)
 
-u32     ds_TSlabSharedAlloc(struct ds_TSlabShared *shared,
+u32     ds_TSlabSharedAlloc(struct arena *mem,
+                           struct ds_TSlabShared *shared,
                            void **external,
                            const u32 thread_count,
                            const u64 slot_size,
-                           const u64 vm_size);
+                           const u32 length);
 
 void    ds_TSlabSharedDealloc(struct ds_TSlabShared *shared);
 
@@ -134,9 +138,9 @@ ds_NoReturn void ds_TSlabOutOfMemoryInternal(void);
 
 /****************************** Slab inline definitions ******************************/
 
-#define ds_TSlabAlloc(_slab_, _vm_size_, _thread_count_)                                \
-    ds_TSlabSharedAlloc(&(_slab_).shared, (void **) &(_slab_).buf, (_thread_count_),    \
-                       sizeof((_slab_).buf[0]), (_vm_size_))
+#define ds_TSlabAlloc(_mem_, _slab_, _length_, _thread_count_)                          \
+    ds_TSlabSharedAlloc((_mem_), &(_slab_).shared, (void **) &(_slab_).buf,             \
+                       (_thread_count_), sizeof((_slab_).buf[0]), (_length_))
 
 #define ds_TSlabDealloc(_slab_)                                                         \
 do                                                                                      \

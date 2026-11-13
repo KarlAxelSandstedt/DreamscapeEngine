@@ -1301,16 +1301,17 @@ struct slab_item { u64 a; u32 b; };
 DEFINE_ARRAY_STRUCT(slab_item);
 DEFINE_TSLAB(slab_item);
 
-/* ds_TSlab: alloc (region, magazines), flush, dealloc; the failure path leaves an empty slab */
+/* ds_TSlab: alloc (region, magazines; reserved or on an arena), flush, dealloc; the failure path leaves an empty slab */
 static struct test_Output SlabAllocTest(struct test_Environment *env)
 {
 	struct test_Output output = { .success = 1, .id = __func__ };
     ds_TSlab(slab_item) slab;
-    const u64 vm_size = (u64) 16 << 20;
-    TEST_EQUAL(1, ds_TSlabAlloc(slab, vm_size, 3));
+    const u32 length = (u32) (((u64) 16 << 20) / sizeof(struct slab_item));
+    TEST_EQUAL(1, ds_TSlabAlloc(NULL, slab, length, 3));
     TEST_NOT_EQUAL(NULL, slab.buf);
     TEST_EQUAL((void *) slab.shared.vm.buf, (void *) slab.buf);
-    TEST_EQUAL(slab.shared.vm.reserved / sizeof(struct slab_item), slab.shared.length);
+    TEST_EQUAL(length, slab.shared.length);
+    TEST_EQUAL(1, slab.shared.heap_allocated);
     TEST_EQUAL(0, slab.shared.a_count_max);
     TEST_EQUAL(3, slab.shared.magazine.thread_count);
     TEST_EQUAL(slab.shared.length, slab.shared.magazine.index_length);
@@ -1342,11 +1343,37 @@ static struct test_Output SlabAllocTest(struct test_Environment *env)
     TEST_EQUAL(0, slab.shared.magazine.thread_count);
     TEST_EQUAL(0, slab.shared.length);
 
-    /* a reservation of 0 bytes fails and leaves the slab empty */
-    TEST_EQUAL(0, ds_TSlabAlloc(slab, 0, 1));
+    /* 0 slots fail and leave the slab empty */
+    TEST_EQUAL(0, ds_TSlabAlloc(NULL, slab, 0, 1));
     TEST_EQUAL(NULL, slab.buf);
     TEST_EQUAL(NULL, slab.shared.magazine.thread);
-    (void) env;
+
+    /* on an arena: every byte pushed up front, nothing released by dealloc; the failure path pushes stay for the caller's pop */
+    ArenaPushRecord(env->mem_1);
+    const u64 mem_left = env->mem_1->mem_left;
+    TEST_EQUAL(1, ds_TSlabAlloc(env->mem_1, slab, 1024, 2));
+    TEST_NOT_EQUAL(NULL, slab.buf);
+    TEST_EQUAL(0, slab.shared.heap_allocated);
+    TEST_EQUAL(1024, slab.shared.length);
+    TEST_NOT_ZERO((u8 *) slab.buf >= env->mem_1->stack_ptr - (mem_left - env->mem_1->mem_left) && (u8 *) slab.buf < env->mem_1->stack_ptr);
+    TEST_NOT_ZERO(mem_left - env->mem_1->mem_left >= 1024*sizeof(struct slab_item));
+    ds_Array(slab_item) arr = ds_TSlabAdd(slab, 1024);
+    TEST_EQUAL(1024, arr.length);
+    TEST_EQUAL((void *) slab.buf, (void *) arr.buf);
+    TEST_EQUAL(0, ds_TSlabAdd(slab, 1).length);
+    ds_TSlabRemove(slab, arr);
+    arr = ds_TSlabAdd(slab, 1024);
+    TEST_EQUAL(0, arr.base);
+    const u64 mem_left_before_dealloc = env->mem_1->mem_left;
+    ds_TSlabDealloc(slab);
+    TEST_EQUAL(mem_left_before_dealloc, env->mem_1->mem_left);
+    TEST_EQUAL(NULL, slab.buf);
+
+    struct arena small = ArenaAlloc(env->mem_1, 4*1024);
+    TEST_EQUAL(0, ds_TSlabAlloc(&small, slab, 1024, 1));
+    TEST_EQUAL(NULL, slab.buf);
+    TEST_EQUAL(NULL, slab.shared.magazine.thread);
+    ArenaPopRecord(env->mem_1);
 	return output;
 }
 
@@ -1355,7 +1382,7 @@ static struct test_Output TSlabReallocTest(struct test_Environment *env)
 {
 	struct test_Output output = { .success = 1, .id = __func__ };
     ds_TSlab(slab_item) slab;
-    TEST_EQUAL(1, ds_TSlabAlloc(slab, (u64) 16 << 20, 1));
+    TEST_EQUAL(1, ds_TSlabAlloc(NULL, slab, (u32) (((u64) 16 << 20) / sizeof(struct slab_item)), 1));
 
     ds_Array(slab_item) arr = ds_TSlabAdd(slab, 3);
     TEST_EQUAL(4, arr.length);
@@ -1401,7 +1428,7 @@ static struct test_Output TSlabArrayDeserializeTest(struct test_Environment *env
 {
 	struct test_Output output = { .success = 1, .id = __func__ };
     ds_TSlab(slab_item) slab;
-    TEST_EQUAL(1, ds_TSlabAlloc(slab, (u64) 16 << 20, 1));
+    TEST_EQUAL(1, ds_TSlabAlloc(NULL, slab, (u32) (((u64) 16 << 20) / sizeof(struct slab_item)), 1));
 
     /* 5 live elements in a length-8 array: written compact, restored as 5 in a length-8 array */
     ds_Array(slab_item) arr = ds_TSlabAdd(slab, 5);
@@ -1459,7 +1486,7 @@ static struct test_Output TSlabArrayDeserializeTest(struct test_Environment *env
 
     /* a slab too small for the array: the stream stays, the array is empty */
     ds_TSlab(slab_item) tiny;
-    TEST_EQUAL(1, ds_TSlabAlloc(tiny, 1, 1));
+    TEST_EQUAL(1, ds_TSlabAlloc(NULL, tiny, 1, 1));
     const u32 full = tiny.shared.length;
     TEST_EQUAL(full, ds_TSlabAdd(tiny, full).length);
     ss.bit_index = 0;
@@ -1634,7 +1661,7 @@ static struct test_Output TSlabParallelTest(struct test_Environment *env)
 
     struct test_TSlabParallel *t = ds_Alloc(sizeof(*t), DS_CACHE_LINE);
     TEST_NOT_EQUAL(NULL, t);
-    TEST_EQUAL(1, ds_TSlabAlloc(t->slab, (u64) 256 << 20, g_arch_config->logical_core_count));
+    TEST_EQUAL(1, ds_TSlabAlloc(NULL, t->slab, (u32) (((u64) 256 << 20) / sizeof(struct test_TSlabItem)), g_arch_config->logical_core_count));
     t->node = ds_Alloc(TSLAB_PARALLEL_HANDOFF*sizeof(struct test_TSlabHandoff), DS_CACHE_LINE);
     TEST_NOT_EQUAL(NULL, t->node);
     ds_TStackFlush(&t->handoff_free);

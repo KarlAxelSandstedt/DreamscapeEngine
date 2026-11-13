@@ -1691,8 +1691,10 @@ u32 ds_CGraphTryDeserialize(struct SS *ss, struct ds_Dynamics *pipeline)
 
 /*************************** pipeline ***************************/
 
-/* Header: ns_tick, frames_completed, the applied config, island_to_split */
-#define DS_SNAPSHOT_HEADER_FIXED_SIZE (3*sizeof(u64))
+/* Header: ns_tick, frames_completed, the applied config, island_to_split, the tri cache slots the original carved */
+#define DS_SNAPSHOT_HEADER_FIXED_SIZE (3*sizeof(u64) + sizeof(u32))
+/* a copy restored onto mem holds its tri cache slab there: twice what the original carved, at least this */
+#define DS_SNAPSHOT_TRI_CACHE_LENGTH_MIN 256
 
 /*
  * Every contact's narrowphase data and every compute's ccache is serialized by its owner: cgraph
@@ -1763,6 +1765,7 @@ void ds_DynamicsSerialize(struct SS *ss, const struct ds_Dynamics *pipeline)
 	SSWriteU64Le(ss, pipeline->frames_completed);
 	ds_DynamicsConfigSerializeBitPacked(ss, &pipeline->config);
 	SSWriteU64Le(ss, pipeline->island_to_split.val);
+	SSWriteU32Le(ss, pipeline->tri_cache_slab.shared.a_count_max);
 
 	ds_BodyPoolSerialize(ss, &pipeline->body_pool);
 	ds_BitSetSerialize(ss, &pipeline->body_usage_set);
@@ -1821,10 +1824,6 @@ u32 ds_DynamicsTryDeserialize(struct arena *mem, struct SS *ss, struct ds_Dynami
 	};
 	DLLFlush(pipeline->event_list);
     ds_DynamicsRuntimeAlloc(mem, &pipeline->runtime);
-	if (!ds_TSlabAlloc(pipeline->tri_cache_slab, g_config->vm_size_tri_cache_allocator, g_config->thread_count))
-	{
-		goto failure;
-	}
 	pipeline->frames_completed = SSReadU64Le(ss);
 	if (!ds_DynamicsConfigTryDeserializeBitPacked(ss, &pipeline->config))
 	{
@@ -1832,6 +1831,22 @@ u32 ds_DynamicsTryDeserialize(struct arena *mem, struct SS *ss, struct ds_Dynami
 	}
 	pipeline->config_pending = pipeline->config;
 	pipeline->island_to_split = (ds_IslandId) { .val = SSReadU64Le(ss) };
+	const u32 tri_cache_carved = SSReadU32Le(ss);
+
+	u32 tri_cache_length;
+	if (mem)
+	{
+		tri_cache_length = (tri_cache_carved < DS_SNAPSHOT_TRI_CACHE_LENGTH_MIN) ? DS_SNAPSHOT_TRI_CACHE_LENGTH_MIN : 2*tri_cache_carved;
+	}
+	else
+	{
+		const u64 tri_cache_slots = g_config->vm_size_tri_cache_allocator / sizeof(struct ds_TriCache);
+		tri_cache_length = (tri_cache_slots < U32_MAX) ? (u32) tri_cache_slots : U32_MAX - 1;
+	}
+	if (!ds_TSlabAlloc(mem, pipeline->tri_cache_slab, tri_cache_length, g_config->thread_count))
+	{
+		goto failure;
+	}
 
 	/* frame data goes into the buffer the next tick reads (and does not flush) */
 	const u64 f = pipeline->frames_completed & 0x1;

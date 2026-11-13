@@ -246,7 +246,8 @@ struct ds_Dynamics ds_DynamicsAlloc(const struct ds_DynamicsConfig *config, cons
     ds_PoolAlloc(NULL, pipeline.contact_pool, 8*initial_size, GROWABLE);
     pipeline.contact_map = ds_HashMapAlloc(NULL, 8*initial_size, 8*initial_size, GROWABLE);
     pipeline.contact_usage_set = ds_BitSetAlloc(NULL, 8*initial_size, 0, GROWABLE);
-    if (!ds_TSlabAlloc(pipeline.tri_cache_slab, g_config->vm_size_tri_cache_allocator, g_config->thread_count))
+    const u64 tri_cache_slots = g_config->vm_size_tri_cache_allocator / sizeof(struct ds_TriCache);
+    if (!ds_TSlabAlloc(NULL, pipeline.tri_cache_slab, (tri_cache_slots < U32_MAX) ? (u32) tri_cache_slots : U32_MAX - 1, g_config->thread_count))
     {
         Log(T_SYSTEM, S_FATAL, "Out of memory in %s\n", __func__);
         FatalCleanupAndExit();

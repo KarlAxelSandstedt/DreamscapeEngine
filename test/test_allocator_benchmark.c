@@ -304,8 +304,8 @@ static void *sb_init(const u32 variant, const u32 rotate, const u32 pow2)
         g_set = malloc(g_set_count*sizeof(struct sb_set));
         if (variant == SB_SLAB)
         {
-            ds_TSlabAlloc(g_slab_m, SB_VM_SIZE, g_set_count);
-            ds_TSlabAlloc(g_slab_c, SB_VM_SIZE, g_set_count);
+            ds_TSlabAlloc(NULL, g_slab_m, SB_VM_SIZE / sizeof(g_slab_m.buf[0]), g_set_count);
+            ds_TSlabAlloc(NULL, g_slab_c, SB_VM_SIZE / sizeof(g_slab_c.buf[0]), g_set_count);
         }
         for (u32 i = 0; i < g_set_count; ++i)
         {

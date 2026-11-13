@@ -3078,7 +3078,7 @@ struct test_Output MeshSphereCasesTest(struct test_Environment *env)
     const f32 radius_ratio[] = { 1e-3f, 1.0f, 1e3f };
     const char *point_id[] = { "face", "edge", "vertex" };
     ds_TSlab(ds_TriCache) slab;
-    TEST_EQUAL(1, ds_TSlabAlloc(slab, (u64) 16 << 20, 1));
+    TEST_EQUAL(1, ds_TSlabAlloc(NULL, slab, ((u64) 16 << 20) / sizeof(struct ds_TriCache), 1));
     struct ds_ConcaveCache none = { .tri = { .buf = NULL, .length = 0, .base = U32_MAX } };
     for (u32 si = 0; si < 3; ++si)
     for (u32 ri = 0; ri < 3; ++ri)
@@ -3292,7 +3292,7 @@ static struct mc_CapsuleCase McCapsuleCase(struct arena *mem, const struct c_Sha
 {
     struct mc_CapsuleCase cc;
     ds_TSlab(ds_TriCache) slab;
-    ds_TSlabAlloc(slab, (u64) 16 << 20, 1);
+    ds_TSlabAlloc(NULL, slab, ((u64) 16 << 20) / sizeof(struct ds_TriCache), 1);
     struct ds_ConcaveCache none = { .tri = { .buf = NULL, .length = 0, .base = U32_MAX } };
     const struct d3 pos_m = CtWorldPosition();
     const q q_mesh = CtRotation();
@@ -3623,7 +3623,7 @@ struct test_Output MeshFlatGridTest(struct test_Environment *env)
     memset(mc_worker, 0, sizeof(mc_worker));
     g_dynamics_worker = mc_worker;
     ds_TSlab(ds_TriCache) slab;
-    TEST_EQUAL(1, ds_TSlabAlloc(slab, (u64) 16 << 20, 1));
+    TEST_EQUAL(1, ds_TSlabAlloc(NULL, slab, ((u64) 16 << 20) / sizeof(struct ds_TriCache), 1));
     struct ds_ConcaveCache none = { .tri = { .buf = NULL, .length = 0, .base = U32_MAX } };
     const char *kind_id[] = { "sphere", "capsule", "box", "hull" };
     static const f32 tilt_set[] = { 0.0f, 1e-7f, 1e-5f, 1e-3f };
@@ -3798,7 +3798,7 @@ struct test_Output MeshFlatGridTest(struct test_Environment *env)
 static const char *McTerrainCheck(struct arena *frame, u64 *manifolds, const struct c_Shape *mesh, const ds_TransformWorld *t_mesh, const struct c_Shape *convex, const ds_TransformWorld *t_convex)
 {
     ds_TSlab(ds_TriCache) slab;
-    ds_TSlabAlloc(slab, (u64) 16 << 20, 1);
+    ds_TSlabAlloc(NULL, slab, ((u64) 16 << 20) / sizeof(struct ds_TriCache), 1);
     struct ds_ConcaveCache none = { .tri = { .buf = NULL, .length = 0, .base = U32_MAX } }, none_t = { .tri = { .buf = NULL, .length = 0, .base = U32_MAX } };
     const char *fail = NULL;
     const struct c_ContactResult r = c_MeshContact(frame, &slab, &none, mesh, t_mesh, convex, t_convex);
@@ -4094,7 +4094,7 @@ struct test_Output MeshHullCasesTest(struct test_Environment *env)
     memset(mc_worker, 0, sizeof(mc_worker));
     g_dynamics_worker = mc_worker;
     ds_TSlab(ds_TriCache) slab;
-    TEST_EQUAL(1, ds_TSlabAlloc(slab, (u64) 16 << 20, 1));
+    TEST_EQUAL(1, ds_TSlabAlloc(NULL, slab, ((u64) 16 << 20) / sizeof(struct ds_TriCache), 1));
     struct ds_ConcaveCache none = { .tri = { .buf = NULL, .length = 0, .base = U32_MAX } };
 
     static const f32 tri_size[] = { 1e-2f, 1.0f, 1e2f };
@@ -4217,7 +4217,7 @@ struct test_Output MeshHullRandomTest(struct test_Environment *env)
     g_dynamics_worker = mc_worker;
     struct ds_DynamicsMetrics *metrics = &g_dynamics_worker[ds_ThreadSelfIndex()].metrics;
     ds_TSlab(ds_TriCache) slab;
-    TEST_EQUAL(1, ds_TSlabAlloc(slab, (u64) 16 << 20, 1));
+    TEST_EQUAL(1, ds_TSlabAlloc(NULL, slab, ((u64) 16 << 20) / sizeof(struct ds_TriCache), 1));
     struct ds_ConcaveCache none = { .tri = { .buf = NULL, .length = 0, .base = U32_MAX } };
     static const f64 offset[] = { 0.0, 1e-6, -1e-6, 1e-4, -1e-4, 1e-2, -1e-2 };
 

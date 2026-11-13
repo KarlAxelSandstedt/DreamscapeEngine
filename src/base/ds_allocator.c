@@ -295,7 +295,7 @@ u32 ds_MagazinePow2Alloc(struct arena *mem,
         local_length += 2*storage->mclass_length[i];
     }
 
-    const u64 max_magazine_count = (u64) max_array_count / DS_MAGAZINE_LENGTH_MIN;
+    const u64 max_magazine_count = (u64) max_array_count / DS_MAGAZINE_LENGTH_MIN + 1;
 
     storage->index_length = max_array_count;
     storage->magazine_length = (u32) max_magazine_count;
@@ -320,6 +320,11 @@ u32 ds_MagazinePow2Alloc(struct arena *mem,
         storage->vm_magazine = VMReserve(vm_magazine_size);
         storage->index = (u32 *) storage->vm_index.buf;
         storage->magazine = (struct ds_MagazineShared *) storage->vm_magazine.buf;
+    }
+
+    if (storage->thread)
+    {
+        memset(storage->thread, 0, thread_count*sizeof(struct ds_MagazineThread));
     }
 
     if (!storage->thread || !storage->magazine || !storage->index)
