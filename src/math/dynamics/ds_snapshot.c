@@ -726,7 +726,7 @@ u32 ds_PhysicsEventTryDeserialize(struct SS *ss, struct ds_PhysicsEvent *event)
 	return 1;
 }
 
-/* the narrowphase arrays and a concave cache's array are restored by their owners; a convex cache is part of the contact */
+/* the manifold buffer and a concave cache's array are restored after the contact pool; a convex cache is part of the contact */
 #define DS_CONTACT_FIXED_SERIALIZE_SIZE (SNAPSHOT_ID_SIZE + 2*sizeof(u32) + 5*sizeof(u32) + 4*SNAPSHOT_DLL_NODE_SIZE + SNAPSHOT_V3_SIZE)
 
 u64 ds_ContactSerializeSize(const struct ds_Contact *contact)
@@ -908,7 +908,7 @@ u32 ds_BodyComputeTryDeserialize(struct SS *ss, struct ds_BodyCompute *bcomp)
 	return 1;
 }
 
-/* cc is rebuilt every solve; ccache is restored by the compute's owner */
+/* cc is rebuilt every solve */
 #define DS_CONTACT_COMPUTE_SERIALIZE_SIZE (3*sizeof(u32))
 
 u64 ds_ContactComputeSerializeSize(const struct ds_ContactCompute *compute)
@@ -1338,7 +1338,7 @@ void ds_SolverSetSerialize(struct SS *ss, const struct ds_Dynamics *pipeline, co
 
 	const struct ds_SolverSet *set = pipeline->solver_set_pool.buf + set_index;
 	ds_Assert((set_index >= SOLVER_SET_SLEEPING_FIRST) == (set->mem.mem_size != 0));
-	/* sleeping sets own one heap arena holding their pools and narrowphase data */
+	/* sleeping sets own one heap arena holding their pools */
 	SSWriteU64Le(ss, set->mem.mem_size);
 	ds_BodySimCPoolSerialize(ss, &set->body_sim_pool);
 	ds_BodyComputeCPoolSerialize(ss, &set->body_compute_pool);
@@ -1534,7 +1534,7 @@ u32 ds_CGraphTryDeserialize(struct SS *ss, struct ds_Dynamics *pipeline)
 #define DS_SNAPSHOT_MANIFOLD_LENGTH_MIN 256
 
 /*
- * Every contact's narrowphase data and every compute's ccache is serialized by its owner: cgraph
+ * Every contact's manifold buffer is serialized after the contact pool; computes by their owners: cgraph
  * colors (touching, awake), the ACTIVE set (non-touching, awake) and the sleeping sets.
  */
 u64 ds_DynamicsSerializeSize(const struct ds_Dynamics *pipeline)
@@ -1593,7 +1593,7 @@ void ds_DynamicsSerialize(struct SS *ss, const struct ds_Dynamics *pipeline)
 	ds_Assert(ds_DynamicsSerializeSize(pipeline) <= SSBytesLeft(ss));
 
 #ifdef DS_ASSERT_DEBUG
-	/* a contact without an owner would keep dangling narrowphase pointers after a restore */
+	/* every contact has an owner: a cgraph color or a solver set */
 	u32 owned_contacts = 0;
 	for (u32 i = 0; i < CG_COLOR_COUNT; ++i)
 	{

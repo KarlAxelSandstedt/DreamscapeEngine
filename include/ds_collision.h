@@ -407,9 +407,8 @@ v[i] - depth[i] n. The c_*Contact functions return local manifolds, in the refer
     convex pairs    one manifold; s0 is the reference (n from s0 to s1)
     c_MeshContact   one manifold per contacting triangle; the convex shape is the reference (n from it to the
                     mesh)
-ds_ShapeContact converts each in place to the solver form (ds_SolverManifold, ds_dynamics.h), hence the union
-in c_ContactResult. cached_result: the pair's previous result, or an empty result (zeroed) for none; never NULL.
-The new result's arrays are pushed onto frame.
+ds_ShapeContact converts each to the solver form (ds_SolverManifold, ds_dynamics.h). The result's arrays are pushed
+onto frame.
 
 Point ids: the solver's warm start matches a manifold's points to the previous tick's by id. Contract: an id is
 unique within its manifold, and a point keeps its id across ticks while the same features produce it; a feature
@@ -469,17 +468,10 @@ u32     c_ManifoldCheck(const struct c_Manifold *cm);
 /* Transform the manifold */
 void	c_ManifoldTransform(struct c_Manifold *dst, const struct c_Manifold *src, const m3 rot, const v3 translation);
 
-struct ds_SolverManifold;
-
 struct c_ContactResult
 {
     u32                         manifold_count;     /* Number of stored manifolds               */
-    union
-    {
-        struct c_Manifold *         contact_manifold;   /* c_*Contact output: local manifolds (if any) */
-        struct ds_SolverManifold *  manifold;           /* the same memory after ds_ShapeContact converted it
-                                                           in place: solver form (ds_dynamics.h)         */
-    };
+    struct c_Manifold *         contact_manifold;   /* local manifolds (if any)                 */
     u32 *                       tri;                /* mesh: manifold i's triangle (else NULL)  */
 };
 

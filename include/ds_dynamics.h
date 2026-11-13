@@ -541,8 +541,8 @@ void            ds_BodyUpdateOrientationRange(struct ds_Dynamics *pipeline, stru
 ds_SolverManifold
 =================
 A contact manifold in the solver's form: ds_ShapeContact converts the narrowphase's local manifolds
-(c_ContactResult.contact_manifold) in place, so ds_Contact.narrowphase.manifold names the same memory in this
-form; the two structs have the same size (ds_DynamicsStaticAssert). Body 0 is the body of the contact key's
+(c_ContactResult.contact_manifold) into the contact's ds_SolverManifoldBuffer, kept across ticks with the impulses
+the warm start reads (tangent basis, impulses; tri: mesh triangle). Body 0 is the body of the contact key's
 shape[0] (the reference), body 1 the body of shape[1]. Every vector is f32 in world axes, and none is a world
 position: points are offsets from a body's center of mass.
 
@@ -1074,9 +1074,8 @@ SOLVER_SET_ACTIVE: every simulated island with its bodies' simulation and comput
     the constraint graph's colours (contact->set is SOLVER_SET_NULL there); its contact_pool holds only the
     contacts not promoted yet.
 SOLVER_SET_SLEEPING_FIRST and up: one set per sleeping island, created by ds_SolverSetSleep in one heap arena
-    (mem) sized by ds_SolverSetSleepMemoryRequirement: the pools, the contacts' solver caches and narrowphase
-    data copied off the constraint graph and the frame arenas. ds_SolverSetWakeUp copies them back onto the
-    current worker frame and into the graph, and frees the set; the slot is reused.
+    (mem) sized by ds_SolverSetSleepMemoryRequirement: the pools; contacts keep their manifold buffers.
+    ds_SolverSetWakeUp moves the contacts back into the graph and frees the set; the slot is reused.
 
 Only the pipeline sleeps and wakes islands: at the end of SolveConstraints an island whose bodies have all
 rested for sleep_time_threshold and that is not flagged for a split goes to sleep; a set wakes when one of its
@@ -1133,9 +1132,9 @@ void        ds_SolverSetRemove(struct ds_Dynamics *pipeline, const u32 index);
 /* Empty the given ds_SolverSet's pools; their memory is kept */
 void        ds_SolverSetFlush(struct ds_Dynamics *pipeline, const u32 index);
 /*
- * Wake up the given sleeping ds_SolverSet: its contacts go back into the constraint graph (narrowphase data and
- * caches copied onto the current worker frame), its bodies and islands into the active set with zero velocity
- * and a reset sleep timer, and the set is removed. A fixed set or SOLVER_SET_NULL: no-op.
+ * Wake up the given sleeping ds_SolverSet: its contacts go back into the constraint graph, its bodies and
+ * islands into the active set with zero velocity and a reset sleep timer, and the set is removed. A fixed set
+ * or SOLVER_SET_NULL: no-op.
  */
 void        ds_SolverSetWakeUp(struct ds_Dynamics *pipeline, const u32 index);
 /* Move the given active island into a new sleeping set. No-op while sleeping is disabled. */
@@ -1606,8 +1605,7 @@ struct ds_JointSim *    ds_CGraphJointAdd(struct ds_Dynamics *pipeline, struct d
 /* Deallocate a ds_JointSim */
 void                    ds_CGraphJointRemove(struct ds_Dynamics *pipeline, struct ds_Joint *joint);
 /* 
- * Add contact to constraint graph (And unset the contact set index WITHOUT removing it from the set). Any cached
- * data in sleeper sets is copied onto the frame. 
+ * Add contact to constraint graph (And unset the contact set index WITHOUT removing it from the set).
  */
 void                    ds_CGraphContactAdd(struct ds_Dynamics *pipeline, struct ds_Contact *contact);
 /* Remove the contact from the constraint graph; the last contact of its colour takes its slot (compute index updated). */
