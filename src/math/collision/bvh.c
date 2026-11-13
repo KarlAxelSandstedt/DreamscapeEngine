@@ -63,8 +63,8 @@ static void BVHNodeSerialize(struct SS *ss, const struct BVHNode *node)
 {
 	SSWriteU32LeN(ss, node->bt_child, 2);
 	SSWriteU32Le(ss, node->bt_parent);
-	SSWriteF32LeN(ss, node->bbox.min.buf, 3);
-	SSWriteF32LeN(ss, node->bbox.max.buf, 3);
+	V3Serialize(ss, node->bbox.min);
+	V3Serialize(ss, node->bbox.max);
 }
 
 static u32 BVHNodeTryDeserialize(struct SS *ss, struct BVHNode *node)
@@ -76,8 +76,8 @@ static u32 BVHNodeTryDeserialize(struct SS *ss, struct BVHNode *node)
 
 	SSReadU32LeN(ss, node->bt_child, 2);
 	node->bt_parent = SSReadU32Le(ss);
-	SSReadF32LeN(ss, node->bbox.min.buf, 3);
-	SSReadF32LeN(ss, node->bbox.max.buf, 3);
+	V3Deserialize(ss, &node->bbox.min);
+	V3Deserialize(ss, &node->bbox.max);
 	return 1;
 }
 
