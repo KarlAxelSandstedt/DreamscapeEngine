@@ -21,19 +21,19 @@
 ds_slab.h
 =========
 ds_TSlab: per-struct thread-safe slab alloactor.
+ds_TPool: per-struct thread-safe slot allocator (ds_TSlab restricted to 1-class)
 */
 
 #ifndef __DS_SLAB_H__
 #define __DS_SLAB_H__
 
 ////TODO poison slab memory
-////TODO mem api
 
 /*
 Slab API
 ========
 
-::: Usage and Documentation :::
+::: Usage :::
 
     struct item { ... };
     DEFINE_ARRAY_STRUCT(item);
@@ -44,6 +44,7 @@ Slab API
     ds_TSlabFlush(slab);
     ds_TSlabDealloc(slab);
 
+::: Documentation :::
 
     // Master:
     // If mem == NULL, reserve memory and initialize allocator.
@@ -83,8 +84,14 @@ Slab API
 
 TPool API
 =========
-A ds_TSlab(T) that adds and removes single slots: ds_TPool(T) is ds_TSlab(T), DEFINE_TPOOL(T) is
-DEFINE_TSLAB(T) (after DEFINE_ARRAY_STRUCT(T)). Slot index i is at pool.buf[i].
+
+is ds_TSlab(T), DEFINE_TPOOL(T) is
+
+::: Usage :::
+
+    struct item { ... };
+    DEFINE_ARRAY_STRUCT(item);
+    DEFINE_TPOOL(item);
 
     ds_TPool(item) pool;
     ds_TPoolAlloc(NULL, pool, length, thread_count);
@@ -92,13 +99,15 @@ DEFINE_TSLAB(T) (after DEFINE_ARRAY_STRUCT(T)). Slot index i is at pool.buf[i].
     ds_TPoolRemove(pool, slot.index);
     ds_TPoolDealloc(pool);
 
+::: Documentation :::
+
     // Master: ds_TSlabAlloc, ds_TSlabDealloc, ds_TSlabFlush.
     u32  ds_TPoolAlloc(mem, pool, length, thread_count)
     void ds_TPoolDealloc(pool)
     void ds_TPoolFlush(pool)
 
     // Thread-safe:
-    // Add a slot and return { address, index }; on failure empty_slot.
+    // Add a slot and return { address, index }; full: { NULL, DS_TSLAB_NULL }.
     struct slot ds_TPoolAdd(pool)
 
     // Thread-safe:

@@ -26,11 +26,9 @@
 #define XXH_INLINE_ALL
 #include "xxhash.h"
 
-#if 0 /* TPool: retired, rebuilt on magazines and TStack */
 struct ds_Structure
 {
     THASH_NODE;
-    TPOOL_NODE;
 
     u64     key;
 };
@@ -45,6 +43,7 @@ static u32 ds_StructureKeyEqual(const void *node, const void *key)
     return ((const struct ds_Structure *) node)->key == *(const u64 *) key;
 }
 
+DEFINE_ARRAY_STRUCT(ds_Structure);
 DEFINE_TPOOL(ds_Structure);
 DEFINE_THASH(ds_Structure);
 
@@ -84,7 +83,7 @@ void ds_StructureTHashMapTestReset(void *args)
         {
             ds_Assert(AtomicLoadRlx64(g_tmap.state.a_bucket + i) == THASH_NULL);
         }
-        ds_TPoolAlloc(*pool, g_arch_config->logical_core_count, 1);
+        ds_TPoolAlloc(NULL, *pool, g_arch_config->logical_core_count*10000, g_arch_config->logical_core_count);
         ds_THashMapFlush(g_tmap);
     }
 }
@@ -110,7 +109,7 @@ void ds_StructureTHashMapAddAllRemoveAllTest(void *null)
     u32 indices[10000];
     for (u32 i = 0; i < count; ++i)
     {
-        struct slot slot = ds_TPoolIncrement(*pool);
+        struct slot slot = ds_TPoolAdd(*pool);
         indices[i] = slot.index;
         struct ds_Structure *n = slot.address;
         n->key = indices[i];
@@ -189,7 +188,7 @@ static struct test_Output THashMapSerialTest(struct test_Environment *env)
 	struct test_Output output = { .success = 1, .id = __func__ };
 
     ds_TPool(ds_Structure) pool;
-    ds_TPoolAlloc(pool, g_arch_config->logical_core_count, 64);
+    TEST_EQUAL(1, ds_TPoolAlloc(NULL, pool, THASH_TEST_COUNT, 1));
     ds_THashMap(ds_Structure) map;
     TEST_EQUAL(1, ds_THashMapAlloc(env->mem_1, map, &pool, 60));
     TEST_EQUAL(64, map.state.hash_len);
@@ -296,5 +295,3 @@ struct suite_Performance storage_THashMap_performance_suite =
 
 struct suite_Performance *THashMap_performance_suite = &storage_THashMap_performance_suite;
 struct suite_Correctness *THashMap_correctness_suite = &storage_THashMap_correctness_suite;
-
-#endif

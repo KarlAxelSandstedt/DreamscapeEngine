@@ -219,7 +219,6 @@ u32 ds_HashMapNext(const struct ds_HashMap *map, const u32 index)
 	return map->index[index];
 }
 
-#if 0 /* TPool: retired, rebuilt on magazines and TStack */
 /*
  * THashMap: the bucket array; the lock-free operations are force-inlined in ds_hash_map.h. A node is
  * removed in two steps (Michael): mark its own link (THASH_MARK), so nothing is linked past it any more,
@@ -306,5 +305,3 @@ u32 ds_THashMapTryDeserializeInternal(struct arena *mem, struct SS *ss, struct d
 	state->heap_allocated = (mem == NULL);
 	return 1;
 }
-
-#endif

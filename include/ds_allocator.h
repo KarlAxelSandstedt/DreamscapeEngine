@@ -35,7 +35,7 @@ Contents (in this order):
     Pool        ds_Pool(T) of POOL_NODE structs: stable indices, free list, serializable.
     TPool       ds_TPool(T) (ds_slab.h): a ds_TSlab(T) adding and removing single slots.
 Poisoning, Utilities, Heap, VM and ds_TStack are below. The others live in ds_arena.h, ds_ring.h, ds_compact_pool.h, ds_pool.h
-(Pool and TPool) and ds_slab.h, included at the end in this order; they are not included on their own.
+(Pool) and ds_slab.h (TSlab and TPool), included at the end in this order; they are not included on their own.
 */
 
 #ifndef __DS_ALLOCATOR_H__

@@ -24,8 +24,7 @@ Hash maps from a 32-bit hash to indices of the caller's storage; the caller comp
 
 Contents (in this order):
     ds_HashMap  hash -> chain of indices (u32 arrays), for pools and arrays; single-threaded, serializable.
-    THashMap    ds_THashMap(T): the same, lock-free and intrusive, over the nodes of a ds_TPool(T).
-                Retired (#if 0) with the TPool.
+    THashMap    ds_THashMap(T): the same, lock-free and intrusive, over the slots of a ds_TPool(T).
 */
 
 #ifndef __DS_HASH_MAP_H__
@@ -102,16 +101,16 @@ u32		            ds_HashMapFirst(const struct ds_HashMap *map, const u32 hash);
 /* Return the next index in the chain, or HASH_NULL. */
 u32		            ds_HashMapNext(const struct ds_HashMap *map, const u32 index);
 
-#if 0 /* TPool: retired, rebuilt on magazines and TStack */
 /*
 THashMap
 --------
-Lock-free intrusive map from a 32-bit hash to the nodes of a ds_TPool(T): adds, removes and lookups may run
+Lock-free intrusive map from a 32-bit hash to the slots of a ds_TPool(T): adds, removes and lookups may run
 on any threads at the same time (Maged M. Michael, "High Performance Dynamic Lock-Free Hash Tables and
 List-Based Sets"). As with ds_HashMap, the caller hashes the key; a node is added and removed by its pool
 index, and only Lookup compares keys, through the caller's equal function.
 
-    struct node { TPOOL_NODE; THASH_NODE; u64 key; };
+    struct node { THASH_NODE; u64 key; };
+    DEFINE_ARRAY_STRUCT(node);
     DEFINE_TPOOL(node);
     DEFINE_THASH(node);
     static u32 NodeKeyEqual(const void *node, const void *key)
@@ -119,6 +118,8 @@ index, and only Lookup compares keys, through the caller's equal function.
         return ((const struct node *) node)->key == *(const u64 *) key;
     }
 
+    ds_TPool(node) pool;
+    ds_TPoolAlloc(NULL, pool, length, thread_count);
     ds_THashMap(node) map;
     ds_THashMapAlloc(NULL, map, &pool, 4096);
     ds_THashMapAdd(map, hash, slot.index);                              (any thread)
@@ -145,7 +146,7 @@ Serialize and TryDeserialize only while no other thread uses the map):
     void            ds_THashMapFlush(map)
 
     // Add pool slot index (< 2^31) under hash. index must not be in the map, and the node's key in no
-    // other node (Lookup would return either).
+    // other node (Lookup would return either). The slot must stay in the pool while it is in the map.
     void            ds_THashMapAdd(map, hash, index)
 
     // Return { address, index } of a node under hash that equal(node, key) accepts, or { NULL, U32_MAX }.
@@ -199,16 +200,16 @@ void ds_THashMapDeallocInternal(struct ds_THashState *state);
 void ds_THashMapFlushInternal(struct ds_THashState *state);
 void ds_THashMapSerializeInternal(struct SS *ss, const struct ds_THashState *state);
 u32  ds_THashMapTryDeserializeInternal(struct arena *mem, struct SS *ss, struct ds_THashState *state);
-static ds_ForceInline u32 ds_THashFindInternal(u64 **a_prev, u64 *prev, u64 *cur, u32 *found, const struct ds_THashState *state, const struct ds_TPoolState *pool, void *const *block, const u64 slot_size, const u64 link_offset, const u32 hash, const u32 index, const void *key, u32 (*equal)(const void *, const void *));
-static ds_ForceInline void ds_THashMapAddInternal(const struct ds_THashState *state, const struct ds_TPoolState *pool, void *const *block, const u64 slot_size, const u64 link_offset, const u32 hash, const u32 index);
-static ds_ForceInline struct slot ds_THashMapLookupInternal(const struct ds_THashState *state, const struct ds_TPoolState *pool, void *const *block, const u64 slot_size, const u64 link_offset, const u32 hash, const void *key, u32 (*equal)(const void *, const void *));
-static ds_ForceInline void ds_THashMapRemoveInternal(const struct ds_THashState *state, const struct ds_TPoolState *pool, void *const *block, const u64 slot_size, const u64 link_offset, const u32 hash, const u32 index);
+static ds_ForceInline u32 ds_THashFindInternal(u64 **a_prev, u64 *prev, u64 *cur, u32 *found, const struct ds_THashState *state, u8 *buf, const u64 slot_size, const u64 link_offset, const u32 hash, const u32 index, const void *key, u32 (*equal)(const void *, const void *));
+static ds_ForceInline void ds_THashMapAddInternal(const struct ds_THashState *state, u8 *buf, const u64 slot_size, const u64 link_offset, const u32 hash, const u32 index);
+static ds_ForceInline struct slot ds_THashMapLookupInternal(const struct ds_THashState *state, u8 *buf, const u64 slot_size, const u64 link_offset, const u32 hash, const void *key, u32 (*equal)(const void *, const void *));
+static ds_ForceInline void ds_THashMapRemoveInternal(const struct ds_THashState *state, u8 *buf, const u64 slot_size, const u64 link_offset, const u32 hash, const u32 index);
 
 /* Internal: byte offset of the link in T (a constant; never reads the pool, see ds_PoolSlotOffset). */
-#define ds_THashLinkOffset(map)	((u64) &((1 ? NULL : (map).pool->block[0])->a_thash_next))
+#define ds_THashLinkOffset(map)	((u64) &((1 ? NULL : (map).pool->buf)->a_thash_next))
 
 #define ds_THashMapPoolArgs(map)                                                                        \
-	&(map).pool->state, (void *const *) (map).pool->block, sizeof((map).pool->block[0][0]), ds_THashLinkOffset(map)
+	(u8 *) (map).pool->buf, sizeof((map).pool->buf[0]), ds_THashLinkOffset(map)
 
 #define ds_THashMapAlloc(mem, map, __pool, hash_len)                                                    \
 	((map).pool = (__pool), ds_THashMapAllocInternal((mem), &(map).state, (hash_len)))
@@ -240,9 +241,9 @@ static ds_ForceInline void ds_THashMapRemoveInternal(const struct ds_THashState 
 #define THASH_RETAG(link)   (((link) & THASH_TAG_MASK) + THASH_TAG_ONE)
 
 /* Internal: the address of slot index's link word (tag | next) */
-static ds_ForceInline u64 *ds_THashLinkInternal(const struct ds_TPoolState *pool, void *const *block, const u32 index, const u64 slot_size, const u64 link_offset)
+static ds_ForceInline u64 *ds_THashLinkInternal(u8 *buf, const u32 index, const u64 slot_size, const u64 link_offset)
 {
-	return (u64 *) (ds_TPoolAddressInternal(pool, block, index, slot_size) + link_offset);
+	return (u64 *) (buf + index*slot_size + link_offset);
 }
 
 /*
@@ -251,7 +252,7 @@ static ds_ForceInline u64 *ds_THashLinkInternal(const struct ds_TPoolState *pool
  * link's value, *cur the node's own link value and *found its index; else 0. A link that changed under
  * the walk restarts it from the bucket.
  */
-static ds_ForceInline u32 ds_THashFindInternal(u64 **a_prev, u64 *prev, u64 *cur, u32 *found, const struct ds_THashState *state, const struct ds_TPoolState *pool, void *const *block, const u64 slot_size, const u64 link_offset, const u32 hash, const u32 index, const void *key, u32 (*equal)(const void *, const void *))
+static ds_ForceInline u32 ds_THashFindInternal(u64 **a_prev, u64 *prev, u64 *cur, u32 *found, const struct ds_THashState *state, u8 *buf, const u64 slot_size, const u64 link_offset, const u32 hash, const u32 index, const void *key, u32 (*equal)(const void *, const void *))
 {
 try_again:
 	*a_prev = state->a_bucket + (hash & state->hash_mask);
@@ -259,7 +260,7 @@ try_again:
 	while ((*prev & THASH_NEXT_MASK) != THASH_NULL)
 	{
 		const u32 i = (u32) (*prev & THASH_NEXT_MASK);
-		u64 *a_cur = ds_THashLinkInternal(pool, block, i, slot_size, link_offset);
+		u64 *a_cur = ds_THashLinkInternal(buf, i, slot_size, link_offset);
 		*cur = AtomicLoadAcq64(a_cur);
 		/* prev was marked, relinked or reused since we read it: cur may not follow it */
 		if (AtomicLoadAcq64(*a_prev) != *prev)
@@ -306,10 +307,10 @@ try_again:
 	return 0;
 }
 
-static ds_ForceInline void ds_THashMapAddInternal(const struct ds_THashState *state, const struct ds_TPoolState *pool, void *const *block, const u64 slot_size, const u64 link_offset, const u32 hash, const u32 index)
+static ds_ForceInline void ds_THashMapAddInternal(const struct ds_THashState *state, u8 *buf, const u64 slot_size, const u64 link_offset, const u32 hash, const u32 index)
 {
 	ds_Assert(index < THASH_NULL);
-	u64 *a_node = ds_THashLinkInternal(pool, block, index, slot_size, link_offset);
+	u64 *a_node = ds_THashLinkInternal(buf, index, slot_size, link_offset);
 	u64 *a_bucket = state->a_bucket + (hash & state->hash_mask);
 	const u64 tag = THASH_RETAG(AtomicLoadRlx64(a_node));
 	u64 head = AtomicLoadAcq64(a_bucket);
@@ -321,27 +322,27 @@ static ds_ForceInline void ds_THashMapAddInternal(const struct ds_THashState *st
 	} while (!AtomicCompareExchangeAcqRelAcq64(a_bucket, &head, new_head));
 }
 
-static ds_ForceInline struct slot ds_THashMapLookupInternal(const struct ds_THashState *state, const struct ds_TPoolState *pool, void *const *block, const u64 slot_size, const u64 link_offset, const u32 hash, const void *key, u32 (*equal)(const void *, const void *))
+static ds_ForceInline struct slot ds_THashMapLookupInternal(const struct ds_THashState *state, u8 *buf, const u64 slot_size, const u64 link_offset, const u32 hash, const void *key, u32 (*equal)(const void *, const void *))
 {
 	u64 *a_prev;
 	u64 prev, cur;
 	u32 found;
-	if (ds_THashFindInternal(&a_prev, &prev, &cur, &found, state, pool, block, slot_size, link_offset, hash, U32_MAX, key, equal))
+	if (ds_THashFindInternal(&a_prev, &prev, &cur, &found, state, buf, slot_size, link_offset, hash, U32_MAX, key, equal))
 	{
-		return (struct slot) { .address = ds_TPoolAddressInternal(pool, block, found, slot_size), .index = found };
+		return (struct slot) { .address = buf + found*slot_size, .index = found };
 	}
 	return (struct slot) { .address = NULL, .index = U32_MAX };
 }
 
-static ds_ForceInline void ds_THashMapRemoveInternal(const struct ds_THashState *state, const struct ds_TPoolState *pool, void *const *block, const u64 slot_size, const u64 link_offset, const u32 hash, const u32 index)
+static ds_ForceInline void ds_THashMapRemoveInternal(const struct ds_THashState *state, u8 *buf, const u64 slot_size, const u64 link_offset, const u32 hash, const u32 index)
 {
 	u64 *a_prev;
 	u64 prev, cur;
 	u32 found;
-	while (ds_THashFindInternal(&a_prev, &prev, &cur, &found, state, pool, block, slot_size, link_offset, hash, index, NULL, NULL))
+	while (ds_THashFindInternal(&a_prev, &prev, &cur, &found, state, buf, slot_size, link_offset, hash, index, NULL, NULL))
 	{
 		/* mark: from now on nobody links past the node's link, and searches unlink it */
-		u64 *a_cur = ds_THashLinkInternal(pool, block, index, slot_size, link_offset);
+		u64 *a_cur = ds_THashLinkInternal(buf, index, slot_size, link_offset);
 		const u64 marked = THASH_RETAG(cur) | THASH_MARK | (cur & THASH_NEXT_MASK);
 		if (!AtomicCompareExchangeRelRlx64(a_cur, &cur, marked))
 		{
@@ -352,13 +353,11 @@ static ds_ForceInline void ds_THashMapRemoveInternal(const struct ds_THashState 
 		if (!AtomicCompareExchangeRelRlx64(a_prev, &prev, unlinked))
 		{
 			/* a search for index passes the whole chain and unlinks the marked node on the way */
-			ds_THashFindInternal(&a_prev, &prev, &cur, &found, state, pool, block, slot_size, link_offset, hash, index, NULL, NULL);
+			ds_THashFindInternal(&a_prev, &prev, &cur, &found, state, buf, slot_size, link_offset, hash, index, NULL, NULL);
 		}
 		return;
 	}
 }
-
-#endif
 
 #ifdef __cplusplus
 } 
