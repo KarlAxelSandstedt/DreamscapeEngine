@@ -781,6 +781,8 @@ u32 ds_ContactTryDeserialize(struct SS *ss, struct ds_Contact *contact)
 	contact->narrowphase.manifold_count = SSReadU32Le(ss);
 	contact->narrowphase.manifold = NULL;
 	contact->narrowphase.tri = NULL;
+	contact->manifold_arr = (ds_Array(ds_SolverManifold)) { .buf = NULL, .length = 0, .base = U32_MAX };
+	contact->manifold_count = 0;
 	contact->com_offset = ReadV3(ss);
 	if (ds_ContactConvexCheck(contact))
 	{
@@ -1713,9 +1715,10 @@ u32 ds_CGraphTryDeserialize(struct SS *ss, struct ds_Dynamics *pipeline)
 /*************************** pipeline ***************************/
 
 /* Header: ns_tick, frames_completed, the applied config, island_to_split, the tri cache slots the original carved */
-#define DS_SNAPSHOT_HEADER_FIXED_SIZE (3*sizeof(u64) + sizeof(u32))
+#define DS_SNAPSHOT_HEADER_FIXED_SIZE (3*sizeof(u64) + 2*sizeof(u32))
 /* a copy restored onto mem holds its tri cache slab there: twice what the original carved, at least this */
 #define DS_SNAPSHOT_TRI_CACHE_LENGTH_MIN 256
+#define DS_SNAPSHOT_MANIFOLD_LENGTH_MIN 256
 
 /*
  * Every contact's narrowphase data and every compute's ccache is serialized by its owner: cgraph
@@ -1787,6 +1790,7 @@ void ds_DynamicsSerialize(struct SS *ss, const struct ds_Dynamics *pipeline)
 	ds_DynamicsConfigSerializeBitPacked(ss, &pipeline->config);
 	SSWriteU64Le(ss, pipeline->island_to_split.val);
 	SSWriteU32Le(ss, pipeline->tri_cache_slab.shared.a_count_max);
+	SSWriteU32Le(ss, pipeline->manifold_slab.shared.a_count_max);
 
 	ds_BodyPoolSerialize(ss, &pipeline->body_pool);
 	ds_BitSetSerialize(ss, &pipeline->body_usage_set);
@@ -1853,6 +1857,7 @@ u32 ds_DynamicsTryDeserialize(struct arena *mem, struct SS *ss, struct ds_Dynami
 	pipeline->config_pending = pipeline->config;
 	pipeline->island_to_split = (ds_IslandId) { .val = SSReadU64Le(ss) };
 	const u32 tri_cache_carved = SSReadU32Le(ss);
+	const u32 manifold_carved = SSReadU32Le(ss);
 
 	u32 tri_cache_length;
 	if (mem)
@@ -1865,6 +1870,21 @@ u32 ds_DynamicsTryDeserialize(struct arena *mem, struct SS *ss, struct ds_Dynami
 		tri_cache_length = (tri_cache_slots < U32_MAX) ? (u32) tri_cache_slots : U32_MAX - 1;
 	}
 	if (!ds_TSlabAlloc(mem, pipeline->tri_cache_slab, tri_cache_length, g_config->thread_count))
+	{
+		goto failure;
+	}
+
+	u32 manifold_length;
+	if (mem)
+	{
+		manifold_length = (manifold_carved < DS_SNAPSHOT_MANIFOLD_LENGTH_MIN) ? DS_SNAPSHOT_MANIFOLD_LENGTH_MIN : 2*manifold_carved;
+	}
+	else
+	{
+		const u64 manifold_slots = g_config->vm_size_manifold_allocator / sizeof(struct ds_SolverManifold);
+		manifold_length = (manifold_slots < U32_MAX) ? (u32) manifold_slots : U32_MAX - 1;
+	}
+	if (!ds_TSlabAlloc(mem, pipeline->manifold_slab, manifold_length, g_config->thread_count))
 	{
 		goto failure;
 	}

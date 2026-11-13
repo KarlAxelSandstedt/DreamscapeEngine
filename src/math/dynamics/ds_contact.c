@@ -101,6 +101,8 @@ struct slot ds_ContactTryAdd(struct ds_Dynamics *pipeline, const struct ds_Conta
     {
         c->cache.concave = (struct ds_ConcaveCache) { .tri = { .buf = NULL, .length = 0, .base = U32_MAX }, .tri_count = 0 };
     }
+    c->manifold_arr = (ds_Array(ds_SolverManifold)) { .buf = NULL, .length = 0, .base = U32_MAX };
+    c->manifold_count = 0;
     c->com_offset = V3Zero();
 
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
@@ -139,6 +141,11 @@ void ds_ContactRemove(struct ds_Dynamics *pipeline, const u32 index, const u32 i
     if (!ds_ContactConvexCheck(c) && c->cache.concave.tri.length)
     {
         ds_TSlabRemove(pipeline->tri_cache_slab, c->cache.concave.tri);
+    }
+
+    if (c->manifold_arr.length)
+    {
+        ds_TSlabRemove(pipeline->manifold_slab, c->manifold_arr);
     }
 
     ds_SolverSetWakeUp(pipeline, c->set);

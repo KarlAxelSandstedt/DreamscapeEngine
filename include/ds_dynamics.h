@@ -566,6 +566,8 @@ struct ds_SolverManifold
     f32     tangent_impulse[4][2];
     f32     normal_impulse[4];
 };
+DEFINE_ARRAY_STRUCT(ds_SolverManifold);
+DEFINE_TSLAB(ds_SolverManifold);
 
 /*
 ds_ContactKey
@@ -642,6 +644,8 @@ struct ds_Contact
      */
     struct c_ContactResult      narrowphase;        /* manifold: solver form (ds_ShapeContact converted the
                                                        narrowphase's contact_manifold in place)            */
+    ds_Array(ds_SolverManifold) manifold_arr;
+    u32                         manifold_count;
     union
     {
         struct ds_ConvexCache   convex;
@@ -2062,6 +2066,7 @@ struct ds_Dynamics
 	struct ds_HashMap	            contact_map;		
     struct ds_BitSet                contact_usage_set;
     ds_TSlab(ds_TriCache)           tri_cache_slab;
+    ds_TSlab(ds_SolverManifold)     manifold_slab;
 
     ds_IslandId                     island_to_split;            /* the island the next tick splits, chosen at the end of the solve (null: none) */
 	ds_Pool(ds_Island)            island_pool;	    

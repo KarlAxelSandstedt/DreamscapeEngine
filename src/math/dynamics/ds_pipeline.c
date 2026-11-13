@@ -251,6 +251,13 @@ struct ds_Dynamics ds_DynamicsAlloc(const struct ds_DynamicsConfig *config, cons
         FatalCleanupAndExit();
     }
 
+    const u64 manifold_slots = g_config->vm_size_manifold_allocator / sizeof(struct ds_SolverManifold);
+    if (!ds_TSlabAlloc(NULL, pipeline.manifold_slab, (manifold_slots < U32_MAX) ? (u32) manifold_slots : U32_MAX - 1, g_config->thread_count))
+    {
+        Log(T_SYSTEM, S_FATAL, "Out of memory in %s\n", __func__);
+        FatalCleanupAndExit();
+    }
+
 	ds_PoolAlloc(NULL, pipeline.island_pool, initial_size, GROWABLE);
     pipeline.island_high_energy_set = ds_BitSetAlloc(NULL, initial_size, 0, GROWABLE);
 
@@ -272,6 +279,7 @@ struct ds_Dynamics ds_DynamicsAlloc(const struct ds_DynamicsConfig *config, cons
 void ds_DynamicsDealloc(struct ds_Dynamics *pipeline)
 {
     ds_TSlabDealloc(pipeline->tri_cache_slab);
+    ds_TSlabDealloc(pipeline->manifold_slab);
     ds_DynamicsRuntimeDealloc(&pipeline->runtime);
 
     ds_BitSetDealloc(&pipeline->shape_dynamic_usage_set);
@@ -325,6 +333,7 @@ static void ds_DynamicsClearFrame(struct ds_Dynamics *pipeline)
 void ds_DynamicsFlush(struct ds_Dynamics *pipeline)
 {
     ds_TSlabFlush(pipeline->tri_cache_slab);
+    ds_TSlabFlush(pipeline->manifold_slab);
     for (u32 i = 0; i < pipeline->runtime.worker_count; ++i)
     {
         ArenaFlush(pipeline->runtime.worker[i].frame_arr + 0);
