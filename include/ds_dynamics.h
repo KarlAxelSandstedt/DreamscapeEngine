@@ -323,7 +323,8 @@ DEFINE_POOL(ds_ShapePrefabInstance);
 /* 
  * Allocates a shape according to the values set in Prefab and with given local body frame transform. On success, 
  * an identifier to the shape is returned. On failure (a missing body, or a dynamic body with a density that is
- * not finite and positive), the null id is returned. 
+ * not finite and positive), the null id is returned. A static shape wakes the dynamic bodies whose proxies
+ * overlap its proxy and adds their contacts.
  */
 ds_ShapeId  ds_ShapeAdd(struct ds_Dynamics *pipeline, const struct ds_ShapePrefab *prefab, const ds_Transform *t, const ds_BodyId body);
 /* 

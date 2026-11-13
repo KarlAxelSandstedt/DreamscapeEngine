@@ -74,6 +74,9 @@ Parking (DynamicsParkingTest): a sleeping island's non-touching contacts whose o
 in the disabled set with the partial sleeping bit clear and return to the active set on a wake; a contact created
 between a sleeping and a static shape starts there.
 
+Static shape add (DynamicsStaticShapeAddTest): a static wall added into a sleeping box, and into an awake resting
+box, has its contact at once (active, the box awake) and touching after a tick.
+
 Constraint graph (DynamicsGraphTest): a three-box row and a slab carrying nine boxes, more than the dynamic
 colours. After a tick every contact is coloured and the invariants hold (GraphTestCheck: static colours hold
 static-dynamic contacts, dynamic colours dynamic-dynamic ones, one contact per dynamic body and colour, a
@@ -1851,6 +1854,91 @@ static struct test_Output DynamicsParkingTest(struct test_Environment *env)
     active = pipeline.solver_set_pool.buf + SOLVER_SET_ACTIVE;
     disabled = pipeline.solver_set_pool.buf + SOLVER_SET_DISABLED;
     TEST_NOT_ZERO(active->contact_pool.count == 0 && disabled->contact_pool.count == 3);
+    ds_ContactValidateAll(&pipeline);
+
+    ds_DynamicsConfigPop(&pipeline);
+    ds_DynamicsDealloc(&pipeline);
+    c_ShapeDBDealloc(&cshape_db);
+    ds_SDBDealloc(prefab_db);
+    ArenaFree(&mem);
+    return output;
+}
+
+/*
+ * A static shape added into resting dynamic shapes: static shapes never query the broadphase and a resting shape is
+ * not dirty, so ds_ShapeAdd pairs them itself. A sleeping box, and then an awake resting box (sleeping disabled, its
+ * shape not dirty), each get a static wall added 5 cm into them: right after the add the contact exists in the
+ * active set with the partial sleeping bit set and the box is awake; the next tick finds it touching and colours it.
+ */
+static struct test_Output DynamicsStaticShapeAddTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct arena mem = ArenaAlloc(NULL, 64*1024*1024);
+    struct c_ShapeDB cshape_db = { 0 };
+    c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
+    ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
+    ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
+    struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&external, NSEC_PER_SEC / 60);
+    ds_DynamicsConfigPush(&pipeline);
+    pipeline.config_pending.solver.sleep_enabled = 1;
+    ds_DynamicsConfigUpdatePending(&pipeline);
+
+    /* ground, two resting boxes, and the two walls added later, each 5 cm into one box */
+    const v3 hw = V3(0.5f, 0.5f, 0.5f);
+    const struct dynamics_TestBox scene[5] =
+    {
+        { .position = V3(0.0f, -1.0f, 0.0f), .rotation = QIdentity(), .hw = V3(16.0f, 1.0f, 16.0f), .dynamic = 0, .friction = 0.5f },
+        { .position = V3(0.0f, 0.5f, 0.0f), .rotation = QIdentity(), .hw = hw, .dynamic = 1, .friction = 0.5f },
+        { .position = V3(5.0f, 0.5f, 0.0f), .rotation = QIdentity(), .hw = hw, .dynamic = 1, .friction = 0.5f },
+        { .position = V3(0.95f, 1.0f, 0.0f), .rotation = QIdentity(), .hw = V3(0.5f, 1.0f, 1.0f), .dynamic = 0, .friction = 0.5f },
+        { .position = V3(5.95f, 1.0f, 0.0f), .rotation = QIdentity(), .hw = V3(0.5f, 1.0f, 1.0f), .dynamic = 0, .friction = 0.5f },
+    };
+    ds_BodyId id[5];
+    for (u32 i = 0; i < 3; ++i)
+    {
+        id[i] = DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, scene + i, (v3f64) { 0 }, i);
+    }
+    const struct ds_Body *sleeper = ds_BodyLookup(&pipeline, id[1]).address;
+    const struct ds_Body *rester = ds_BodyLookup(&pipeline, id[2]).address;
+
+    u32 t;
+    for (t = 0; t < 600 && sleeper->set < SOLVER_SET_SLEEPING_FIRST; ++t)
+    {
+        SnapshotTestTick(&pipeline);
+    }
+    TEST_NOT_ZERO(t < 600);
+
+    /* a wall added into the sleeping box: the contact exists at once, active with the bit set, and the box is awake */
+    id[3] = DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, scene + 3, (v3f64) { 0 }, 3);
+    u32 ci = DynamicsTestContactIndex(&pipeline, id[1], id[3]);
+    TEST_NOT_ZERO(ci != U32_MAX && sleeper->set == SOLVER_SET_ACTIVE);
+    const struct ds_Contact *c = pipeline.contact_pool.buf + ci;
+    TEST_NOT_ZERO(c->set == SOLVER_SET_ACTIVE && ds_ContactPartialSleepingCheck(c));
+    ds_ContactValidateAll(&pipeline);
+    SnapshotTestTick(&pipeline);
+    c = pipeline.contact_pool.buf + ci;
+    TEST_NOT_ZERO(c->set == SOLVER_SET_NULL && pipeline.manifold_buffer_pool.buf[ci].count > 0);
+
+    /* sleeping disabled: the other box is awake and resting, its shape not dirty after a tick */
+    pipeline.config_pending.solver.sleep_enabled = 0;
+    ds_DynamicsConfigUpdatePending(&pipeline);
+    for (t = 0; t < 60; ++t)
+    {
+        SnapshotTestTick(&pipeline);
+    }
+    TEST_NOT_ZERO(rester->set == SOLVER_SET_ACTIVE && !ds_BitSetGet(&pipeline.shape_dirty_set, rester->shape_list.first));
+
+    /* a wall added into the awake resting box: the contact exists at once and touches after a tick */
+    id[4] = DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, scene + 4, (v3f64) { 0 }, 4);
+    ci = DynamicsTestContactIndex(&pipeline, id[2], id[4]);
+    TEST_NOT_ZERO(ci != U32_MAX);
+    c = pipeline.contact_pool.buf + ci;
+    TEST_NOT_ZERO(c->set == SOLVER_SET_ACTIVE && ds_ContactPartialSleepingCheck(c));
+    SnapshotTestTick(&pipeline);
+    c = pipeline.contact_pool.buf + ci;
+    TEST_NOT_ZERO(c->set == SOLVER_SET_NULL && pipeline.manifold_buffer_pool.buf[ci].count > 0);
     ds_ContactValidateAll(&pipeline);
 
     ds_DynamicsConfigPop(&pipeline);
@@ -4394,6 +4482,7 @@ static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
     DynamicsSleepTest,
     DynamicsWakeByContactTest,
     DynamicsParkingTest,
+    DynamicsStaticShapeAddTest,
     DynamicsGraphTest,
     DynamicsJointTest,
     DynamicsJointIslandTest,
