@@ -99,7 +99,8 @@ struct slot ds_ContactTryAdd(struct ds_Dynamics *pipeline, const struct ds_Conta
         c->flags |= DS_CONTACT_STATIC | DS_CONTACT_STATIC_INDEX;
     }
 
-    if ((body[0]->set != SOLVER_SET_ACTIVE) != (body[1]->set != SOLVER_SET_ACTIVE))
+    const u32 inactive[2] = { body[0]->set != SOLVER_SET_ACTIVE, body[1]->set != SOLVER_SET_ACTIVE };
+    if (inactive[0] != inactive[1])
     {
         c->flags |= DS_CONTACT_PARTIAL_SLEEPING;
     }
@@ -114,11 +115,14 @@ struct slot ds_ContactTryAdd(struct ds_Dynamics *pipeline, const struct ds_Conta
     }
     c->com_offset = V3Zero();
 
-    struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
-    c->compute = ds_CPoolPush(active->contact_pool).index;
-    c->set = SOLVER_SET_ACTIVE;
+    const u32 set_index = (inactive[0] && inactive[1])
+                        ? SOLVER_SET_DISABLED
+                        : SOLVER_SET_ACTIVE;
+    struct ds_SolverSet *set = pipeline->solver_set_pool.buf + set_index;
+    c->compute = ds_CPoolPush(set->contact_pool).index;
+    c->set = set_index;
     c->color = CG_INVALID_COLOR;
-    active->contact_pool.buf[ c->compute ] = contact_slot.index;
+    set->contact_pool.buf[ c->compute ] = contact_slot.index;
         
     struct ds_Contact *buf = pipeline->contact_pool.buf;
     struct ds_Contact *c0 = buf + shape[0]->contact_list.last; 
@@ -368,6 +372,20 @@ void ds_ContactValidateAll(const struct ds_Dynamics *pipeline)
         ds_Assert(c->set == SOLVER_SET_ACTIVE);
         ds_Assert(c->color == CG_INVALID_COLOR);
         ds_Assert(pipeline->manifold_buffer_pool.buf[ci].count == 0);
+
+        const struct ds_Shape *shape[2] =
+        {
+            pipeline->shape_pool.buf + c->key.shape[0],
+            pipeline->shape_pool.buf + c->key.shape[1],
+        };
+
+        const struct ds_Body *body[2] =
+        {
+            pipeline->body_pool.buf + shape[0]->body,
+            pipeline->body_pool.buf + shape[1]->body,
+        };
+
+        ds_Assert(body[0]->set == SOLVER_SET_ACTIVE || body[1]->set == SOLVER_SET_ACTIVE);
     }
 
     const struct ds_SolverSet *disabled = pipeline->solver_set_pool.buf + SOLVER_SET_DISABLED;
