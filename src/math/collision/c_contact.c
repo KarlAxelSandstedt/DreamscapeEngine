@@ -2135,11 +2135,6 @@ static void c_MeshContactFinish(struct arena *frame, ds_TSlab(ds_TriCache) *slab
         if (count > cache->tri.length)
         {
             cache->tri = (cache->tri.length) ? ds_TSlabRealloc(*slab, cache->tri, count) : ds_TSlabAdd(*slab, count);
-            if (cache->tri.buf == NULL)
-            {
-                LogString(T_SYSTEM, S_FATAL, "tri cache slab full, exiting");
-                FatalCleanupAndExit();
-            }
         }
 
         for (u32 i = 0; i < helper->record_count && cache->tri_count < count; ++i)
