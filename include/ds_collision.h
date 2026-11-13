@@ -83,7 +83,6 @@ struct BVHQuerySet
 
 /* free allocated resources */
 void 		        BVHFree(struct BVH *tree);
-/* WARNING: Platform-dependent. */
 /* Return the required size when serializing the bvh. */
 u64                 BVHSerializeSize(const struct BVH *bvh);
 /* Serialize the bvh (aligned). WARNING: Assumes bvh fits in the stream. */
