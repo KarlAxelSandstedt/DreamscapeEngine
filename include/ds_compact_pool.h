@@ -88,6 +88,7 @@ The macros (pool is a ds_CPool(T) lvalue; arguments may be evaluated more than o
     // Upper bound of the arena bytes ds_CPoolAlloc(mem, pool, length, ...) pushes for slot_size-byte slots.
     u64             ds_CPoolAllocMemoryRequirement(length, slot_size)
 
+    // WARNING: Platform-dependent.
     // Bytes ds_CPoolSerialize writes.
     u64             ds_CPoolSerializeSize(pool)
 

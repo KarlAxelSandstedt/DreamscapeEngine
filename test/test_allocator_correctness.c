@@ -1396,6 +1396,83 @@ static struct test_Output TSlabReallocTest(struct test_Environment *env)
 	return output;
 }
 
+/* ds_TSlabArrayTryDeserialize: the compact form of a grown array comes back at the rounded length, count 0, a cut stream, a full slab */
+static struct test_Output TSlabArrayDeserializeTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+    ds_TSlab(slab_item) slab;
+    TEST_EQUAL(1, ds_TSlabAlloc(slab, (u64) 16 << 20, 1));
+
+    /* 5 live elements in a length-8 array: written compact, restored as 5 in a length-8 array */
+    ds_Array(slab_item) arr = ds_TSlabAdd(slab, 5);
+    for (u32 i = 0; i < arr.length; ++i) { arr.buf[i].a = 200 + i; arr.buf[i].b = i; }
+    const u32 live = 5;
+    const u64 size = ds_ArrayCompactSerializeSize(arr, live);
+    struct SS ss = SSAlloc(env->mem_1, size);
+    TEST_NOT_EQUAL(NULL, ss.buf);
+    ds_ArrayCompactSerialize(&ss, arr, live);
+    TEST_EQUAL(8*size, ss.bit_index);
+
+    ss.bit_index = 0;
+    ds_Array(slab_item) read;
+    u32 count = U32_MAX;
+    TEST_EQUAL(1, ds_TSlabArrayTryDeserialize(&ss, slab, read, &count));
+    TEST_EQUAL(8*size, ss.bit_index);
+    TEST_EQUAL(live, count);
+    TEST_EQUAL(8, read.length);
+    TEST_NOT_EQUAL(arr.base, read.base);
+    TEST_EQUAL((void *) (slab.buf + read.base), (void *) read.buf);
+    TEST_EQUAL(0, memcmp(arr.buf, read.buf, live*sizeof(struct slab_item)));
+    ds_TSlabRemove(slab, read);
+
+    /* 3 live elements of the same array come back in a length-4 array: the restore shrinks */
+    ss.bit_index = 0;
+    ds_ArrayCompactSerialize(&ss, arr, 3);
+    ss.bit_index = 0;
+    TEST_EQUAL(1, ds_TSlabArrayTryDeserialize(&ss, slab, read, &count));
+    TEST_EQUAL(3, count);
+    TEST_EQUAL(4, read.length);
+    ds_TSlabRemove(slab, read);
+
+    /* count 0: a bare count, the empty array */
+    ss.bit_index = 0;
+    ds_ArrayCompactSerialize(&ss, arr, 0);
+    ss.bit_index = 0;
+    TEST_EQUAL(1, ds_TSlabArrayTryDeserialize(&ss, slab, read, &count));
+    TEST_EQUAL(0, count);
+    TEST_EQUAL(0, read.length);
+    TEST_EQUAL(NULL, read.buf);
+
+    /* a stream one byte short, and a corrupt count */
+    ss.bit_index = 0;
+    ds_ArrayCompactSerialize(&ss, arr, live);
+    struct SS cut = SSBuffered(ss.buf, size - 1);
+    TEST_EQUAL(0, ds_TSlabArrayTryDeserialize(&cut, slab, read, &count));
+    TEST_EQUAL(0, cut.bit_index);
+    TEST_EQUAL(0, count);
+    TEST_EQUAL(0, read.length);
+    struct SS corrupt = SSBuffered(ss.buf, size);
+    SSWriteU32Le(&corrupt, live + 1);
+    corrupt.bit_index = 0;
+    TEST_EQUAL(0, ds_TSlabArrayTryDeserialize(&corrupt, slab, read, &count));
+    TEST_EQUAL(0, corrupt.bit_index);
+
+    /* a slab too small for the array: the stream stays, the array is empty */
+    ds_TSlab(slab_item) tiny;
+    TEST_EQUAL(1, ds_TSlabAlloc(tiny, 1, 1));
+    const u32 full = tiny.shared.length;
+    TEST_EQUAL(full, ds_TSlabAdd(tiny, full).length);
+    ss.bit_index = 0;
+    TEST_EQUAL(0, ds_TSlabArrayTryDeserialize(&ss, tiny, read, &count));
+    TEST_EQUAL(0, ss.bit_index);
+    TEST_EQUAL(0, read.length);
+    ds_TSlabDealloc(tiny);
+
+    ds_TSlabRemove(slab, arr);
+    ds_TSlabDealloc(slab);
+    return output;
+}
+
 struct test_TSlabItem { u32 owner; u32 serial; u32 pad[6]; };
 DEFINE_ARRAY_STRUCT(test_TSlabItem);
 DEFINE_TSLAB(test_TSlabItem);
@@ -1689,6 +1766,7 @@ static struct test_Output (*allocator_tests[])(struct test_Environment *) =
     VMTest,
     SlabAllocTest,
     TSlabReallocTest,
+    TSlabArrayDeserializeTest,
     TSlabParallelTest,
 };
 

@@ -202,21 +202,24 @@ static ds_ForceInline i64	SSReadI64Partial(struct SS *ss, const u64 bit_count);
 
 /*************************** array ***************************/
 
+/* WARNING: Platform-dependent. */
 /* Bytes ds_ArrayCompactSerialize writes. */
-#define ds_ArrayCompactSerializeSize(array, count)  (sizeof(u32) + (u64) (count)*sizeof((array).buf[0]))
+#define ds_ArrayCompactSerializeSize(_array_, _count_)  (sizeof(u32) + (u64) (_count_)*sizeof((_array_).buf[0]))
 /* Write the first count elements of the array to ss (at a byte boundary; it must fit). */
-#define ds_ArrayCompactSerialize(ss, array, count)  ds_ArraySerializeInternal((ss), (array).buf, (count), sizeof((array).buf[0]))
+#define ds_ArrayCompactSerialize(_ss_, _array_, _count_)                                        \
+	ds_ArraySerializeInternal((_ss_), (_array_).buf, (_count_), sizeof((_array_).buf[0]))
 /* Bytes ds_ArraySerialize writes. */
-#define ds_ArraySerializeSize(array)    ds_ArrayCompactSerializeSize((array), (array).length)
+#define ds_ArraySerializeSize(_array_)      ds_ArrayCompactSerializeSize((_array_), (_array_).length)
 /* Write the array to ss (at a byte boundary; it must fit: ds_ArraySerializeSize). */
-#define ds_ArraySerialize(ss, array)    ds_ArrayCompactSerialize((ss), (array), (array).length)
+#define ds_ArraySerialize(_ss_, _array_)    ds_ArrayCompactSerialize((_ss_), (_array_), (_array_).length)
 /*
- * Read an array from ss into mem or the heap, with the written length and base U32_MAX. 
- * Returns 1 on success, 0 on failure. On failure, ss remains unchanged.
+ * Read an array from ss into mem or the heap (mem == NULL; free it with ds_Free), with the written length
+ * and base U32_MAX. Returns 1 on success; 0 if mem is full or ss holds no valid array (the array is empty,
+ * ss's position unchanged).
  */
-#define ds_ArrayTryDeserialize(mem, ss, array)                                                  \
-	ds_ArrayTryDeserializeInternal((mem), (ss), (void **) &(array).buf, &(array).length,        \
-	                               &(array).base, sizeof((array).buf[0]))
+#define ds_ArrayTryDeserialize(_mem_, _ss_, _array_)                                            \
+	ds_ArrayTryDeserializeInternal((_mem_), (_ss_), (void **) &(_array_).buf, &(_array_).length, \
+	                               &(_array_).base, sizeof((_array_).buf[0]))
 
 
 /*************************** stream: inline definitions ***************************/

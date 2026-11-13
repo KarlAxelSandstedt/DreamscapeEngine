@@ -27,9 +27,7 @@ ds_TSlab: per-struct thread-safe slab alloactor.
 #define __DS_SLAB_H__
 
 ////TODO poison slab memory
-////TODO compact api
 ////TODO mem api
-////TODO add serialize api
 
 /*
 Slab API
@@ -47,13 +45,16 @@ Slab API
     ds_TSlabDealloc(slab);
 
 
-    // Master: Reserve >= vm_size memory and initialize allocator.
+    // Master: 
+    // Reserve >= vm_size memory and initialize allocator.
     void ds_TSlabAlloc(slab, vm_size, thread_count)
 
-    // Master: Release any memory held by allocator
+    // Master: 
+    // Release any memory held by allocator
     void ds_TSlabDealloc(slab)
 
-    // Master: Flush allocator resources, reseting counts.
+    // Master: 
+    // Flush allocator resources, reseting counts.
     void ds_TSlabFlush(slab)
 
     // Thread-safe:
@@ -61,13 +62,22 @@ Slab API
     // On failure: { .length = 0, .buf = NULL, .base = U32_MAX }.
     ds_Array(T) ds_TSlabAdd(slab, count)
 
-    // Thread-safe: Remove array.
+    // Thread-safe: 
+    // Remove array.
     void ds_TSlabRemove(slab, array)
 
     // Thread-safe:
     // Returns reallocated array, or { .length = 0, .buf = NULL, .base = U32_MAX }
     // on count = 0. Removes any previous array.
     ds_Array(T) ds_TSlabRealloc(slab, array, count)
+
+    // WARNING: Platform-dependent.
+    // Master: 
+    // Read an ds_Array(T) array from ss into a new slab array (of possibly greater size),
+    // and read the written length in count. Returns 1 on success, and return 0 on failure.
+    // Fails if the slab is full or ss holds no valid array (the array is empty, count 0, 
+    // ss's position unchanged).
+    u32 ds_TSlabArrayTryDeserialize(ss, slab, array, count)
 */
 
 #define DS_TSLAB_NULL            U32_MAX
@@ -113,6 +123,12 @@ struct ds_ArrayUntyped  ds_TSlabSharedRealloc(struct ds_TSlabShared *shared,
                                               const struct ds_ArrayUntyped array,
                                               const u32 count);
 
+u32     ds_TSlabSharedArrayTryDeserialize(struct SS *ss,
+                                          struct ds_TSlabShared *shared,
+                                          struct ds_ArrayUntyped *array,
+                                          u32 *count,
+                                          const u64 slot_size);
+
 /* Internal: log and exit; the Log API is not visible here */
 ds_NoReturn void ds_TSlabOutOfMemoryInternal(void);
 
@@ -150,5 +166,10 @@ do                                                                              
                                          .base = (_array_).base,                        \
                                      },                                                 \
                                      (_count_)) }).t
+
+#define ds_TSlabArrayTryDeserialize(_ss_, _slab_, _array_, _count_)                     \
+    ds_TSlabSharedArrayTryDeserialize((_ss_), &(_slab_).shared,                         \
+                                      (struct ds_ArrayUntyped *) &(_array_), (_count_), \
+                                      sizeof((_slab_).buf[0]))
 
 #endif

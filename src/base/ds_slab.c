@@ -125,6 +125,38 @@ struct ds_ArrayUntyped ds_TSlabSharedRealloc(struct ds_TSlabShared *shared, cons
     return moved;
 }
 
+u32 ds_TSlabSharedArrayTryDeserialize(struct SS *ss, struct ds_TSlabShared *shared, struct ds_ArrayUntyped *array, u32 *count, const u64 slot_size)
+{
+    *array = ds_ArrayEmpty();
+    *count = 0;
+    if (SSBytesLeft(ss) < sizeof(u32))
+    {
+        return 0;
+    }
+
+    const u64 bit_index = ss->bit_index;
+    const u32 serialized_count = SSReadU32Le(ss);
+    /* division instead of count*slot_size: a corrupt count must not overflow the check */
+    if (serialized_count > SSBytesLeft(ss) / slot_size)
+    {
+        ss->bit_index = bit_index;
+        return 0;
+    }
+
+    if (serialized_count > 0)
+    {
+        *array = ds_TSlabSharedAdd(shared, slot_size, serialized_count);
+        if (array->buf == NULL)
+        {
+            ss->bit_index = bit_index;
+            return 0;
+        }
+        SSRead8N(ss, (b8 *) array->buf, serialized_count*slot_size);
+    }
+    *count = serialized_count;
+    return 1;
+}
+
 void ds_TSlabOutOfMemoryInternal(void)
 {
     LogString(T_SYSTEM, S_FATAL, "Slab-Allocator OOM, exiting!");

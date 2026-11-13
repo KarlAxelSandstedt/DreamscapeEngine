@@ -82,6 +82,7 @@ than once):
     // 1 if the slot at ptr (in buf[0, count_max)) is allocated.
     u32             ds_PoolSlotAllocated(ptr)
 
+    // WARNING: Platform-dependent.
     // Bytes ds_PoolSerialize writes.
     u64             ds_PoolSerializeSize(pool)
 
