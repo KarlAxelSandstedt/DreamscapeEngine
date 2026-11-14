@@ -726,7 +726,7 @@ void ds_JointConstraintInitRange(struct ds_Dynamics *pipeline, const u32 color_i
         /* canonical slot (ds_JointAdd): a static body is body 1 */
         ds_Assert(ds_BodyDynamicCheck(b[0]));
         jsim->body_sim[0] = b[0]->sim;
-        jsim->body_sim[1] = ds_BodyDynamicCheck(b[1]) ? b[1]->sim : ACTIVE_BODY_DUMMY_INDEX;
+        jsim->body_sim[1] = ds_JointStaticCheck(joint) ? ACTIVE_BODY_DUMMY_INDEX : b[1]->sim;
 
         /*
          * The real sims, a static body's from the static set: the prepare needs its pose, which the dummy lacks.

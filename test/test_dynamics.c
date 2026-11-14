@@ -2157,6 +2157,7 @@ static struct test_Output DynamicsJointTest(struct test_Environment *env)
     const struct ds_Joint *joint1 = s1.address;
     /* the add's canonical slot: the static ground is body 1 of joint0 although it was passed first */
     TEST_NOT_ZERO(joint0->body[0] == index[1] && joint0->body[1] == index[0] && joint1->body[0] == index[1] && joint1->body[1] == index[2]);
+    TEST_NOT_ZERO(ds_JointStaticCheck(joint0) && !ds_JointStaticCheck(joint1));
     TEST_NOT_ZERO(ground->joint_list.count == 1 && a->joint_list.count == 2 && b->joint_list.count == 1);
     TEST_NOT_ZERO(joint0->set == SOLVER_SET_NULL && joint0->color <= CG_STATIC_COLOR_LAST);
     TEST_NOT_ZERO(joint1->set == SOLVER_SET_NULL && CG_DYNAMIC_COLOR_FIRST <= joint1->color && joint1->color <= CG_DYNAMIC_COLOR_LAST);

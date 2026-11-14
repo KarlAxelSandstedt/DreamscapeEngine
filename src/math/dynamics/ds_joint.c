@@ -96,6 +96,7 @@ ds_JointId ds_JointAdd(struct ds_Dynamics *pipeline, const enum ds_JointType typ
 
     joint->body[0] = slot_b0.index;
     joint->body[1] = slot_b1.index;
+    joint->flags = (dynamic[1]) ? 0 : DS_JOINT_STATIC;
     joint->island = expand_index;
     const u32 i0 = (joint->body[0] == pipeline->joint_pool.buf[b[0]->joint_list.last].body[1]);
     const u32 i1 = (joint->body[1] == pipeline->joint_pool.buf[b[1]->joint_list.last].body[1]);
@@ -203,17 +204,14 @@ void ds_JointCollisionEnable(struct ds_Dynamics *pipeline, const ds_JointId id)
             pipeline->body_pool.buf + joint->body[1],
         };
 
-        if (ds_BodyDynamicCheck(body[0]))
+        i32 si = body[0]->shape_list.first;
+        while (si != DLL_SENTINEL)
         {
-            i32 si = body[0]->shape_list.first;
-            while (si != DLL_SENTINEL)
-            {
-                ds_BitSetSet(&pipeline->shape_dirty_set, si, 1);
-                si = pipeline->shape_pool.buf[si].body_shape.next;
-            }
+            ds_BitSetSet(&pipeline->shape_dirty_set, si, 1);
+            si = pipeline->shape_pool.buf[si].body_shape.next;
         }
 
-        if (ds_BodyDynamicCheck(body[1]))
+        if (!ds_JointStaticCheck(joint))
         {
             i32 si = body[1]->shape_list.first;
             while (si != DLL_SENTINEL)
@@ -244,8 +242,8 @@ void ds_JointCollisionDisable(struct ds_Dynamics *pipeline, const ds_JointId id)
 
         const u32 dynamic[2] =
         {
-            ds_BodyDynamicBit(b[0]),
-            ds_BodyDynamicBit(b[1]),
+            1,
+            !ds_JointStaticCheck(joint),
         };
 
         /* Pick any dynamic body as a first guess. If both are dynamic, we
@@ -307,6 +305,8 @@ void ds_JointValidateAll(const struct ds_Dynamics *pipeline)
         ds_Assert(joint->body[0] != joint->body[1]);
         ds_Assert(ds_PoolSlotAllocated(pipeline->body_pool.buf + joint->body[0]));
         ds_Assert(ds_PoolSlotAllocated(pipeline->body_pool.buf + joint->body[1]));
+        ds_Assert(ds_BodyDynamicCheck(pipeline->body_pool.buf + joint->body[0]));
+        ds_Assert(!ds_JointStaticCheck(joint) == !ds_BodyStaticCheck(pipeline->body_pool.buf + joint->body[1]));
 
         const struct ds_Island *island = pipeline->island_pool.buf + joint->island;
         ds_Assert(joint->island < pipeline->island_pool.count_max && ds_PoolSlotAllocated(island));

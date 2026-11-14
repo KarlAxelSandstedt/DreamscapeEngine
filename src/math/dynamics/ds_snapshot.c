@@ -460,7 +460,7 @@ u32 ds_ShapeTryDeserialize(struct SS *ss, struct ds_Shape *shape)
 	return shape->cshape_type < C_SHAPE_COUNT;
 }
 
-#define DS_JOINT_SERIALIZE_SIZE (SNAPSHOT_ID_SIZE + 2*sizeof(u32) + SNAPSHOT_DLL_NODE_SIZE + 2*sizeof(u32) + 2*SNAPSHOT_DLL_NODE_SIZE + 4*sizeof(u32))
+#define DS_JOINT_SERIALIZE_SIZE (SNAPSHOT_ID_SIZE + 3*sizeof(u32) + SNAPSHOT_DLL_NODE_SIZE + 2*sizeof(u32) + 2*SNAPSHOT_DLL_NODE_SIZE + 4*sizeof(u32))
 
 u64 ds_JointSerializeSize(const struct ds_Joint *joint)
 {
@@ -470,6 +470,7 @@ u64 ds_JointSerializeSize(const struct ds_Joint *joint)
 void ds_JointSerialize(struct SS *ss, const struct ds_Joint *joint)
 {
 	SSWriteU64Le(ss, joint->id.val);
+	SSWriteU32Le(ss, joint->flags);
 	SSWriteU32Le(ss, (u32) joint->type);
 	SSWriteU32Le(ss, joint->island);
 	WriteDLLNode(ss, joint->island_joint);
@@ -490,6 +491,7 @@ u32 ds_JointTryDeserialize(struct SS *ss, struct ds_Joint *joint)
 	}
 
 	joint->id.val = SSReadU64Le(ss);
+	joint->flags = SSReadU32Le(ss);
 	joint->type = (enum ds_JointType) SSReadU32Le(ss);
 	joint->island = SSReadU32Le(ss);
 	joint->island_joint = ReadDLLNode(ss);

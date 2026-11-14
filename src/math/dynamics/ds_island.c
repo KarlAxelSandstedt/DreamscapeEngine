@@ -190,9 +190,8 @@ void ds_IslandValidateAll(const struct ds_Dynamics *pipeline)
             ds_Assert(joint->island == index);
             const struct ds_Body *b0 = pipeline->body_pool.buf + joint->body[0];
             const struct ds_Body *b1 = pipeline->body_pool.buf + joint->body[1];
-            ds_Assert((b0->island == index) || ds_BodyStaticCheck(b0));
-            ds_Assert((b1->island == index) || ds_BodyStaticCheck(b1));
-            ds_Assert(ds_BodyDynamicCheck(b0) || ds_BodyDynamicCheck(b1));
+            ds_Assert(b0->island == index);
+            ds_Assert((b1->island == index) || ds_JointStaticCheck(joint));
             if (is->set == SOLVER_SET_ACTIVE)
             {
                 ds_Assert(joint->set == SOLVER_SET_NULL && joint->color != CG_INVALID_COLOR);

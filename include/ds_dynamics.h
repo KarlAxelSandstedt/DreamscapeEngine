@@ -968,9 +968,15 @@ enum ds_JointType
     DS_JOINT_TYPE_COUNT
 };
 
+#define DS_JOINT_STATIC             ((u32) 1 << 0)      /* body[1] is static (ds_JointAdd puts
+                                                           a static body in slot 1)          */
+
+#define ds_JointStaticCheck(j)      ((j)->flags & DS_JOINT_STATIC)
+
 struct ds_Joint
 {
     POOL_NODE;
+    u32                 flags;                 /* DS_JOINT_ bits */
     ds_JointId          id;                    /* generational identifier */
     enum ds_JointType   type;
 
