@@ -1979,8 +1979,7 @@ static u32 GraphTestCheck(const struct ds_Dynamics *pipeline)
         for (u32 i = 0; i < colour->contact_pool.count; ++i)
         {
             const struct ds_Contact *contact = pipeline->contact_pool.buf + colour->contact_pool.buf[i];
-            const struct ds_Shape *shape[2] = { pipeline->shape_pool.buf + contact->key.shape[0], pipeline->shape_pool.buf + contact->key.shape[1] };
-            const struct ds_Body *body[2] = { pipeline->body_pool.buf + shape[0]->body, pipeline->body_pool.buf + shape[1]->body };
+            const struct ds_Body *body[2] = { pipeline->body_pool.buf + contact->body[0], pipeline->body_pool.buf + contact->body[1] };
             const u32 dynamic = (ds_BodyDynamicCheck(body[0]) != 0) + (ds_BodyDynamicCheck(body[1]) != 0);
             ok &= (contact->color == c && contact->compute == i && contact->set == SOLVER_SET_NULL);
             ok &= (pipeline->island_pool.buf[contact->island].set == SOLVER_SET_ACTIVE);
@@ -1990,7 +1989,7 @@ static u32 GraphTestCheck(const struct ds_Dynamics *pipeline)
             {
                 if (ds_BodyDynamicCheck(body[k]))
                 {
-                    colour_count[shape[k]->body] += 1;
+                    colour_count[contact->body[k]] += 1;
                 }
             }
             total += 1;

@@ -372,7 +372,7 @@ Pair order (the narrowphase computes in the frame of the first shape):
     mesh pairs      (mesh, convex), computed in the convex shape's frame. Mesh vs mesh is not supported.
 
 Reference: the solver form's reference is the contact key's shape[0], whose body is the solver's body 0
-(ds_ContactKeyAddress). Contacts between the same two bodies may therefore have opposite normals.
+(ds_Contact.body[0]). Contacts between the same two bodies may therefore have opposite normals.
 
 Assumptions:
     caches          SAT and GJK caches belong to the ordered pair (first -> second shape), so the pair order
@@ -608,8 +608,6 @@ struct ds_ContactKey    ds_ContactKeyCanonical(const u32 shape0, const u32 shape
 u32                     ds_ContactKeyHash(const struct ds_ContactKey key);
 /* Return 1 if the two keys are equivalent, otherwise return  0. */
 u32                     ds_ContactKeyEquivalence(const struct ds_ContactKey key0, const struct ds_ContactKey key1);
-/* Return the body and shape addresses of the key */
-void                    ds_ContactKeyAddress(struct ds_Body **b0, struct ds_Shape **s0, struct ds_Body **b1, struct ds_Shape **s1, const struct ds_Dynamics *pipeline, const struct ds_ContactKey key);
 /* Validate contact state */
 void		            ds_ContactValidateAll(const struct ds_Dynamics *pipeline);
 
@@ -648,6 +646,7 @@ struct ds_Contact
 
     ds_ContactId                id;                 /* Generational Identifier                  */
     struct ds_ContactKey        key;                /* shape pair key                           */
+    u32                         body[2];            /* body of key.shape[i]                     */
     
     u32                         flags;              /* DS_CONTACT_ bits                         */
     u32                         island;             /* Index of contact's island                */

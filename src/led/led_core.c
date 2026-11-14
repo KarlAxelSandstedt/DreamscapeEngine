@@ -2366,16 +2366,10 @@ static void led_EngineRun(struct led *led, const u32 physics_ticked)
                     const struct ds_Contact *c = ds_ContactLookup(led->physics, event->contact).address;
                     if (c)
                     {
-                        const struct ds_Shape *shape[2] =
-                        {
-                            led->physics->shape_pool.buf + c->key.shape[0],
-                            led->physics->shape_pool.buf + c->key.shape[1],
-                        };
-                        
                         const struct ds_Body *body[2] =
                         {
-		                    led->physics->body_pool.buf + shape[0]->body,
-		                    led->physics->body_pool.buf + shape[1]->body,
+		                    led->physics->body_pool.buf + c->body[0],
+		                    led->physics->body_pool.buf + c->body[1],
                         };
 
 					    if (ds_BodyDynamicCheck(body[0]))

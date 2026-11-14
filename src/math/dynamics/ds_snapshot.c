@@ -630,7 +630,7 @@ u32 ds_PhysicsEventTryDeserialize(struct SS *ss, struct ds_PhysicsEvent *event)
 }
 
 /* the manifold buffer and a concave cache's array are restored after the contact pool; a convex cache is part of the contact */
-#define DS_CONTACT_FIXED_SERIALIZE_SIZE (SNAPSHOT_ID_SIZE + 2*sizeof(u32) + 5*sizeof(u32) + 3*SNAPSHOT_DLL_NODE_SIZE + SNAPSHOT_V3_SIZE)
+#define DS_CONTACT_FIXED_SERIALIZE_SIZE (SNAPSHOT_ID_SIZE + 4*sizeof(u32) + 5*sizeof(u32) + 3*SNAPSHOT_DLL_NODE_SIZE + SNAPSHOT_V3_SIZE)
 
 u64 ds_ContactSerializeSize(const struct ds_Contact *contact)
 {
@@ -646,6 +646,7 @@ void ds_ContactSerialize(struct SS *ss, const struct ds_Contact *contact)
 {
 	SSWriteU64Le(ss, contact->id.val);
 	SSWriteU32LeN(ss, contact->key.shape, 2);
+	SSWriteU32LeN(ss, contact->body, 2);
 	SSWriteU32Le(ss, contact->flags);
 	SSWriteU32Le(ss, contact->island);
 	SSWriteU32Le(ss, contact->set);
@@ -670,6 +671,7 @@ u32 ds_ContactTryDeserialize(struct SS *ss, struct ds_Contact *contact)
 
 	contact->id.val = SSReadU64Le(ss);
 	SSReadU32LeN(ss, contact->key.shape, 2);
+	SSReadU32LeN(ss, contact->body, 2);
 	contact->flags = SSReadU32Le(ss);
 	contact->island = SSReadU32Le(ss);
 	contact->set = SSReadU32Le(ss);

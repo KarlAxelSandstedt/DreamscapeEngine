@@ -175,14 +175,7 @@ void ds_CGraphContactAdd(struct ds_Dynamics *pipeline, struct ds_Contact *contac
     ds_Assert(contact->set != SOLVER_SET_NULL)
     ds_Assert(contact->color == CG_INVALID_COLOR);
 
-    const struct ds_Shape *shape[2] =
-    {
-        pipeline->shape_pool.buf + contact->key.shape[0],
-        pipeline->shape_pool.buf + contact->key.shape[1],
-    };
-
-    const u32 body[2] = { shape[0]->body, shape[1]->body };
-    contact->color = ds_CGraphColorNext(pipeline, body);
+    contact->color = ds_CGraphColorNext(pipeline, contact->body);
     struct ds_CGraphColor *color = pipeline->cgraph.color + contact->color;
 
     contact->compute = ds_CPoolPush(color->contact_pool).index;
@@ -206,14 +199,8 @@ void ds_CGraphContactRemove(struct ds_Dynamics *pipeline, struct ds_Contact *con
 
     if (contact->color != CG_SERIAL_COLOR)
     {
-        const struct ds_Shape *shape[2] =
-        {
-            pipeline->shape_pool.buf + contact->key.shape[0],
-            pipeline->shape_pool.buf + contact->key.shape[1],
-        };
-
-        ds_BitSetSet(&color->body_bitset, shape[0]->body, 0);
-        ds_BitSetSet(&color->body_bitset, shape[1]->body, 0);
+        ds_BitSetSet(&color->body_bitset, contact->body[0], 0);
+        ds_BitSetSet(&color->body_bitset, contact->body[1], 0);
     }
 
     ds_CPoolRemoveAndSwap(color->contact_pool, contact->compute);
@@ -241,16 +228,10 @@ void ds_CGraphValidate(const struct ds_Dynamics *pipeline)
             const struct ds_Contact *contact = pipeline->contact_pool.buf + ci;
             const struct ds_Island *island = pipeline->island_pool.buf + contact->island;
 
-            const struct ds_Shape *shape[2] =
-            {
-                pipeline->shape_pool.buf + contact->key.shape[0],
-                pipeline->shape_pool.buf + contact->key.shape[1],
-            };
-
             const struct ds_Body *body[2] =
             {
-                pipeline->body_pool.buf + shape[0]->body,
-                pipeline->body_pool.buf + shape[1]->body,
+                pipeline->body_pool.buf + contact->body[0],
+                pipeline->body_pool.buf + contact->body[1],
             };
 
             ds_Assert(contact->color == c);

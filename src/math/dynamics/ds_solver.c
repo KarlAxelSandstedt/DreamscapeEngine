@@ -293,9 +293,8 @@ void ds_ContactConstraintInitRange(struct ds_Dynamics *pipeline, const u32 color
         const struct ds_Contact *c = pipeline->contact_pool.buf + color->contact_pool.buf[ci];
         struct ds_ContactCompute *ccomp = color->contact_compute_pool.buf + ci;
 
-	    struct ds_Body *b[2];
-        struct ds_Shape *s[2];
-        ds_ContactKeyAddress(b+0, s+0, b+1, s+1, pipeline, c->key);
+        const struct ds_Body *b[2] = { pipeline->body_pool.buf + c->body[0], pipeline->body_pool.buf + c->body[1] };
+        const struct ds_Shape *s[2] = { pipeline->shape_pool.buf + c->key.shape[0], pipeline->shape_pool.buf + c->key.shape[1] };
 
         ccomp->body_sim[0] = ds_BodyDynamicCheck(b[0])
                 ? b[0]->sim

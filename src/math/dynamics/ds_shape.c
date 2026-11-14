@@ -432,7 +432,7 @@ void ds_ShapeContact(struct arena *tmp, struct ds_Dynamics *pipeline, const u32 
     v3f64 com[2];
     for (u32 i = 0; i < 2; ++i)
     {
-        const struct ds_Body *body = pipeline->body_pool.buf + s[i]->body;
+        const struct ds_Body *body = pipeline->body_pool.buf + c->body[i];
         const struct ds_SolverSet *set = pipeline->solver_set_pool.buf + body->set;
         com[i] = ds_BodySimWorldCenterOfMass(set->body_sim_pool.buf + body->sim);
     }

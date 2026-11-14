@@ -158,10 +158,8 @@ void ds_IslandValidateAll(const struct ds_Dynamics *pipeline)
 	    {
 	    	c = pipeline->contact_pool.buf + ci;
 	    	ds_Assert(ds_PoolSlotAllocated(c));
-            const struct ds_Shape *s0 = pipeline->shape_pool.buf + c->key.shape[0];
-            const struct ds_Shape *s1 = pipeline->shape_pool.buf + c->key.shape[1];
-	    	const struct ds_Body *b0 = pipeline->body_pool.buf + s0->body;
-	    	const struct ds_Body *b1 = pipeline->body_pool.buf + s1->body;
+	    	const struct ds_Body *b0 = pipeline->body_pool.buf + c->body[0];
+	    	const struct ds_Body *b1 = pipeline->body_pool.buf + c->body[1];
 	    	ds_Assert((b0->island == index) || ds_BodyStaticCheck(b0));
 	    	ds_Assert((b1->island == index) || ds_BodyStaticCheck(b1));
             ds_Assert(c->island == index);
@@ -387,13 +385,13 @@ void ds_IslandSplit(struct ds_Dynamics *pipeline, const u32 island_to_split)
                     const i32 ci_next = c->shape_contact[1-neighbour_index].next;
                     if (c->island == island_to_split)
                     {
-                        const struct ds_Shape *neighbour_shape = pipeline->shape_pool.buf + c->key.shape[neighbour_index]; 
-                        const struct ds_Body *neighbour_body = pipeline->body_pool.buf + neighbour_shape->body; 
+                        const u32 neighbour_body_index = c->body[neighbour_index];
+                        const struct ds_Body *neighbour_body = pipeline->body_pool.buf + neighbour_body_index;
                         if (neighbour_body->island == island_to_split)
                         {
-		      		    	DLLRemove(split->body_list, pipeline->body_pool.buf, neighbour_shape->body, island_body);
-		      		    	ds_IslandAddBody(pipeline, new_island_index, neighbour_shape->body);
-		      		    	body_stack[sc++] = neighbour_shape->body;
+		      		    	DLLRemove(split->body_list, pipeline->body_pool.buf, neighbour_body_index, island_body);
+		      		    	ds_IslandAddBody(pipeline, new_island_index, neighbour_body_index);
+		      		    	body_stack[sc++] = neighbour_body_index;
                         }
 	                    DLLAppend(new_island->contact_list, pipeline->contact_pool.buf, (u32) ci, island_contact);
                         c->island = new_island_index;

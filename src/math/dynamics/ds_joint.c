@@ -278,8 +278,7 @@ void ds_JointCollisionDisable(struct ds_Dynamics *pipeline, const ds_JointId id)
                             : 0;
                 const u32 ci_next = contact->shape_contact[1-neighbour_index].next;
 
-                const struct ds_Shape *neighbour_shape = pipeline->shape_pool.buf + contact->key.shape[neighbour_index];
-                if (neighbour_shape->body == body_neighbour_index)
+                if (contact->body[neighbour_index] == body_neighbour_index)
                 {
                     ds_ContactRemove(pipeline, ci, 0);
                 }

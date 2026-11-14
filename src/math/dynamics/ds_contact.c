@@ -35,15 +35,6 @@ u32 ds_ContactKeyEquivalence(const struct ds_ContactKey key0, const struct ds_Co
     return key0.shape[0] == key1.shape[0] && key0.shape[1] == key1.shape[1];
 }
 
-void ds_ContactKeyAddress(struct ds_Body **b0, struct ds_Shape **s0, struct ds_Body **b1, struct ds_Shape **s1, const struct ds_Dynamics *pipeline, const struct ds_ContactKey key)
-{    
-    *s0 = pipeline->shape_pool.buf + key.shape[0];
-    *s1 = pipeline->shape_pool.buf + key.shape[1];
-
-    *b0 = pipeline->body_pool.buf + (*s0)->body;
-    *b1 = pipeline->body_pool.buf + (*s1)->body;
-}
-
 struct slot ds_ContactTryAdd(struct ds_Dynamics *pipeline, const struct ds_ContactKey key)
 {
     ds_Assert(ds_ContactKeyLookup(pipeline, key).address == NULL);
@@ -80,6 +71,8 @@ struct slot ds_ContactTryAdd(struct ds_Dynamics *pipeline, const struct ds_Conta
     pipeline->manifold_buffer_pool.buf[contact_slot.index] = (struct ds_SolverManifoldBuffer) { .type = SOLVER_MANIFOLD_INTERNAL, .count = 0 };
 
     c->key = key;
+    c->body[0] = shape[0]->body;
+    c->body[1] = shape[1]->body;
     c->island = U32_MAX;
     c->id = ds_ContactIdNextGeneration(c->id);
     const struct ds_Body *body[2] = { pipeline->body_pool.buf + shape[0]->body, pipeline->body_pool.buf + shape[1]->body };
@@ -147,9 +140,10 @@ void ds_ContactRemove(struct ds_Dynamics *pipeline, const u32 index, const u32 i
 	struct ds_Contact *c = buf + index;
     ds_Assert(ds_PoolSlotAllocated(c));
 
-	struct ds_Body *body0, *body1;
-    struct ds_Shape *shape0, *shape1;
-    ds_ContactKeyAddress(&body0, &shape0, &body1, &shape1, pipeline, c->key);
+	const struct ds_Body *body0 = pipeline->body_pool.buf + c->body[0];
+	const struct ds_Body *body1 = pipeline->body_pool.buf + c->body[1];
+    struct ds_Shape *shape0 = pipeline->shape_pool.buf + c->key.shape[0];
+    struct ds_Shape *shape1 = pipeline->shape_pool.buf + c->key.shape[1];
 	PhysicsEventContactRemoved(pipeline, body0->id, shape0->id, body1->id, shape1->id);
     if (!ds_ContactConvexCheck(c) && c->cache.concave.tri.length)
     {
@@ -283,16 +277,10 @@ void ds_ContactPromote(struct ds_Dynamics *pipeline, const u32 contact)
      * TODO: This code is repeated often in engine, can we simplify contacts/joints to
      * skip the pointer chase, at least a little, and simplify the code using flags? 
      */
-    const struct ds_Shape *shape[2] =
-    {
-        pipeline->shape_pool.buf + c->key.shape[0],
-        pipeline->shape_pool.buf + c->key.shape[1],
-    };
-    
     const struct ds_Body *body[2] =
     {
-	    pipeline->body_pool.buf + shape[0]->body,
-	    pipeline->body_pool.buf + shape[1]->body,
+	    pipeline->body_pool.buf + c->body[0],
+	    pipeline->body_pool.buf + c->body[1],
     };
 
     u32 expand_index = body[1]->island;
@@ -328,8 +316,8 @@ void ds_ContactDemote(struct ds_Dynamics *pipeline, const u32 contact)
     
     const struct ds_Body *body[2] =
     {
-	    pipeline->body_pool.buf + shape[0]->body,
-	    pipeline->body_pool.buf + shape[1]->body,
+	    pipeline->body_pool.buf + c->body[0],
+	    pipeline->body_pool.buf + c->body[1],
     };
 	PhysicsEventContactRemoved(pipeline, body[0]->id, shape[0]->id, body[1]->id, shape[1]->id);
 
@@ -373,16 +361,10 @@ void ds_ContactValidateAll(const struct ds_Dynamics *pipeline)
         ds_Assert(c->color == CG_INVALID_COLOR);
         ds_Assert(pipeline->manifold_buffer_pool.buf[ci].count == 0);
 
-        const struct ds_Shape *shape[2] =
-        {
-            pipeline->shape_pool.buf + c->key.shape[0],
-            pipeline->shape_pool.buf + c->key.shape[1],
-        };
-
         const struct ds_Body *body[2] =
         {
-            pipeline->body_pool.buf + shape[0]->body,
-            pipeline->body_pool.buf + shape[1]->body,
+            pipeline->body_pool.buf + c->body[0],
+            pipeline->body_pool.buf + c->body[1],
         };
 
         ds_Assert(body[0]->set == SOLVER_SET_ACTIVE || body[1]->set == SOLVER_SET_ACTIVE);
@@ -399,16 +381,10 @@ void ds_ContactValidateAll(const struct ds_Dynamics *pipeline)
         ds_Assert(c->color == CG_INVALID_COLOR);
         ds_Assert(pipeline->manifold_buffer_pool.buf[ci].count == 0);
 
-        const struct ds_Shape *shape[2] =
-        {
-            pipeline->shape_pool.buf + c->key.shape[0],
-            pipeline->shape_pool.buf + c->key.shape[1],
-        };
-
         const struct ds_Body *body[2] =
         {
-            pipeline->body_pool.buf + shape[0]->body,
-            pipeline->body_pool.buf + shape[1]->body,
+            pipeline->body_pool.buf + c->body[0],
+            pipeline->body_pool.buf + c->body[1],
         };
 
         ds_Assert(body[0]->set != SOLVER_SET_ACTIVE && body[1]->set != SOLVER_SET_ACTIVE);
@@ -434,16 +410,12 @@ void ds_ContactValidateAll(const struct ds_Dynamics *pipeline)
         const struct ds_Contact *c = pipeline->contact_pool.buf + ci;
         if (ds_PoolSlotAllocated(c))
         {
-            const struct ds_Shape *shape[2] =
-            {
-                pipeline->shape_pool.buf + c->key.shape[0],
-                pipeline->shape_pool.buf + c->key.shape[1],
-            };
-
+            ds_Assert(c->body[0] == pipeline->shape_pool.buf[ c->key.shape[0] ].body);
+            ds_Assert(c->body[1] == pipeline->shape_pool.buf[ c->key.shape[1] ].body);
             const struct ds_Body *body[2] =
             {
-                pipeline->body_pool.buf + shape[0]->body,
-                pipeline->body_pool.buf + shape[1]->body,
+                pipeline->body_pool.buf + c->body[0],
+                pipeline->body_pool.buf + c->body[1],
             };
 
             const u32 partial_sleeping = ((body[0]->set != SOLVER_SET_ACTIVE) != (body[1]->set != SOLVER_SET_ACTIVE));
