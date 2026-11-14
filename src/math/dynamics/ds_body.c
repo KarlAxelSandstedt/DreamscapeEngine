@@ -42,6 +42,11 @@ ds_BodyId ds_BodyAdd(struct ds_Dynamics *pipeline, const struct ds_BodyPrefab *p
     }
     ds_BitSetSet(&pipeline->body_usage_set, body_slot.index, 1);
 
+    if (pipeline->cgraph.color[CG_DYNAMIC_COLOR_FIRST].body_bitset.bit_count <= body_slot.index)
+    {
+        ds_CGraphIncreaseSize(pipeline);
+    }
+
     DLLFlush(body->joint_list);
     DLLFlush(body->shape_list);
 

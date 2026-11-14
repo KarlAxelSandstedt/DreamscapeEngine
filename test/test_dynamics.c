@@ -159,9 +159,9 @@ and damping within 1 % (the contacts cancel only the normal part), nothing acros
 dropped flat with restitution 1 leaves the ground with its impact speed (within the tick's gravity), one with
 restitution 0 keeps less than 5 % of it.
 
-Pipeline (DynamicsFirstTickTest, DynamicsFlushTest): 101 bodies added to a pipeline of initial size 64 tick once
-and every contact is coloured (the per-colour body bit sets must have grown with the body pool before the first
-tick). A flushed pipeline is empty, forgets a split it had flagged, and simulates a new scene whose islands reuse
+Pipeline (DynamicsFirstTickTest, DynamicsFlushTest): 101 bodies added to a pipeline of initial size 64, two of
+the new ones joined before the first tick: the joint is coloured at once, and after one tick every contact is
+too (the per-colour body bit sets grow as bodies are added). A flushed pipeline is empty, forgets a split it had flagged, and simulates a new scene whose islands reuse
 the old slots and ids.
 
 Numerics config (DynamicsNumericsConfigTest): the defaults' derived values against tan^2, cos and sin^2 of their
@@ -1958,10 +1958,10 @@ static struct test_Output DynamicsStaticShapeAddTest(struct test_Environment *en
 }
 
 /*
- * The constraint graph's invariants: every coloured contact is between an active island's bodies, a static
- * colour holds static-dynamic contacts and a dynamic colour dynamic-dynamic ones, no dynamic body has two
- * contacts of one colour, and a colour's body bit set marks exactly the dynamic bodies with a contact in it.
- * Returns the number of contacts in the colours, or U32_MAX on a violation.
+ * The constraint graph's invariants: every coloured contact and joint is between an active island's bodies, a
+ * static colour holds static-dynamic constraints and a dynamic colour dynamic-dynamic ones, no dynamic body has
+ * two constraints of one colour, and a colour's body bit set marks exactly the dynamic bodies with a constraint
+ * in it. Returns the number of contacts in the colours, or U32_MAX on a violation.
  */
 static u32 GraphTestCheck(const struct ds_Dynamics *pipeline)
 {
@@ -1993,6 +1993,23 @@ static u32 GraphTestCheck(const struct ds_Dynamics *pipeline)
                 }
             }
             total += 1;
+        }
+        for (u32 i = 0; i < colour->joint_sim_pool.count; ++i)
+        {
+            const struct ds_Joint *joint = pipeline->joint_pool.buf + colour->joint_sim_pool.buf[i].joint;
+            const struct ds_Body *body[2] = { pipeline->body_pool.buf + joint->body[0], pipeline->body_pool.buf + joint->body[1] };
+            const u32 dynamic = (ds_BodyDynamicCheck(body[0]) != 0) + (ds_BodyDynamicCheck(body[1]) != 0);
+            ok &= (joint->color == c && joint->sim == i && joint->set == SOLVER_SET_NULL);
+            ok &= (pipeline->island_pool.buf[joint->island].set == SOLVER_SET_ACTIVE);
+            ok &= (c > CG_STATIC_COLOR_LAST || dynamic == 1);
+            ok &= (c < CG_DYNAMIC_COLOR_FIRST || c > CG_DYNAMIC_COLOR_LAST || dynamic == 2);
+            for (u32 k = 0; k < 2; ++k)
+            {
+                if (ds_BodyDynamicCheck(body[k]))
+                {
+                    colour_count[joint->body[k]] += 1;
+                }
+            }
         }
         if (c == CG_SERIAL_COLOR)
         {
@@ -3708,28 +3725,43 @@ static struct test_Output DynamicsFirstTickTest(struct test_Environment *env)
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
     const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
-    struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&external, NSEC_PER_SEC / 60);
+    struct ds_DynamicsConfig config = ds_DynamicsConfigDefault();
+    config.initial_size = 64;
+    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&config, &external, NSEC_PER_SEC / 60);
     ds_DynamicsConfigPush(&pipeline);
     pipeline.config_pending.solver.sleep_enabled = 0;
     ds_DynamicsConfigUpdatePending(&pipeline);
+    const u64 initial_bit_count = pipeline.cgraph.color[CG_DYNAMIC_COLOR_FIRST].body_bitset.bit_count;
 
     /* a ground and a 10 by 10 grid of boxes on it: 101 bodies, the pools grow past 64 before the first tick */
     const struct dynamics_TestBox ground = { .position = V3(0.0f, -1.0f, 0.0f), .rotation = QIdentity(), .hw = V3(16.0f, 1.0f, 16.0f), .dynamic = 0, .friction = 0.5f };
     DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, &ground, (v3f64) { 0 }, 0);
+    ds_BodyId id[100];
     for (u32 i = 0; i < 100; ++i)
     {
         const struct dynamics_TestBox box = { .position = V3(-13.5f + 3.0f * (f32) (i % 10), 0.5f, -13.5f + 3.0f * (f32) (i / 10)), .rotation = QIdentity(), .hw = V3(0.5f, 0.5f, 0.5f), .dynamic = 1, .friction = 0.5f };
-        DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, &box, (v3f64) { 0 }, 1 + i);
+        id[i] = DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, &box, (v3f64) { 0 }, 1 + i);
     }
-    TEST_NOT_ZERO(pipeline.body_pool.length > 64 && pipeline.body_pool.count == 102);
+    TEST_NOT_ZERO(initial_bit_count == 64 && pipeline.body_pool.length > 64 && pipeline.body_pool.count == 102);
+
+    /* the last two boxes of the grid, both past the bit sets' initial size, joined before the first tick */
+    TEST_NOT_ZERO(ds_BodyIdIndex(id[98]) >= initial_bit_count && ds_BodyIdIndex(id[99]) >= initial_bit_count);
+    struct ds_DistanceJointPrefab prefab;
+    ds_DistanceJointPrefab(&prefab, 3.0f, ds_BreakageOptionNone());
+    const ds_Transform centre = ds_TransformIdentity();
+    const ds_JointId joint = ds_DistanceJointAdd(&pipeline, &prefab, id[98], &centre, id[99], &centre);
+    TEST_NOT_ZERO(!ds_JointIdNullCheck(joint));
+    const u32 joint_colour = pipeline.joint_pool.buf[ds_JointIdIndex(joint)].color;
+    TEST_NOT_ZERO(CG_DYNAMIC_COLOR_FIRST <= joint_colour && joint_colour <= CG_DYNAMIC_COLOR_LAST);
+    TEST_NOT_ZERO(GraphTestCheck(&pipeline) == 0);
 
     SnapshotTestTick(&pipeline);
     ds_CGraphValidate(&pipeline);
     ds_IslandValidateAll(&pipeline);
-    TEST_NOT_ZERO(GraphTestCheck(&pipeline) == 100 && pipeline.island_pool.count == 100);
+    TEST_NOT_ZERO(GraphTestCheck(&pipeline) == 100 && pipeline.island_pool.count == 99);
     for (u32 c = 0; c < CG_COLOR_COUNT; ++c)
     {
-        TEST_NOT_ZERO(c == CG_SERIAL_COLOR || pipeline.cgraph.color[c].body_bitset.bit_count >= pipeline.body_pool.length);
+        TEST_NOT_ZERO(c == CG_SERIAL_COLOR || pipeline.cgraph.color[c].body_bitset.bit_count >= pipeline.body_pool.count_max);
     }
 
     ds_DynamicsConfigPop(&pipeline);
@@ -4879,7 +4911,6 @@ static void *DynamicsPerfSolveInit(const enum dynamics_PerfScene scene, const en
     pipeline->config_pending.solver.sleep_enabled = 0;
     ds_DynamicsConfigUpdatePending(pipeline);
     ds_DynamicsConfigPush(pipeline);
-    ds_CGraphFramePrepare(pipeline);
     in->frame = pipeline->runtime.worker[ds_ThreadSelfIndex()].frame;
     ArenaPushRecord(in->frame);
 

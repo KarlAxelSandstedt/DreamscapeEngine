@@ -1601,8 +1601,8 @@ void                    ds_CGraphDealloc(struct ds_Dynamics *pipeline);
 void                    ds_CGraphFlush(struct ds_Dynamics *pipeline);
 /* Validate the state of the pipeline's constraint graph */
 void                    ds_CGraphValidate(const struct ds_Dynamics *pipeline);
-/* Prepare the pipeline's constraint graph for the new frame: the body bit sets grow with the body pool. */
-void                    ds_CGraphFramePrepare(struct ds_Dynamics *pipeline);
+/* Grow the constraint graph's body bit sets to the body pool's length. */
+void                    ds_CGraphIncreaseSize(struct ds_Dynamics *pipeline);
 /* Allocate and setup a new ds_JointSim */
 struct ds_JointSim *    ds_CGraphJointAdd(struct ds_Dynamics *pipeline, struct ds_Joint *joint);
 /* Deallocate a ds_JointSim */

@@ -1943,7 +1943,6 @@ void ds_DynamicsTick(struct arena *tmp, struct ds_Dynamics *pipeline, const u64 
     ArenaPushRecord(tmp);
 	pipeline->frames_completed += 1;
     ds_DynamicsClearFrame(pipeline);
-    ds_CGraphFramePrepare(pipeline);
 
     ds_DynamicsProfileBegin(pipeline);
     {

@@ -63,17 +63,14 @@ void ds_CGraphFlush(struct ds_Dynamics *pipeline)
     }
 }
 
-void ds_CGraphFramePrepare(struct ds_Dynamics *pipeline)
+void ds_CGraphIncreaseSize(struct ds_Dynamics *pipeline)
 {
     struct ds_CGraph *cg = &pipeline->cgraph;
-    if (cg->color[CG_DYNAMIC_COLOR_FIRST].body_bitset.bit_count < pipeline->body_pool.length)
+    for (u32 i = 0; i < CG_COLOR_COUNT; ++i)
     {
-        for (u32 i = 0; i < CG_COLOR_COUNT; ++i)
+        if (i != CG_SERIAL_COLOR)
         {
-            if (i != CG_SERIAL_COLOR)
-            {
-                ds_BitSetIncreaseSize(&cg->color[i].body_bitset, pipeline->body_pool.length, 0);
-            }
+            ds_BitSetIncreaseSize(&cg->color[i].body_bitset, pipeline->body_pool.length, 0);
         }
     }
 }
@@ -222,6 +219,7 @@ void ds_CGraphValidate(const struct ds_Dynamics *pipeline)
     for (u32 c = 0; c < CG_COLOR_COUNT; ++c)
     {
         const struct ds_CGraphColor *color = pipeline->cgraph.color + c;
+        ds_Assert(c == CG_SERIAL_COLOR || color->body_bitset.bit_count >= pipeline->body_pool.count_max);
         for (u32 i = 0; i < color->contact_pool.count; ++i)
         {
             const u32 ci = color->contact_pool.buf[i];
