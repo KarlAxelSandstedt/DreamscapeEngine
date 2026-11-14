@@ -552,7 +552,7 @@ position: points are offsets from a body's center of mass.
     depth[i]        penetration depth (>= 0) of point i: body 1's deepest point is anchor0[i] - depth[i]*normal
     id[i]           point i's c_PointId: the warm start matches points by it
 
-Body 1's anchors follow from ds_Contact.com_offset (com1 - com0, world axes):
+Body 1's anchors follow from ds_SolverManifoldBuffer.com_offset (com1 - com0, world axes):
 
     anchor1[i] = anchor0[i] - com_offset - depth[i]*normal      (relative to body 1's center of mass)
 */
@@ -581,6 +581,12 @@ struct ds_SolverManifoldBuffer
 {
     enum ds_SolverManifoldBufferType    type;
     u32                                 count;  /* Manifold count in buffer */
+    union
+    {
+        struct ds_ConvexCache           convex;
+        struct ds_ConcaveCache          concave;
+    } cache;
+    v3                                  com_offset;     /* com1 - com0 (world axes, f32 from an f64 subtraction) */
     union
     {
         struct ds_SolverManifold        manifold;
@@ -659,12 +665,6 @@ struct ds_Contact
     struct DLLNode              island_contact;     /* island->contact_list node                */
     struct DLLNode              shape_contact[2];   /* [i] is part of shape i's contact list    */
 
-    union
-    {
-        struct ds_ConvexCache   convex;
-        struct ds_ConcaveCache  concave;
-    } cache;
-    v3                          com_offset;         /* com1 - com0 (world axes, f32 from an f64 subtraction) */
 };
 DEFINE_POOL(ds_Contact);
 
@@ -1205,7 +1205,7 @@ struct ds_ContactConstraintPoint
                                    point). World axes from contact prep through the velocity phase; body
                                    axes from ds_PositionConstraintInitAndCacheImpulsesRange on (NGS rotates
                                    them by the current rotation)                                        */
-    f32     com_separation;     /* dot(com1 - com0, n) at the step's start (ds_Contact.com_offset)      */
+    f32     com_separation;     /* dot(com1 - com0, n) at the step's start (manifold buffer com_offset) */
 	f32 	normal_impulse;	    /* Normal impulse produced by the contact       */
 	f32	    velocity_bias;	    /* scale of velocity_bias along contact normal  */
 	f32	    normal_mass;	    /* 1.0f / row(J,i)*Inv(M)*J^T                   */

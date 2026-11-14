@@ -631,17 +631,12 @@ u32 ds_PhysicsEventTryDeserialize(struct SS *ss, struct ds_PhysicsEvent *event)
 	return 1;
 }
 
-/* the manifold buffer and a concave cache's array are restored after the contact pool; a convex cache is part of the contact */
-#define DS_CONTACT_FIXED_SERIALIZE_SIZE (SNAPSHOT_ID_SIZE + 4*sizeof(u32) + 5*sizeof(u32) + 3*SNAPSHOT_DLL_NODE_SIZE + SNAPSHOT_V3_SIZE)
+/* the manifold buffer (manifolds, narrowphase cache, com_offset) and a concave cache's array follow the contact pool */
+#define DS_CONTACT_FIXED_SERIALIZE_SIZE (SNAPSHOT_ID_SIZE + 4*sizeof(u32) + 5*sizeof(u32) + 3*SNAPSHOT_DLL_NODE_SIZE)
 
 u64 ds_ContactSerializeSize(const struct ds_Contact *contact)
 {
-	u64 size = DS_CONTACT_FIXED_SERIALIZE_SIZE;
-	if (ds_ContactConvexCheck(contact))
-	{
-		size += ds_ConvexCacheSerializeSize(&contact->cache.convex);
-	}
-	return size;
+	return DS_CONTACT_FIXED_SERIALIZE_SIZE;
 }
 
 void ds_ContactSerialize(struct SS *ss, const struct ds_Contact *contact)
@@ -657,11 +652,6 @@ void ds_ContactSerialize(struct SS *ss, const struct ds_Contact *contact)
 	WriteDLLNode(ss, contact->island_contact);
 	WriteDLLNode(ss, contact->shape_contact[0]);
 	WriteDLLNode(ss, contact->shape_contact[1]);
-	V3Serialize(ss, contact->com_offset);
-	if (ds_ContactConvexCheck(contact))
-	{
-		ds_ConvexCacheSerialize(ss, &contact->cache.convex);
-	}
 }
 
 u32 ds_ContactTryDeserialize(struct SS *ss, struct ds_Contact *contact)
@@ -682,13 +672,6 @@ u32 ds_ContactTryDeserialize(struct SS *ss, struct ds_Contact *contact)
 	contact->island_contact = ReadDLLNode(ss);
 	contact->shape_contact[0] = ReadDLLNode(ss);
 	contact->shape_contact[1] = ReadDLLNode(ss);
-	V3Deserialize(ss, &contact->com_offset);
-	if (ds_ContactConvexCheck(contact))
-	{
-		return ds_ConvexCacheTryDeserialize(ss, &contact->cache.convex);
-	}
-
-	contact->cache.concave = (struct ds_ConcaveCache) { .tri = { .buf = NULL, .length = 0, .base = U32_MAX }, .tri_count = 0 };
 	return 1;
 }
 
@@ -1108,29 +1091,29 @@ DEFINE_CPOOL_SERIALIZE(ds_JointSim, ds_JointSim)
 /*************************** contact data ***************************/
 
 /* a concave contact's tri cache: tri_count, then the entries */
-static u64 ContactTriCacheSerializeSize(const struct ds_Contact *c)
+static u64 ContactTriCacheSerializeSize(const struct ds_SolverManifoldBuffer *buffer)
 {
 	u64 size = sizeof(u32);
-	for (u32 i = 0; i < c->cache.concave.tri_count; ++i)
+	for (u32 i = 0; i < buffer->cache.concave.tri_count; ++i)
 	{
-		size += ds_TriCacheSerializeSize(c->cache.concave.tri.buf + i);
+		size += ds_TriCacheSerializeSize(buffer->cache.concave.tri.buf + i);
 	}
 	return size;
 }
 
-static void ContactTriCacheSerialize(struct SS *ss, const struct ds_Contact *c)
+static void ContactTriCacheSerialize(struct SS *ss, const struct ds_SolverManifoldBuffer *buffer)
 {
-	SSWriteU32Le(ss, c->cache.concave.tri_count);
-	for (u32 i = 0; i < c->cache.concave.tri_count; ++i)
+	SSWriteU32Le(ss, buffer->cache.concave.tri_count);
+	for (u32 i = 0; i < buffer->cache.concave.tri_count; ++i)
 	{
-		ds_TriCacheSerialize(ss, c->cache.concave.tri.buf + i);
+		ds_TriCacheSerialize(ss, buffer->cache.concave.tri.buf + i);
 	}
 }
 
 /* the cache must be empty */
-static u32 ContactTriCacheTryDeserialize(struct SS *ss, struct ds_Dynamics *pipeline, struct ds_Contact *c)
+static u32 ContactTriCacheTryDeserialize(struct SS *ss, struct ds_Dynamics *pipeline, struct ds_SolverManifoldBuffer *buffer)
 {
-	ds_Assert(c->cache.concave.tri.buf == NULL && c->cache.concave.tri_count == 0);
+	ds_Assert(buffer->cache.concave.tri.buf == NULL && buffer->cache.concave.tri_count == 0);
 	if (SSBytesLeft(ss) < sizeof(u32))
 	{
 		return 0;
@@ -1147,30 +1130,34 @@ static u32 ContactTriCacheTryDeserialize(struct SS *ss, struct ds_Dynamics *pipe
 		return 1;
 	}
 
-	c->cache.concave.tri = ds_TSlabAdd(pipeline->tri_cache_slab, count);
-	if (c->cache.concave.tri.buf == NULL)
+	buffer->cache.concave.tri = ds_TSlabAdd(pipeline->tri_cache_slab, count);
+	if (buffer->cache.concave.tri.buf == NULL)
 	{
 		return 0;
 	}
 
 	for (u32 i = 0; i < count; ++i)
 	{
-		if (!ds_TriCacheTryDeserialize(ss, c->cache.concave.tri.buf + i))
+		if (!ds_TriCacheTryDeserialize(ss, buffer->cache.concave.tri.buf + i))
 		{
 			return 0;
 		}
 	}
-	c->cache.concave.tri_count = count;
+	buffer->cache.concave.tri_count = count;
 	return 1;
 }
 
 static u64 ContactManifoldSerializeSize(const struct ds_Dynamics *pipeline, const u32 contact)
 {
 	const ds_Array(ds_SolverManifold) manifold = ds_SolverManifoldArray(pipeline, contact);
-	u64 size = sizeof(u32);
+	u64 size = sizeof(u32) + SNAPSHOT_V3_SIZE;
 	for (u32 i = 0; i < manifold.length; ++i)
 	{
 		size += ds_SolverManifoldSerializeSize(manifold.buf + i);
+	}
+	if (ds_ContactConvexCheck(pipeline->contact_pool.buf + contact))
+	{
+		size += ds_ConvexCacheSerializeSize(&pipeline->manifold_buffer_pool.buf[contact].cache.convex);
 	}
 	return size;
 }
@@ -1183,10 +1170,15 @@ static void ContactManifoldSerialize(struct SS *ss, const struct ds_Dynamics *pi
 	{
 		ds_SolverManifoldSerialize(ss, manifold.buf + i);
 	}
+	V3Serialize(ss, pipeline->manifold_buffer_pool.buf[contact].com_offset);
+	if (ds_ContactConvexCheck(pipeline->contact_pool.buf + contact))
+	{
+		ds_ConvexCacheSerialize(ss, &pipeline->manifold_buffer_pool.buf[contact].cache.convex);
+	}
 }
 
 /* the buffer must be INTERNAL and empty; more than one manifold go into a slab array (EXTERNAL) */
-static u32 ContactManifoldTryDeserialize(struct SS *ss, struct ds_Dynamics *pipeline, struct ds_SolverManifoldBuffer *buffer)
+static u32 ContactManifoldTryDeserialize(struct SS *ss, struct ds_Dynamics *pipeline, struct ds_SolverManifoldBuffer *buffer, const struct ds_Contact *contact)
 {
 	ds_Assert(buffer->type == SOLVER_MANIFOLD_INTERNAL && buffer->count == 0);
 	if (SSBytesLeft(ss) < sizeof(u32))
@@ -1220,6 +1212,15 @@ static u32 ContactManifoldTryDeserialize(struct SS *ss, struct ds_Dynamics *pipe
 		}
 	}
 	buffer->count = count;
+	if (SSBytesLeft(ss) < SNAPSHOT_V3_SIZE)
+	{
+		return 0;
+	}
+	V3Deserialize(ss, &buffer->com_offset);
+	if (ds_ContactConvexCheck(contact))
+	{
+		return ds_ConvexCacheTryDeserialize(ss, &buffer->cache.convex);
+	}
 	return 1;
 }
 
@@ -1467,7 +1468,7 @@ u64 ds_DynamicsSerializeSize(const struct ds_Dynamics *pipeline)
 		const struct ds_Contact *c = pipeline->contact_pool.buf + i;
 		if (ds_PoolSlotAllocated(c) && !ds_ContactConvexCheck(c))
 		{
-			size += ContactTriCacheSerializeSize(c);
+			size += ContactTriCacheSerializeSize(pipeline->manifold_buffer_pool.buf + i);
 		}
 	}
 
@@ -1539,7 +1540,7 @@ void ds_DynamicsSerialize(struct SS *ss, const struct ds_Dynamics *pipeline)
 		const struct ds_Contact *c = pipeline->contact_pool.buf + i;
 		if (ds_PoolSlotAllocated(c) && !ds_ContactConvexCheck(c))
 		{
-			ContactTriCacheSerialize(ss, c);
+			ContactTriCacheSerialize(ss, pipeline->manifold_buffer_pool.buf + i);
 		}
 	}
 	for (u32 i = 0; i < pipeline->contact_pool.count_max; ++i)
@@ -1651,28 +1652,6 @@ u32 ds_DynamicsTryDeserialize(struct arena *mem, struct SS *ss, struct ds_Dynami
 		goto failure;
 	}
 
-	/* the contacts' data arrays are restored by their owners: empty them first, so ds_DynamicsDealloc is safe after a failure */
-	for (u32 i = 0; i < pipeline->contact_pool.count_max; ++i)
-	{
-		struct ds_Contact *c = pipeline->contact_pool.buf + i;
-		if (ds_PoolSlotAllocated(c))
-		{
-			if (!ds_ContactConvexCheck(c))
-			{
-				c->cache.concave = (struct ds_ConcaveCache) { .tri = { .buf = NULL, .length = 0, .base = U32_MAX }, .tri_count = 0 };
-			}
-		}
-	}
-
-	for (u32 i = 0; i < pipeline->contact_pool.count_max; ++i)
-	{
-		struct ds_Contact *c = pipeline->contact_pool.buf + i;
-		if (ds_PoolSlotAllocated(c) && !ds_ContactConvexCheck(c) && !ContactTriCacheTryDeserialize(ss, pipeline, c))
-		{
-			goto failure;
-		}
-	}
-
 	ds_CPoolAlloc(NULL, pipeline->manifold_buffer_pool, pipeline->contact_pool.length, GROWABLE);
 	if (pipeline->contact_pool.count_max)
 	{
@@ -1680,13 +1659,22 @@ u32 ds_DynamicsTryDeserialize(struct arena *mem, struct SS *ss, struct ds_Dynami
 	}
 	for (u32 i = 0; i < pipeline->contact_pool.count_max; ++i)
 	{
-		pipeline->manifold_buffer_pool.buf[i] = (struct ds_SolverManifoldBuffer) { .type = SOLVER_MANIFOLD_INTERNAL, .count = 0 };
+		pipeline->manifold_buffer_pool.buf[i] = (struct ds_SolverManifoldBuffer) { .type = SOLVER_MANIFOLD_INTERNAL, .count = 0, .cache.concave = { .tri = { .buf = NULL, .length = 0, .base = U32_MAX }, .tri_count = 0 } };
+	}
+
+	for (u32 i = 0; i < pipeline->contact_pool.count_max; ++i)
+	{
+		struct ds_Contact *c = pipeline->contact_pool.buf + i;
+		if (ds_PoolSlotAllocated(c) && !ds_ContactConvexCheck(c) && !ContactTriCacheTryDeserialize(ss, pipeline, pipeline->manifold_buffer_pool.buf + i))
+		{
+			goto failure;
+		}
 	}
 
 	for (u32 i = 0; i < pipeline->contact_pool.count_max; ++i)
 	{
 		const struct ds_Contact *c = pipeline->contact_pool.buf + i;
-		if (ds_PoolSlotAllocated(c) && !ContactManifoldTryDeserialize(ss, pipeline, pipeline->manifold_buffer_pool.buf + i))
+		if (ds_PoolSlotAllocated(c) && !ContactManifoldTryDeserialize(ss, pipeline, pipeline->manifold_buffer_pool.buf + i, c))
 		{
 			goto failure;
 		}

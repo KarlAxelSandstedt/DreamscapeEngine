@@ -316,6 +316,7 @@ void ds_ContactConstraintInitRange(struct ds_Dynamics *pipeline, const u32 color
         };
 
         const ds_Array(ds_SolverManifold) manifold = ds_SolverManifoldArray(pipeline, color->contact_pool.buf[ci]);
+        const v3 com_offset = pipeline->manifold_buffer_pool.buf[ color->contact_pool.buf[ci] ].com_offset;
         ccomp->cc_count = manifold.length;
         ccomp->cc = ArenaPushPacked(frame, ccomp->cc_count*sizeof(struct ds_ContactConstraint));
         if (!ccomp->cc)
@@ -344,8 +345,8 @@ void ds_ContactConstraintInitRange(struct ds_Dynamics *pipeline, const u32 color
 		    	ccp->tangent_impulse[1] = 0.0f;
 
 		    	ccp->r[0] = m->anchor0[ccpi];
-		    	ccp->r[1] = V3Sub(V3AddScaled(m->anchor0[ccpi], m->normal, -m->depth[ccpi]), c->com_offset);
-                ccp->com_separation = V3Dot(c->com_offset, m->normal);
+		    	ccp->r[1] = V3Sub(V3AddScaled(m->anchor0[ccpi], m->normal, -m->depth[ccpi]), com_offset);
+                ccp->com_separation = V3Dot(com_offset, m->normal);
 
                 const m3 inv_inertia0 = sim[0]->world_inv_inertia;
                 const m3 inv_inertia1 = sim[1]->world_inv_inertia;

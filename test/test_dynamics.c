@@ -605,7 +605,7 @@ static u32 SnapshotTestEqual(const struct ds_Dynamics *a, const struct ds_Dynami
             continue;
         }
 
-        const struct ds_ConcaveCache *cache_a = &c_a->cache.concave, *cache_b = &c_b->cache.concave;
+        const struct ds_ConcaveCache *cache_a = &a->manifold_buffer_pool.buf[i].cache.concave, *cache_b = &b->manifold_buffer_pool.buf[i].cache.concave;
         if (cache_a->tri_count != cache_b->tri_count)
         {
             return 0;
@@ -1037,7 +1037,7 @@ static struct test_Output DynamicsMeshArrayStatsTest(struct test_Environment *en
             const struct ds_Contact *c = pipeline.contact_pool.buf + i;
             const u32 live = ds_PoolSlotAllocated(c) && !ds_ContactConvexCheck(c);
             const u32 m = (live) ? pipeline.manifold_buffer_pool.buf[i].count : 0;
-            const u32 k = (live) ? c->cache.concave.tri_count : 0;
+            const u32 k = (live) ? pipeline.manifold_buffer_pool.buf[i].cache.concave.tri_count : 0;
             if (live)
             {
                 mesh_contacts += 1;

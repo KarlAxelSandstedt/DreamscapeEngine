@@ -100,13 +100,13 @@ struct slot ds_ContactTryAdd(struct ds_Dynamics *pipeline, const struct ds_Conta
 
     if (ds_ContactConvexCheck(c))
     {
-        c->cache.convex = (struct ds_ConvexCache) { .sat.type = SAT_CACHE_NONE, .gjk.count = 0 };
+        pipeline->manifold_buffer_pool.buf[contact_slot.index].cache.convex = (struct ds_ConvexCache) { .sat.type = SAT_CACHE_NONE, .gjk.count = 0 };
     }
     else
     {
-        c->cache.concave = (struct ds_ConcaveCache) { .tri = { .buf = NULL, .length = 0, .base = U32_MAX }, .tri_count = 0 };
+        pipeline->manifold_buffer_pool.buf[contact_slot.index].cache.concave = (struct ds_ConcaveCache) { .tri = { .buf = NULL, .length = 0, .base = U32_MAX }, .tri_count = 0 };
     }
-    c->com_offset = V3Zero();
+    pipeline->manifold_buffer_pool.buf[contact_slot.index].com_offset = V3Zero();
 
     const u32 set_index = (inactive[0] && inactive[1])
                         ? SOLVER_SET_DISABLED
@@ -145,9 +145,9 @@ void ds_ContactRemove(struct ds_Dynamics *pipeline, const u32 index, const u32 i
     struct ds_Shape *shape0 = pipeline->shape_pool.buf + c->key.shape[0];
     struct ds_Shape *shape1 = pipeline->shape_pool.buf + c->key.shape[1];
 	PhysicsEventContactRemoved(pipeline, body0->id, shape0->id, body1->id, shape1->id);
-    if (!ds_ContactConvexCheck(c) && c->cache.concave.tri.length)
+    if (!ds_ContactConvexCheck(c) && pipeline->manifold_buffer_pool.buf[index].cache.concave.tri.length)
     {
-        ds_TSlabRemove(pipeline->tri_cache_slab, c->cache.concave.tri);
+        ds_TSlabRemove(pipeline->tri_cache_slab, pipeline->manifold_buffer_pool.buf[index].cache.concave.tri);
     }
 
     const struct ds_SolverManifoldBuffer *buffer = pipeline->manifold_buffer_pool.buf + index;
