@@ -657,7 +657,6 @@ struct ds_Contact
                                                        contacts are treated as a single 
                                                        constraint!)                             */
 
-	struct DLLNode              island_joint;       /* island->joint_list node                  */
     struct DLLNode              island_contact;     /* island->contact_list node                */
     struct DLLNode              shape_contact[2];   /* [i] is part of shape i's contact list    */
 

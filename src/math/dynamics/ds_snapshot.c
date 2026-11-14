@@ -630,7 +630,7 @@ u32 ds_PhysicsEventTryDeserialize(struct SS *ss, struct ds_PhysicsEvent *event)
 }
 
 /* the manifold buffer and a concave cache's array are restored after the contact pool; a convex cache is part of the contact */
-#define DS_CONTACT_FIXED_SERIALIZE_SIZE (SNAPSHOT_ID_SIZE + 2*sizeof(u32) + 5*sizeof(u32) + 4*SNAPSHOT_DLL_NODE_SIZE + SNAPSHOT_V3_SIZE)
+#define DS_CONTACT_FIXED_SERIALIZE_SIZE (SNAPSHOT_ID_SIZE + 2*sizeof(u32) + 5*sizeof(u32) + 3*SNAPSHOT_DLL_NODE_SIZE + SNAPSHOT_V3_SIZE)
 
 u64 ds_ContactSerializeSize(const struct ds_Contact *contact)
 {
@@ -651,7 +651,6 @@ void ds_ContactSerialize(struct SS *ss, const struct ds_Contact *contact)
 	SSWriteU32Le(ss, contact->set);
 	SSWriteU32Le(ss, contact->compute);
 	SSWriteU32Le(ss, contact->color);
-	WriteDLLNode(ss, contact->island_joint);
 	WriteDLLNode(ss, contact->island_contact);
 	WriteDLLNode(ss, contact->shape_contact[0]);
 	WriteDLLNode(ss, contact->shape_contact[1]);
@@ -676,7 +675,6 @@ u32 ds_ContactTryDeserialize(struct SS *ss, struct ds_Contact *contact)
 	contact->set = SSReadU32Le(ss);
 	contact->compute = SSReadU32Le(ss);
 	contact->color = SSReadU32Le(ss);
-	contact->island_joint = ReadDLLNode(ss);
 	contact->island_contact = ReadDLLNode(ss);
 	contact->shape_contact[0] = ReadDLLNode(ss);
 	contact->shape_contact[1] = ReadDLLNode(ss);
