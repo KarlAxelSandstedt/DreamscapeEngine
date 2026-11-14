@@ -121,14 +121,14 @@ void ds_ShapeDynamicRemove(struct ds_Dynamics *pipeline, struct ds_Body *body, c
         ds_ContactRemove(pipeline, shape->contact_list.first, 1);
     }
 
+    ds_BitSetSet(&pipeline->shape_dynamic_usage_set, shape_index, 0);
+    ds_BitSetSet(&pipeline->shape_dirty_set, shape_index, 0);
+    DLLRemove(body->shape_list, pipeline->shape_pool.buf, shape_index, body_shape);
     if (mass_properties_update)
     {
         ds_BodyUpdateMassProperties(pipeline, body->id);
     }
 
-    ds_BitSetSet(&pipeline->shape_dynamic_usage_set, shape_index, 0);
-    ds_BitSetSet(&pipeline->shape_dirty_set, shape_index, 0);
-    DLLRemove(body->shape_list, pipeline->shape_pool.buf, shape_index, body_shape);
 	c_ShapeDBDereference(pipeline->external->cshape_db, shape->cshape_handle);
 	DBVHRemove(&pipeline->dynamic_bvh, shape->proxy);
 	ds_PoolRemove(pipeline->shape_pool, shape_index);
