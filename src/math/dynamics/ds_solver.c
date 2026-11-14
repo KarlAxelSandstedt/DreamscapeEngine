@@ -445,6 +445,11 @@ void ds_ContactConstraintWarmupRange(struct ds_Dynamics *pipeline, const u32 col
             ((ccomp->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_bcomp : active->body_compute_pool.buf + ccomp->body_sim[1]),
         };
 
+        /*
+         * TODO(perf, agent_notes/future_patches.txt item 16): prepare could store the manifold pointer in ds_ContactCompute
+         * for this lookup and the store's: -4 % on those stages (linux-laptop 2026-11-14), but the compute grows 24 -> 32 B
+         * for every iteration pass (unmeasured). Retest on other hardware and scenes.
+         */
         const ds_Array(ds_SolverManifold) manifold = ds_SolverManifoldArray(pipeline, color->contact_pool.buf[ci]);
         for (u32 cci = 0; cci < ccomp->cc_count; ++cci)
         {
