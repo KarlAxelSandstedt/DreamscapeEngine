@@ -356,7 +356,7 @@ static void ds_SolverManifoldSetCache(struct ds_SolverManifold *m, const ds_Arra
     }
 }
 
-static void ds_SolverManifoldConcave(struct arena *tmp, ds_TSlab(ds_SolverManifold) *slab, struct ds_SolverManifoldBuffer *buffer, const ds_Array(c_Manifold) *result, const m3 rot, const v3 offset, const u32 flip)
+static void ds_SolverManifoldConcave(struct arena *tmp, ds_TSlab(ds_SolverManifold) *slab, struct ds_ContactNarrow *buffer, const ds_Array(c_Manifold) *result, const m3 rot, const v3 offset, const u32 flip)
 {
     if (result->length == 0)
     {
@@ -404,7 +404,7 @@ static void ds_SolverManifoldConcave(struct arena *tmp, ds_TSlab(ds_SolverManifo
 
 /*
  * The pipeline's contact entry: writes the contact's com_offset, narrowphase cache and solver manifolds
- * (manifold_buffer_pool) with their warm start impulses. A convex pair's manifold is local to the more complex
+ * (contact_narrow_pool) with their warm start impulses. A convex pair's manifold is local to the more complex
  * shape (higher type; equal types: the contact key's order), a mesh pair's manifolds to the convex shape.
  */
 void ds_ShapeContact(struct arena *tmp, struct ds_Dynamics *pipeline, const u32 contact_index)
@@ -412,7 +412,7 @@ void ds_ShapeContact(struct arena *tmp, struct ds_Dynamics *pipeline, const u32 
     ArenaPushRecord(tmp);
 
     struct ds_Contact *c = pipeline->contact_pool.buf + contact_index;
-    struct ds_SolverManifoldBuffer *buffer = pipeline->manifold_buffer_pool.buf + contact_index;
+    struct ds_ContactNarrow *buffer = pipeline->contact_narrow_pool.buf + contact_index;
 
     const struct ds_Shape *s[2] =
     {
@@ -474,7 +474,7 @@ void ds_ShapeContact(struct arena *tmp, struct ds_Dynamics *pipeline, const u32 
         const ds_Array(c_Manifold) result = c_MeshContact(tmp, &pipeline->tri_cache_slab, &buffer->cache.concave, c_s[mesh], &t_world[mesh], c_s[convex], &t_world[convex]);
         const m3 rot = M3QUnit(t_world[convex].rotation);
         const v3 offset = V3F64Demote(V3F64Sub(t_world[convex].position, com[0]));
-        ds_SolverManifoldConcave(tmp, &pipeline->manifold_slab, pipeline->manifold_buffer_pool.buf + contact_index, &result, rot, offset, flip_normal);
+        ds_SolverManifoldConcave(tmp, &pipeline->manifold_slab, pipeline->contact_narrow_pool.buf + contact_index, &result, rot, offset, flip_normal);
     }
 
     ArenaPopRecord(tmp);

@@ -167,7 +167,7 @@ void ds_IslandValidateAll(const struct ds_Dynamics *pipeline)
                 colored_contacts += 1;
             }
 
-            if (pipeline->manifold_buffer_pool.buf[ci].count)
+            if (pipeline->contact_narrow_pool.buf[ci].count)
             {
                 touching_contacts += 1;
             }

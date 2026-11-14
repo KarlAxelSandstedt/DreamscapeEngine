@@ -605,7 +605,7 @@ static u32 SnapshotTestEqual(const struct ds_Dynamics *a, const struct ds_Dynami
             continue;
         }
 
-        const struct ds_ConcaveCache *cache_a = &a->manifold_buffer_pool.buf[i].cache.concave, *cache_b = &b->manifold_buffer_pool.buf[i].cache.concave;
+        const struct ds_ConcaveCache *cache_a = &a->contact_narrow_pool.buf[i].cache.concave, *cache_b = &b->contact_narrow_pool.buf[i].cache.concave;
         if (cache_a->tri_count != cache_b->tri_count)
         {
             return 0;
@@ -1036,8 +1036,8 @@ static struct test_Output DynamicsMeshArrayStatsTest(struct test_Environment *en
         {
             const struct ds_Contact *c = pipeline.contact_pool.buf + i;
             const u32 live = ds_PoolSlotAllocated(c) && !ds_ContactConvexCheck(c);
-            const u32 m = (live) ? pipeline.manifold_buffer_pool.buf[i].count : 0;
-            const u32 k = (live) ? pipeline.manifold_buffer_pool.buf[i].cache.concave.tri_count : 0;
+            const u32 m = (live) ? pipeline.contact_narrow_pool.buf[i].count : 0;
+            const u32 k = (live) ? pipeline.contact_narrow_pool.buf[i].cache.concave.tri_count : 0;
             if (live)
             {
                 mesh_contacts += 1;
@@ -1407,16 +1407,16 @@ static struct test_Output DynamicsContactTest(struct test_Environment *env)
     const struct slot found = ds_ContactKeyLookup(&pipeline, key);
     const struct ds_Contact *c = found.address;
     TEST_NOT_ZERO(c != NULL && ds_ContactKeyEquivalence(c->key, key));
-    TEST_NOT_ZERO(ds_ContactLookup(&pipeline, c->id).address == c);
-    TEST_NOT_ZERO(ds_ContactLookup(&pipeline, ds_ContactIdNextGeneration(c->id)).address == NULL);
+    const ds_ContactId contact_id = ds_ContactIdInit(found.index, c->generation);
+    TEST_NOT_ZERO(ds_ContactLookup(&pipeline, contact_id).address == c);
+    TEST_NOT_ZERO(ds_ContactLookup(&pipeline, ds_ContactIdNextGeneration(contact_id)).address == NULL);
     TEST_NOT_ZERO(ds_ContactLookup(&pipeline, ds_ContactIdNull()).address == NULL);
-    const ds_ContactId contact_id = c->id;
 
     /* the shapes list it (each with the ground's contact too), and the touching boxes share an island */
     const struct ds_Shape *shape1 = pipeline.shape_pool.buf + s1;
     const struct ds_Shape *shape2 = pipeline.shape_pool.buf + s2;
     TEST_NOT_ZERO(shape1->contact_list.count == 2 && shape2->contact_list.count == 2);
-    TEST_NOT_ZERO(pipeline.manifold_buffer_pool.buf[found.index].count > 0 && c->set == SOLVER_SET_NULL && c->color != CG_INVALID_COLOR);
+    TEST_NOT_ZERO(pipeline.contact_narrow_pool.buf[found.index].count > 0 && c->set == SOLVER_SET_NULL && c->color != CG_INVALID_COLOR);
     TEST_NOT_ZERO(b1->island == b2->island && c->island == b1->island);
     TEST_NOT_ZERO(pipeline.contact_pool.count == 3);
 
@@ -1796,9 +1796,9 @@ static struct test_Output DynamicsParkingTest(struct test_Environment *env)
     const u32 box_plank = DynamicsTestContactIndex(&pipeline, id[2], id[4]);
     TEST_NOT_ZERO(boxes != U32_MAX && lone_wall != U32_MAX && box_plank != U32_MAX);
     const struct ds_Contact *c = pipeline.contact_pool.buf + boxes;
-    TEST_NOT_ZERO(c->set == SOLVER_SET_DISABLED && !ds_ContactPartialSleepingCheck(c) && pipeline.manifold_buffer_pool.buf[boxes].count == 0);
+    TEST_NOT_ZERO(c->set == SOLVER_SET_DISABLED && !ds_ContactPartialSleepingCheck(c) && pipeline.contact_narrow_pool.buf[boxes].count == 0);
     c = pipeline.contact_pool.buf + lone_wall;
-    TEST_NOT_ZERO(c->set == SOLVER_SET_DISABLED && !ds_ContactPartialSleepingCheck(c) && pipeline.manifold_buffer_pool.buf[lone_wall].count == 0);
+    TEST_NOT_ZERO(c->set == SOLVER_SET_DISABLED && !ds_ContactPartialSleepingCheck(c) && pipeline.contact_narrow_pool.buf[lone_wall].count == 0);
     c = pipeline.contact_pool.buf + box_plank;
     TEST_NOT_ZERO(c->set == box->set && !ds_ContactPartialSleepingCheck(c));
     const struct ds_SolverSet *active = pipeline.solver_set_pool.buf + SOLVER_SET_ACTIVE;
@@ -1927,7 +1927,7 @@ static struct test_Output DynamicsStaticShapeAddTest(struct test_Environment *en
     ds_ContactValidateAll(&pipeline);
     SnapshotTestTick(&pipeline);
     c = pipeline.contact_pool.buf + ci;
-    TEST_NOT_ZERO(c->set == SOLVER_SET_NULL && pipeline.manifold_buffer_pool.buf[ci].count > 0);
+    TEST_NOT_ZERO(c->set == SOLVER_SET_NULL && pipeline.contact_narrow_pool.buf[ci].count > 0);
 
     /* sleeping disabled: the other box is awake and resting, its shape not dirty after a tick */
     pipeline.config_pending.solver.sleep_enabled = 0;
@@ -1946,7 +1946,7 @@ static struct test_Output DynamicsStaticShapeAddTest(struct test_Environment *en
     TEST_NOT_ZERO(c->set == SOLVER_SET_ACTIVE && ds_ContactPartialSleepingCheck(c));
     SnapshotTestTick(&pipeline);
     c = pipeline.contact_pool.buf + ci;
-    TEST_NOT_ZERO(c->set == SOLVER_SET_NULL && pipeline.manifold_buffer_pool.buf[ci].count > 0);
+    TEST_NOT_ZERO(c->set == SOLVER_SET_NULL && pipeline.contact_narrow_pool.buf[ci].count > 0);
     ds_ContactValidateAll(&pipeline);
 
     ds_DynamicsConfigPop(&pipeline);

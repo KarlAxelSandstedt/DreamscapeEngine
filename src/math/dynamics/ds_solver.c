@@ -316,7 +316,7 @@ void ds_ContactConstraintInitRange(struct ds_Dynamics *pipeline, const u32 color
         };
 
         const ds_Array(ds_SolverManifold) manifold = ds_SolverManifoldArray(pipeline, color->contact_pool.buf[ci]);
-        const v3 com_offset = pipeline->manifold_buffer_pool.buf[ color->contact_pool.buf[ci] ].com_offset;
+        const v3 com_offset = pipeline->contact_narrow_pool.buf[ color->contact_pool.buf[ci] ].com_offset;
         ccomp->cc_count = manifold.length;
         ccomp->cc = ArenaPushPacked(frame, ccomp->cc_count*sizeof(struct ds_ContactConstraint));
         if (!ccomp->cc)

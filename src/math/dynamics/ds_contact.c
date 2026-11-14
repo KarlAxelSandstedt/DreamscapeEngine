@@ -55,7 +55,7 @@ struct slot ds_ContactTryAdd(struct ds_Dynamics *pipeline, const struct ds_Conta
     struct ds_Contact *c = contact_slot.address;
     if (old_max != pipeline->contact_pool.count_max)
     {
-        c->id = ds_ContactIdInit(contact_slot.index, 0);
+        c->generation = 0;
     }
 
     if (pipeline->contact_usage_set.bit_count <= contact_slot.index)
@@ -64,17 +64,17 @@ struct slot ds_ContactTryAdd(struct ds_Dynamics *pipeline, const struct ds_Conta
     }
     ds_BitSetSet(&pipeline->contact_usage_set, contact_slot.index, 1);
 
-    if (pipeline->manifold_buffer_pool.count <= contact_slot.index)
+    if (pipeline->contact_narrow_pool.count <= contact_slot.index)
     {
-        ds_CPoolPushBatch(pipeline->manifold_buffer_pool, contact_slot.index + 1 - pipeline->manifold_buffer_pool.count);
+        ds_CPoolPushBatch(pipeline->contact_narrow_pool, contact_slot.index + 1 - pipeline->contact_narrow_pool.count);
     }
-    pipeline->manifold_buffer_pool.buf[contact_slot.index] = (struct ds_SolverManifoldBuffer) { .type = SOLVER_MANIFOLD_INTERNAL, .count = 0 };
+    pipeline->contact_narrow_pool.buf[contact_slot.index] = (struct ds_ContactNarrow) { .type = SOLVER_MANIFOLD_INTERNAL, .count = 0 };
 
     c->key = key;
     c->body[0] = shape[0]->body;
     c->body[1] = shape[1]->body;
     c->island = U32_MAX;
-    c->id = ds_ContactIdNextGeneration(c->id);
+    c->generation += 1;
     const struct ds_Body *body[2] = { pipeline->body_pool.buf + shape[0]->body, pipeline->body_pool.buf + shape[1]->body };
     ds_Assert(ds_BodyDynamicCheck(body[0]) || ds_BodyDynamicCheck(body[1]));
     c->flags = 0;
@@ -100,13 +100,13 @@ struct slot ds_ContactTryAdd(struct ds_Dynamics *pipeline, const struct ds_Conta
 
     if (ds_ContactConvexCheck(c))
     {
-        pipeline->manifold_buffer_pool.buf[contact_slot.index].cache.convex = (struct ds_ConvexCache) { .sat.type = SAT_CACHE_NONE, .gjk.count = 0 };
+        pipeline->contact_narrow_pool.buf[contact_slot.index].cache.convex = (struct ds_ConvexCache) { .sat.type = SAT_CACHE_NONE, .gjk.count = 0 };
     }
     else
     {
-        pipeline->manifold_buffer_pool.buf[contact_slot.index].cache.concave = (struct ds_ConcaveCache) { .tri = { .buf = NULL, .length = 0, .base = U32_MAX }, .tri_count = 0 };
+        pipeline->contact_narrow_pool.buf[contact_slot.index].cache.concave = (struct ds_ConcaveCache) { .tri = { .buf = NULL, .length = 0, .base = U32_MAX }, .tri_count = 0 };
     }
-    pipeline->manifold_buffer_pool.buf[contact_slot.index].com_offset = V3Zero();
+    pipeline->contact_narrow_pool.buf[contact_slot.index].com_offset = V3Zero();
 
     const u32 set_index = (inactive[0] && inactive[1])
                         ? SOLVER_SET_DISABLED
@@ -127,7 +127,7 @@ struct slot ds_ContactTryAdd(struct ds_Dynamics *pipeline, const struct ds_Conta
 
 	ds_HashMapAdd(&pipeline->contact_map, ds_ContactKeyHash(key), contact_slot.index);
 
-	PhysicsEventContactNew(pipeline, c->id);
+	PhysicsEventContactNew(pipeline, ds_ContactIdInit(contact_slot.index, c->generation));
 
     return contact_slot;
 }
@@ -145,12 +145,12 @@ void ds_ContactRemove(struct ds_Dynamics *pipeline, const u32 index, const u32 i
     struct ds_Shape *shape0 = pipeline->shape_pool.buf + c->key.shape[0];
     struct ds_Shape *shape1 = pipeline->shape_pool.buf + c->key.shape[1];
 	PhysicsEventContactRemoved(pipeline, body0->id, shape0->id, body1->id, shape1->id);
-    if (!ds_ContactConvexCheck(c) && pipeline->manifold_buffer_pool.buf[index].cache.concave.tri.length)
+    if (!ds_ContactConvexCheck(c) && pipeline->contact_narrow_pool.buf[index].cache.concave.tri.length)
     {
-        ds_TSlabRemove(pipeline->tri_cache_slab, pipeline->manifold_buffer_pool.buf[index].cache.concave.tri);
+        ds_TSlabRemove(pipeline->tri_cache_slab, pipeline->contact_narrow_pool.buf[index].cache.concave.tri);
     }
 
-    const struct ds_SolverManifoldBuffer *buffer = pipeline->manifold_buffer_pool.buf + index;
+    const struct ds_ContactNarrow *buffer = pipeline->contact_narrow_pool.buf + index;
     if (buffer->type == SOLVER_MANIFOLD_EXTERNAL)
     {
         ds_TSlabRemove(pipeline->manifold_slab, buffer->manifold_array);
@@ -220,7 +220,7 @@ struct slot ds_ContactLookup(const struct ds_Dynamics *pipeline, const ds_Contac
     if (index < pipeline->contact_pool.count_max)
     {
         struct ds_Contact *c = pipeline->contact_pool.buf + index;
-        if (ds_PoolSlotAllocated(c) && ds_ContactIdEqual(c->id, id))
+        if (ds_PoolSlotAllocated(c) && c->generation == ds_ContactIdGeneration(id))
         {
             slot.address = c;
             slot.index = index;
@@ -334,7 +334,7 @@ void ds_ContactWakeUp(struct ds_Dynamics *pipeline, const u32 contact_index)
 {
     struct ds_Contact *c = pipeline->contact_pool.buf + contact_index;
     ds_Assert(c->set >= SOLVER_SET_SLEEPING_FIRST && c->color == CG_INVALID_COLOR);
-    ds_Assert(pipeline->manifold_buffer_pool.buf[contact_index].count);
+    ds_Assert(pipeline->contact_narrow_pool.buf[contact_index].count);
 
     ds_CGraphContactAdd(pipeline, c);
 }
@@ -359,7 +359,7 @@ void ds_ContactValidateAll(const struct ds_Dynamics *pipeline)
         ds_Assert(c->compute == i);
         ds_Assert(c->set == SOLVER_SET_ACTIVE);
         ds_Assert(c->color == CG_INVALID_COLOR);
-        ds_Assert(pipeline->manifold_buffer_pool.buf[ci].count == 0);
+        ds_Assert(pipeline->contact_narrow_pool.buf[ci].count == 0);
 
         const struct ds_Body *body[2] =
         {
@@ -379,7 +379,7 @@ void ds_ContactValidateAll(const struct ds_Dynamics *pipeline)
         ds_Assert(c->compute == i);
         ds_Assert(c->set == SOLVER_SET_DISABLED);
         ds_Assert(c->color == CG_INVALID_COLOR);
-        ds_Assert(pipeline->manifold_buffer_pool.buf[ci].count == 0);
+        ds_Assert(pipeline->contact_narrow_pool.buf[ci].count == 0);
 
         const struct ds_Body *body[2] =
         {
@@ -401,7 +401,7 @@ void ds_ContactValidateAll(const struct ds_Dynamics *pipeline)
             ds_Assert(c->compute == i);
             ds_Assert(c->set == SOLVER_SET_NULL);
             ds_Assert(c->color == color_index);
-            ds_Assert(pipeline->manifold_buffer_pool.buf[ci].count > 0);
+            ds_Assert(pipeline->contact_narrow_pool.buf[ci].count > 0);
         }
     }
 
@@ -427,7 +427,7 @@ void ds_ContactValidateAll(const struct ds_Dynamics *pipeline)
                 ds_Assert(ds_PoolSlotAllocated(pipeline->solver_set_pool.buf + c->set));
                 ds_Assert(c->compute == U32_MAX);
                 ds_Assert(c->color == CG_INVALID_COLOR);
-                ds_Assert(pipeline->manifold_buffer_pool.buf[ci].count > 0);
+                ds_Assert(pipeline->contact_narrow_pool.buf[ci].count > 0);
                 ds_Assert(body[0]->set == c->set || body[0]->set == SOLVER_SET_STATIC);
                 ds_Assert(body[1]->set == c->set || body[1]->set == SOLVER_SET_STATIC);
             }

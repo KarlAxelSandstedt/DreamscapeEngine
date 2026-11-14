@@ -542,7 +542,7 @@ void            ds_BodyUpdateOrientationRange(struct ds_Dynamics *pipeline, stru
 ds_SolverManifold
 =================
 A contact manifold in the solver's form: ds_ShapeContact converts the narrowphase's local manifolds
-(c_*Contact, c_MeshContact) into the contact's ds_SolverManifoldBuffer, kept across ticks with the impulses
+(c_*Contact, c_MeshContact) into the contact's ds_ContactNarrow, kept across ticks with the impulses
 the warm start reads (world tangent impulses, normal impulses; tri: mesh triangle). Body 0 is the body of the contact key's
 shape[0] (the reference), body 1 the body of shape[1]. Every vector is f32 in world axes, and none is a world
 position: points are offsets from a body's center of mass.
@@ -552,7 +552,7 @@ position: points are offsets from a body's center of mass.
     depth[i]        penetration depth (>= 0) of point i: body 1's deepest point is anchor0[i] - depth[i]*normal
     id[i]           point i's c_PointId: the warm start matches points by it
 
-Body 1's anchors follow from ds_SolverManifoldBuffer.com_offset (com1 - com0, world axes):
+Body 1's anchors follow from ds_ContactNarrow.com_offset (com1 - com0, world axes):
 
     anchor1[i] = anchor0[i] - com_offset - depth[i]*normal      (relative to body 1's center of mass)
 */
@@ -571,15 +571,15 @@ DEFINE_ARRAY_STRUCT(ds_SolverManifold);
 DEFINE_TSLAB(ds_SolverManifold);
 
 
-enum ds_SolverManifoldBufferType
+enum ds_SolverManifoldType
 {
     SOLVER_MANIFOLD_INTERNAL,   /* Buffer stores 1 manifold locally                 */
     SOLVER_MANIFOLD_EXTERNAL,   /* Buffer stores >= 2 manifolds in slab allocator   */
 };
 
-struct ds_SolverManifoldBuffer
+struct ds_ContactNarrow
 {
-    enum ds_SolverManifoldBufferType    type;
+    enum ds_SolverManifoldType          type;
     u32                                 count;  /* Manifold count in buffer */
     union
     {
@@ -593,7 +593,7 @@ struct ds_SolverManifoldBuffer
         ds_Array(ds_SolverManifold)     manifold_array;
     };
 };
-DEFINE_CPOOL_STRUCT(ds_SolverManifoldBuffer);
+DEFINE_CPOOL_STRUCT(ds_ContactNarrow);
 
 static ds_ForceInline ds_Array(ds_SolverManifold) ds_SolverManifoldArray(const struct ds_Dynamics *pipeline, const u32 contact);
 
@@ -623,7 +623,7 @@ ds_Contact
 ==========
 Every touching and non-touching contact is a persistent ds_Contact. The structure stores general
 connectivity data and where to find its simulation/compute data. Its narrowphase cache and solver
-manifolds (manifold_buffer_pool, same index) stay with it in every state.
+manifolds (contact_narrow_pool, same index) stay with it in every state.
 
     :: Every non-touching contact has a link (<->) in the active set (the disabled set if both bodies
        are static or sleeping), no compute data and no island.
@@ -649,22 +649,20 @@ manifolds (manifold_buffer_pool, same index) stay with it in every state.
 struct ds_Contact
 {
     POOL_NODE;      
-
-    ds_ContactId                id;                 /* Generational Identifier                  */
+    u32                         generation;         /* generation of its ds_ContactId           */
     struct ds_ContactKey        key;                /* shape pair key                           */
     u32                         body[2];            /* body of key.shape[i]                     */
     
-    u32                         flags;              /* DS_CONTACT_ bits                         */
+    u16                         flags;              /* DS_CONTACT_ bits                         */
+    u16                         color;              /* Index of contact's color (mesh triangle
+                                                       contacts are treated as a single 
+                                                       constraint!)                             */
     u32                         island;             /* Index of contact's island                */
     u32                         set;                /* Index of contact's set                   */
     u32                         compute;            /* Index of contact's set OR color data     */
-    u32                         color;              /* Index of contact's color (mesh triangle
-                                                       contacts are treated as a single 
-                                                       constraint!)                             */
 
     struct DLLNode              island_contact;     /* island->contact_list node                */
     struct DLLNode              shape_contact[2];   /* [i] is part of shape i's contact list    */
-
 };
 DEFINE_POOL(ds_Contact);
 
@@ -1081,7 +1079,7 @@ SOLVER_SET_ACTIVE: every simulated island with its bodies' simulation and comput
     non-touching contacts with an awake body.
 SOLVER_SET_SLEEPING_FIRST and up: one set per sleeping island, created by ds_SolverSetSleep in one heap arena
     (mem) sized by ds_SolverSetSleepMemoryRequirement. Its touching contacts only name it (compute U32_MAX)
-    and keep their manifold buffers; ds_SolverSetWakeUp moves them into the graph and frees the set for reuse.
+    and keep their ds_ContactNarrow; ds_SolverSetWakeUp moves them into the graph and frees the set for reuse.
 
 Only the pipeline sleeps and wakes islands: at the end of SolveConstraints an island whose bodies have all
 rested for sleep_time_threshold and that is not flagged for a split goes to sleep; a set wakes when one of its
@@ -1205,7 +1203,7 @@ struct ds_ContactConstraintPoint
                                    point). World axes from contact prep through the velocity phase; body
                                    axes from ds_PositionConstraintInitAndCacheImpulsesRange on (NGS rotates
                                    them by the current rotation)                                        */
-    f32     com_separation;     /* dot(com1 - com0, n) at the step's start (manifold buffer com_offset) */
+    f32     com_separation;     /* dot(com1 - com0, n) at the step's start (ds_ContactNarrow.com_offset)*/
 	f32 	normal_impulse;	    /* Normal impulse produced by the contact       */
 	f32	    velocity_bias;	    /* scale of velocity_bias along contact normal  */
 	f32	    normal_mass;	    /* 1.0f / row(J,i)*Inv(M)*J^T                   */
@@ -2056,7 +2054,7 @@ struct ds_Dynamics
 	 *
 	 * i.e. the smaller index owns slot 0 and the larger index owns slot 1.  */
     ds_Pool(ds_Contact)           contact_pool;   
-    ds_CPool(ds_SolverManifoldBuffer)   manifold_buffer_pool;
+    ds_CPool(ds_ContactNarrow)   contact_narrow_pool;
 	struct ds_HashMap	            contact_map;		
     struct ds_BitSet                contact_usage_set;
     ds_TSlab(ds_TriCache)           tri_cache_slab;
@@ -2189,11 +2187,11 @@ void                        ds_BodyDrawRange(struct ds_Dynamics *pipeline, const
 /* Internal: after the solve: every awake joint's anchors, forces and segment; sims through the body, the sleep pass has run */
 void                        ds_DynamicsDrawFrameEnd(struct ds_Dynamics *pipeline);
 
-/**************** ds_SolverManifoldBuffer: inline definitions ****************/
+/**************** ds_ContactNarrow: inline definitions ****************/
 
 static ds_ForceInline ds_Array(ds_SolverManifold) ds_SolverManifoldArray(const struct ds_Dynamics *pipeline, const u32 contact)
 {
-    struct ds_SolverManifoldBuffer *buffer = pipeline->manifold_buffer_pool.buf + contact;
+    struct ds_ContactNarrow *buffer = pipeline->contact_narrow_pool.buf + contact;
     return (ds_Array(ds_SolverManifold))
     {
         .buf = (buffer->type == SOLVER_MANIFOLD_INTERNAL) ? &buffer->manifold : buffer->manifold_array.buf,
