@@ -409,7 +409,7 @@ static u64 c_ShapeBlockSizeRequired(const utf8 id, const struct c_Shape *src)
             size += c_ShapeBlockOffset(size, mesh->v_count*sizeof(v3));
             size += c_ShapeBlockOffset(size, mesh->tri_count*sizeof(v3u32));
             size += c_ShapeBlockOffset(size, src->mesh_bvh.tri_count*sizeof(u32));
-            size += c_ShapeBlockOffset(size, ((u64) src->mesh_bvh.bvh.pool.length + 1)*sizeof(struct BVHNode));
+            size += PowerOfTwoMultipleCeil(size, DS_CACHE_LINE) - size + ((u64) src->mesh_bvh.bvh.pool.length + 1)*sizeof(struct BVHNode);
         } break;
 
         default: break;

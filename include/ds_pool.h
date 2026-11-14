@@ -60,6 +60,9 @@ than once):
     // success; 0 on failure, with the pool empty (buf NULL, length 0).
     u32             ds_PoolAlloc(mem, pool, length, growable)
 
+    // Upper bound of the arena bytes ds_PoolAlloc(mem, pool, length, ...) pushes for slot_size-byte slots.
+    u64             ds_PoolAllocMemoryRequirement(length, slot_size)
+
     // Free a heap pool's memory (arena memory stays with the arena); the pool becomes empty.
     void            ds_PoolDealloc(pool)
 
@@ -103,7 +106,7 @@ than once):
 ::: Stub slot and serialized format :::
 
 buf[-1] is a stub slot, so index -1 (DS_STUB_INDEX) is addressable: intrusive lists over pools
-(ds_list.h) use it as their sentinel. Serialized format (LE): u32 length, count, count_max; the
+(ds_list.h) use it as their sentinel. The allocation (stub included) is cache-line aligned. Serialized format (LE): u32 length, count, count_max; the
 count_max - count free indices in free-list order; the count allocated slots as raw bytes, each with
 pool_slot replaced by its index. DEFINE_POOL_SERIALIZE writes the same counts and free list, then each
 allocated slot as u32 index + element.
@@ -153,6 +156,9 @@ u32  ds_PoolTryDeserializeInternal(struct arena *mem, struct SS *ss, u32 *heap_a
 static ds_ForceInline struct slot ds_PoolAddInternal(void **buf, u32 *length, u32 *count, u32 *count_max, u32 *next_free, const u32 growable, const u64 slot_size, const u64 pool_slot_offset);
 static ds_ForceInline void ds_PoolRemoveInternal(void *buf, u32 *count, u32 *next_free, const u32 count_max, const u32 index, const u64 slot_size, const u64 pool_slot_offset);
 static ds_ForceInline void ds_PoolIndexCheck(const void *buf, const u32 length, const void *addr, const u64 slot_size);
+
+#define ds_PoolAllocMemoryRequirement(__length, __slot_size)                                             \
+    (DS_CACHE_LINE + ((__length)+1)*(__slot_size))
 
 #define ds_PoolAlloc(mem, pool, __length, __growable)                                                   \
 	ds_PoolAllocInternal((mem), &(pool).heap_allocated, (void **) &(pool).buf, &(pool).length,         \

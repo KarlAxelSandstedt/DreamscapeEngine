@@ -892,7 +892,7 @@ end:
 	else
 	{
 		ArenaPopRecord(mem);
-		const u64 size_required = max_node_count_required*sizeof(struct BVHNode) 
+		const u64 size_required = ds_PoolAllocMemoryRequirement(max_node_count_required, sizeof(struct BVHNode))
 			+ mesh->tri_count*sizeof(u32) 
 			+ mesh->tri_count*sizeof(struct aabb)
 			+ 3*mesh->tri_count*sizeof(u8) 

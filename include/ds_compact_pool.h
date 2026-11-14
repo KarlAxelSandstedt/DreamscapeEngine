@@ -319,6 +319,7 @@ static inline struct slot ds_CPoolPushInternal(void **buf, u32 *count, u32 *leng
         const u64 old_size = (*buf) ? ((*length)+1) * slot_size : 0;
         void *base = (*buf) ? (u8 *)(*buf) - slot_size : NULL;
         base = ds_Realloc(base, old_size, new_size, DS_CACHE_LINE);
+        ds_Assert(PowerOfTwoMultipleCheck((u64) base, DS_CACHE_LINE));
         PoisonAddress(base, new_size);                                
         UnpoisonAddress(base, (*count + 1)*slot_size);                
         *buf = (u8 *) base + slot_size;
@@ -360,6 +361,7 @@ static inline struct slot ds_CPoolPushBatchInternal(void **buf, u32 *count, u32 
         const u64 old_size = (*buf) ? ((*length)+1) * slot_size : 0;
         void *base = (*buf) ? (u8 *)(*buf) - slot_size : NULL;
         base = ds_Realloc(base, old_size, new_size, DS_CACHE_LINE);
+        ds_Assert(PowerOfTwoMultipleCheck((u64) base, DS_CACHE_LINE));
         PoisonAddress(base, new_size);
         UnpoisonAddress(base, (*count + 1)*slot_size);
         *buf = (u8 *) base + slot_size;

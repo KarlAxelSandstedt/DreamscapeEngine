@@ -72,12 +72,13 @@ u32 ds_PoolAllocInternal(struct arena *mem, u32 *heap_allocated, void **buf, u32
 
 	const u64 size = slot_size * ((u64) alloc_length + 1);
 	u8 *addr = (mem)
-		? ArenaPush(mem, size)
+		? ArenaPushAligned(mem, size, DS_CACHE_LINE)
 		: ds_Alloc(size, DS_CACHE_LINE);
 	if (addr == NULL)
 	{
 		return 0;
 	}
+	ds_Assert(PowerOfTwoMultipleCheck((u64) addr, DS_CACHE_LINE));
 
 	*buf = addr + slot_size;
 	*length = alloc_length;
@@ -105,6 +106,7 @@ void ds_PoolGrowInternal(void **buf, u32 *length, const u64 slot_size)
 	/* ds_Realloc is fatal on failure */
 	u8 *base = ds_Realloc((u8 *) *buf - slot_size, old_length_including_stub*slot_size,
 	                      new_length_including_stub*slot_size, DS_CACHE_LINE);
+	ds_Assert(PowerOfTwoMultipleCheck((u64) base, DS_CACHE_LINE));
 	UnpoisonAddress(base, old_length_including_stub*slot_size);
 	PoisonAddress(base + old_length_including_stub*slot_size,
 	              (new_length_including_stub - old_length_including_stub)*slot_size);
