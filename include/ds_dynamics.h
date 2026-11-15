@@ -1185,7 +1185,7 @@ struct slot ds_IslandLookup(struct ds_Dynamics *pipeline, const ds_IslandId id);
 void 		ds_IslandRemove(struct ds_Dynamics *pipeline, const u32 island);
 /* Merge islands (Or simply update if new local contact) using new contact, and return expanded island index */
 u32 		ds_IslandMerge(struct ds_Dynamics *pipeline, const u32 island_index0, const u32 island_index1);
-/* Split island; the largest component keeps it */
+/* Split island into its connected components, each a new island; one component: island kept, remove count cleared */
 void 		ds_IslandSplit(struct ds_Dynamics *pipeline, const u32 island);
 /* Debug printing of island */
 void 		ds_IslandPrint(FILE *file, const struct ds_Dynamics *pipeline, const u32 island, const char *desc);
