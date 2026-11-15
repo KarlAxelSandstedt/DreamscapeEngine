@@ -1084,7 +1084,8 @@ SOLVER_SET_SLEEPING_FIRST and up: one set per sleeping island, created by ds_Sol
 Only the pipeline sleeps and wakes islands: at the end of SolveConstraints an island whose bodies have all
 rested for sleep_time_threshold and that is not flagged for a split goes to sleep; a set wakes when one of its
 bodies or contacts is removed, a shape is added to or onto one of its bodies (ds_ShapeAdd), a new contact
-touches one of its bodies (ds_IslandMerge), or sleeping is disabled. While sleeping is disabled ds_SolverSetSleep is a no-op.
+touches one of its bodies (ds_IslandMerge), or sleeping is disabled. While sleeping is disabled the bodies' rest
+timers stay zero and no island is split or put to sleep.
 */
 
 enum ds_SolverSetType
@@ -2088,8 +2089,9 @@ void			ds_DynamicsValidate(const struct ds_Dynamics *pipeline);
  */
 u32f32 			ds_DynamicsRaycastParameter(const struct ds_Dynamics *pipeline, const struct rayWorld *ray);
 /*
- * Internal: switch sleeping on or off at once and wake every sleeping set. Callers set config.solver.sleep_enabled
- * instead; ds_DynamicsConfigUpdatePending applies it through these.
+ * Internal: switch sleeping on or off at once and wake every sleeping set; switching off also zeroes every body's
+ * rest timer. Callers set config.solver.sleep_enabled instead; ds_DynamicsConfigUpdatePending applies it through
+ * these.
  */
 void 			ds_DynamicsSleepEnable(struct ds_Dynamics *pipeline);
 void 			ds_DynamicsSleepDisable(struct ds_Dynamics *pipeline);

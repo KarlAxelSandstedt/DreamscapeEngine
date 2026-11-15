@@ -74,6 +74,12 @@ Parking (DynamicsParkingTest): a sleeping island's non-touching contacts whose o
 in the disabled set with the partial sleeping bit clear and return to the active set on a wake; a contact created
 between two sleeping bodies starts there; a shape added to a sleeping body wakes it.
 
+Sleep toggle (DynamicsSleepToggleTest): the parking scene asleep with two parked contacts. Switching sleeping off,
+on a copy restored from a snapshot and on the original (one box awake with a partly run rest timer), wakes every
+set, empties the disabled set and zeroes every rest timer. While off, an island
+with removed constraints rests two seconds without a rest timer, a split or a sleep; switched back on, it is split
+and its boxes sleep only once they have rested the threshold from zero.
+
 Static shape add (DynamicsStaticShapeAddTest): a static wall added into a sleeping box, and into an awake resting
 box, has its contact at once (active, the box awake) and touching after a tick.
 
@@ -90,10 +96,10 @@ bodies' lists, coloured static and dynamic with their sims pointing back and the
 by id empties the lists, the colour and the lookup, a second one is a no-op; a reused slot gets a new
 generation; a body's removal takes its joints. No tick runs with a joint alive.
 
-Joints and islands (DynamicsJointIslandTest): three resting boxes in their own islands. A joint merges two of
-them (the joint in the merged island's list), a second joint merges the third; removing the second marks the
-island and the split, once it rests, keeps the still jointed pair together; removing the last joint splits the
-pair. With sleeping on, the jointed pair's set carries the joint (its sim in the set's pool, no colour); a joint
+Joints and islands (DynamicsJointIslandTest, sleeping on): three resting boxes in their own islands. A joint
+merges two of them (the joint in the merged island's list), a second joint merges the third; removing the second
+marks the island and the split, once it rests, keeps the still jointed pair together; removing the last joint
+splits the pair. The jointed pair's set carries the joint (its sim in the set's pool, no colour); a joint
 to the sleeping third box wakes both sets and merges; removing a sleeping jointed body takes its joints and
 wakes the rest. Each step ticks under the debug validation.
 
@@ -1459,7 +1465,7 @@ static struct test_Output DynamicsIslandTest(struct test_Environment *env)
     const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
     struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&external, NSEC_PER_SEC / 60);
     ds_DynamicsConfigPush(&pipeline);
-    pipeline.config_pending.solver.sleep_enabled = 0;
+    pipeline.config_pending.solver.sleep_enabled = 1;
     ds_DynamicsConfigUpdatePending(&pipeline);
 
     /* a lone body: its island, its island's id, and the id's death */
@@ -1509,7 +1515,7 @@ static struct test_Output DynamicsIslandTest(struct test_Environment *env)
     TEST_NOT_ZERO(pipeline.island_pool.buf[left->island].body_list.count == 3 && pipeline.island_pool.count == 1);
 
     ds_BodyRemove(&mem, &pipeline, body[2]);
-    /* the pipeline splits a flagged island once its bodies have rested for the sleep time threshold: let them settle */
+    /* with sleeping on, the pipeline splits a flagged island once its bodies have rested for the sleep time threshold: let them settle */
     for (u32 t = 0; t < 600 && pipeline.island_pool.count < 2; ++t)
     {
         ds_DynamicsTick(DynamicsTestTickArena(), &pipeline, NSEC_PER_SEC / 60);
@@ -1872,6 +1878,126 @@ static struct test_Output DynamicsParkingTest(struct test_Environment *env)
     return output;
 }
 
+/* sleeping just switched off: no sleeping set, nothing parked, every rest timer zero, the contacts' sets and bits valid */
+static u32 SleepToggleTestAwake(const struct ds_Dynamics *pipeline)
+{
+    u32 ok = (SnapshotTestSleepingSetCount(pipeline) == 0);
+    ok &= (pipeline->solver_set_pool.buf[SOLVER_SET_DISABLED].contact_pool.count == 0);
+    for (u32 i = 0; i < pipeline->body_pool.count_max; ++i)
+    {
+        const struct ds_Body *body = pipeline->body_pool.buf + i;
+        ok &= (!ds_PoolSlotAllocated(body) || body->low_velocity_time == 0.0f);
+    }
+    ds_ContactValidateAll(pipeline);
+    ds_IslandValidateAll(pipeline);
+    return ok;
+}
+
+/* sleeping switched off over parked contacts, on a restored copy and on the original, and back on (file comment) */
+static struct test_Output DynamicsSleepToggleTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct arena mem = ArenaAlloc(NULL, 64*1024*1024);
+    struct c_ShapeDB cshape_db = { 0 };
+    c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
+    ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
+    ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
+    struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&external, NSEC_PER_SEC / 60);
+    ds_DynamicsConfigPush(&pipeline);
+    pipeline.config_pending.solver.sleep_enabled = 1;
+    ds_DynamicsConfigUpdatePending(&pipeline);
+
+    /* the parking scene: ground, wall, two boxes 3 cm apart under a plank, a lone box 3 cm from the wall */
+    const v3 hw = V3(0.5f, 0.5f, 0.5f);
+    const struct dynamics_TestBox scene[6] =
+    {
+        { .position = V3(0.0f, -1.0f, 0.0f), .rotation = QIdentity(), .hw = V3(16.0f, 1.0f, 16.0f), .dynamic = 0, .friction = 0.5f },
+        { .position = V3(3.0f, 1.0f, 0.0f), .rotation = QIdentity(), .hw = V3(0.5f, 1.0f, 1.0f), .dynamic = 0, .friction = 0.5f },
+        { .position = V3(-0.515f, 0.5f, 0.0f), .rotation = QIdentity(), .hw = hw, .dynamic = 1, .friction = 0.5f },
+        { .position = V3(0.515f, 0.5f, 0.0f), .rotation = QIdentity(), .hw = hw, .dynamic = 1, .friction = 0.5f },
+        { .position = V3(0.0f, 1.25f, 0.0f), .rotation = QIdentity(), .hw = V3(1.0f, 0.25f, 0.5f), .dynamic = 1, .friction = 0.5f },
+        { .position = V3(1.97f, 0.5f, 0.0f), .rotation = QIdentity(), .hw = hw, .dynamic = 1, .friction = 0.5f },
+    };
+    ds_BodyId id[6];
+    for (u32 i = 0; i < 6; ++i)
+    {
+        id[i] = DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, scene + i, (v3f64) { 0 }, i);
+    }
+    const struct ds_Body *box = ds_BodyLookup(&pipeline, id[2]).address;
+    const struct ds_Body *box_right = ds_BodyLookup(&pipeline, id[3]).address;
+    const struct ds_Body *lone = ds_BodyLookup(&pipeline, id[5]).address;
+
+    u32 t;
+    for (t = 0; t < 600 && (box->set < SOLVER_SET_SLEEPING_FIRST || lone->set < SOLVER_SET_SLEEPING_FIRST); ++t)
+    {
+        SnapshotTestTick(&pipeline);
+    }
+    TEST_NOT_ZERO(t < 600 && SnapshotTestSleepingSetCount(&pipeline) == 2 && pipeline.solver_set_pool.buf[SOLVER_SET_DISABLED].contact_pool.count == 2);
+
+    /* a copy restored from the sleeping scene, switched off: everything awake, nothing parked */
+    ArenaPushRecord(&mem);
+    const u64 size = ds_DynamicsSerializeSize(&pipeline);
+    struct SS snap = SSAlloc(&mem, size);
+    ds_DynamicsSerialize(&snap, &pipeline);
+    snap.bit_index = 0;
+    struct ds_Dynamics copy;
+    const u32 restored = ds_DynamicsTryDeserialize(&mem, &snap, &copy, &external);
+    TEST_NOT_ZERO(restored);
+    TEST_NOT_ZERO(SnapshotTestSleepingSetCount(&copy) == 2 && copy.solver_set_pool.buf[SOLVER_SET_DISABLED].contact_pool.count == 2);
+    ds_DynamicsConfigPush(&copy);
+    copy.config_pending.solver.sleep_enabled = 0;
+    ds_DynamicsConfigUpdatePending(&copy);
+    TEST_NOT_ZERO(SleepToggleTestAwake(&copy));
+    ds_DynamicsDealloc(&copy);
+    ArenaPopRecord(&mem);
+    ds_DynamicsConfigPush(&pipeline);
+
+    /* the original with the lone box awake and partly rested, switched off: its timer is zeroed too */
+    ds_SolverSetWakeUp(&pipeline, lone->set);
+    for (t = 0; t < 10; ++t)
+    {
+        SnapshotTestTick(&pipeline);
+    }
+    TEST_NOT_ZERO(lone->set == SOLVER_SET_ACTIVE && lone->low_velocity_time > 0.0f && box->set >= SOLVER_SET_SLEEPING_FIRST);
+    TEST_NOT_ZERO(pipeline.solver_set_pool.buf[SOLVER_SET_DISABLED].contact_pool.count == 1);
+    pipeline.config_pending.solver.sleep_enabled = 0;
+    ds_DynamicsConfigUpdatePending(&pipeline);
+    TEST_NOT_ZERO(SleepToggleTestAwake(&pipeline));
+
+    /* sleeping off: without the plank its boxes are an island with removed constraints; two seconds of rest neither time, split nor sleep it */
+    ds_BodyRemove(&mem, &pipeline, id[4]);
+    TEST_NOT_ZERO(box->island == box_right->island && pipeline.island_pool.buf[box->island].constraint_remove_count > 0);
+    u32 quiet = 1;
+    for (t = 0; t < 120; ++t)
+    {
+        SnapshotTestTick(&pipeline);
+        quiet &= (ds_IslandIdNullCheck(pipeline.island_to_split) && box->low_velocity_time == 0.0f && lone->low_velocity_time == 0.0f);
+    }
+    TEST_NOT_ZERO(quiet && box->island == box_right->island && SnapshotTestSleepingSetCount(&pipeline) == 0);
+
+    /* back on: the timers start from zero, so the boxes' island is split and both sleep only after the threshold */
+    pipeline.config_pending.solver.sleep_enabled = 1;
+    ds_DynamicsConfigUpdatePending(&pipeline);
+    const u32 threshold_ticks = (u32) (pipeline.config.solver.sleep_time_threshold * 60.0f);
+    for (t = 0; t < 600 && (box->set < SOLVER_SET_SLEEPING_FIRST || box_right->set < SOLVER_SET_SLEEPING_FIRST); ++t)
+    {
+        SnapshotTestTick(&pipeline);
+    }
+    TEST_NOT_ZERO(t < 600 && t >= threshold_ticks && box->island != box_right->island && box->set != box_right->set);
+    TEST_NOT_ZERO(lone->set >= SOLVER_SET_SLEEPING_FIRST && pipeline.solver_set_pool.buf[SOLVER_SET_DISABLED].contact_pool.count == 2);
+    ds_ContactValidateAll(&pipeline);
+    ds_IslandValidateAll(&pipeline);
+
+    ds_DynamicsConfigPop(&pipeline);
+    ds_DynamicsDealloc(&pipeline);
+    c_ShapeDBDealloc(&cshape_db);
+    ds_SDBDealloc(prefab_db);
+    ArenaFree(&mem);
+    return output;
+}
+
 /*
  * A static shape added into resting dynamic shapes: static shapes never query the broadphase and a resting shape is
  * not dirty, so ds_ShapeAdd pairs them itself. A sleeping box, and then an awake resting box (sleeping disabled, its
@@ -2225,7 +2351,7 @@ static struct test_Output DynamicsJointIslandTest(struct test_Environment *env)
     const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
     struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&external, NSEC_PER_SEC / 60);
     ds_DynamicsConfigPush(&pipeline);
-    pipeline.config_pending.solver.sleep_enabled = 0;
+    pipeline.config_pending.solver.sleep_enabled = 1;
     ds_DynamicsConfigUpdatePending(&pipeline);
 
     /* a ground and three boxes resting on it, far enough apart never to touch */
@@ -2295,10 +2421,8 @@ static struct test_Output DynamicsJointIslandTest(struct test_Environment *env)
     TEST_NOT_ZERO(t < 600 && (pipeline.island_pool.buf + a->island)->joint_list.count == 0 && (pipeline.island_pool.buf + b->island)->joint_list.count == 0);
     ds_DynamicsValidate(&pipeline);
 
-    /* with sleeping on, the jointed pair's set carries the joint: in the set's pool, out of the colours */
+    /* the jointed pair's set carries the joint: in the set's pool, out of the colours */
     const ds_JointId jab2 = ds_DistanceJointAdd(&pipeline, &prefab, id[1], &frame, id[2], &frame);
-    pipeline.config_pending.solver.sleep_enabled = 1;
-    ds_DynamicsConfigUpdatePending(&pipeline);
     for (t = 0; t < 600 && (a->set < SOLVER_SET_SLEEPING_FIRST || c->set < SOLVER_SET_SLEEPING_FIRST); ++t)
     {
         SnapshotTestTick(&pipeline);
@@ -3785,7 +3909,7 @@ static struct test_Output DynamicsFlushTest(struct test_Environment *env)
     const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
     struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&external, NSEC_PER_SEC / 60);
     ds_DynamicsConfigPush(&pipeline);
-    pipeline.config_pending.solver.sleep_enabled = 0;
+    pipeline.config_pending.solver.sleep_enabled = 1;
     ds_DynamicsConfigUpdatePending(&pipeline);
 
     /* three boxes in a row on a ground; without the middle one the island is flagged, and once rested, chosen for a split */
@@ -3816,7 +3940,12 @@ static struct test_Output DynamicsFlushTest(struct test_Environment *env)
     TEST_NOT_ZERO(pipeline.frames_completed == 0 && ds_IslandIdNullCheck(pipeline.island_to_split));
     TEST_NOT_ZERO(SnapshotTestSleepingSetCount(&pipeline) == 0 && pipeline.solver_set_pool.buf[SOLVER_SET_ACTIVE].body_sim_pool.count == 0);
 
-    /* three lone boxes take the island slots the row had, with the ids a fresh pipeline gives; the ticks after the flush must not split any of them */
+    /*
+     * three lone boxes take the island slots the row had, with the ids a fresh pipeline gives; the ticks after the
+     * flush must not split any of them (sleeping off: the resting boxes stay coloured)
+     */
+    pipeline.config_pending.solver.sleep_enabled = 0;
+    ds_DynamicsConfigUpdatePending(&pipeline);
     for (u32 i = 0; i < 4; ++i)
     {
         const struct dynamics_TestBox box = { .position = V3(-4.0f + 2.0f * (f32) i, 0.5f, 0.0f), .rotation = QIdentity(), .hw = V3(0.5f, 0.5f, 0.5f), .dynamic = (i != 0), .friction = 0.5f };
@@ -4522,6 +4651,7 @@ static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
     DynamicsSleepTest,
     DynamicsWakeByContactTest,
     DynamicsParkingTest,
+    DynamicsSleepToggleTest,
     DynamicsStaticShapeAddTest,
     DynamicsGraphTest,
     DynamicsJointTest,

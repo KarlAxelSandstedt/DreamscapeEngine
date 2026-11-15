@@ -1714,7 +1714,13 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
         
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
     ds_BitSetClear(&pipeline->island_high_energy_set, 0);
-    pipeline->island_to_split = ds_IslandIdNull(); 
+    pipeline->island_to_split = ds_IslandIdNull();
+
+    /* sleeping off: the rest timers stay zero (ds_DynamicsSleepDisable), no island is split or put to sleep */
+    if (!g_solver_config->sleep_enabled)
+    {
+        return;
+    }
 
     /*
      * Fallback split candidate: a high-energy island with a removed constraint holding a body that has rested
@@ -1774,12 +1780,6 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
     if (ds_IslandIdNullCheck(pipeline->island_to_split))
     {
         pipeline->island_to_split = fallback_island;
-    }
-
-    /* with sleeping disabled ds_SolverSetSleep is a no-op: a resting island would stay active and the loop below never advance */
-    if (!g_solver_config->sleep_enabled)
-    {
-        return;
     }
 
     for (u64 block = 0; block < pipeline->island_high_energy_set.block_count; ++block)
@@ -1854,6 +1854,12 @@ void ds_DynamicsSleepDisable(struct ds_Dynamics *pipeline)
             ds_SolverSetWakeUp(pipeline, set_index);
         }
 	}
+
+    const struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
+    for (u32 i = 0; i < active->body_sim_pool.count; ++i)
+    {
+        pipeline->body_pool.buf[ active->body_sim_pool.buf[i].body ].low_velocity_time = 0.0f;
+    }
 }
 
 void ds_DynamicsSimulateFrame(struct ds_Dynamics *pipeline)
