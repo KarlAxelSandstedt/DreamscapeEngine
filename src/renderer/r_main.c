@@ -304,7 +304,8 @@ static v4 r_InternalShapeColor(const struct ds_Dynamics *pipeline, const struct 
 			{
 				const struct ds_SolverSet *set = pipeline->solver_set_pool.buf + body->set;
 				const struct ds_BodyCompute *compute = set->body_compute_pool.buf + body->sim;
-				energy = 0.5f * body->mass * V3Dot(compute->linear_velocity, compute->linear_velocity);
+				const struct ds_BodySim *sim = set->body_sim_pool.buf + body->sim;
+				energy = 0.5f * sim->mass * V3Dot(compute->linear_velocity, compute->linear_velocity);
 			}
 			const f32 t = F32Clamp(energy / config->energy_max, 0.0f, 1.0f);
 			return V4Add(V4Scale(config->color_velocity_low, 1.0f - t), V4Scale(config->color_velocity_high, t));

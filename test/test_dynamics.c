@@ -18,6 +18,12 @@ static struct arena *DynamicsTestTickArena(void)
     return &tick;
 }
 
+static f32 DynamicsTestBodyMass(const struct ds_Dynamics *pipeline, const struct ds_Body *body)
+{
+    const struct ds_SolverSet *set = pipeline->solver_set_pool.buf + body->set;
+    return set->body_sim_pool.buf[body->sim].mass;
+}
+
 /*
 Dynamics tests
 ==============
@@ -581,7 +587,7 @@ static u32 SnapshotTestEqual(const struct ds_Dynamics *a, const struct ds_Dynami
             continue;
         }
 
-        if (!ds_BodyIdEqual(body_a->id, body_b->id) || body_a->set != body_b->set || body_a->sim != body_b->sim || body_a->island != body_b->island
+        if (body_a->generation != body_b->generation || body_a->set != body_b->set || body_a->sim != body_b->sim || body_a->island != body_b->island
             || memcmp(&body_a->low_velocity_time, &body_b->low_velocity_time, sizeof(f32)) != 0)
         {
             return 0;
@@ -1148,7 +1154,7 @@ static struct test_Output DynamicsShapeTest(struct test_Environment *env)
         shape_id[i] = ds_ShapeAdd(&pipeline, &prefab, &t_local[i], body_id);
         TEST_NOT_ZERO(!ds_ShapeIdNullCheck(shape_id[i]));
     }
-    TEST_NOT_ZERO(body->shape_list.count == 3 && body->mass > 0.0f);
+    TEST_NOT_ZERO(body->shape_list.count == 3 && DynamicsTestBodyMass(&pipeline, body) > 0.0f);
 
     /* lookups, and the world box contains each shape's extreme points */
     const struct ds_Shape *shape[3];
@@ -1311,7 +1317,7 @@ static struct test_Output DynamicsBodyTest(struct test_Environment *env)
         TEST_NOT_ZERO(body != NULL && body->set == SOLVER_SET_ACTIVE && body->shape_list.count == 2);
         const struct ds_SolverSet *set = pipeline.solver_set_pool.buf + body->set;
         const struct ds_BodySim *sim = set->body_sim_pool.buf + body->sim;
-        TEST_NOT_ZERO(DynamicsTestNear(body->mass, mass, mass) && DynamicsTestNear(sim->inv_mass, 1.0f / mass, 1.0f / mass));
+        TEST_NOT_ZERO(DynamicsTestNear(sim->mass, mass, mass) && DynamicsTestNear(sim->inv_mass, 1.0f / mass, 1.0f / mass));
         TEST_NOT_ZERO(DynamicsTestNear(sim->local_center_of_mass.x, -0.5f, 1.0f) && DynamicsTestNear(sim->local_center_of_mass.y, 0.0f, 1.0f) && DynamicsTestNear(sim->local_center_of_mass.z, 0.0f, 1.0f));
         const m3 inv = sim->local_inv_inertia;
         const f32 scale = 1.0f / i_xx;
@@ -1321,7 +1327,7 @@ static struct test_Output DynamicsBodyTest(struct test_Environment *env)
     }
     {
         const struct ds_Body *body = ds_BodyLookup(&pipeline, b).address;
-        TEST_NOT_ZERO(body != NULL && body->set == SOLVER_SET_STATIC && body->island == POOL_NULL && body->mass == 0.0f);
+        TEST_NOT_ZERO(body != NULL && body->set == SOLVER_SET_STATIC && body->island == POOL_NULL && DynamicsTestBodyMass(&pipeline, body) == 0.0f);
         const struct ds_SolverSet *set = pipeline.solver_set_pool.buf + body->set;
         const struct ds_BodySim *sim = set->body_sim_pool.buf + body->sim;
         TEST_NOT_ZERO(sim->inv_mass == 0.0f && sim->local_inv_inertia.a11 == 0.0f && sim->local_inv_inertia.a22 == 0.0f && sim->local_inv_inertia.a33 == 0.0f);
@@ -2921,7 +2927,7 @@ static struct dynamics_SpringRun DynamicsSpringRun(f32 *distance, const u32 tick
     const ds_JointId joint = ds_DistanceJointAdd(&pipeline, prefab, id[0], &frame, id[1], &frame);
     ds_Assert(!ds_JointIdNullCheck(joint));
     const struct ds_Body *body = ds_BodyLookup(&pipeline, id[1]).address;
-    const f32 mass = body->mass;
+    const f32 mass = DynamicsTestBodyMass(&pipeline, body);
 
     struct dynamics_SpringModel model = { .x = distance_0 };
     for (u32 t = 0; t < tick_count; ++t)
@@ -3288,7 +3294,7 @@ static struct test_Output DynamicsJointSleepTest(struct test_Environment *env)
         TEST_NOT_ZERO(!ds_JointIdNullCheck(jid[i]));
     }
     const struct ds_Body *box[4] = { ds_BodyLookup(&pipeline, id[1]).address, ds_BodyLookup(&pipeline, id[2]).address, ds_BodyLookup(&pipeline, id[3]).address, NULL };
-    const f32 mass = box[0]->mass;
+    const f32 mass = DynamicsTestBodyMass(&pipeline, box[0]);
     const f32 g = -pipeline.config.solver.gravity.y;
     const f32 h = pipeline.timestep;
 
@@ -3548,7 +3554,7 @@ static struct test_Output DynamicsMouseJointTest(struct test_Environment *env)
 
         /* the joint pulls the tick's weight at rest: |impulse| = m g h */
         const struct ds_MouseJoint *mouse = DynamicsTestMouseSim(&rig.pipeline, joint);
-        const f32 weight_tick = rig.body->mass * g * rig.pipeline.timestep;
+        const f32 weight_tick = DynamicsTestBodyMass(&rig.pipeline, rig.body) * g * rig.pipeline.timestep;
         TEST_NOT_ZERO(F32Abs(V3Length(mouse->impulse) - weight_tick) <= 0.05f * weight_tick);
 
         /* a step of 1 m up: critically damped, so no descent, no sideways motion; the rise is measured below */
@@ -3575,7 +3581,7 @@ static struct test_Output DynamicsMouseJointTest(struct test_Environment *env)
         ds_MouseJointPrefabFromBody(&prefab, &rig.pipeline, rig.box, target, 2.0f, 1.0f, force_scale, 0.0f, ds_BreakageOptionNone());
         const ds_JointId joint = ds_MouseJointAdd(&rig.pipeline, &prefab, rig.box, &frame);
         TEST_NOT_ZERO(!ds_JointIdNullCheck(joint));
-        const f32 weight = rig.body->mass * g;
+        const f32 weight = DynamicsTestBodyMass(&rig.pipeline, rig.body) * g;
         TEST_NOT_ZERO(F32Abs(prefab.max_force - force_scale * weight) <= 1e-5f * weight);
 
         const v3 after = DynamicsMouseRigRun(&rig, 60);
@@ -3668,7 +3674,7 @@ static struct test_Output DynamicsMouseJointSleepTest(struct test_Environment *e
     const struct ds_Joint *j = ds_JointLookup(&rig.pipeline, joint).address;
     TEST_NOT_ZERO(j->set == rig.body->set && j->color == CG_INVALID_COLOR);
     TEST_NOT_ZERO(rig.pipeline.solver_set_pool.buf[rig.body->set].joint_sim_pool.count == 1);
-    const f32 weight_tick = rig.body->mass * g * rig.pipeline.timestep;
+    const f32 weight_tick = DynamicsTestBodyMass(&rig.pipeline, rig.body) * g * rig.pipeline.timestep;
     TEST_NOT_ZERO(F32Abs(V3Length(DynamicsTestMouseSim(&rig.pipeline, joint)->impulse) - weight_tick) <= 0.05f * weight_tick);
     ds_DynamicsValidate(&rig.pipeline);
 
@@ -4505,7 +4511,8 @@ static struct test_Output DynamicsJointBreakingTest(struct test_Environment *env
     {
         id[i] = DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, scene + i, (v3f64) { 0 }, i);
     }
-    const f32 weight = ((const struct ds_Body *) ds_BodyLookup(&pipeline, id[1]).address)->mass * V3Length(pipeline.config.solver.gravity);
+    const struct ds_Body *body1 = ds_BodyLookup(&pipeline, id[1]).address;
+    const f32 weight = DynamicsTestBodyMass(&pipeline, body1) * V3Length(pipeline.config.solver.gravity);
 
     /* the anchor frames straight above each box's centre; strong holds 1.5 weights, weak 0.5 */
     const ds_Transform frame = ds_TransformIdentity();

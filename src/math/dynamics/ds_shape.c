@@ -126,7 +126,8 @@ void ds_ShapeDynamicRemove(struct ds_Dynamics *pipeline, struct ds_Body *body, c
     DLLRemove(body->shape_list, pipeline->shape_pool.buf, shape_index, body_shape);
     if (mass_properties_update)
     {
-        ds_BodyUpdateMassProperties(pipeline, body->id);
+        const ds_BodyId body_id = ds_BodyIdInit(shape->body, body->generation);
+        ds_BodyUpdateMassProperties(pipeline, body_id);
     }
 
 	c_ShapeDBDereference(pipeline->external->cshape_db, shape->cshape_handle);

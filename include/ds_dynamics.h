@@ -447,7 +447,7 @@ struct ds_Body
 	POOL_NODE;
 	struct DLLNode island_body;	            /* island body_list node                                */
 
-    ds_BodyId  id;                         /* generational identifier                              */
+    u32             generation;                 /* the id's generation: ds_BodyIdInit(index, generation) */
 	u32 		    flags;
 	u32		        island;                     /* island the body belongs to (if it is non-static)     */
 
@@ -461,9 +461,10 @@ struct ds_Body
 
 	struct DLL   shape_list;		            /* list of convex shapes constructing the rigid body 	*/
 
-	f32 		    mass;			            /* total body mass                                      */
-
-    //TODO temporary
+    //TODO temporary: This (and other dynamics resources which have generational handles and may be
+    //interacted with by user) can be moved to a separate struct ds_ExternalResource, indexed by 
+    //body / resource index, which stores user-provided external data: (void*, u32, ...). every 
+    //dynamics resource with such a struct gets a separate ds_ExternalResources arrary...
 	u32 	        entity;
 };
 DEFINE_POOL(ds_Body);
@@ -479,6 +480,7 @@ struct ds_BodySim
     u32             body;                       /* RigidBody index                                      */
     u32             flags;
     f32             inv_mass;                   /* Inverse mass                                         */
+	f32 		    mass;			            /* total body mass                                      */
 	ds_TransformWorld world;	                /* local body frame to world transform. Rotation is 
                                                    about the local origin (not center of mass!)         */
 	v3		        local_center_of_mass;	    /* local body frame center of mass                      */

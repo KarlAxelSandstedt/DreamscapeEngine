@@ -27,6 +27,7 @@ struct ds_DynamicsWorker *g_dynamics_worker;
 void ds_DynamicsStaticAssert(void)
 {
     ds_StaticAssert(sizeof(struct ds_BodyCompute) == DS_CACHE_LINE, "");
+    ds_StaticAssert(sizeof(struct ds_Body) == 64, "Not required, but nice to keep bodies cache-aligned when body-walking.");
     ds_StaticAssert(sizeof(struct ds_Contact) == 64, "Not required, but nice to keep contacts cache-aligned when contact-walking.");
     ds_StaticAssert(sizeof(struct ds_RebuildThreadCompute) == DS_CACHE_LINE, "");
     ds_StaticAssert(sizeof(struct ds_RebuildJob) == DS_CACHE_LINE, "");

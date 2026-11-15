@@ -60,7 +60,9 @@ ds_JointId ds_JointAdd(struct ds_Dynamics *pipeline, const enum ds_JointType typ
     const u32 index[2] = { slot_b0.index, slot_b1.index };
     for (u32 i = 0; i < 2; ++i)
     {
-        if (dynamic[i] && !(b[i]->mass > 0.0f))
+        const struct ds_SolverSet *set = pipeline->solver_set_pool.buf + b[i]->set;
+        const struct ds_BodySim *bsim = set->body_sim_pool.buf + b[i]->sim;
+        if (dynamic[i] && !(bsim->mass > 0.0f))
         {
             Log(T_PHYSICS, S_WARNING, "joint add rejected: dynamic body %u has no mass (no shapes)", index[i]);
             return ds_JointIdNull();
@@ -834,7 +836,14 @@ void ds_MouseJointPrefab(struct ds_MouseJointPrefab *prefab, const v3f64 target,
 void ds_MouseJointPrefabFromBody(struct ds_MouseJointPrefab *prefab, const struct ds_Dynamics *pipeline, const ds_BodyId body, const v3f64 target, const f32 hertz, const f32 damping_ratio, const f32 force_scale, const f32 torque_scale, const struct ds_BreakageOption breakage)
 {
     const struct ds_Body *b = ds_BodyLookup(pipeline, body).address;
-    if (!b || !ds_BodyDynamicCheck(b) || !(b->mass > 0.0f))
+    const struct ds_BodySim *bsim = NULL;
+    if (b)
+    {
+        const struct ds_SolverSet *set = pipeline->solver_set_pool.buf + b->set;
+        bsim = set->body_sim_pool.buf + b->sim;
+    }
+
+    if (!b || !ds_BodyDynamicCheck(b) || !(bsim->mass > 0.0f))
     {
         /* a prefab that pulls with nothing; the add refuses such a body anyway */
         Log(T_PHYSICS, S_WARNING, "mouse joint prefab: body %u missing, not dynamic or without mass, the prefab pulls with no force", ds_BodyIdIndex(body));
@@ -842,8 +851,7 @@ void ds_MouseJointPrefabFromBody(struct ds_MouseJointPrefab *prefab, const struc
         return;
     }
 
-    const struct ds_BodySim *bsim = pipeline->solver_set_pool.buf[b->set].body_sim_pool.buf + b->sim;
-    const f32 weight = b->mass * V3Length(g_solver_config->gravity);
+    const f32 weight = bsim->mass * V3Length(g_solver_config->gravity);
 
     /* radius of gyration sqrt(trace(I) / (3 m)); the sim stores Inv(I), and a dynamic body's inertia inverts */
     //TODO(Research): i do not understand
@@ -851,7 +859,7 @@ void ds_MouseJointPrefabFromBody(struct ds_MouseJointPrefab *prefab, const struc
     const f32 det = M3Inverse(&inertia, bsim->local_inv_inertia);
     ds_Assert(det > 0.0f);
     const f32 trace = inertia.a11 + inertia.a22 + inertia.a33;
-    const f32 lever = F32Sqrt(trace / (3.0f * b->mass));
+    const f32 lever = F32Sqrt(trace / (3.0f * bsim->mass));
 
     ds_MouseJointPrefab(prefab, target, hertz, damping_ratio, force_scale * weight, torque_scale * lever * weight, breakage);
 }

@@ -221,7 +221,7 @@ ds_BodyId ds_SimBodyByEntity(const struct ds_Sim *sim, const u32 entity)
         const struct ds_Body *body = sim->dynamics.body_pool.buf + i;
         if (ds_PoolSlotAllocated(body) && body->entity == entity)
         {
-            return body->id;
+            return ds_BodyIdInit(i, body->generation);
         }
     }
 

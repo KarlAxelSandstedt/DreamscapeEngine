@@ -144,7 +144,9 @@ void ds_ContactRemove(struct ds_Dynamics *pipeline, const u32 index, const u32 i
 	const struct ds_Body *body1 = pipeline->body_pool.buf + c->body[1];
     struct ds_Shape *shape0 = pipeline->shape_pool.buf + c->key.shape[0];
     struct ds_Shape *shape1 = pipeline->shape_pool.buf + c->key.shape[1];
-	PhysicsEventContactRemoved(pipeline, body0->id, shape0->id, body1->id, shape1->id);
+	const ds_BodyId body_id0 = ds_BodyIdInit(c->body[0], body0->generation);
+	const ds_BodyId body_id1 = ds_BodyIdInit(c->body[1], body1->generation);
+	PhysicsEventContactRemoved(pipeline, body_id0, shape0->id, body_id1, shape1->id);
     if (!ds_ContactConvexCheck(c) && pipeline->contact_narrow_pool.buf[index].cache.concave.tri.length)
     {
         ds_TSlabRemove(pipeline->tri_cache_slab, pipeline->contact_narrow_pool.buf[index].cache.concave.tri);
@@ -319,7 +321,9 @@ void ds_ContactDemote(struct ds_Dynamics *pipeline, const u32 contact)
 	    pipeline->body_pool.buf + c->body[0],
 	    pipeline->body_pool.buf + c->body[1],
     };
-	PhysicsEventContactRemoved(pipeline, body[0]->id, shape[0]->id, body[1]->id, shape[1]->id);
+	const ds_BodyId body_id0 = ds_BodyIdInit(c->body[0], body[0]->generation);
+	const ds_BodyId body_id1 = ds_BodyIdInit(c->body[1], body[1]->generation);
+	PhysicsEventContactRemoved(pipeline, body_id0, shape[0]->id, body_id1, shape[1]->id);
 
     island->constraint_remove_count += 1;
     DLLRemove(island->contact_list, pipeline->contact_pool.buf, contact, island_contact);

@@ -31,10 +31,11 @@ ds_BodyId ds_BodyAdd(struct ds_Dynamics *pipeline, const struct ds_BodyPrefab *p
 
     if (old_max != pipeline->body_pool.count_max)
     {
-        body->id = ds_BodyIdInit(body_slot.index, 0);
+        body->generation = 0;
     }
-    body->id = ds_BodyIdNextGeneration(body->id);
-	PhysicsEventBodyNew(pipeline, body->id);
+    body->generation = (body->generation + 1) & DS_ID_GENERATION_MAX;
+    const ds_BodyId id = ds_BodyIdInit(body_slot.index, body->generation);
+	PhysicsEventBodyNew(pipeline, id);
 
     if (pipeline->body_usage_set.bit_count <= body_slot.index)
     {
@@ -97,12 +98,13 @@ ds_BodyId ds_BodyAdd(struct ds_Dynamics *pipeline, const struct ds_BodyPrefab *p
     sim->world = *world;
     /* no shapes yet: no mass, and no inertia either (ds_BodyUpdateMassProperties sets both from the shapes) */
     sim->inv_mass = 0.0f;
+    sim->mass = 0.0f;
     sim->local_center_of_mass = V3Zero();
     sim->local_inv_inertia = M3Scale(M3Identity(), 0.0f);
     /* a static sim's world inverse inertia is read by the joint prepare and never updated per tick */
     sim->world_inv_inertia = sim->local_inv_inertia;
 
-	return body->id;
+	return id;
 }
 
 void ds_BodyRemove(struct arena *mem_tmp, struct ds_Dynamics *pipeline, const ds_BodyId id)
@@ -191,7 +193,8 @@ struct slot ds_BodyLookup(const struct ds_Dynamics *pipeline, const ds_BodyId id
     if (index < pipeline->body_pool.count_max)
     {
         struct ds_Body *body = pipeline->body_pool.buf + index;
-        if (ds_PoolSlotAllocated(body) && ds_BodyIdEqual(body->id, id))
+        const ds_BodyId body_id = ds_BodyIdInit(index, body->generation);
+        if (ds_PoolSlotAllocated(body) && ds_BodyIdEqual(body_id, id))
         {
             slot.address = body;
             slot.index = index;
@@ -215,7 +218,7 @@ void ds_BodyUpdateMassProperties(struct ds_Dynamics *pipeline, const ds_BodyId i
     struct ds_BodySim *sim = set->body_sim_pool.buf + body->sim;
 	ds_Assert(ds_PoolSlotAllocated(body));
 
-	body->mass = 0.0f;
+	sim->mass = 0.0f;
     sim->local_center_of_mass = V3Zero();
 
     /* static bodies and bodies without shapes: zero mass, center of mass at the body origin */
@@ -247,7 +250,7 @@ void ds_BodyUpdateMassProperties(struct ds_Dynamics *pipeline, const ds_BodyId i
 		const struct c_Shape *cshape = c_ShapeDBShape(pipeline->external->cshape_db, shape->cshape_handle);
 
 		mass[i] = shape->density * cshape->volume;
-		body->mass += mass[i];
+		sim->mass += mass[i];
 
 		/* R, R^-1 */
 		const m3 rot_local = M3QUnit(shape->t_local.rotation);
@@ -263,8 +266,8 @@ void ds_BodyUpdateMassProperties(struct ds_Dynamics *pipeline, const ds_BodyId i
 	}
 
     /* zero volume or density on a dynamic body (TODO: c_Shape / body checker) */
-    ds_Assert(body->mass > 0.0f);
-    sim->inv_mass = 1.0f / body->mass;
+    ds_Assert(sim->mass > 0.0f);
+    sim->inv_mass = 1.0f / sim->mass;
 	sim->local_center_of_mass = V3Scale(sim->local_center_of_mass, sim->inv_mass);
 
 	/*

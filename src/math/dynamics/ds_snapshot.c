@@ -370,7 +370,7 @@ static ds_ForceInline struct DLLNode ReadDLLNode(struct SS *ss)
 
 /*************************** per-type serializers ***************************/
 
-#define DS_BODY_SERIALIZE_SIZE (SNAPSHOT_DLL_NODE_SIZE + SNAPSHOT_ID_SIZE + 4*sizeof(u32) + sizeof(f32) + 2*SNAPSHOT_DLL_SIZE + sizeof(f32) + sizeof(u32))
+#define DS_BODY_SERIALIZE_SIZE (SNAPSHOT_DLL_NODE_SIZE + 5*sizeof(u32) + sizeof(f32) + 2*SNAPSHOT_DLL_SIZE + sizeof(u32))
 
 u64 ds_BodySerializeSize(const struct ds_Body *body)
 {
@@ -380,7 +380,7 @@ u64 ds_BodySerializeSize(const struct ds_Body *body)
 void ds_BodySerialize(struct SS *ss, const struct ds_Body *body)
 {
 	WriteDLLNode(ss, body->island_body);
-	SSWriteU64Le(ss, body->id.val);
+	SSWriteU32Le(ss, body->generation);
 	SSWriteU32Le(ss, body->flags);
 	SSWriteU32Le(ss, body->island);
 	SSWriteU32Le(ss, body->set);
@@ -388,7 +388,6 @@ void ds_BodySerialize(struct SS *ss, const struct ds_Body *body)
 	SSWriteF32Le(ss, body->low_velocity_time);
 	DLLSerialize(ss, body->joint_list);
 	DLLSerialize(ss, body->shape_list);
-	SSWriteF32Le(ss, body->mass);
 	SSWriteU32Le(ss, body->entity);
 }
 
@@ -400,7 +399,7 @@ u32 ds_BodyTryDeserialize(struct SS *ss, struct ds_Body *body)
 	}
 
 	body->island_body = ReadDLLNode(ss);
-	body->id.val = SSReadU64Le(ss);
+	body->generation = SSReadU32Le(ss);
 	body->flags = SSReadU32Le(ss);
 	body->island = SSReadU32Le(ss);
 	body->set = SSReadU32Le(ss);
@@ -408,7 +407,6 @@ u32 ds_BodyTryDeserialize(struct SS *ss, struct ds_Body *body)
 	body->low_velocity_time = SSReadF32Le(ss);
 	DLLDeserialize(ss, body->joint_list);
 	DLLDeserialize(ss, body->shape_list);
-	body->mass = SSReadF32Le(ss);
 	body->entity = SSReadU32Le(ss);
 	return 1;
 }
@@ -728,7 +726,7 @@ u32 ds_ProxyQueryTryDeserialize(struct SS *ss, struct ds_ProxyQuery *query)
 	return 1;
 }
 
-#define DS_BODY_SIM_SERIALIZE_SIZE (2*sizeof(u32) + sizeof(f32) + SNAPSHOT_TRANSFORM_WORLD_SIZE + SNAPSHOT_V3_SIZE + SNAPSHOT_V3F64_SIZE + 2*SNAPSHOT_M3_SIZE)
+#define DS_BODY_SIM_SERIALIZE_SIZE (2*sizeof(u32) + 2*sizeof(f32) + SNAPSHOT_TRANSFORM_WORLD_SIZE + SNAPSHOT_V3_SIZE + SNAPSHOT_V3F64_SIZE + 2*SNAPSHOT_M3_SIZE)
 
 u64 ds_BodySimSerializeSize(const struct ds_BodySim *bsim)
 {
@@ -740,6 +738,7 @@ void ds_BodySimSerialize(struct SS *ss, const struct ds_BodySim *bsim)
 	SSWriteU32Le(ss, bsim->body);
 	SSWriteU32Le(ss, bsim->flags);
 	SSWriteF32Le(ss, bsim->inv_mass);
+	SSWriteF32Le(ss, bsim->mass);
 	ds_TransformWorldSerialize(ss, &bsim->world);
 	V3Serialize(ss, bsim->local_center_of_mass);
 	V3F64Serialize(ss, bsim->world_center_of_mass);
@@ -757,6 +756,7 @@ u32 ds_BodySimTryDeserialize(struct SS *ss, struct ds_BodySim *bsim)
 	bsim->body = SSReadU32Le(ss);
 	bsim->flags = SSReadU32Le(ss);
 	bsim->inv_mass = SSReadF32Le(ss);
+	bsim->mass = SSReadF32Le(ss);
 	ds_TransformWorldDeserialize(ss, &bsim->world);
 	V3Deserialize(ss, &bsim->local_center_of_mass);
 	V3F64Deserialize(ss, &bsim->world_center_of_mass);
