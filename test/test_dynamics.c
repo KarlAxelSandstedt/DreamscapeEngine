@@ -70,6 +70,11 @@ boxes dropped onto a relief terrain (mesh contacts): a copy's mesh contacts hold
 entry for entry (a separation entry's feature ids are not written, so they are not compared). A restore points the dynamics globals at the copy, so the test points
 them back at the original (ds_DynamicsConfigPush) before calling into it outside a tick.
 
+Lowered cache max (DynamicsSnapshotCacheMaxTest): boxes asleep on a flat terrain mesh, then cache_count_max lowered
+below a sleeping mesh contact's triangle cache, which keeps its length (the max only bounds rebuilt caches). The
+snapshot restores with no config pushed and with the original's pushed; both copies equal the original, also when
+woken and ticked side by side, and the woken contacts' rebuilt caches hold at most the lowered max.
+
 Solver sets (DynamicsSleepTest): a two-box stack and a lone box fall asleep into one set each (one island and the
 bodies' simulation state without compute state in the set's arena, the contacts only naming the set; the active
 set empty). Waking a fixed set or the null index does nothing. Removing the top box wakes the stack's
@@ -895,6 +900,196 @@ static struct test_Output DynamicsSnapshotMeshTest(struct test_Environment *env)
 	struct test_Output output = { .success = 1, .id = __func__ };
 
     TEST_TRUE(SnapshotMeshTestRun());
+
+	return output;
+}
+
+#define SNAPSHOT_CACHE_TEST_BOXES       2       /* per side */
+#define SNAPSHOT_CACHE_TEST_SLEEP_TICKS 600     /* the boxes fall asleep well before */
+#define SNAPSHOT_CACHE_TEST_MAX         1       /* the lowered cache_count_max */
+
+/* Whether a mesh contact outside the active set holds more triangle cache entries than cache_count_max */
+static u32 SnapshotCacheTestLongSleeping(const struct ds_Dynamics *pipeline)
+{
+    for (u32 i = 0; i < pipeline->contact_pool.count_max; ++i)
+    {
+        const struct ds_Contact *c = pipeline->contact_pool.buf + i;
+        if (!ds_PoolSlotAllocated(c) || ds_ContactConvexCheck(c) || c->set == SOLVER_SET_ACTIVE)
+        {
+            continue;
+        }
+
+        if (pipeline->contact_narrow_pool.buf[i].cache.concave.tri_count > pipeline->config.numerics.cache_count_max)
+        {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* Whether every active mesh contact holds at most cache_count_max triangle cache entries */
+static u32 SnapshotCacheTestActiveCapped(const struct ds_Dynamics *pipeline)
+{
+    for (u32 i = 0; i < pipeline->contact_pool.count_max; ++i)
+    {
+        const struct ds_Contact *c = pipeline->contact_pool.buf + i;
+        if (!ds_PoolSlotAllocated(c) || ds_ContactConvexCheck(c) || c->set != SOLVER_SET_ACTIVE)
+        {
+            continue;
+        }
+
+        if (pipeline->contact_narrow_pool.buf[i].cache.concave.tri_count > pipeline->config.numerics.cache_count_max)
+        {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/* a lowered cache_count_max below a sleeping mesh contact's cache (file comment) */
+static u32 SnapshotCacheMaxTestRun(void)
+{
+    struct arena mem = ArenaAlloc(NULL, 128*1024*1024);
+    struct c_ShapeDB cshape_db = { 0 };
+    c_ShapeDBAlloc(NULL, &cshape_db, 64, GROWABLE);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
+    struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&external, NSEC_PER_SEC / 60);
+    ds_DynamicsConfigPush(&pipeline);
+    pipeline.config_pending.solver.sleep_enabled = 1;
+    ds_DynamicsConfigUpdatePending(&pipeline);
+
+    /* mesh shapes sit at the body origin, unrotated; flat, so the boxes fall asleep */
+    const f32 cell = 1.0f;
+    const struct c_Shape terrain = McTerrain(&mem, cell, 0.0f, NULL);
+    const struct slot slot = c_ShapeDBAdd(&cshape_db, Utf8Inline("terrain"), &terrain);
+    const struct ds_BodyPrefab body_prefab = { .dynamic = 0 };
+    const ds_TransformWorld t_world = { .rotation = QIdentity(), .position = V3F64(0.0, 0.0, 0.0) };
+    const ds_BodyId terrain_body = ds_BodyAdd(&pipeline, &body_prefab, &t_world, 0);
+    const struct ds_ShapePrefab shape_prefab = { .cshape = slot.index, .density = 1.0f, .restitution = 0.0f, .friction = 0.8f };
+    const ds_Transform t_local = ds_TransformIdentity();
+    ds_ShapeAdd(&pipeline, &shape_prefab, &t_local, terrain_body);
+
+    u32 index = 1;
+    for (u32 i = 0; i < SNAPSHOT_CACHE_TEST_BOXES; ++i)
+    {
+        for (u32 j = 0; j < SNAPSHOT_CACHE_TEST_BOXES; ++j)
+        {
+            const struct dynamics_TestBox box = { .position = V3(3.0f + 3.0f*cell*(f32) i, 1.0f, 3.0f + 3.0f*cell*(f32) j), .rotation = QIdentity(), .hw = V3(0.5f, 0.5f, 0.5f), .dynamic = 1 };
+            DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, &box, dynamics_test_origin[0], index);
+            index += 1;
+        }
+    }
+
+    u32 success = 1;
+    for (u32 t = 0; t < SNAPSHOT_CACHE_TEST_SLEEP_TICKS && pipeline.solver_set_pool.buf[SOLVER_SET_ACTIVE].body_sim_pool.count; ++t)
+    {
+        SnapshotTestTick(&pipeline);
+    }
+
+    if (pipeline.solver_set_pool.buf[SOLVER_SET_ACTIVE].body_sim_pool.count)
+    {
+        fprintf(stdout, "  cache max: the boxes are not asleep after %u ticks\n", SNAPSHOT_CACHE_TEST_SLEEP_TICKS);
+        success = 0;
+    }
+
+    pipeline.config_pending.numerics.cache_count_max = SNAPSHOT_CACHE_TEST_MAX;
+    ds_DynamicsConfigUpdatePending(&pipeline);
+    SnapshotTestTick(&pipeline);
+    if (!SnapshotCacheTestLongSleeping(&pipeline))
+    {
+        fprintf(stdout, "  cache max: no sleeping mesh contact holds more than %u cache entries\n", SNAPSHOT_CACHE_TEST_MAX);
+        success = 0;
+    }
+
+    const u64 size = ds_DynamicsSerializeSize(&pipeline);
+    struct SS snap = SSAlloc(&mem, size);
+    ds_DynamicsSerialize(&snap, &pipeline);
+
+    /* copy 0 restored with no config pushed, copy 1 with the original's */
+    struct ds_Dynamics copy[2];
+    u32 restored[2];
+    ds_DynamicsConfigPop(&pipeline);
+    snap.bit_index = 0;
+    restored[0] = ds_DynamicsTryDeserialize(&mem, &snap, copy + 0, &external);
+    ds_DynamicsConfigPush(&pipeline);
+    snap.bit_index = 0;
+    restored[1] = ds_DynamicsTryDeserialize(&mem, &snap, copy + 1, &external);
+
+    for (u32 c = 0; c < 2; ++c)
+    {
+        if (!restored[c])
+        {
+            fprintf(stdout, "  cache max: restore %u failed\n", c);
+            success = 0;
+        }
+        else if (!SnapshotTestEqual(copy + c, &pipeline))
+        {
+            fprintf(stdout, "  cache max: copy %u differs from the original as restored\n", c);
+            success = 0;
+        }
+    }
+
+    if (restored[0] && restored[1])
+    {
+        const u32 woken = SnapshotTestWakeAll(&pipeline);
+        for (u32 c = 0; c < 2; ++c)
+        {
+            if (SnapshotTestWakeAll(copy + c) != woken)
+            {
+                fprintf(stdout, "  cache max: copy %u has another number of sleeping sets than the original (%u)\n", c, woken);
+                success = 0;
+            }
+        }
+
+        u32 differs = 0;
+        for (u32 t = 0; t < SNAPSHOT_TEST_COMPARE_TICKS; ++t)
+        {
+            SnapshotTestTick(&pipeline);
+            if (t == 0 && !SnapshotCacheTestActiveCapped(&pipeline))
+            {
+                fprintf(stdout, "  cache max: a woken mesh contact's rebuilt cache holds more than %u entries\n", SNAPSHOT_CACHE_TEST_MAX);
+                success = 0;
+            }
+
+            for (u32 c = 0; c < 2; ++c)
+            {
+                SnapshotTestTick(copy + c);
+                if (!differs && !SnapshotTestEqual(copy + c, &pipeline))
+                {
+                    fprintf(stdout, "  cache max: copy %u differs from the original %u ticks after the wake\n", c, t + 1);
+                    differs = 1;
+                    success = 0;
+                }
+            }
+        }
+    }
+
+    for (u32 c = 0; c < 2; ++c)
+    {
+        if (restored[c])
+        {
+            ds_DynamicsDealloc(copy + c);
+        }
+    }
+
+    /* the copies' wakes and ticks pushed their own */
+    ds_DynamicsConfigPush(&pipeline);
+    ds_DynamicsConfigPop(&pipeline);
+    ds_DynamicsDealloc(&pipeline);
+    c_ShapeDBDealloc(&cshape_db);
+    ArenaFree(&mem);
+
+    fprintf(stdout, "  cache max %u below a sleeping mesh contact's cache, snapshot %llu B, 2 copies over %u ticks: %s\n",
+        SNAPSHOT_CACHE_TEST_MAX, (unsigned long long) size, SNAPSHOT_TEST_COMPARE_TICKS, (success) ? "equal" : "FAILED");
+    return success;
+}
+
+/* a snapshot with caches longer than a lowered cache_count_max (file comment) */
+static struct test_Output DynamicsSnapshotCacheMaxTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    TEST_TRUE(SnapshotCacheMaxTestRun());
 
 	return output;
 }
@@ -4650,6 +4845,7 @@ static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
     DynamicsRestingSlopeTest,
     DynamicsSnapshotTest,
     DynamicsSnapshotMeshTest,
+    DynamicsSnapshotCacheMaxTest,
     DynamicsMeshArrayStatsTest,
     DynamicsShapeTest,
     DynamicsBodyTest,

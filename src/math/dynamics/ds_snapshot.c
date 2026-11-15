@@ -1120,7 +1120,7 @@ static u32 ContactTriCacheTryDeserialize(struct SS *ss, struct ds_Dynamics *pipe
 	}
 
 	const u32 count = SSReadU32Le(ss);
-	if (count > g_numerics_config->cache_count_max || count > SSBytesLeft(ss))
+	if (count > SSBytesLeft(ss))
 	{
 		return 0;
 	}
