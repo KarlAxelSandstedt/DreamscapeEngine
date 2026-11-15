@@ -588,7 +588,10 @@ void ds_IslandSplit(struct ds_Dynamics *pipeline, const u32 island_to_split)
     struct DLL body_list = split->body_list;
     ds_IslandRemove(pipeline, island_to_split);
 
-    /* Remap every partial island to a new real island index */
+    /*
+     * Remap every partial island to a new real island index. Since partial[p].parent < p,
+     * we know that the parent slot always holds an allocated island for non-root p's.
+     */
     for (u32 p = 1; p < s.partial_count; ++p)
     {
         const u32 parent = s.partial[p].parent;

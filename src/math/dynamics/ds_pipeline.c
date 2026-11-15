@@ -731,16 +731,12 @@ static void CollisionDetection(struct ds_Dynamics *pipeline)
     {
         if (!ds_IslandIdNullCheck(pipeline->island_to_split))
         {
-    	    ProfZoneNamed("Island Split");
-    
             const u32 split_index = ds_IslandIdIndex(pipeline->island_to_split);
             if (ds_PoolSlotAllocated(pipeline->island_pool.buf + split_index) 
                     && ds_IslandIdEqual(pipeline->island_to_split, pipeline->island_pool.buf[split_index].id))
             {
                 ds_IslandSplit(pipeline, split_index);
             }
-    
-    	    ProfZoneEnd;
         }
     }
 }
