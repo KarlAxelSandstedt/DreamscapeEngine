@@ -343,7 +343,7 @@ void ds_IslandRemove(struct ds_Dynamics *pipeline, const u32 island_index)
 
 struct ds_PartialIsland
 {
-    u32 component;
+    u32 parent;
 };
 
 struct ds_PartialIslandMember
@@ -368,14 +368,10 @@ struct ds_IslandSplitState
 
 #define DS_PARTIAL_ISLAND_VISITED_BIT   ((u32) 1 << 31)
 
-/* Push the split's arrays for island onto mem and start with no partial island; fatal if mem is too small */
 static struct ds_IslandSplitState ds_IslandSplitStateAlloc(struct arena *mem, const struct ds_Dynamics *pipeline, const u32 island)
 {
     const struct ds_Island *split = pipeline->island_pool.buf + island;
 
-    /* ZERO island is reserved for denoting no-island. island.component == 0 means it is
-     * root component, and any islands with component != 0, is a sub-component of partial
-     * island indexed by component.*/
     struct ds_IslandSplitState s =
     {
         .partial_count = 1,
@@ -386,7 +382,7 @@ static struct ds_IslandSplitState ds_IslandSplitStateAlloc(struct arena *mem, co
         .island = island,
     };
     s.partial = ArenaPush(mem, (split->body_list.count+1)*sizeof(struct ds_PartialIsland));
-    s.body_to_partial = ArenaPushZero(mem, split->body_list.count*sizeof(struct ds_PartialIslandMember));
+    s.body_to_partial = ArenaPush(mem, split->body_list.count*sizeof(struct ds_PartialIslandMember));
     s.contact_to_partial = ArenaPush(mem, split->contact_list.count*sizeof(struct ds_PartialIslandMember));
     s.joint_to_partial = ArenaPush(mem, split->joint_list.count*sizeof(struct ds_PartialIslandMember));
 
@@ -399,60 +395,78 @@ static struct ds_IslandSplitState ds_IslandSplitStateAlloc(struct arena *mem, co
     return s;
 }
 
-/* Return the component partial island p belongs to; shortens the fused chain it walks */
-static u32 ds_PartialIslandComponent(struct ds_PartialIsland *partial, u32 p)
+static u32 ds_PartialIslandFindRoot(struct ds_PartialIsland *partial, const u32 p)
 {
-    while (partial[p].component)
+    u32 root = p;
+    while (partial[root].parent)
     {
-        const u32 fused = partial[p].component;
-        if (!partial[fused].component)
-        {
-            return fused;
-        }
-        partial[p].component = partial[fused].component;
-        p = partial[fused].component;
+        root = partial[root].parent;
     }
-    return p;
+    return root;
 }
 
-/* Return the body's index in body_to_partial; maps it on its first visit */
-static u32 ds_IslandSplitBody(struct ds_IslandSplitState *s, struct ds_Dynamics *pipeline, const u32 body)
+static u32 ds_PartialIslandConnect(struct ds_IslandSplitState *s, const u32 p0, const u32 p1)
+{
+    const u32 root0 = ds_PartialIslandFindRoot(s->partial, p0);
+    const u32 root1 = ds_PartialIslandFindRoot(s->partial, p1);
+    const u32 root_lower = U32Min(root0, root1);
+    const u32 root_upper = U32Max(root0, root1);
+
+    /*
+     * We shorten future link traversal by linking the partial islands
+     * directly to the common root.
+     */
+    s->partial[p0].parent = root_lower;
+    s->partial[p1].parent = root_lower;
+
+    /*
+     * If root0 != root1, link all partial islands under root0 and root1
+     * by linking root_upper -> root_lower (canonical order, useful later)
+     */
+    s->partial[root_upper].parent = root_lower;
+    s->partial[root_lower].parent = 0; /* Clear any self references */
+    s->fuse_count += (root0 != root1);
+    return root_lower;
+}
+
+/* Return the body's index in body_to_partial and set up its partial island mapping */
+static u32 ds_IslandSplitBodyMap(struct ds_IslandSplitState *s, struct ds_Dynamics *pipeline, const u32 body)
 {
     struct ds_Body *b = pipeline->body_pool.buf + body;
     if (b->island == s->island)
     {
         b->island = DS_PARTIAL_ISLAND_VISITED_BIT | s->body_to_partial_count;
         s->body_to_partial[ s->body_to_partial_count ].index = body;
+        s->body_to_partial[ s->body_to_partial_count ].partial_island = 0;
         s->body_to_partial_count += 1;
     }
     return b->island & ~DS_PARTIAL_ISLAND_VISITED_BIT;
 }
 
 /*
- * Return the partial island of a contact or joint between body[0] and body[1] (static_index: the static body's slot,
- * U32_MAX if both are dynamic); maps unvisited dynamic bodies and fuses their components (counted in fuse_count)
+ * Return the partial island of one of the input bodies, and connect their respective partial
+ * islands if needed. Maps unvisited dynamic bodies to an existing or new island.
  */
 static u32 ds_IslandSplitConstraint(struct ds_IslandSplitState *s, struct ds_Dynamics *pipeline, const u32 body[2], const u32 static_index)
 {
     if (static_index != U32_MAX)
     {
-        const u32 m = ds_IslandSplitBody(s, pipeline, body[1 - static_index]);
+        const u32 m = ds_IslandSplitBodyMap(s, pipeline, body[1 - static_index]);
 
         u32 partial_island = s->body_to_partial[m].partial_island;
         if (!partial_island)
         {
-            /* Begin a new component and island */
             partial_island = s->partial_count;
             s->partial_count += 1;
-            s->partial[ partial_island ].component = 0;
+            s->partial[ partial_island ].parent = 0;
             s->body_to_partial[m].partial_island = partial_island;
         }
         return partial_island;
     }
 
     u32 m[2];
-    m[0] = ds_IslandSplitBody(s, pipeline, body[0]);
-    m[1] = ds_IslandSplitBody(s, pipeline, body[1]);
+    m[0] = ds_IslandSplitBodyMap(s, pipeline, body[0]);
+    m[1] = ds_IslandSplitBodyMap(s, pipeline, body[1]);
 
     const u32 pi[2] =
     {
@@ -463,25 +477,14 @@ static u32 ds_IslandSplitConstraint(struct ds_IslandSplitState *s, struct ds_Dyn
     u32 partial_island = (pi[0]) ? pi[0] : pi[1];
     if (pi[0] && pi[1])
     {
-        /* Begin a two components and islands exist, one partial island
-         * becomes sub-component and points to other component */
-        const u32 component0 = ds_PartialIslandComponent(s->partial, pi[0]);
-        const u32 component1 = ds_PartialIslandComponent(s->partial, pi[1]);
-
-        /* fused entries point to lower indices */
-        partial_island = U32Min(component0, component1);
-        if (component0 != component1)
-        {
-            s->partial[ U32Max(component0, component1) ].component = partial_island;
-            s->fuse_count += 1;
-        }
+        partial_island = ds_PartialIslandConnect(s, pi[0], pi[1]);
     }
     else if (!partial_island)
     {
         /* Begin a new component and island */
         partial_island = s->partial_count;
         s->partial_count += 1;
-        s->partial[ partial_island ].component = 0;
+        s->partial[ partial_island ].parent = 0;
     }
 
     s->body_to_partial[ m[0] ].partial_island = partial_island;
@@ -491,6 +494,45 @@ static u32 ds_IslandSplitConstraint(struct ds_IslandSplitState *s, struct ds_Dyn
 
 void ds_IslandSplit(struct ds_Dynamics *pipeline, const u32 island_to_split)
 {
+    /*
+     *  To minimize memory bandwidth, we only traverse actual constraints in the island.
+     *
+     *  Algorithm idea: We define a partial island as a subset of the underlying island's
+     *  state, i.e. the island is the union of all its partial islands.
+     *
+     *  As we walk the contacts and joints of the island being split:
+     *
+     *      1. We initialize a new partial island whenever none of the bodies in the
+     *      constraint is mapped to one (static bodies never get mapped).
+     *
+     *      2. We map the bodies to an existing partial island whenever at least one
+     *      of them is mapped to one.
+     *
+     *      3. Whenever both bodies are mapped, we find (root0, root1) from their
+     *      respective partial islands partial0, partial1, and determine root_lower < root_upper.
+     *      We then link root_lower <- root_upper, partial0, partial1.
+     *
+     *
+     *                              +----+----------------+
+     *                              |    |                |
+     *                              V    |                |
+     *      Partial Islands:  [ unused | root0 | child1 | root1 | grandchild1 | child2 | ...
+     *                                      A    |   A            |             |
+     *                                      |    |   |            |             |
+     *                                      +----+---|------------|-------------+
+     *                                               |            |
+     *                                               +------------+
+     *
+     *
+     *      4. When all links have been constructed, we flatten the partial island
+     *      array so that partial[p].parent is a real allocated island, shared by
+     *      all partial islands under the same root.
+     *
+     *      5. After all new islands have been set up, the remaining unmapped bodies
+     *      are bodies without contacts or joints acting upon them. Each such body
+     *      gets its own island.
+     */
+
     ProfZone;
 
     struct arena *mem = pipeline->runtime.worker[ds_ThreadSelfIndex()].frame;
@@ -530,12 +572,14 @@ void ds_IslandSplit(struct ds_Dynamics *pipeline, const u32 island_to_split)
         ProfZoneEnd;
     }
 
+    /* If the new island count is 1, no split happens and we must reset body->island */
     const u32 component_count = (s.partial_count - 1) - s.fuse_count + (split->body_list.count - s.body_to_partial_count);
     if (component_count <= 1)
     {
         for (u32 i = 0; i < s.body_to_partial_count; ++i)
         {
-            pipeline->body_pool.buf[ s.body_to_partial[i].index ].island = island_to_split;
+            const u32 body = s.body_to_partial[i].index;
+            pipeline->body_pool.buf[body].island = island_to_split;
         }
         split->constraint_remove_count = 0;
         goto end;
@@ -544,58 +588,38 @@ void ds_IslandSplit(struct ds_Dynamics *pipeline, const u32 island_to_split)
     struct DLL body_list = split->body_list;
     ds_IslandRemove(pipeline, island_to_split);
 
+    /* Remap every partial island to a new real island index */
+    for (u32 p = 1; p < s.partial_count; ++p)
     {
-        ProfZoneNamed("Component Array Walk");
-        /* a component gets a new island; a fused partial island takes the island of the lower index it points to */
-        for (u32 p = 1; p < s.partial_count; ++p)
-        {
-            if (s.partial[p].component == 0)
-            {
-                s.partial[p].component = ds_IslandAlloc(pipeline, SOLVER_SET_ACTIVE).index;
-            }
-            else
-            {
-                s.partial[p].component = s.partial[ s.partial[p].component ].component;
-            }
-        }
-        ProfZoneEnd;
+        const u32 parent = s.partial[p].parent;
+        s.partial[p].parent = (parent == 0)
+                            ? ds_IslandAlloc(pipeline, SOLVER_SET_ACTIVE).index
+                            : s.partial[ parent ].parent;
     }
 
+    for (u32 i = 0; i < s.body_to_partial_count; ++i)
     {
-        ProfZoneNamed("Body Array Walk");
-        for (u32 i = 0; i < s.body_to_partial_count; ++i)
-        {
-            const u32 bi = s.body_to_partial[i].index;
-            DLLRemove(body_list, pipeline->body_pool.buf, bi, island_body);
-            ds_IslandAddBody(pipeline, s.partial[ s.body_to_partial[i].partial_island ].component, bi);
-        }
-        ProfZoneEnd;
+        const u32 bi = s.body_to_partial[i].index;
+        DLLRemove(body_list, pipeline->body_pool.buf, bi, island_body);
+        ds_IslandAddBody(pipeline, s.partial[ s.body_to_partial[i].partial_island ].parent, bi);
     }
 
+    for (u32 i = 0; i < s.contact_to_partial_count; ++i)
     {
-        ProfZoneNamed("Contact Array Walk");
-        for (u32 i = 0; i < s.contact_to_partial_count; ++i)
-        {
-            const u32 ci = s.contact_to_partial[i].index;
-            const u32 island_index = s.partial[ s.contact_to_partial[i].partial_island ].component;
-            struct ds_Island *island = pipeline->island_pool.buf + island_index;
-            pipeline->contact_pool.buf[ci].island = island_index;
-            DLLAppend(island->contact_list, pipeline->contact_pool.buf, ci, island_contact);
-        }
-        ProfZoneEnd;
+        const u32 ci = s.contact_to_partial[i].index;
+        const u32 island_index = s.partial[ s.contact_to_partial[i].partial_island ].parent;
+        struct ds_Island *island = pipeline->island_pool.buf + island_index;
+        pipeline->contact_pool.buf[ci].island = island_index;
+        DLLAppend(island->contact_list, pipeline->contact_pool.buf, ci, island_contact);
     }
 
+    for (u32 i = 0; i < s.joint_to_partial_count; ++i)
     {
-        ProfZoneNamed("Joint Array Walk");
-        for (u32 i = 0; i < s.joint_to_partial_count; ++i)
-        {
-            const u32 ji = s.joint_to_partial[i].index;
-            const u32 island_index = s.partial[ s.joint_to_partial[i].partial_island ].component;
-            struct ds_Island *island = pipeline->island_pool.buf + island_index;
-            pipeline->joint_pool.buf[ji].island = island_index;
-            DLLAppend(island->joint_list, pipeline->joint_pool.buf, ji, island_joint);
-        }
-        ProfZoneEnd;
+        const u32 ji = s.joint_to_partial[i].index;
+        const u32 island_index = s.partial[ s.joint_to_partial[i].partial_island ].parent;
+        struct ds_Island *island = pipeline->island_pool.buf + island_index;
+        pipeline->joint_pool.buf[ji].island = island_index;
+        DLLAppend(island->joint_list, pipeline->joint_pool.buf, ji, island_joint);
     }
 
     /* the bodies left in the old list have no contact or joint: an island each */
