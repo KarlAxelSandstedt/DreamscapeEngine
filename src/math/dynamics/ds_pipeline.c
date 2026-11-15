@@ -1827,14 +1827,6 @@ void ds_DynamicsSleepEnable(struct ds_Dynamics *pipeline)
     }
 
 	pipeline->config.solver.sleep_enabled = 1;
-    for (u32 set_index = 0; set_index < pipeline->solver_set_pool.count_max; ++set_index)
-    {
-        struct ds_SolverSet *set = pipeline->solver_set_pool.buf + set_index;
-        if (ds_PoolSlotAllocated(set))
-        {
-            ds_SolverSetWakeUp(pipeline, set_index);
-        }
-    }
 }
 
 void ds_DynamicsSleepDisable(struct ds_Dynamics *pipeline)

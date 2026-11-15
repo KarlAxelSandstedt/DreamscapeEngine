@@ -2089,9 +2089,8 @@ void			ds_DynamicsValidate(const struct ds_Dynamics *pipeline);
  */
 u32f32 			ds_DynamicsRaycastParameter(const struct ds_Dynamics *pipeline, const struct rayWorld *ray);
 /*
- * Internal: switch sleeping on or off at once and wake every sleeping set; switching off also zeroes every body's
- * rest timer. Callers set config.solver.sleep_enabled instead; ds_DynamicsConfigUpdatePending applies it through
- * these.
+ * Internal: switch sleeping on or off at once; switching off wakes every sleeping set and zeroes every body's rest
+ * timer. Callers set config.solver.sleep_enabled instead; ds_DynamicsConfigUpdatePending applies it through these.
  */
 void 			ds_DynamicsSleepEnable(struct ds_Dynamics *pipeline);
 void 			ds_DynamicsSleepDisable(struct ds_Dynamics *pipeline);

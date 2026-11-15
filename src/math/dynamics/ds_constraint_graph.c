@@ -75,15 +75,14 @@ void ds_CGraphIncreaseSize(struct ds_Dynamics *pipeline)
     }
 }
 
-static u32 ds_CGraphColorNext(struct ds_Dynamics *pipeline, const u32 body[2])
+/* static_index: the static body's slot in body[] (0 or 1), U32_MAX if both bodies are dynamic */
+static u32 ds_CGraphColorNext(struct ds_Dynamics *pipeline, const u32 body[2], const u32 static_index)
 {
     struct ds_CGraph *cg = &pipeline->cgraph;
+    ds_Assert(static_index == U32_MAX || static_index <= 1);
+    ds_Assert(static_index != U32_MAX || (ds_BodyDynamicCheck(pipeline->body_pool.buf + body[0]) && ds_BodyDynamicCheck(pipeline->body_pool.buf + body[1])));
+    ds_Assert(static_index == U32_MAX || (ds_BodyStaticCheck(pipeline->body_pool.buf + body[static_index]) && ds_BodyDynamicCheck(pipeline->body_pool.buf + body[1 - static_index])));
 
-    const struct ds_Body *b0 = pipeline->body_pool.buf + body[0];
-    const struct ds_Body *b1 = pipeline->body_pool.buf + body[1];
-
-    const u32 dynamic_bit[2] = { ds_BodyDynamicBit(b0), ds_BodyDynamicBit(b1) };
-    const u32 dynamic_dynamic = dynamic_bit[0] & dynamic_bit[1];
     u32 color = CG_SERIAL_COLOR;
 
     /*
@@ -91,7 +90,7 @@ static u32 ds_CGraphColorNext(struct ds_Dynamics *pipeline, const u32 body[2])
      * constraints of such bodies having the same color, hence we skip updating the body_bitset for
      * static bodies. Furthermore, we don't care about the body_bitset for CG_SERIAL_COLOR either.
      */
-    if (dynamic_dynamic)
+    if (static_index == U32_MAX)
     {
         for (u32 i = CG_DYNAMIC_COLOR_FIRST; i <= CG_DYNAMIC_COLOR_LAST; ++i)
         {
@@ -108,8 +107,7 @@ static u32 ds_CGraphColorNext(struct ds_Dynamics *pipeline, const u32 body[2])
     }
     else
     {
-        ds_Assert(dynamic_bit[0] || dynamic_bit[1]);
-        const u32 dynamic_body = dynamic_bit[1];
+        const u32 dynamic_body = 1 - static_index;
         for (u32 i = CG_STATIC_COLOR_FIRST; i <= CG_STATIC_COLOR_LAST; ++i)
         {
             if (ds_BitSetGet(&cg->color[i].body_bitset, body[dynamic_body]))
@@ -128,7 +126,8 @@ static u32 ds_CGraphColorNext(struct ds_Dynamics *pipeline, const u32 body[2])
 
 struct ds_JointSim *ds_CGraphJointAdd(struct ds_Dynamics *pipeline, struct ds_Joint *joint)
 {    
-    joint->color = ds_CGraphColorNext(pipeline, joint->body);
+    const u32 static_index = (ds_JointStaticCheck(joint)) ? 1 : U32_MAX;
+    joint->color = ds_CGraphColorNext(pipeline, joint->body, static_index);
     struct ds_CGraph *cg = &pipeline->cgraph;
     struct ds_CGraphColor *color = pipeline->cgraph.color + joint->color;
     struct slot slot = ds_CPoolPush(color->joint_sim_pool);
@@ -172,7 +171,8 @@ void ds_CGraphContactAdd(struct ds_Dynamics *pipeline, struct ds_Contact *contac
     ds_Assert(contact->set != SOLVER_SET_NULL)
     ds_Assert(contact->color == CG_INVALID_COLOR);
 
-    contact->color = ds_CGraphColorNext(pipeline, contact->body);
+    const u32 static_index = (ds_ContactStaticCheck(contact)) ? ds_ContactStaticIndex(contact) : U32_MAX;
+    contact->color = ds_CGraphColorNext(pipeline, contact->body, static_index);
     struct ds_CGraphColor *color = pipeline->cgraph.color + contact->color;
 
     contact->compute = ds_CPoolPush(color->contact_pool).index;
