@@ -58,8 +58,8 @@ Example (repetition testing):
 
 /*************************** configs ***************************/
 
-#define DS_NUMERICS_CONFIG_VERSION  2u
-#define DS_NUMERICS_CONFIG_BITS     (32 + 10*32)
+#define DS_NUMERICS_CONFIG_VERSION  3u
+#define DS_NUMERICS_CONFIG_BITS     (32 + 12*32)
 
 u64 ds_NumericsConfigSerializeBitPackedSize(const struct ds_NumericsConfig *config)
 {
@@ -79,6 +79,8 @@ void ds_NumericsConfigSerializeBitPacked(struct SS *ss, const struct ds_Numerics
     SSWriteU64Partial(ss, (b32) { .f = config->sat_face_bias }.u, 32);
     SSWriteU64Partial(ss, (b32) { .f = config->sat_cache_tolerance }.u, 32);
     SSWriteU64Partial(ss, config->gjk_max_iterations, 32);
+    SSWriteU64Partial(ss, config->geometric_mover_max_iterations, 32);
+    SSWriteU64Partial(ss, (b32) { .f = config->geometric_mover_tolerance }.u, 32);
     SSWriteU64Partial(ss, (b32) { .f = config->proxy_margin_min }.u, 32);
     SSWriteU64Partial(ss, (b32) { .f = config->proxy_margin_scale }.u, 32);
 }
@@ -100,6 +102,8 @@ u32 ds_NumericsConfigTryDeserializeBitPacked(struct SS *ss, struct ds_NumericsCo
     config->sat_face_bias = (b32) { .u = (u32) SSReadU64Partial(&ss_mut, 32) }.f;
     config->sat_cache_tolerance = (b32) { .u = (u32) SSReadU64Partial(&ss_mut, 32) }.f;
     config->gjk_max_iterations = (u32) SSReadU64Partial(&ss_mut, 32);
+    config->geometric_mover_max_iterations = (u32) SSReadU64Partial(&ss_mut, 32);
+    config->geometric_mover_tolerance = (b32) { .u = (u32) SSReadU64Partial(&ss_mut, 32) }.f;
     config->proxy_margin_min = (b32) { .u = (u32) SSReadU64Partial(&ss_mut, 32) }.f;
     config->proxy_margin_scale = (b32) { .u = (u32) SSReadU64Partial(&ss_mut, 32) }.f;
     *config = ds_NumericsConfigDerive(config);
@@ -1451,6 +1455,7 @@ u64 ds_DynamicsSerializeSize(const struct ds_Dynamics *pipeline)
 		+ ds_BitSetSerializeSize(&pipeline->shape_dynamic_usage_set)
 		+ BVHSerializeSize(&pipeline->dynamic_bvh)
 		+ BVHSerializeSize(&pipeline->static_bvh)
+		+ BVHSerializeSize(&pipeline->kinematic_bvh)
 		+ ds_BitSetSerializeSize(&pipeline->shape_dirty_set)
 		+ ds_ProxyQueryCPoolSerializeSize(&pipeline->dirty_shape_query)
 		+ ds_PhysicsEventPoolSerializeSize(&pipeline->event_pool)
@@ -1530,6 +1535,7 @@ void ds_DynamicsSerialize(struct SS *ss, const struct ds_Dynamics *pipeline)
 	ds_BitSetSerialize(ss, &pipeline->shape_dynamic_usage_set);
 	BVHSerialize(ss, &pipeline->dynamic_bvh);
 	BVHSerialize(ss, &pipeline->static_bvh);
+	BVHSerialize(ss, &pipeline->kinematic_bvh);
 	ds_BitSetSerialize(ss, &pipeline->shape_dirty_set);
 	ds_ProxyQueryCPoolSerialize(ss, &pipeline->dirty_shape_query);
 	ds_PhysicsEventPoolSerialize(ss, &pipeline->event_pool);
@@ -1643,6 +1649,7 @@ u32 ds_DynamicsTryDeserialize(struct arena *mem, struct SS *ss, struct ds_Dynami
 		|| !ds_BitSetTryDeserialize(NULL, ss, &pipeline->shape_dynamic_usage_set, GROWABLE)
 		|| !BVHTryDeserialize(NULL, ss, &pipeline->dynamic_bvh, GROWABLE)
 		|| !BVHTryDeserialize(NULL, ss, &pipeline->static_bvh, GROWABLE)
+		|| !BVHTryDeserialize(NULL, ss, &pipeline->kinematic_bvh, GROWABLE)
 		|| !ds_BitSetTryDeserialize(NULL, ss, &pipeline->shape_dirty_set, GROWABLE)
 		|| !ds_ProxyQueryCPoolTryDeserialize(NULL, ss, &pipeline->dirty_shape_query, GROWABLE)
 		|| !ds_PhysicsEventPoolTryDeserialize(NULL, ss, &pipeline->event_pool, GROWABLE)

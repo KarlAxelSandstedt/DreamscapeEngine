@@ -238,6 +238,7 @@ struct ds_Dynamics ds_DynamicsAlloc(const struct ds_DynamicsConfig *config, cons
     pipeline.shape_dynamic_usage_set = ds_BitSetAlloc(NULL, initial_size, 0, GROWABLE);
 	pipeline.dynamic_bvh = DBVHAlloc(NULL, 2*initial_size, GROWABLE);
 	pipeline.static_bvh = DBVHAlloc(NULL, 2*initial_size, GROWABLE);
+	pipeline.kinematic_bvh = DBVHAlloc(NULL, 2*initial_size, GROWABLE);
     pipeline.shape_dirty_set = ds_BitSetAlloc(NULL, initial_size, 0, GROWABLE);
     ds_CPoolAlloc(NULL, pipeline.dirty_shape_query, initial_size, GROWABLE);
 
@@ -290,6 +291,7 @@ void ds_DynamicsDealloc(struct ds_Dynamics *pipeline)
     ds_CPoolDealloc(pipeline->dirty_shape_query);
 	BVHFree(&pipeline->dynamic_bvh);
 	BVHFree(&pipeline->static_bvh);
+	BVHFree(&pipeline->kinematic_bvh);
     ds_PoolDealloc(pipeline->contact_pool);
     ds_CPoolDealloc(pipeline->contact_narrow_pool);
     ds_HashMapDealloc(&pipeline->contact_map);
@@ -376,6 +378,7 @@ void ds_DynamicsFlush(struct ds_Dynamics *pipeline)
     ds_CPoolFlush(pipeline->dirty_shape_query);
 	DBVHFlush(&pipeline->dynamic_bvh);
 	DBVHFlush(&pipeline->static_bvh);
+	DBVHFlush(&pipeline->kinematic_bvh);
 	ds_PoolFlush(pipeline->shape_pool);
 
 	ds_PoolFlush(pipeline->event_pool);
@@ -439,7 +442,7 @@ u32 ds_BroadJobPhaseDispatch(const ds_JobId job)
                 const struct ds_Shape *shape = pipeline->shape_pool.buf + si;
                 const struct BVHNode *node = pipeline->dynamic_bvh.pool.buf + shape->proxy;
                 const struct BVHQuerySet dynamic_query = BVHQueryAndFilterOnBody(tmp, &pipeline->dynamic_bvh, node, dirty);
-                const struct BVHQuerySet static_query = BVHQuery(tmp, &pipeline->static_bvh, node);
+                const struct BVHQuerySet static_query = BVHQuery(tmp, &pipeline->static_bvh, &node->bbox);
                 
                 query[si].dynamic_count = 0;
                 query[si].dynamic_query = ArenaPushPacked(frame, dynamic_query.count*sizeof(u32));

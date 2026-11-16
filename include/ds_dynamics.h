@@ -99,6 +99,9 @@ struct ds_NumericsConfig
     /* Max GJK iterations (support point evaluations) per distance query; at least 1 */
     u32 gjk_max_iterations;
 
+    u32 geometric_mover_max_iterations;
+    f32 geometric_mover_tolerance;
+
     f32 proxy_margin_min;
     f32 proxy_margin_scale;
 };
@@ -2037,6 +2040,7 @@ struct ds_Dynamics
     struct ds_BitSet                shape_dynamic_usage_set;/* Shapes in use */
 	struct BVH 		                dynamic_bvh;            /* bvh of dynamic shapes */
 	struct BVH 		                static_bvh;             /* bvh of static shapes */
+	struct BVH 		                kinematic_bvh;          /* bvh of kinematic shapes (empty: kinematic shapes are in static_bvh for now) */
 
     struct ds_BitSet                shape_dirty_set;        /* the shapes whose proxy box changed since the last broadphase: they query for pairs, then the set is cleared */
     ds_CPool(ds_ProxyQuery)         dirty_shape_query;      /* per shape index: the broadphase's new pairs of the frame */
@@ -2102,8 +2106,31 @@ void            ds_DynamicsPrintUsage(const struct ds_Dynamics *pipeline);
 #ifdef DS_PHYSICS_DEBUG
 #define PHYSICS_PIPELINE_VALIDATE(pipeline)	ds_DynamicsValidate(pipeline)
 #else
-#define PHYSICS_PIPELINE_VALIDATE(pipeline)	
+#define PHYSICS_PIPELINE_VALIDATE(pipeline)
 #endif
+
+/*
+ds_GeometricMover
+=================
+ds_GeometricMover is a capsule with a velocity and position. Calls to
+ds_DynamicsGeometricMover update the capsule's position by iteratively
+solving its overlap with rigid bodies and minimizing its distance to
+
+    target = position + tick*velocity.
+
+Any dynamic bodies the mover touches have an impulse applied to them
+based on mover state.
+
+//TODO how is velocity affected...
+*/
+struct ds_GeometricMover
+{
+    v3f64           position;
+    v3              velocity;
+    struct capsule  capsule;
+};
+
+void ds_DynamicsGeometricMover(struct ds_Dynamics *dynamics, struct ds_GeometricMover *mover, const f32 tick);
 
 /**************** PHYISCS PIPELINE INTERNAL API ****************/
 

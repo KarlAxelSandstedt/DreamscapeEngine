@@ -47,6 +47,7 @@ extern "C" {
 #include "ds_binary_tree.h"
 #include "ds_bitset.h"
 
+DEFINE_ARRAY_STRUCT(plane);
 
 /********************************** BVH **********************************/
 
@@ -95,8 +96,8 @@ void                BVHPropagateBoundingBoxesFromLeaves(struct BVH *bvh);
 void 		        BVHValidate(const struct BVH *bvh);
 /* return the tree's cost, a quality measure (lower is better) */
 f32 		        BVHCost(const struct BVH *bvh);
-/* the shapes whose leaf boxes overlap node's box */
-struct BVHQuerySet BVHQuery(struct arena *mem, const struct BVH *bvh, const struct BVHNode *node);
+/* the shapes whose leaf boxes overlap bbox */
+struct BVHQuerySet BVHQuery(struct arena *mem, const struct BVH *bvh, const struct aabb *bbox);
 /*
  * BVHQuery for the broadphase, each pair reported once by one of its shapes and never two shapes of one body: a
  * shape with a body index > node's (bt_child[1]), or a shape of another body whose bit in dirty is clear. node's

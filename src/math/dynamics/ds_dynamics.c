@@ -39,3 +39,4 @@
 #include "ds_solver_set.c"
 #include "ds_dynamics_draw.c"
 #include "ds_snapshot.c"
+#include "ds_geometric_mover.c"

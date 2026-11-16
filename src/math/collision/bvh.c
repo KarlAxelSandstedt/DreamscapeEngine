@@ -457,7 +457,7 @@ void DBVHRemove(struct BVH *bvh, const u32 index)
 	}
 }
 
-struct BVHQuerySet BVHQuery(struct arena *mem, const struct BVH *bvh, const struct BVHNode *node)
+struct BVHQuerySet BVHQuery(struct arena *mem, const struct BVH *bvh, const struct aabb *bbox)
 {
     if (BTLeafCount(bvh->bt) < 1) { return (struct BVHQuerySet) { 0 }; }
 	const struct BVHNode *nodes = bvh->pool.buf;
@@ -474,7 +474,7 @@ struct BVHQuerySet BVHQuery(struct arena *mem, const struct BVH *bvh, const stru
     u32 *node_stack = stack_arr.addr;
     u32 sc = 0;
 
-    if (AabbTest(&node->bbox, &nodes[bvh->bt.root].bbox))
+    if (AabbTest(bbox, &nodes[bvh->bt.root].bbox))
     {
        node_stack[ sc++ ] = bvh->bt.root;
     }
@@ -501,11 +501,11 @@ struct BVHQuerySet BVHQuery(struct arena *mem, const struct BVH *bvh, const stru
             }
         	const struct BVHNode *left = nodes + n->bt_child[0];
         	const struct BVHNode *right = nodes + n->bt_child[1];
-        	if (AabbTest(&node->bbox, &right->bbox))
+        	if (AabbTest(bbox, &right->bbox))
         	{
         		node_stack[ sc++ ] = n->bt_child[1];
         	}
-        	if (AabbTest(&node->bbox, &left->bbox))
+        	if (AabbTest(bbox, &left->bbox))
             {
         		node_stack[ sc++ ] = n->bt_child[0];
             }

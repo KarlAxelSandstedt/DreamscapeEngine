@@ -60,7 +60,7 @@ static u32 BVHTestQueriesAgree(struct arena *mem, const struct BVH *bvh, const s
     if (filter) { ds_BitSetSet(dirty, q, 1); }
     const struct BVHQuerySet set = (filter)
         ? BVHQueryAndFilterOnBody(mem, bvh, &probe, dirty)
-        : BVHQuery(mem, bvh, &probe);
+        : BVHQuery(mem, bvh, &probe.bbox);
 
     u8 found[BVH_TEST_LEAF_MAX] = { 0 };
     u32 ok = 1;
