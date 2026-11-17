@@ -1533,11 +1533,8 @@ struct c_MeshContactHelper
     struct aabb                 bbox;       /* the convex shape's box in mesh space */
     struct aabb                 local;      /* the convex shape's box in its own frame */
 
-    const struct BVHNode *      node;
-    const struct BVHNode **     stack;
-    u32                         stack_count;
-    u32                         leaf_next;  /* the current leaf's remaining triangles: leaf_next .. leaf_last */
-    u32                         leaf_last;
+    ds_Array(u32)               tri;        /* MeshQuery of bbox */
+    u32                         tri_next;
 
     struct arena *              tmp_records;
     struct arena *              tmp;
@@ -1593,16 +1590,8 @@ static void c_MeshContactInit(struct c_MeshContactHelper *helper, const struct c
     /* TODO(perf, audit E2): 2 scratch arenas here (records, the rest), c_MeshHullTriangles a third */
     helper->tmp_records = ArenaPushScratch();
     helper->tmp = ArenaPushScratch();
-    helper->node = helper->mesh->bvh.pool.buf;
-    helper->stack = ArenaPush(helper->tmp, (helper->mesh->depth + 1)*sizeof(struct BVHNode *));
-    helper->stack_count = 0;
-    helper->leaf_next = 1;
-    helper->leaf_last = 0;
-    const struct BVHNode *root = helper->node + helper->mesh->bvh.bt.root;
-    if (AabbTest(&helper->bbox, &root->bbox))
-    {
-        helper->stack[helper->stack_count++] = root;
-    }
+    helper->tri = MeshQuery(helper->tmp, helper->mesh, &helper->bbox);
+    helper->tri_next = 0;
 
     struct memArray records = ArenaPushAlignedAll(helper->tmp_records, sizeof(struct c_MeshTri), 8);
     helper->record = records.addr;
@@ -1617,38 +1606,9 @@ static void c_MeshContactInit(struct c_MeshContactHelper *helper, const struct c
  */
 static u32 c_MeshContactNext(struct c_MeshContactHelper *helper, u32 *tri_index, v3 tri[3])
 {
-    for (;;)
+    while (helper->tri_next < helper->tri.length)
     {
-        while (helper->leaf_next > helper->leaf_last)
-        {
-            if (helper->stack_count == 0)
-            {
-                return 0;
-            }
-
-            const struct BVHNode *node = helper->stack[--helper->stack_count];
-            if (BTLeafCheck(node))
-            {
-                helper->leaf_next = node->bt_child[0];
-                helper->leaf_last = node->bt_child[0] + node->bt_child[1] - 1;
-                continue;
-            }
-
-            const struct BVHNode *left = helper->node + node->bt_child[0];
-            const struct BVHNode *right = helper->node + node->bt_child[1];
-            if (AabbTest(&helper->bbox, &right->bbox))
-            {
-                ds_Assert(helper->stack_count < helper->mesh->depth + 1);
-                helper->stack[helper->stack_count++] = right;
-            }
-            if (AabbTest(&helper->bbox, &left->bbox))
-            {
-                ds_Assert(helper->stack_count < helper->mesh->depth + 1);
-                helper->stack[helper->stack_count++] = left;
-            }
-        }
-
-        *tri_index = helper->mesh->leaf_tri[helper->leaf_next++];
+        *tri_index = helper->tri.buf[helper->tri_next++];
         const u32 *v = helper->mesh->tri[*tri_index].buf;
         for (u32 i = 0; i < 3; ++i)
         {
@@ -1662,6 +1622,8 @@ static u32 c_MeshContactNext(struct c_MeshContactHelper *helper, u32 *tri_index,
             return 1;
         }
     }
+
+    return 0;
 }
 
 static struct c_MeshTri *c_MeshContactPush(struct c_MeshContactHelper *helper, const u32 tri_index)
