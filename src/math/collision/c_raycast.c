@@ -437,7 +437,7 @@ f32 AabbRaycastParameter(const struct aabb *aabb, const struct ray *ray)
 		: F32_INFINITY;
 }
 
-f32 TriMeshBVHRaycastParameter(const struct triMeshBVH *mesh_bvh, const struct ray *ray)
+f32 MeshRaycastParameter(const struct mesh *mesh, const struct ray *ray)
 {
 	ProfZone;
 	ds_Assert(V3Dot(ray->dir, ray->dir) > 0.0f);
@@ -447,7 +447,7 @@ f32 TriMeshBVHRaycastParameter(const struct triMeshBVH *mesh_bvh, const struct r
 
 	/* nodes are popped in order of their box's entry t: stop once the best hit is nearer than the next box */
 	struct arena *mem_tmp = ArenaPushScratch();
-	struct BVHRaycastInfo info = BVHRaycastInit(mem_tmp, &mesh_bvh->bvh, ray);
+	struct BVHRaycastInfo info = BVHRaycastInit(mem_tmp, &mesh->bvh, ray);
 	while (info.hit_queue.count)
 	{
 		const u32f32 tuple = MQPop(&info.hit_queue);
@@ -462,12 +462,11 @@ f32 TriMeshBVHRaycastParameter(const struct triMeshBVH *mesh_bvh, const struct r
 			const u32 tri_last = tri_first + info.node[tuple.u].bt_child[1] - 1;
 			for (u32 i = tri_first; i <= tri_last; ++i)
 			{
-				const struct triMesh *mesh = mesh_bvh->mesh;
-				const v3u32 tri = mesh->tri[mesh_bvh->tri[i]];
+				const v3u32 tri = mesh->tri[mesh->leaf_tri[i]];
 				const f32 t = TriRaycastParameterEx(&woop, mesh->v[tri.x], mesh->v[tri.y], mesh->v[tri.z]);
 				if (t < info.hit.f)
 				{
-					info.hit = u32f32_inline(mesh_bvh->tri[i], t);
+					info.hit = u32f32_inline(mesh->leaf_tri[i], t);
 				}
 			}
 		}
@@ -521,14 +520,14 @@ f32 HullRaycastWorldParameter(const struct dcel *hull, const ds_TransformWorld *
 	return HullRaycastParameter(hull, &local);
 }
 
-f32 TriMeshBVHRaycastWorldParameter(const struct triMeshBVH *mesh_bvh, const ds_TransformWorld *transform, const struct rayWorld *ray)
+f32 MeshRaycastWorldParameter(const struct mesh *mesh, const ds_TransformWorld *transform, const struct rayWorld *ray)
 {
 	const struct ray local =
 	{
 		.origin = ds_TransformWorldPointToLocal(transform, ray->origin),
 		.dir = QUnitRotate(QConj(transform->rotation), ray->dir),
 	};
-	return TriMeshBVHRaycastParameter(mesh_bvh, &local);
+	return MeshRaycastParameter(mesh, &local);
 }
 
 f32 AabbRaycastWorldParameter(const struct aabb *aabb, const ds_TransformWorld *transform, const struct rayWorld *ray)
@@ -569,8 +568,8 @@ f32 c_HullRaycastParameter(const struct c_Shape *shape, const ds_TransformWorld 
 	return HullRaycastWorldParameter(&shape->hull, transform, ray);
 }
 
-f32 c_TriMeshBVHRaycastParameter(const struct c_Shape *shape, const ds_TransformWorld *transform, const struct rayWorld *ray)
+f32 c_MeshRaycastParameter(const struct c_Shape *shape, const ds_TransformWorld *transform, const struct rayWorld *ray)
 {
 	ds_Assert(shape->type == C_SHAPE_TRI_MESH);
-	return TriMeshBVHRaycastWorldParameter(&shape->mesh_bvh, transform, ray);
+	return MeshRaycastWorldParameter(&shape->mesh, transform, ray);
 }

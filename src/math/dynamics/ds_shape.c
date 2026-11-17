@@ -216,8 +216,8 @@ struct aabb ds_ShapeWorldBbox(const struct ds_Dynamics *pipeline, const struct d
 		// mesh shape to have position 0 and no rotation.
         ds_Assert(V3Length(shape->t_local.position) == 0.0f);
         ds_Assert(shape->t_local.rotation.w == 1.0f);
-		const struct BVHNode *node = cshape->mesh_bvh.bvh.pool.buf;
-		const struct aabb bbox = BboxRotate(node[cshape->mesh_bvh.bvh.bt.root].bbox, rot);
+		const struct BVHNode *node = cshape->mesh.bvh.pool.buf;
+		const struct aabb bbox = BboxRotate(node[cshape->mesh.bvh.bt.root].bbox, rot);
 		min = bbox.min;
 		max = bbox.max;
 	}
@@ -235,7 +235,7 @@ static u32 (*c_shape_tests[C_SHAPE_COUNT][C_SHAPE_COUNT])(const struct c_Shape *
 	{ c_SphereTest, 		    0, 				            0, 			            0, },
 	{ c_CapsuleSphereTest,	    c_CapsuleTest, 			    0, 			            0, },
 	{ c_HullSphereTest, 		c_HullCapsuleTest,		    c_HullTest,		        0, },
-	{ c_TriMeshBVHSphereTest,   c_TriMeshBVHCapsuleTest,    c_TriMeshBVHHullTest,	0, },
+	{ c_MeshSphereTest,         c_MeshCapsuleTest,          c_MeshHullTest,         0, },
 };
 
 static f32 (*c_distance_methods[C_SHAPE_COUNT][C_SHAPE_COUNT])(v3f64 *c0, v3f64 *c1, const struct c_Shape *, const ds_TransformWorld *, const struct c_Shape *, const ds_TransformWorld *) =
@@ -243,7 +243,7 @@ static f32 (*c_distance_methods[C_SHAPE_COUNT][C_SHAPE_COUNT])(v3f64 *c0, v3f64 
 	{ c_SphereDistance,	 	        0,				                0, 			                0, },
 	{ c_CapsuleSphereDistance,	    c_CapsuleDistance, 		        0, 			                0, },
 	{ c_HullSphereDistance, 		c_HullCapsuleDistance, 		    c_HullDistance,		        0, },
-	{ c_TriMeshBVHSphereDistance,	c_TriMeshBVHCapsuleDistance, 	c_TriMeshBVHHullDistance,	0, },
+	{ c_MeshSphereDistance,         c_MeshCapsuleDistance,          c_MeshHullDistance,         0, },
 };
 
 static f32 (*c_raycast_parameter_methods[C_SHAPE_COUNT])(const struct c_Shape *, const ds_TransformWorld *, const struct rayWorld *) =
@@ -251,7 +251,7 @@ static f32 (*c_raycast_parameter_methods[C_SHAPE_COUNT])(const struct c_Shape *,
 	c_SphereRaycastParameter,
 	c_CapsuleRaycastParameter,
 	c_HullRaycastParameter,
-	c_TriMeshBVHRaycastParameter,
+	c_MeshRaycastParameter,
 };
 
 u32 ds_ShapeTest(const struct ds_Dynamics *pipeline, const struct ds_Shape *s0, const struct ds_Shape *s1)

@@ -404,12 +404,11 @@ static u64 c_ShapeBlockSizeRequired(const utf8 id, const struct c_Shape *src)
 
         case C_SHAPE_TRI_MESH:
         {
-            const struct triMesh *mesh = src->mesh_bvh.mesh;
-            size += c_ShapeBlockOffset(size, sizeof(struct triMesh));
+            const struct mesh *mesh = &src->mesh;
             size += c_ShapeBlockOffset(size, mesh->v_count*sizeof(v3));
             size += c_ShapeBlockOffset(size, mesh->tri_count*sizeof(v3u32));
-            size += c_ShapeBlockOffset(size, src->mesh_bvh.tri_count*sizeof(u32));
-            size += PowerOfTwoMultipleCeil(size, DS_CACHE_LINE) - size + ((u64) src->mesh_bvh.bvh.pool.length + 1)*sizeof(struct BVHNode);
+            size += c_ShapeBlockOffset(size, mesh->tri_count*sizeof(u32));
+            size += PowerOfTwoMultipleCeil(size, DS_CACHE_LINE) - size + ((u64) mesh->bvh.pool.length + 1)*sizeof(struct BVHNode);
         } break;
 
         default: break;
@@ -438,19 +437,17 @@ static void c_ShapeCopy(struct arena *block, struct c_Shape *shape, const struct
         case C_SHAPE_TRI_MESH:
         {
             /* a built BVH has no holes: slot i of the copy is slot i of the source (unused slots are poisoned) */
-            const struct triMeshBVH *s = &src->mesh_bvh;
+            const struct mesh *s = &src->mesh;
             ds_Assert(s->bvh.pool.count == s->bvh.pool.count_max);
 
-            shape->mesh_bvh = *s;
-            struct triMesh *mesh = ArenaPushMemcpy(block, s->mesh, sizeof(struct triMesh));
-            mesh->v = ArenaPushMemcpy(block, s->mesh->v, s->mesh->v_count*sizeof(v3));
-            mesh->tri = ArenaPushMemcpy(block, s->mesh->tri, s->mesh->tri_count*sizeof(v3u32));
-            shape->mesh_bvh.mesh = mesh;
-            shape->mesh_bvh.tri = ArenaPushMemcpy(block, s->tri, s->tri_count*sizeof(u32));
-            ds_PoolAlloc(block, shape->mesh_bvh.bvh.pool, s->bvh.pool.length, NOT_GROWABLE);
+            shape->mesh = *s;
+            shape->mesh.v = ArenaPushMemcpy(block, s->v, s->v_count*sizeof(v3));
+            shape->mesh.tri = ArenaPushMemcpy(block, s->tri, s->tri_count*sizeof(v3u32));
+            shape->mesh.leaf_tri = ArenaPushMemcpy(block, s->leaf_tri, s->tri_count*sizeof(u32));
+            ds_PoolAlloc(block, shape->mesh.bvh.pool, s->bvh.pool.length, NOT_GROWABLE);
             for (u32 i = 0; i < s->bvh.pool.count_max; ++i)
             {
-                const struct slot node = ds_PoolAdd(shape->mesh_bvh.bvh.pool);
+                const struct slot node = ds_PoolAdd(shape->mesh.bvh.pool);
                 ds_Assert(node.index == i);
                 memcpy(node.address, s->bvh.pool.buf + i, sizeof(struct BVHNode));
             }
@@ -486,10 +483,9 @@ static u32 c_ShapeValidate(const utf8 id, const struct c_Shape *src)
 
         case C_SHAPE_TRI_MESH:
         {
-            const struct triMeshBVH *m = &src->mesh_bvh;
-            if (!m->mesh || !m->mesh->tri_count) { err_str = "mesh without triangles"; }
-            else if (!m->mesh->v || !m->mesh->tri || !m->tri || !m->bvh.pool.buf) { err_str = "mesh without its arrays"; }
-            else if (m->tri_count != m->mesh->tri_count) { err_str = "mesh BVH built over another triangle count"; }
+            const struct mesh *m = &src->mesh;
+            if (!m->tri_count) { err_str = "mesh without triangles"; }
+            else if (!m->v || !m->tri || !m->leaf_tri || !m->bvh.pool.buf) { err_str = "mesh without its arrays"; }
         } break;
 
         default: { err_str = "unknown shape type"; } break;

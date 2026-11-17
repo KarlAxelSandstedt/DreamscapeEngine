@@ -1379,7 +1379,7 @@ struct ds_DynamicsMetrics
     u32 hull_cache_probe_count;     /* Number of existing caches probed         */
     u32 hull_cache_eviction_count;  /* Number of evicted caches                 */
 
-    u32 mesh_call_count;            /* Number of calls to TriMeshBVHHullContact */
+    u32 mesh_call_count;            /* Number of hull-mesh triangle tests       */
     u32 mesh_cache_probe_count;     /* Number of existing caches probed         */
     u32 mesh_cache_eviction_count;  /* Number of evicted caches                 */
 

@@ -425,16 +425,16 @@ struct slot led_CollisionDcelAdd(struct led *led, const utf8 id, struct dcel *dc
     return slot;
 }
 
-struct slot led_CollisionTriMeshBVHAdd(struct led *led, const utf8 id, struct triMeshBVH *mesh_bvh)
+struct slot led_CollisionMeshAdd(struct led *led, const utf8 id, struct mesh *mesh)
 {
     struct slot slot = empty_slot;
-	if (mesh_bvh->mesh->v_count && mesh_bvh->bvh.bt.count)
+	if (mesh->v_count && mesh->bvh.bt.count)
 	{
 		struct c_Shape shape =
 		{
 			.id = id,
 			.type = C_SHAPE_TRI_MESH,
-			.mesh_bvh = *mesh_bvh, 
+			.mesh = *mesh, 
 		};
 
 		slot = led_CollisionShapeAdd(led, &shape);
@@ -775,7 +775,7 @@ struct slot led_RenderMeshAdd(struct led *led, const utf8 id, const utf8 shape)
 				case C_SHAPE_SPHERE: { r_MeshSphere(&led->mem_persistent, mesh, s->sphere.radius, 12); } break;
 				case C_SHAPE_CAPSULE: { r_MeshCapsule(&led->mem_persistent, mesh, s->capsule.half_height, s->capsule.radius, 16); } break;
 				case C_SHAPE_CONVEX_HULL: { r_MeshHull(&led->mem_persistent, mesh, &s->hull); } break;
-				case C_SHAPE_TRI_MESH: { r_MeshTriMesh(&led->mem_persistent, mesh, s->mesh_bvh.mesh); } break;
+				case C_SHAPE_TRI_MESH: { r_MeshTriMesh(&led->mem_persistent, mesh, &s->mesh); } break;
 			}
 		}
 	}
@@ -1491,11 +1491,11 @@ static struct triMesh TriMeshHeightfield(struct arena *mem, const u32 n, const f
 static void led_MeshSceneShapeAdd(struct led *led, const char *id, const enum led_MeshKind kind)
 {
 	struct ds_Window *sys_win = ds_WindowAddress(g_editor->window);
-	struct triMesh *mesh = ArenaPush(&led->mem_persistent, sizeof(struct triMesh));
-	*mesh = TriMeshHeightfield(&led->mem_persistent, 32, 20.0f, kind);
-	struct triMeshBVH *mesh_bvh = ArenaPush(&led->mem_persistent, sizeof(struct triMeshBVH));
-	*mesh_bvh = TriMeshBVHConstruct(&led->mem_persistent, mesh, 8);
-	led_CollisionTriMeshBVHAdd(led, Utf8Cstr(sys_win->ui->mem_frame, id), mesh_bvh);
+	struct triMesh *tri_mesh = ArenaPush(&led->mem_persistent, sizeof(struct triMesh));
+	*tri_mesh = TriMeshHeightfield(&led->mem_persistent, 32, 20.0f, kind);
+	struct mesh *mesh = ArenaPush(&led->mem_persistent, sizeof(struct mesh));
+	*mesh = MeshConstruct(&led->mem_persistent, tri_mesh, 8);
+	led_CollisionMeshAdd(led, Utf8Cstr(sys_win->ui->mem_frame, id), mesh);
 }
 
 /* tri mesh shapes: three heightfields side by side with boxes and spheres dropped on them */
@@ -1696,16 +1696,16 @@ void led_WallSmashSimulationSetup(struct led *led)
 	id = Utf8Cstr(sys_win->ui->mem_frame, "c_dsphere");
     led_CollisionDcelAdd(led, id, c_dsphere);
 
-	struct triMesh *mesh = ArenaPush(&led->mem_persistent, sizeof(struct triMesh));
-	*mesh = TriMeshPerlinNoise(&led->mem_persistent, 64, 200.0f);
-	struct triMeshBVH *mesh_bvh = ArenaPush(&led->mem_persistent, sizeof(struct triMeshBVH));
+	struct triMesh *tri_mesh = ArenaPush(&led->mem_persistent, sizeof(struct triMesh));
+	*tri_mesh = TriMeshPerlinNoise(&led->mem_persistent, 64, 200.0f);
+	struct mesh *mesh = ArenaPush(&led->mem_persistent, sizeof(struct mesh));
 	f32 best_cost = F32_INFINITY;
 	u32 best_bin_count = 8;
 	for (u32 i = 8; i < 16; ++i)
 	{
 		ArenaPushRecord(&led->mem_persistent);
-		*mesh_bvh = TriMeshBVHConstruct(&led->mem_persistent, mesh, i);
-		const f32 cost = BVHCost(&mesh_bvh->bvh);
+		*mesh = MeshConstruct(&led->mem_persistent, tri_mesh, i);
+		const f32 cost = BVHCost(&mesh->bvh);
 		if (cost < best_cost)
 		{
 			best_cost = cost;
@@ -1713,9 +1713,9 @@ void led_WallSmashSimulationSetup(struct led *led)
 		}
 		ArenaPopRecord(&led->mem_persistent);
 	}
-	*mesh_bvh = TriMeshBVHConstruct(&led->mem_persistent, mesh, best_bin_count);
+	*mesh = MeshConstruct(&led->mem_persistent, tri_mesh, best_bin_count);
 	id = Utf8Cstr(sys_win->ui->mem_frame, "c_mesh");
-    led_CollisionTriMeshBVHAdd(led, id, mesh_bvh);
+    led_CollisionMeshAdd(led, id, mesh);
 
     const u32 rb_static = 0;
     const u32 rb_dynamic = 1;

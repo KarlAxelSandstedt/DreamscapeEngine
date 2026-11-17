@@ -256,7 +256,7 @@ The mesh BVH's leaves partition the triangle order [0, tri_count), each leaf's b
 triangle index appears once in tri, the depth is the deepest leaf's, and BVHValidate holds. An empty mesh gives
 the empty hierarchy.
 */
-struct test_Output TriMeshBVHTest(struct test_Environment *env)
+struct test_Output MeshTest(struct test_Environment *env)
 {
     struct test_Output output = { .success = 1, .id = __func__ };
 
@@ -264,32 +264,32 @@ struct test_Output TriMeshBVHTest(struct test_Environment *env)
     {
         ArenaPushRecord(env->mem_1);
         const u32 tri_count = (round == 0) ? 1 : (round == 1) ? 2 : 50 + round * 137;
-        struct triMesh *mesh = ArenaPush(env->mem_1, sizeof(struct triMesh));
-        mesh->v_count = 3 * tri_count;
-        mesh->tri_count = tri_count;
-        mesh->v = ArenaPush(env->mem_1, mesh->v_count*sizeof(v3));
-        mesh->tri = ArenaPush(env->mem_1, tri_count*sizeof(v3u32));
+        struct triMesh *tri_mesh = ArenaPush(env->mem_1, sizeof(struct triMesh));
+        tri_mesh->v_count = 3 * tri_count;
+        tri_mesh->tri_count = tri_count;
+        tri_mesh->v = ArenaPush(env->mem_1, tri_mesh->v_count*sizeof(v3));
+        tri_mesh->tri = ArenaPush(env->mem_1, tri_count*sizeof(v3u32));
         for (u32 i = 0; i < tri_count; ++i)
         {
             const v3 c = V3(RngF32Range(-20.0f, 20.0f), RngF32Range(-2.0f, 2.0f), RngF32Range(-20.0f, 20.0f));
             for (u32 k = 0; k < 3; ++k)
             {
-                mesh->v[3*i + k] = V3Add(c, V3(RngF32Range(-1.0f, 1.0f), RngF32Range(-1.0f, 1.0f), RngF32Range(-1.0f, 1.0f)));
+                tri_mesh->v[3*i + k] = V3Add(c, V3(RngF32Range(-1.0f, 1.0f), RngF32Range(-1.0f, 1.0f), RngF32Range(-1.0f, 1.0f)));
             }
-            mesh->tri[i] = (v3u32) { .buf = { 3*i, 3*i + 1, 3*i + 2 } };
+            tri_mesh->tri[i] = (v3u32) { .buf = { 3*i, 3*i + 1, 3*i + 2 } };
         }
 
-        const struct triMeshBVH mesh_bvh = TriMeshBVHConstruct(env->mem_1, mesh, 8);
-        TEST_NOT_ZERO(mesh_bvh.tri_count == tri_count && mesh_bvh.mesh == mesh);
-        BVHValidate(&mesh_bvh.bvh);
+        const struct mesh mesh = MeshConstruct(env->mem_1, tri_mesh, 8);
+        TEST_NOT_ZERO(mesh.tri_count == tri_count && mesh.v == tri_mesh->v && mesh.tri == tri_mesh->tri && mesh.v_count == tri_mesh->v_count);
+        BVHValidate(&mesh.bvh);
 
         u8 *seen = ArenaPush(env->mem_1, tri_count);
         for (u32 i = 0; i < tri_count; ++i) { seen[i] = 0; }
         u32 covered = 0;
         u32 depth_max = 0;
-        const struct BVHNode *node = mesh_bvh.bvh.pool.buf;
+        const struct BVHNode *node = mesh.bvh.pool.buf;
         BTI it;
-        BTDFInit(it, mesh_bvh.bvh.pool.buf, mesh_bvh.bvh.bt.root);
+        BTDFInit(it, mesh.bvh.pool.buf, mesh.bvh.bt.root);
         do
         {
             const struct BVHNode *n = node + it.at;
@@ -302,24 +302,24 @@ struct test_Output TriMeshBVHTest(struct test_Environment *env)
                 TEST_NOT_ZERO(leaf_count >= 1 && first + leaf_count <= tri_count);
                 for (u32 i = first; i < first + leaf_count; ++i)
                 {
-                    const u32 tri = mesh_bvh.tri[i];
+                    const u32 tri = mesh.leaf_tri[i];
                     TEST_NOT_ZERO(tri < tri_count && !seen[tri]);
                     seen[tri] = 1;
                     covered += 1;
-                    const struct aabb box = BboxTriangle(mesh->v[mesh->tri[tri].x], mesh->v[mesh->tri[tri].y], mesh->v[mesh->tri[tri].z]);
+                    const struct aabb box = BboxTriangle(tri_mesh->v[tri_mesh->tri[tri].x], tri_mesh->v[tri_mesh->tri[tri].y], tri_mesh->v[tri_mesh->tri[tri].z]);
                     TEST_NOT_ZERO(AabbContainsMargin(&n->bbox, &box, 0.0f));
                 }
             }
-            BTDFAdvance(it, mesh_bvh.bvh.pool.buf);
+            BTDFAdvance(it, mesh.bvh.pool.buf);
         }
         while (it.at != it.root);
-        TEST_NOT_ZERO(covered == tri_count && depth_max == mesh_bvh.depth);
-        TEST_NOT_ZERO(BVHCost(&mesh_bvh.bvh) > 0.0f);
+        TEST_NOT_ZERO(covered == tri_count && depth_max == mesh.depth);
+        TEST_NOT_ZERO(BVHCost(&mesh.bvh) > 0.0f);
         ArenaPopRecord(env->mem_1);
     }
 
     const struct triMesh empty = { 0 };
-    const struct triMeshBVH none = TriMeshBVHConstruct(env->mem_1, &empty, 8);
+    const struct mesh none = MeshConstruct(env->mem_1, &empty, 8);
     TEST_NOT_ZERO(none.tri_count == 0 && none.bvh.bt.count == 0 && none.bvh.bt.root == BT_INDEX_NULL);
     BVHValidate(&none.bvh);
 
@@ -330,7 +330,7 @@ static struct test_Output (*bvh_tests[])(struct test_Environment *) =
 {
     DBVHQueryTest,
     DBVHSerializeTest,
-    TriMeshBVHTest,
+    MeshTest,
 };
 
 struct suite_Correctness m_bvh_suite =

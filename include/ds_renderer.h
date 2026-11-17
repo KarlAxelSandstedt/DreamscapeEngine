@@ -581,8 +581,9 @@ void 		r_MeshSphere(struct arena *mem, struct r_Mesh *mesh, const f32 radius, co
 void 		r_MeshCapsule(struct arena *mem, struct r_Mesh *mesh, const f32 half_height, const f32 radius, const u32 refinement);
 /* setup mesh from collison hull: each face fanned into triangles with the face's normal */
 void 		r_MeshHull(struct arena *mem, struct r_Mesh *mesh, const struct dcel *hull);
+struct mesh;
 /* setup mesh from tri mesh: one triangle per tri with its normal */
-void 		r_MeshTriMesh(struct arena *mem, struct r_Mesh *mesh, const struct triMesh *tri_mesh);
+void 		r_MeshTriMesh(struct arena *mem, struct r_Mesh *mesh, const struct mesh *tri_mesh);
 
 struct c_Shape;
 /*

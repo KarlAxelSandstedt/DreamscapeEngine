@@ -3044,7 +3044,7 @@ struct c_Shape McTerrain(struct arena *mem, const f32 cell, const f32 relief, co
     }
 
     struct c_Shape shape = { .type = C_SHAPE_TRI_MESH };
-    shape.mesh_bvh = TriMeshBVHConstruct(mem, mesh, 8);
+    shape.mesh = MeshConstruct(mem, mesh, 8);
     return shape;
 }
 
@@ -3062,7 +3062,7 @@ static struct c_Shape McOneTriangle(struct arena *mem, const v3 t0, const v3 t1,
     mesh->tri[0] = (v3u32) { .buf = { 0, 1, 2 } };
 
     struct c_Shape shape = { .type = C_SHAPE_TRI_MESH };
-    shape.mesh_bvh = TriMeshBVHConstruct(mem, mesh, 8);
+    shape.mesh = MeshConstruct(mem, mesh, 8);
     return shape;
 }
 
@@ -3317,7 +3317,7 @@ static struct mc_CapsuleCase McCapsuleCase(struct arena *mem, const struct c_Sha
     cc.result = c_MeshContact(mem, &slab, &none, mesh, &t_mesh, &capsule, &t_capsule);
     for (u32 k = 0; k < 3; ++k)
     {
-        const struct d3 world = D3Add(pos_m, D3RotationMul(cc.rm, D3V3(mesh->mesh_bvh.mesh->v[k])));
+        const struct d3 world = D3Add(pos_m, D3RotationMul(cc.rm, D3V3(mesh->mesh.v[k])));
         cc.tri[k] = D3RotationTMul(cc.rc, D3Sub(world, pos_c));
     }
     ds_TSlabDealloc(slab);
@@ -3916,7 +3916,7 @@ struct test_Output MeshTerrainRandomTest(struct test_Environment *env)
             }
 
             /* near a random triangle: its centroid moved along its normal by -reach .. 1.5 reach (mesh frame) */
-            const struct triMesh *tm = mesh.mesh_bvh.mesh;
+            const struct mesh *tm = &mesh.mesh;
             const v3u32 tri = tm->tri[RngU64Range(0, tm->tri_count - 1)];
             const v3 a = tm->v[tri.buf[0]], b = tm->v[tri.buf[1]], c = tm->v[tri.buf[2]];
             const v3 centroid = V3Scale(V3Add(V3Add(a, b), c), 1.0f / 3.0f);
@@ -4162,7 +4162,7 @@ struct test_Output MeshHullCasesTest(struct test_Environment *env)
         none.tri_count = 0;
         const ds_Array(c_Manifold) r = c_MeshContact(env->mem_2, &slab, &none, &mesh, &t_mesh, &h.shape, &h.t);
         struct d3 t[3];
-        McTriangleInHull(t, &h, rm, pos_m, mesh.mesh_bvh.mesh->v);
+        McTriangleInHull(t, &h, rm, pos_m, mesh.mesh.v);
         const f64 tol = 1e-4*S;
         const struct d3 n_hull = D3RotationTMul(h.r, D3RotationMul(rm, n_expected));
         u64 touching_off = 0;

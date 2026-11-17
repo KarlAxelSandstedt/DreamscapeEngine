@@ -475,17 +475,18 @@ static struct c_Shape RcTerrain(struct arena *mem, const u32 cells, const f32 ce
         }
     }
     struct c_Shape shape = { .type = C_SHAPE_TRI_MESH };
-    shape.mesh_bvh = TriMeshBVHConstruct(mem, mesh, 8);
+    shape.mesh = MeshConstruct(mem, mesh, 8);
     return shape;
 }
 
 /* the BVH traversal finds exactly the brute-force first hit (the same triangle test with the same ray setup: bit for bit) */
-struct test_Output RaycastMeshBVHTest(struct test_Environment *env)
+struct test_Output RaycastMeshTest(struct test_Environment *env)
 {
     struct test_Output output = { .success = 1, .id = __func__ };
 
     ArenaPushRecord(env->mem_1);
     const struct c_Shape terrain = RcTerrain(env->mem_1, 32, 0.5f, 0.4f);
+    const struct triMesh terrain_tri = { .v = terrain.mesh.v, .tri = terrain.mesh.tri, .v_count = terrain.mesh.v_count, .tri_count = terrain.mesh.tri_count };
     u32 hits = 0;
     const u32 rounds = 4000;
     for (u32 round = 0; round < rounds; ++round)
@@ -496,8 +497,8 @@ struct test_Output RaycastMeshBVHTest(struct test_Environment *env)
             ray.origin.y = 5.0f;	/* from above, down through the terrain */
             ray.dir.y = -F32Abs(ray.dir.y) - 0.1f;
         }
-        const f32 t = TriMeshBVHRaycastParameter(&terrain.mesh_bvh, &ray);
-        const f32 t_brute = RcMeshBruteForce(terrain.mesh_bvh.mesh, &ray);
+        const f32 t = MeshRaycastParameter(&terrain.mesh, &ray);
+        const f32 t_brute = RcMeshBruteForce(&terrain_tri, &ray);
         hits += (t != F32_INFINITY);
         if (t != t_brute)
         {
@@ -665,7 +666,7 @@ static struct test_Output (*raycast_tests[])(struct test_Environment *) =
     RaycastCapsuleTest,
     RaycastTriTest,
     RaycastHullTest,
-    RaycastMeshBVHTest,
+    RaycastMeshTest,
     RaycastWatertightTest,
     RaycastWorldTest,
 };

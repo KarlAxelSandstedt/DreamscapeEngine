@@ -551,7 +551,7 @@ static struct test_Output ShapeDatabaseTest(struct test_Environment *env)
     const struct c_Shape empty_hull = { .type = C_SHAPE_CONVEX_HULL, .hull = DcelEmpty() };
     TEST_EQUAL(SDB_STUB, c_ShapeDBAdd(&db, Utf8Inline("empty_hull"), &empty_hull).index);
     const struct triMesh empty = { 0 };
-    const struct c_Shape empty_mesh = { .type = C_SHAPE_TRI_MESH, .mesh_bvh = TriMeshBVHConstruct(env->mem_1, &empty, 8) };
+    const struct c_Shape empty_mesh = { .type = C_SHAPE_TRI_MESH, .mesh = MeshConstruct(env->mem_1, &empty, 8) };
     TEST_EQUAL(SDB_STUB, c_ShapeDBAdd(&db, Utf8Inline("empty_mesh"), &empty_mesh).index);
     TEST_EQUAL(2, db.sdb.pool.count);
 
@@ -591,6 +591,37 @@ static struct test_Output ShapeDatabaseTest(struct test_Environment *env)
     TEST_EQUAL(1, c_ShapeDBRemove(&db, Utf8Inline("box_3")));
     TEST_EQUAL(SDB_STUB, c_ShapeDBLookup(&db, Utf8Inline("box_3")).index);
     TEST_EQUAL(index[4], c_ShapeDBLookup(&db, Utf8Inline("box_4")).index);
+
+    /* a mesh's copy owns its vertices, triangles, leaf order and nodes */
+    const v3 quad_v[4] = { V3(0.0f, 0.0f, 0.0f), V3(0.0f, 0.0f, 1.0f), V3(1.0f, 0.0f, 0.0f), V3(1.0f, 0.0f, 1.0f) };
+    const v3u32 quad_tri[2] = { { .buf = { 0, 1, 2 } }, { .buf = { 2, 1, 3 } } };
+    struct triMesh quad = { .v_count = 4, .tri_count = 2 };
+    quad.v = ArenaPush(env->mem_1, sizeof(quad_v));
+    quad.tri = ArenaPush(env->mem_1, sizeof(quad_tri));
+    memcpy(quad.v, quad_v, sizeof(quad_v));
+    memcpy(quad.tri, quad_tri, sizeof(quad_tri));
+    const struct c_Shape quad_mesh = { .type = C_SHAPE_TRI_MESH, .mesh = MeshConstruct(env->mem_1, &quad, 8) };
+    const u32 quad_index = c_ShapeDBAdd(&db, Utf8Inline("quad"), &quad_mesh).index;
+    TEST_TRUE(quad_index != SDB_STUB);
+    memset(quad.v, 0xff, sizeof(quad_v));
+    memset(quad.tri, 0xff, sizeof(quad_tri));
+    memset(quad_mesh.mesh.leaf_tri, 0xff, quad.tri_count*sizeof(u32));
+    memset(quad_mesh.mesh.bvh.pool.buf, 0xff, quad_mesh.mesh.bvh.pool.count_max*sizeof(struct BVHNode));
+    const struct mesh *copy = &c_ShapeDBShape(&db, quad_index)->mesh;
+    TEST_EQUAL(4, copy->v_count);
+    TEST_EQUAL(2, copy->tri_count);
+    for (u32 i = 0; i < 4; ++i)
+    {
+        TEST_TRUE(copy->v[i].x == quad_v[i].x && copy->v[i].y == quad_v[i].y && copy->v[i].z == quad_v[i].z);
+    }
+    for (u32 i = 0; i < 2; ++i)
+    {
+        TEST_TRUE(copy->tri[i].x == quad_tri[i].x && copy->tri[i].y == quad_tri[i].y && copy->tri[i].z == quad_tri[i].z);
+    }
+    TEST_TRUE(copy->leaf_tri[0] < 2 && copy->leaf_tri[0] + copy->leaf_tri[1] == 1);
+    BVHValidate(&copy->bvh);
+    const struct aabb root = copy->bvh.pool.buf[copy->bvh.bt.root].bbox;
+    TEST_TRUE(root.min.x == 0.0f && root.min.z == 0.0f && root.max.x == 1.0f && root.max.z == 1.0f);
 
     c_ShapeDBDealloc(&db);
 	return output;

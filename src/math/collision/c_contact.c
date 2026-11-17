@@ -1527,8 +1527,7 @@ struct c_MeshTri
  */
 struct c_MeshContactHelper
 {
-    const struct triMesh *      mesh;
-    const struct triMeshBVH *   mesh_bvh;
+    const struct mesh *         mesh;
     m3                          rot_inv;    /* convex_to_mesh's inverse: x_convex = rot_inv (x_mesh - pos) */
     v3                          pos;
     struct aabb                 bbox;       /* the convex shape's box in mesh space */
@@ -1552,8 +1551,7 @@ static void c_MeshContactInit(struct c_MeshContactHelper *helper, const struct c
 	ds_Assert(mesh->type == C_SHAPE_TRI_MESH);
 	ds_Assert(convex->type < C_SHAPE_TRI_MESH);
 
-    helper->mesh_bvh = &mesh->mesh_bvh;
-    helper->mesh = mesh->mesh_bvh.mesh;
+    helper->mesh = &mesh->mesh;
 
     /*
      * convex_to_mesh: x_mesh = rot x_convex + pos. Triangles use its inverse, rot^T (x_mesh - pos): subtracting
@@ -1595,12 +1593,12 @@ static void c_MeshContactInit(struct c_MeshContactHelper *helper, const struct c
     /* TODO(perf, audit E2): 2 scratch arenas here (records, the rest), c_MeshHullTriangles a third */
     helper->tmp_records = ArenaPushScratch();
     helper->tmp = ArenaPushScratch();
-    helper->node = helper->mesh_bvh->bvh.pool.buf;
-    helper->stack = ArenaPush(helper->tmp, (helper->mesh_bvh->depth + 1)*sizeof(struct BVHNode *));
+    helper->node = helper->mesh->bvh.pool.buf;
+    helper->stack = ArenaPush(helper->tmp, (helper->mesh->depth + 1)*sizeof(struct BVHNode *));
     helper->stack_count = 0;
     helper->leaf_next = 1;
     helper->leaf_last = 0;
-    const struct BVHNode *root = helper->node + helper->mesh_bvh->bvh.bt.root;
+    const struct BVHNode *root = helper->node + helper->mesh->bvh.bt.root;
     if (AabbTest(&helper->bbox, &root->bbox))
     {
         helper->stack[helper->stack_count++] = root;
@@ -1640,17 +1638,17 @@ static u32 c_MeshContactNext(struct c_MeshContactHelper *helper, u32 *tri_index,
             const struct BVHNode *right = helper->node + node->bt_child[1];
             if (AabbTest(&helper->bbox, &right->bbox))
             {
-                ds_Assert(helper->stack_count < helper->mesh_bvh->depth + 1);
+                ds_Assert(helper->stack_count < helper->mesh->depth + 1);
                 helper->stack[helper->stack_count++] = right;
             }
             if (AabbTest(&helper->bbox, &left->bbox))
             {
-                ds_Assert(helper->stack_count < helper->mesh_bvh->depth + 1);
+                ds_Assert(helper->stack_count < helper->mesh->depth + 1);
                 helper->stack[helper->stack_count++] = left;
             }
         }
 
-        *tri_index = helper->mesh_bvh->tri[helper->leaf_next++];
+        *tri_index = helper->mesh->leaf_tri[helper->leaf_next++];
         const u32 *v = helper->mesh->tri[*tri_index].buf;
         for (u32 i = 0; i < 3; ++i)
         {

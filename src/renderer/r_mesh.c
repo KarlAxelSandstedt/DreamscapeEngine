@@ -379,7 +379,7 @@ void r_MeshHull(struct arena *mem, struct r_Mesh *mesh, const struct dcel *hull)
 	mesh->index_max_used = m_i - 1;
 }
 
-void r_MeshTriMesh(struct arena *mem, struct r_Mesh *mesh, const struct triMesh *tri_mesh)
+void r_MeshTriMesh(struct arena *mem, struct r_Mesh *mesh, const struct mesh *tri_mesh)
 {
 	mesh->vertex_count = 3*tri_mesh->tri_count;
 	mesh->vertex_data = mem->stack_ptr;
@@ -422,7 +422,7 @@ struct r_Mesh *r_MeshShape(struct c_Shape *shape, const u32 refinement)
 		case C_SHAPE_SPHERE:        { r_MeshSphere(tmp, &built, shape->sphere.radius, refinement); } break;
 		case C_SHAPE_CAPSULE:       { r_MeshCapsule(tmp, &built, shape->capsule.half_height, shape->capsule.radius, refinement); } break;
 		case C_SHAPE_CONVEX_HULL:   { r_MeshHull(tmp, &built, &shape->hull); } break;
-		case C_SHAPE_TRI_MESH:      { r_MeshTriMesh(tmp, &built, shape->mesh_bvh.mesh); } break;
+		case C_SHAPE_TRI_MESH:      { r_MeshTriMesh(tmp, &built, &shape->mesh); } break;
 		default:                    { ds_Assert(0); } break;
 	}
 
@@ -458,7 +458,7 @@ struct r_Mesh *r_MeshShapeBvh(struct c_Shape *shape)
 		return shape->render_bvh;
 	}
 
-	const struct BVH *bvh = &shape->mesh_bvh.bvh;
+	const struct BVH *bvh = &shape->mesh.bvh;
 	const u32 node_count = bvh->pool.count;
 	if (!node_count)
 	{

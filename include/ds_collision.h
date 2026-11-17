@@ -54,7 +54,7 @@ DEFINE_ARRAY_STRUCT(plane);
 /*
 A struct BVH is a binary tree of boxes; a leaf holds a shape index and a body index (struct BVHNode).
     DBVH*                   dynamic: leaves are inserted and removed one at a time
-    TriMeshBVHConstruct     static, over a triangle mesh: built once; the leaves index mesh_bvh.tri
+    MeshConstruct           static, over a triangle mesh: built once; the leaves index mesh.leaf_tri
 */
 
 struct BVHNode
@@ -115,17 +115,22 @@ u32 			    DBVHInsert(struct BVH *bvh, const u32 body, const u32 shape, const st
 /* remove the leaf at node index index (DBVHInsert's return) */
 void 			    DBVHRemove(struct BVH *bvh, const u32 index);
 
-struct triMeshBVH
+struct mesh
 {
-	const struct triMesh *	mesh;		
+	v3 *			        v;
+	v3u32 *			        tri;
+	u32			            v_count;
+	u32			            tri_count;
 	struct BVH		        bvh;
-	u32 *			        tri;		/* tri[tri_count]: the mesh's triangle indices in leaf order; a leaf's shape index indexes it */
-	u32			            tri_count;	/* = mesh->tri_count */
+	u32 *			        leaf_tri;	/* leaf_tri[tri_count]: the mesh's triangle indices in leaf order; a leaf's shape index indexes it */
     u32                     depth;      /* the deepest leaf's depth, root = 0 */
 };
 
-/* Return the mesh's bvh (bin_count: split candidates per axis, build quality); empty for an empty mesh. */
-struct triMeshBVH   TriMeshBVHConstruct(struct arena *mem, const struct triMesh *mesh, const u32 bin_count);
+/*
+ * Return the mesh of tri_mesh's vertices and triangles (the arrays are shared, not copied) with its bvh
+ * (bin_count: split candidates per axis, build quality); empty for an empty mesh.
+ */
+struct mesh         MeshConstruct(struct arena *mem, const struct triMesh *tri_mesh, const u32 bin_count);
 
 /********************************** SHAPES **********************************/
 
@@ -168,7 +173,7 @@ struct c_Shape
 		struct sphere 		sphere;
 		struct capsule 		capsule;
 		struct dcel		    hull;
-		struct triMeshBVH 	mesh_bvh;
+		struct mesh 		mesh;
 	};
 };
 DEFINE_SDB(c_Shape);
@@ -193,7 +198,7 @@ void        c_ShapeDBAlloc(struct arena *mem, struct c_ShapeDB *db, const u32 le
 /* Free all memory allocated by the database */
 void        c_ShapeDBDealloc(struct c_ShapeDB *db);
 /*
- * Add a copy of src (id <= C_SHAPE_ID_SIZE bytes; a mesh's BVH as TriMeshBVHConstruct built it) with its mass
+ * Add a copy of src (id <= C_SHAPE_ID_SIZE bytes; a mesh as MeshConstruct built it) with its mass
  * properties; bad id, a convex shape without volume, a mesh without triangles, full or out of memory: warning,
  * the stub's slot.
  */
@@ -238,9 +243,9 @@ u32     c_CapsuleTest(const struct c_Shape *s0, const ds_TransformWorld *t0, con
 u32     c_HullSphereTest(const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
 u32     c_HullCapsuleTest(const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
 u32     c_HullTest(const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
-u32     c_TriMeshBVHSphereTest(const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
-u32     c_TriMeshBVHCapsuleTest(const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
-u32     c_TriMeshBVHHullTest(const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
+u32     c_MeshSphereTest(const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
+u32     c_MeshCapsuleTest(const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
+u32     c_MeshHullTest(const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
 
 /********************************** DISTANCES **********************************/
 
@@ -395,9 +400,9 @@ f32     c_HullSphereDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, con
 f32     c_HullCapsuleDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
 f32     c_HullDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
 /* not implemented (debug: assert; release: 0) */
-f32     c_TriMeshBVHSphereDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
-f32     c_TriMeshBVHCapsuleDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
-f32     c_TriMeshBVHHullDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
+f32     c_MeshSphereDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
+f32     c_MeshCapsuleDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
+f32     c_MeshHullDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
 
 /********************************** CONTACTS **********************************/
 
@@ -576,7 +581,7 @@ f32 CapsuleRaycastParameter(const struct capsule *capsule, const struct ray *ray
 /* hull: a closed convex polyhedron with planar faces */
 f32 HullRaycastParameter(const struct dcel *hull, const struct ray *ray);
 f32 AabbRaycastParameter(const struct aabb *aabb, const struct ray *ray);
-f32 TriMeshBVHRaycastParameter(const struct triMeshBVH *mesh_bvh, const struct ray *ray);
+f32 MeshRaycastParameter(const struct mesh *mesh, const struct ray *ray);
 /* triangle abc, any winding (no culling) */
 f32 TriRaycastParameter(const v3 a, const v3 b, const v3 c, const struct ray *ray);
 /* TriRaycastParameter with the ray set up once (RayWoop) for many triangles, e.g. a mesh */
@@ -587,14 +592,14 @@ f32 SphereRaycastWorldParameter(const struct sphere *sphere, const ds_TransformW
 f32 CapsuleRaycastWorldParameter(const struct capsule *capsule, const ds_TransformWorld *transform, const struct rayWorld *ray);
 f32 HullRaycastWorldParameter(const struct dcel *hull, const ds_TransformWorld *transform, const struct rayWorld *ray);
 f32 AabbRaycastWorldParameter(const struct aabb *aabb, const ds_TransformWorld *transform, const struct rayWorld *ray);
-f32 TriMeshBVHRaycastWorldParameter(const struct triMeshBVH *mesh_bvh, const ds_TransformWorld *transform, const struct rayWorld *ray);
+f32 MeshRaycastWorldParameter(const struct mesh *mesh, const ds_TransformWorld *transform, const struct rayWorld *ray);
 f32 TriRaycastWorldParameter(const v3 a, const v3 b, const v3 c, const ds_TransformWorld *transform, const struct rayWorld *ray);
 
 /* the world functions above on a c_Shape of the matching type */
 f32 c_SphereRaycastParameter(const struct c_Shape *shape, const ds_TransformWorld *transform, const struct rayWorld *ray);
 f32 c_CapsuleRaycastParameter(const struct c_Shape *shape, const ds_TransformWorld *transform, const struct rayWorld *ray);
 f32 c_HullRaycastParameter(const struct c_Shape *shape, const ds_TransformWorld *transform, const struct rayWorld *ray);
-f32 c_TriMeshBVHRaycastParameter(const struct c_Shape *shape, const ds_TransformWorld *transform, const struct rayWorld *ray);
+f32 c_MeshRaycastParameter(const struct c_Shape *shape, const ds_TransformWorld *transform, const struct rayWorld *ray);
 
 /********************************** SHAPES: definitions **********************************/
 
