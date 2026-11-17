@@ -101,6 +101,7 @@ struct ds_NumericsConfig
 
     u32 geometric_mover_max_iterations;
     f32 geometric_mover_tolerance;
+    u32 geometric_mover_solver_iterations;
 
     f32 proxy_margin_min;
     f32 proxy_margin_scale;

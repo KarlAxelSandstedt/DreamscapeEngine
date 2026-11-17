@@ -31,6 +31,7 @@ struct ds_NumericsConfig ds_NumericsConfigDerive(const struct ds_NumericsConfig 
     config.gjk_max_iterations = U32Max(config.gjk_max_iterations, 1);
     config.geometric_mover_max_iterations = U32Max(config.geometric_mover_max_iterations, 1);
     config.geometric_mover_tolerance = F32Clamp(config.geometric_mover_tolerance, 0.0f, F32MaxPositiveNormal());
+    config.geometric_mover_solver_iterations = U32Max(config.geometric_mover_solver_iterations, 1);
     config.capsule_parallel_max_degrees = F32Clamp(config.capsule_parallel_max_degrees, 0.0f, 45.0f);
     config.face_parallel_max_degrees = F32Clamp(config.face_parallel_max_degrees, 0.0f, 45.0f);
     config.edge_parallel_max_degrees = F32Clamp(config.edge_parallel_max_degrees, 0.0f, 45.0f);
@@ -58,6 +59,7 @@ struct ds_NumericsConfig ds_NumericsConfigDefault(void)
     config.gjk_max_iterations = 32;
     config.geometric_mover_max_iterations = 5;
     config.geometric_mover_tolerance = 0.01f;
+    config.geometric_mover_solver_iterations = 20;
     config.proxy_margin_min = 0.02f;
     config.proxy_margin_scale = 0.05f;
     /* tan(2.86 deg) ~ 0.05 */
