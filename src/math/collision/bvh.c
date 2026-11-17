@@ -907,6 +907,70 @@ struct aabb MeshBbox(const struct mesh *mesh)
 	return BboxVertexSet(mesh->v, mesh->v_count);
 }
 
+ds_Array(u32) MeshQuery(struct arena *mem, const struct mesh *mesh, const struct aabb *bbox)
+{
+    ds_Array(u32) tri = { .buf = NULL, .length = 0, .base = U32_MAX };
+    if (BTLeafCount(mesh->bvh.bt) < 1)
+    {
+        return tri;
+    }
+
+    struct memArray mem_arr = ArenaPushAlignedAll(mem, sizeof(u32), sizeof(u32));
+    tri.buf = mem_arr.addr;
+
+    struct arena *tmp = ArenaPushScratch();
+    const struct BVHNode *node = mesh->bvh.pool.buf;
+    const struct BVHNode **stack = ArenaPush(tmp, (mesh->depth + 1)*sizeof(struct BVHNode *));
+    u32 stack_count = 0;
+    const struct BVHNode *root = node + mesh->bvh.bt.root;
+    if (AabbTest(bbox, &root->bbox))
+    {
+        stack[stack_count++] = root;
+    }
+
+    while (stack_count)
+    {
+        const struct BVHNode *n = stack[--stack_count];
+        if (BTLeafCheck(n))
+        {
+            const u32 first = n->bt_child[0];
+            const u32 count = n->bt_child[1];
+            if (tri.length + count > mem_arr.len)
+            {
+                Log(T_PHYSICS, S_FATAL, "Out of memory in %s", __func__);
+                FatalCleanupAndExit();
+            }
+
+            for (u32 i = first; i < first + count; ++i)
+            {
+                tri.buf[tri.length++] = mesh->leaf_tri[i];
+            }
+        }
+        else
+        {
+            const struct BVHNode *left = node + n->bt_child[0];
+            const struct BVHNode *right = node + n->bt_child[1];
+            if (AabbTest(bbox, &right->bbox))
+            {
+                ds_Assert(stack_count < mesh->depth + 1);
+                stack[stack_count++] = right;
+            }
+
+            if (AabbTest(bbox, &left->bbox))
+            {
+                ds_Assert(stack_count < mesh->depth + 1);
+                stack[stack_count++] = left;
+            }
+        }
+    }
+
+    ArenaPopScratch();
+
+    ArenaPopPacked(mem, (mem_arr.len - tri.length)*sizeof(u32));
+
+    return tri;
+}
+
 /* the box's queue key: the entry t into its volume (0 if the origin is inside), F32_INFINITY on a miss */
 static f32 BVHNodeRaycastParameter(const struct rayAabb *ray, const struct aabb *bbox)
 {

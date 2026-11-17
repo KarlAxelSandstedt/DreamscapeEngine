@@ -253,7 +253,7 @@ struct test_Output DBVHSerializeTest(struct test_Environment *env)
 
 /*
 The mesh BVH's leaves partition the triangle order [0, tri_count), each leaf's box contains its triangles, every
-triangle index appears once in tri, the depth is the deepest leaf's, and BVHValidate holds. An empty mesh gives
+triangle index appears once in leaf_tri, the depth is the deepest leaf's, and BVHValidate holds. An empty mesh gives
 the empty hierarchy.
 */
 struct test_Output MeshTest(struct test_Environment *env)
@@ -324,11 +324,91 @@ struct test_Output MeshTest(struct test_Environment *env)
     return output;
 }
 
+/*
+MeshQuery on random meshes and boxes returns exactly the leaf_tri ranges of the leaves whose boxes overlap the
+box, every leaf scanned without pruning, in leaf_tri order (a left subtree holds the lower positions). The mesh's
+own box returns every triangle; an empty mesh returns none.
+*/
+struct test_Output MeshQueryTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+
+    for (u32 round = 0; round < 4; ++round)
+    {
+        ArenaPushRecord(env->mem_1);
+        const u32 tri_count = (round == 0) ? 1 : 100 + round * 300;
+        struct mesh mesh = { .v_count = 3*tri_count, .tri_count = tri_count };
+        mesh.v = ArenaPush(env->mem_1, mesh.v_count*sizeof(v3));
+        mesh.tri = ArenaPush(env->mem_1, tri_count*sizeof(v3u32));
+        for (u32 i = 0; i < tri_count; ++i)
+        {
+            const v3 c = V3(RngF32Range(-20.0f, 20.0f), RngF32Range(-2.0f, 2.0f), RngF32Range(-20.0f, 20.0f));
+            for (u32 k = 0; k < 3; ++k)
+            {
+                mesh.v[3*i + k] = V3Add(c, V3(RngF32Range(-1.0f, 1.0f), RngF32Range(-1.0f, 1.0f), RngF32Range(-1.0f, 1.0f)));
+            }
+            mesh.tri[i] = (v3u32) { .buf = { 3*i, 3*i + 1, 3*i + 2 } };
+        }
+        MeshConstruct(env->mem_1, &mesh, 8);
+
+        const struct aabb all = MeshBbox(&mesh);
+        ArenaPushRecord(env->mem_1);
+        TEST_EQUAL(tri_count, MeshQuery(env->mem_1, &mesh, &all).length);
+        ArenaPopRecord(env->mem_1);
+
+        u8 *hit = ArenaPush(env->mem_1, tri_count);
+        const struct BVHNode *node = mesh.bvh.pool.buf;
+        for (u32 q = 0; q < 200; ++q)
+        {
+            const v3 c = V3(RngF32Range(-25.0f, 25.0f), RngF32Range(-4.0f, 4.0f), RngF32Range(-25.0f, 25.0f));
+            const v3 h = V3(RngF32Range(0.0f, 6.0f), RngF32Range(0.0f, 3.0f), RngF32Range(0.0f, 6.0f));
+            const struct aabb bbox = { .min = V3Sub(c, h), .max = V3Add(c, h) };
+
+            for (u32 i = 0; i < tri_count; ++i) { hit[i] = 0; }
+            BTI it;
+            BTDFInit(it, mesh.bvh.pool.buf, mesh.bvh.bt.root);
+            do
+            {
+                const struct BVHNode *n = node + it.at;
+                if (BTLeafCheck(n) && AabbTest(&bbox, &n->bbox))
+                {
+                    for (u32 i = n->bt_child[0]; i < n->bt_child[0] + n->bt_child[1]; ++i) { hit[i] = 1; }
+                }
+                BTDFAdvance(it, mesh.bvh.pool.buf);
+            }
+            while (it.at != it.root);
+
+            ArenaPushRecord(env->mem_1);
+            const ds_Array(u32) tri = MeshQuery(env->mem_1, &mesh, &bbox);
+            u32 expected = 0;
+            for (u32 i = 0; i < tri_count; ++i)
+            {
+                if (hit[i])
+                {
+                    TEST_NOT_ZERO(expected < tri.length && tri.buf[expected] == mesh.leaf_tri[i]);
+                    expected += 1;
+                }
+            }
+            TEST_EQUAL(expected, tri.length);
+            ArenaPopRecord(env->mem_1);
+        }
+        ArenaPopRecord(env->mem_1);
+    }
+
+    struct mesh none = { 0 };
+    MeshConstruct(env->mem_1, &none, 8);
+    const struct aabb box = { .min = V3(-1.0f, -1.0f, -1.0f), .max = V3(1.0f, 1.0f, 1.0f) };
+    TEST_EQUAL(0, MeshQuery(env->mem_1, &none, &box).length);
+
+    return output;
+}
+
 static struct test_Output (*bvh_tests[])(struct test_Environment *) =
 {
     DBVHQueryTest,
     DBVHSerializeTest,
     MeshTest,
+    MeshQueryTest,
 };
 
 struct suite_Correctness m_bvh_suite =

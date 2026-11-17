@@ -139,6 +139,11 @@ struct mesh
 void                MeshConstruct(struct arena *mem, struct mesh *mesh, const u32 bin_count);
 /* Return the bounding box of all v_count vertices, unreferenced ones included; no vertices: the zero box */
 struct aabb         MeshBbox(const struct mesh *mesh);
+/* 
+ * Return the triangles (allocated on arena) whose bounding boxes overlap bbox (mesh frame),
+ * in leaf order.
+ */
+ds_Array(u32)       MeshQuery(struct arena *mem, const struct mesh *mesh, const struct aabb *bbox);
 
 /********************************** SHAPES **********************************/
 
