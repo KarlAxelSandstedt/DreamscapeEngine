@@ -97,12 +97,12 @@ ds_ShapeId ds_ShapeAdd(struct ds_Dynamics *pipeline, const struct ds_ShapePrefab
         /* static shapes never query the broadphase: pair the overlapping dynamic shapes here */
         struct arena *tmp = ArenaPushScratch();
         const struct BVHNode *node = pipeline->static_bvh.pool.buf + shape->proxy;
-        const struct BVHQuerySet overlap = BVHQuery(tmp, &pipeline->dynamic_bvh, &node->bbox);
-        for (u32 i = 0; i < overlap.count; ++i)
+        const ds_Array(u32) overlap = BVHQuery(tmp, &pipeline->dynamic_bvh, &node->bbox);
+        for (u32 i = 0; i < overlap.length; ++i)
         {
-            const struct ds_Shape *neighbour = pipeline->shape_pool.buf + overlap.shape[i];
+            const struct ds_Shape *neighbour = pipeline->shape_pool.buf + overlap.buf[i];
             ds_SolverSetWakeUp(pipeline, pipeline->body_pool.buf[ neighbour->body ].set);
-            ds_ContactTryAdd(pipeline, ds_ContactKeyCanonical(shape_slot.index, overlap.shape[i]));
+            ds_ContactTryAdd(pipeline, ds_ContactKeyCanonical(shape_slot.index, overlap.buf[i]));
         }
         ArenaPopScratch();
     }

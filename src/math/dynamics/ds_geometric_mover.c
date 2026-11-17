@@ -94,12 +94,12 @@ static ds_Array(ds_GeometricMoverPlane) ds_GeometricMoverPlanes(struct arena *me
     struct aabb bbox;
     AabbTranslateOutward(&bbox, &local, position);
 
-    struct BVHQuerySet query[3];
+    ds_Array(u32) query[3];
     u32 query_count = 0;
     for (u32 b = 0; b < 3; ++b)
     {
         query[b] = BVHQuery(tmp, bvh[b], &bbox);
-        query_count += query[b].count;
+        query_count += query[b].length;
     }
 
     struct ds_GeometricMoverPlane *buf = ArenaPush(mem, query_count*sizeof(struct ds_GeometricMoverPlane));
@@ -112,9 +112,9 @@ static ds_Array(ds_GeometricMoverPlane) ds_GeometricMoverPlanes(struct arena *me
 
     for (u32 b = 0; b < 3; ++b)
     {
-        for (u32 i = 0; i < query[b].count; ++i)
+        for (u32 i = 0; i < query[b].length; ++i)
         {
-            const struct ds_Shape *shape = dynamics->shape_pool.buf + query[b].shape[i];
+            const struct ds_Shape *shape = dynamics->shape_pool.buf + query[b].buf[i];
             const struct c_Shape *c_shape = c_ShapeDBShape(dynamics->external->cshape_db, shape->cshape_handle);
             ds_TransformWorld t_world;
             ds_ShapeWorldTransform(&t_world, dynamics, shape);

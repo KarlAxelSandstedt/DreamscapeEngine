@@ -441,14 +441,14 @@ u32 ds_BroadJobPhaseDispatch(const ds_JobId job)
                 const u32 si = (u32) ds_BitBlockNext(&it);
                 const struct ds_Shape *shape = pipeline->shape_pool.buf + si;
                 const struct BVHNode *node = pipeline->dynamic_bvh.pool.buf + shape->proxy;
-                const struct BVHQuerySet dynamic_query = BVHQueryAndFilterOnBody(tmp, &pipeline->dynamic_bvh, node, dirty);
-                const struct BVHQuerySet static_query = BVHQuery(tmp, &pipeline->static_bvh, &node->bbox);
+                const ds_Array(u32) dynamic_query = BVHQueryAndFilterOnBody(tmp, &pipeline->dynamic_bvh, node, dirty);
+                const ds_Array(u32) static_query = BVHQuery(tmp, &pipeline->static_bvh, &node->bbox);
                 
                 query[si].dynamic_count = 0;
-                query[si].dynamic_query = ArenaPushPacked(frame, dynamic_query.count*sizeof(u32));
-                for (u32 qi = 0; qi < dynamic_query.count; ++qi)
+                query[si].dynamic_query = ArenaPushPacked(frame, dynamic_query.length*sizeof(u32));
+                for (u32 qi = 0; qi < dynamic_query.length; ++qi)
                 {
-                    const u32 neighbour_si = dynamic_query.shape[qi];
+                    const u32 neighbour_si = dynamic_query.buf[qi];
                     const struct ds_ContactKey key = ds_ContactKeyCanonical(si, neighbour_si);
                     if (!ds_ContactKeyLookup(pipeline, key).address)
                     {
@@ -456,13 +456,13 @@ u32 ds_BroadJobPhaseDispatch(const ds_JobId job)
                         query[si].dynamic_count += 1;
                     }
                 }
-                ArenaPopPacked(frame, (dynamic_query.count - query[si].dynamic_count)*sizeof(u32));
+                ArenaPopPacked(frame, (dynamic_query.length - query[si].dynamic_count)*sizeof(u32));
 
                 query[si].static_count = 0;
-                query[si].static_query = ArenaPushPacked(frame, static_query.count*sizeof(u32));
-                for (u32 qi = 0; qi < static_query.count; ++qi)
+                query[si].static_query = ArenaPushPacked(frame, static_query.length*sizeof(u32));
+                for (u32 qi = 0; qi < static_query.length; ++qi)
                 {
-                    const u32 neighbour_si = static_query.shape[qi];
+                    const u32 neighbour_si = static_query.buf[qi];
                     const struct ds_ContactKey key = ds_ContactKeyCanonical(si, neighbour_si);
                     if (!ds_ContactKeyLookup(pipeline, key).address)
                     {
@@ -470,7 +470,7 @@ u32 ds_BroadJobPhaseDispatch(const ds_JobId job)
                         query[si].static_count += 1;
                     }
                 }
-                ArenaPopPacked(frame, (static_query.count - query[si].static_count)*sizeof(u32));
+                ArenaPopPacked(frame, (static_query.length - query[si].static_count)*sizeof(u32));
 
                 ArenaPopRecord(tmp);
 		    }

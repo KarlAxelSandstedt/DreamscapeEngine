@@ -457,16 +457,17 @@ void DBVHRemove(struct BVH *bvh, const u32 index)
 	}
 }
 
-struct BVHQuerySet BVHQuery(struct arena *mem, const struct BVH *bvh, const struct aabb *bbox)
+ds_Array(u32) BVHQuery(struct arena *mem, const struct BVH *bvh, const struct aabb *bbox)
 {
-    if (BTLeafCount(bvh->bt) < 1) { return (struct BVHQuerySet) { 0 }; }
+    if (BTLeafCount(bvh->bt) < 1) { return (ds_Array(u32)) { .buf = NULL, .length = 0, .base = U32_MAX }; }
 	const struct BVHNode *nodes = bvh->pool.buf;
 
     struct memArray mem_arr = ArenaPushAlignedAll(mem, sizeof(u32), sizeof(u32));
-    struct BVHQuerySet query = 
+    ds_Array(u32) query = 
     { 
-        .count = 0,
-        .shape = mem_arr.addr,
+        .buf = mem_arr.addr,
+        .length = 0,
+        .base = U32_MAX,
     };
 
     struct arena *tmp = ArenaPushScratch();
@@ -484,12 +485,12 @@ struct BVHQuerySet BVHQuery(struct arena *mem, const struct BVH *bvh, const stru
         const struct BVHNode *n = nodes + node_stack[ sc ];
         if (BTLeafCheck(n))
         {
-            if (query.count == mem_arr.len)
+            if (query.length == mem_arr.len)
             {
 				LogString(T_PHYSICS, S_FATAL, "out-of-memory in query set, increase arena size!");		
 				FatalCleanupAndExit();
             }
-            query.shape[ query.count++ ] = n->bt_child[0];
+            query.buf[ query.length++ ] = n->bt_child[0];
         }
         else
         {
@@ -514,21 +515,22 @@ struct BVHQuerySet BVHQuery(struct arena *mem, const struct BVH *bvh, const stru
 
     ArenaPopScratch();
 
-    ArenaPopPacked(mem, (mem_arr.len - query.count)*sizeof(u32));
+    ArenaPopPacked(mem, (mem_arr.len - query.length)*sizeof(u32));
 
     return query;
 }
 
-struct BVHQuerySet BVHQueryAndFilterOnBody(struct arena *mem, const struct BVH *bvh, const struct BVHNode *node, const struct ds_BitSet *dirty)
+ds_Array(u32) BVHQueryAndFilterOnBody(struct arena *mem, const struct BVH *bvh, const struct BVHNode *node, const struct ds_BitSet *dirty)
 {
-	if (BTLeafCount(bvh->bt) < 1) { return (struct BVHQuerySet) { 0 }; }
+	if (BTLeafCount(bvh->bt) < 1) { return (ds_Array(u32)) { .buf = NULL, .length = 0, .base = U32_MAX }; }
 	const struct BVHNode *nodes = bvh->pool.buf;
 
     struct memArray mem_arr = ArenaPushAlignedAll(mem, sizeof(u32), sizeof(u32));
-    struct BVHQuerySet query = 
+    ds_Array(u32) query = 
     { 
-        .count = 0,
-        .shape = mem_arr.addr,
+        .buf = mem_arr.addr,
+        .length = 0,
+        .base = U32_MAX,
     };
 
     struct arena *tmp = ArenaPushScratch();
@@ -549,12 +551,12 @@ struct BVHQuerySet BVHQueryAndFilterOnBody(struct arena *mem, const struct BVH *
         {
             if (node->bt_child[1] < n->bt_child[1] || (node->bt_child[1] != n->bt_child[1] && !ds_BitSetGet(dirty, n->bt_child[0])))
             {
-                if (query.count == mem_arr.len)
+                if (query.length == mem_arr.len)
                 {
 			    	LogString(T_PHYSICS, S_FATAL, "out-of-memory in query set, increase arena size!");		
 			    	FatalCleanupAndExit();
                 }
-                query.shape[ query.count++ ] = n->bt_child[0];
+                query.buf[ query.length++ ] = n->bt_child[0];
             }
         }
         else
@@ -580,7 +582,7 @@ struct BVHQuerySet BVHQueryAndFilterOnBody(struct arena *mem, const struct BVH *
 
     ArenaPopScratch();
 
-    ArenaPopPacked(mem, (mem_arr.len - query.count)*sizeof(u32));
+    ArenaPopPacked(mem, (mem_arr.len - query.length)*sizeof(u32));
 
     return query;
 }

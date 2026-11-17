@@ -58,20 +58,20 @@ static u32 BVHTestQueriesAgree(struct arena *mem, const struct BVH *bvh, const s
     const struct BVHNode probe = { .bbox = leaf[q].box, .bt_child = { q, leaf[q].body } };
     const u32 q_dirty = (filter) ? ds_BitSetGet(dirty, q) : 0;
     if (filter) { ds_BitSetSet(dirty, q, 1); }
-    const struct BVHQuerySet set = (filter)
+    const ds_Array(u32) set = (filter)
         ? BVHQueryAndFilterOnBody(mem, bvh, &probe, dirty)
         : BVHQuery(mem, bvh, &probe.bbox);
 
     u8 found[BVH_TEST_LEAF_MAX] = { 0 };
     u32 ok = 1;
-    for (u32 i = 0; i < set.count; ++i)
+    for (u32 i = 0; i < set.length; ++i)
     {
-        if (set.shape[i] >= count || found[set.shape[i]])
+        if (set.buf[i] >= count || found[set.buf[i]])
         {
             ok = 0;	/* out of range, or twice */
             break;
         }
-        found[set.shape[i]] = 1;
+        found[set.buf[i]] = 1;
     }
     for (u32 i = 0; ok && i < count; ++i)
     {
