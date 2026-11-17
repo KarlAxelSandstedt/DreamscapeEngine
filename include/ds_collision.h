@@ -76,12 +76,6 @@ struct BVH
 	u32			        heap_allocated;
 };
 
-struct BVHQuerySet
-{
-    u32     count;
-    u32 *   shape;
-};
-
 /* free allocated resources */
 void 		        BVHFree(struct BVH *tree);
 /* Return the required size when serializing the bvh. */
@@ -97,14 +91,14 @@ void 		        BVHValidate(const struct BVH *bvh);
 /* return the tree's cost, a quality measure (lower is better) */
 f32 		        BVHCost(const struct BVH *bvh);
 /* the shapes whose leaf boxes overlap bbox */
-struct BVHQuerySet BVHQuery(struct arena *mem, const struct BVH *bvh, const struct aabb *bbox);
+ds_Array(u32)       BVHQuery(struct arena *mem, const struct BVH *bvh, const struct aabb *bbox);
 /*
  * BVHQuery for the broadphase, each pair reported once by one of its shapes and never two shapes of one body: a
  * shape with a body index > node's (bt_child[1]), or a shape of another body whose bit in dirty is clear. node's
  * shape (bt_child[0]) must be dirty: only dirty shapes query, so a pair of two dirty shapes comes from the
  * smaller body index and a pair with one dirty shape from that shape.
  */
-struct BVHQuerySet BVHQueryAndFilterOnBody(struct arena *mem, const struct BVH *bvh, const struct BVHNode *node, const struct ds_BitSet *dirty);
+ds_Array(u32)       BVHQueryAndFilterOnBody(struct arena *mem, const struct BVH *bvh, const struct BVHNode *node, const struct ds_BitSet *dirty);
 
 /* an empty dynamic bvh */
 struct BVH		    DBVHAlloc(struct arena *mem, const u32 initial_length, const u32 growable);
