@@ -86,6 +86,99 @@ static void ds_GeometricMoverCapsulePlane(ds_Array(ds_GeometricMoverPlane) *plan
     planes->length += 1;
 }
 
+static void ds_GeometricMoverHullPlane(ds_Array(ds_GeometricMoverPlane) *planes, const struct capsule *mover, const struct c_Shape *hull, const ds_Transform *t_shape)
+{
+    ds_Assert(hull->type == C_SHAPE_CONVEX_HULL);
+
+    const f32 radius = mover->radius;
+    const struct c_Shape mover_shape = { .type = C_SHAPE_CAPSULE, .capsule = *mover };
+
+    struct GJKCache cache;
+    v3 c[2], n;
+    const f32 distance = GJK(c+0, c+1, &n, &cache, NULL, &mover_shape, hull, t_shape, radius);
+    if (radius < distance)
+    {
+        return;
+    }
+
+    /* shallow penetration; deep (the core touches the hull) gives no plane */
+    if (0.0f < distance)
+    {
+        const u32 index = planes->length & (GEOMETRIC_MOVER_PLANE_MAX - 1);
+        planes->buf[index].plane = (struct plane) { .normal = V3Negate(n), .signed_distance = radius - distance };
+        planes->length += 1;
+    }
+}
+
+static void ds_GeometricMoverMeshPlanes(struct arena *mem, ds_Array(ds_GeometricMoverPlane) *planes, const struct capsule *mover, const struct mesh *mesh, const ds_Transform *mover_to_mesh)
+{
+    const f32 r = mover->radius;
+    const f32 h = mover->half_height + r;
+    const struct segment core = Segment(V3(0.0f, mover->half_height, 0.0f), V3(0.0f, -mover->half_height, 0.0f));
+    const struct aabb local = { .min = V3(-r, -h, -r), .max = V3(r, h, r) };
+
+    /* x_mesh = rot x_mover + pos */
+    const m3 rot = M3QUnit(mover_to_mesh->rotation);
+    const m3 rot_inv = M3QUnit(QConj(mover_to_mesh->rotation));
+    const v3 pos = mover_to_mesh->position;
+
+    /* the local box in mesh space: center pos, half widths |rot| local.max */
+    const m3 rot_abs = M3Abs(rot);
+    const v3 half = M3V3Mul(rot_abs, local.max);
+    const struct aabb bbox = { .min = V3Sub(pos, half), .max = V3Add(pos, half) };
+
+    const ds_Array(u32) query = MeshQuery(mem, mesh, &bbox);
+    for (u32 i = 0; i < query.length; ++i)
+    {
+        const u32 *v = mesh->tri[query.buf[i]].buf;
+        v3 tri[3];
+        for (u32 k = 0; k < 3; ++k)
+        {
+            tri[k] = M3V3Mul(rot_inv, V3Sub(mesh->v[v[k]], pos));
+        }
+
+        const struct aabb tri_bbox = { .min = V3Min(V3Min(tri[0], tri[1]), tri[2]), .max = V3Max(V3Max(tri[0], tri[1]), tri[2]) };
+        if (!AabbTest(&tri_bbox, &local))
+        {
+            continue;
+        }
+
+        /* 
+         * TODO: we deviate from ordinary contacts here, we do back side culling. We should consdier
+         * whether or not back-culling should be done for all cases.
+         */
+        const v3 cross = V3Cross(V3Sub(tri[1], tri[0]), V3Sub(tri[2], tri[0]));
+        if (V3Dot(cross, tri[0]) > 0.0f)
+        {
+            continue;
+        }
+
+        f32 w[3], s;
+        const enum voronoi region = TriSegmentVoronoi(w, &s, tri[0], tri[1], tri[2], core.p[0], core.p[1]);
+        ds_AssertString(region != VORONOI_INVALID, "TriSegmentVoronoi: NaN input or distances beyond f32");
+
+        const v3 c_t = V3Add(V3Add(V3Scale(tri[0], w[0]), V3Scale(tri[1], w[1])), V3Scale(tri[2], w[2]));
+        const v3 c_s = SegmentBc(&core, s);
+        const f32 distance_sq = V3DistanceSquared(c_t, c_s);
+        if (distance_sq > r*r)
+        {
+            continue;
+        }
+
+        /* deep overlap: no plane */
+        const f32 distance = F32Sqrt(distance_sq);
+        if (distance < g_solver_config->linear_slop)
+        {
+            continue;
+        }
+
+        const v3 n = V3Scale(V3Sub(c_s, c_t), 1.0f / distance);
+        const u32 index = planes->length & (GEOMETRIC_MOVER_PLANE_MAX - 1);
+        planes->buf[index].plane = (struct plane) { .normal = n, .signed_distance = r - distance };
+        planes->length += 1;
+    }
+}
+
 static ds_Array(ds_GeometricMoverPlane) ds_GeometricMoverPlanes(struct ds_GeometricMoverPlane buf[GEOMETRIC_MOVER_PLANE_MAX], const struct ds_Dynamics *dynamics, const v3f64 position, const struct capsule *capsule)
 {
     struct arena *tmp = ArenaPushScratch();
@@ -123,9 +216,15 @@ static ds_Array(ds_GeometricMoverPlane) ds_GeometricMoverPlanes(struct ds_Geomet
                     ds_GeometricMoverCapsulePlane(&planes, capsule, &c_shape->capsule, &t_shape);
                 } break;
 
-                default:
+                case C_SHAPE_CONVEX_HULL:
                 {
-                    //TODO: hull and mesh planes
+                    ds_GeometricMoverHullPlane(&planes, capsule, c_shape, &t_shape);
+                } break;
+
+                case C_SHAPE_TRI_MESH:
+                {
+                    const ds_Transform mover_to_mesh = ds_TransformWorldRelative(&t_world, &t_mover);
+                    ds_GeometricMoverMeshPlanes(tmp, &planes, capsule, &c_shape->mesh, &mover_to_mesh);
                 } break;
             }
         }

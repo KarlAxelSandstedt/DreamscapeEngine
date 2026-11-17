@@ -1580,7 +1580,7 @@ static void c_MeshContactInit(struct c_MeshContactHelper *helper, const struct c
     }
     helper->local = local;
     const v3 center = V3Add(M3V3Mul(rot, V3Scale(V3Add(local.min, local.max), 0.5f)), helper->pos);
-    const m3 rot_abs = M3Columns(V3Abs(rot.col[0]), V3Abs(rot.col[1]), V3Abs(rot.col[2]));
+    const m3 rot_abs = M3Abs(rot);
     const v3 half = M3V3Mul(rot_abs, V3Scale(V3Sub(local.max, local.min), 0.5f));
     helper->bbox = (struct aabb) { .min = V3Sub(center, half), .max = V3Add(center, half) };
 

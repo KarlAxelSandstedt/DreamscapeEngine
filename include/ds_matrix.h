@@ -72,6 +72,8 @@ static ds_ForceInline m3 M3Add(const m3 a, const m3 b);
 static ds_ForceInline m3 M3Sub(const m3 a, const m3 b);
 /* m*scale */
 static ds_ForceInline m3 M3Scale(const m3 m, const f32 scale);
+/* |m| per entry */
+static ds_ForceInline m3 M3Abs(const m3 m);
 /* a*b */
 static ds_ForceInline m3 M3Mul(const m3 a, const m3 b);
 static ds_ForceInline m4 M4Mul(const m4 a, const m4 b);
@@ -202,6 +204,13 @@ static ds_ForceInline m3 M3Scale(const m3 m, const f32 scale)
 	return M3Columns(V3Scale(m.col[0], scale),
 			 V3Scale(m.col[1], scale),
 			 V3Scale(m.col[2], scale));
+}
+
+static ds_ForceInline m3 M3Abs(const m3 m)
+{
+	return M3Columns(V3Abs(m.col[0]),
+			 V3Abs(m.col[1]),
+			 V3Abs(m.col[2]));
 }
 
 static ds_ForceInline m3 M3Mul(const m3 a, const m3 b)
