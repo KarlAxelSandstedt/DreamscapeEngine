@@ -307,9 +307,10 @@ struct test_Output RaycastTriTest(struct test_Environment *env)
 /********************************** hull **********************************/
 
 /* a mesh of the hull's faces, each triangulated as a fan from its first vertex */
-static struct triMesh *RcHullMesh(struct arena *mem, const struct dcel *hull)
+static struct mesh *RcHullMesh(struct arena *mem, const struct dcel *hull)
 {
-    struct triMesh *mesh = ArenaPush(mem, sizeof(struct triMesh));
+    struct mesh *mesh = ArenaPush(mem, sizeof(struct mesh));
+    *mesh = (struct mesh) { 0 };
     mesh->v_count = hull->v_count;
     mesh->v = hull->v;
     mesh->tri_count = 0;
@@ -332,7 +333,7 @@ static struct triMesh *RcHullMesh(struct arena *mem, const struct dcel *hull)
 }
 
 /* the first hit over all triangles of a mesh, one ray setup (as the BVH traversal does) */
-static f32 RcMeshBruteForce(const struct triMesh *mesh, const struct ray *ray)
+static f32 RcMeshBruteForce(const struct mesh *mesh, const struct ray *ray)
 {
     const struct rayWoop woop = RayWoop(ray);
     f32 best = F32_INFINITY;
@@ -389,7 +390,7 @@ struct test_Output RaycastHullTest(struct test_Environment *env)
             ArenaPopRecord(env->mem_1);
             continue;	/* degenerate cloud */
         }
-        const struct triMesh *mesh = RcHullMesh(env->mem_1, &hull);
+        const struct mesh *mesh = RcHullMesh(env->mem_1, &hull);
 
         for (u32 k = 0; k < 8; ++k)
         {
@@ -451,7 +452,8 @@ struct test_Output RaycastHullTest(struct test_Environment *env)
 static struct c_Shape RcTerrain(struct arena *mem, const u32 cells, const f32 cell, const f32 relief)
 {
     const u32 n = cells + 1;
-    struct triMesh *mesh = ArenaPush(mem, sizeof(struct triMesh));
+    struct c_Shape shape = { .type = C_SHAPE_TRI_MESH };
+    struct mesh *mesh = &shape.mesh;
     mesh->v_count = n*n;
     mesh->tri_count = 2*cells*cells;
     mesh->v = ArenaPush(mem, mesh->v_count*sizeof(v3));
@@ -474,8 +476,7 @@ static struct c_Shape RcTerrain(struct arena *mem, const u32 cells, const f32 ce
             mesh->tri[t++] = (v3u32) { .buf = { b, c, d } };
         }
     }
-    struct c_Shape shape = { .type = C_SHAPE_TRI_MESH };
-    shape.mesh = MeshConstruct(mem, mesh, 8);
+    MeshConstruct(mem, mesh, 8);
     return shape;
 }
 
@@ -486,7 +487,6 @@ struct test_Output RaycastMeshTest(struct test_Environment *env)
 
     ArenaPushRecord(env->mem_1);
     const struct c_Shape terrain = RcTerrain(env->mem_1, 32, 0.5f, 0.4f);
-    const struct triMesh terrain_tri = { .v = terrain.mesh.v, .tri = terrain.mesh.tri, .v_count = terrain.mesh.v_count, .tri_count = terrain.mesh.tri_count };
     u32 hits = 0;
     const u32 rounds = 4000;
     for (u32 round = 0; round < rounds; ++round)
@@ -498,7 +498,7 @@ struct test_Output RaycastMeshTest(struct test_Environment *env)
             ray.dir.y = -F32Abs(ray.dir.y) - 0.1f;
         }
         const f32 t = MeshRaycastParameter(&terrain.mesh, &ray);
-        const f32 t_brute = RcMeshBruteForce(&terrain_tri, &ray);
+        const f32 t_brute = RcMeshBruteForce(&terrain.mesh, &ray);
         hits += (t != F32_INFINITY);
         if (t != t_brute)
         {
@@ -532,7 +532,7 @@ struct test_Output RaycastWatertightTest(struct test_Environment *env)
             ArenaPopRecord(env->mem_1);
             continue;
         }
-        const struct triMesh *mesh = RcHullMesh(env->mem_1, &hull);
+        const struct mesh *mesh = RcHullMesh(env->mem_1, &hull);
         /* an interior point: the mean of the vertices (convex) */
         v3 inside = V3Zero();
         for (u32 i = 0; i < hull.v_count; ++i) { inside = V3Add(inside, hull.v[i]); }

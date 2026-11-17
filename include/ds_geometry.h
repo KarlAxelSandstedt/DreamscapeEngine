@@ -247,24 +247,6 @@ static ds_ForceInline u32 AabbContainsMargin(const struct aabb *a, const struct 
 /* Return the axis with the largest side length (ties: the lowest axis) */
 static ds_ForceInline u32 AabbMaxAxis(const struct aabb a);
 
-/********************************* tri_mesh **********************************/
-
-/*
- * triangle mesh: tri_count triangles, each three indices into the v_count vertices v; no adjacency. Precondition:
- * every triangle has nonzero area (asserted by the mesh contacts). Collision is two-sided; the CCW winding only
- * orients render normals.
- */
-struct triMesh
-{
-	v3 *		v;
-	v3u32 *	tri;
-	u32 		v_count;	
-	u32 		tri_count;
-};
-
-/* Return the bounding box of all v_count vertices, unreferenced ones included; no vertices: the zero box */
-static ds_ForceInline struct aabb TriMeshBbox(const struct triMesh *mesh);
-
 /********************************* triangle *********************************/
 
 /*
@@ -673,11 +655,6 @@ static ds_ForceInline u32 AabbMaxAxis(const struct aabb a)
 }
 
 /****************************** tri_mesh: inline definitions *******************************/
-
-static ds_ForceInline struct aabb TriMeshBbox(const struct triMesh *mesh)
-{
-	return BboxVertexSet(mesh->v, mesh->v_count);
-}
 
 /****************************** triangle: inline definitions *******************************/
 

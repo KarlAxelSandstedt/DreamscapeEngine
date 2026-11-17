@@ -799,13 +799,13 @@ struct slot led_RenderMeshLookup(struct led *led, const utf8 id)
 	return ds_SDBLookup(led->render_mesh_db, id);
 }
 
-static struct triMesh TriMeshPerlinNoise(struct arena *mem_persistent, const u32 n, const f32 width)
+static struct mesh TriMeshPerlinNoise(struct arena *mem_persistent, const u32 n, const f32 width)
 {
 	ds_Assert(PowerOfTwoCheck(n) && n >= 32);
 
 	struct arena *tmp = ArenaPushScratch();
 
-	struct triMesh mesh = 
+	struct mesh mesh = 
 	{
 		.v_count = (n-1)*(n-1),
 		.tri_count = 2*(n-2)*(n-2),
@@ -907,7 +907,7 @@ static struct triMesh TriMeshPerlinNoise(struct arena *mem_persistent, const u32
 	ArenaPopScratch();
 
 	/* centered on its box: not required, but f32 vertices are most precise near the origin */
-	const struct aabb bbox = TriMeshBbox(&mesh);
+	const struct aabb bbox = MeshBbox(&mesh);
 	const v3 local_origin = V3Scale(V3Add(bbox.min, bbox.max), -0.5f);
 	for (u32 i = 0; i < mesh.v_count; ++i)
 	{
@@ -1450,9 +1450,9 @@ enum led_MeshKind
 };
 
 /* a heightfield of n x n vertices over width x width metres, centred on the origin, y = f(x, z) by kind */
-static struct triMesh TriMeshHeightfield(struct arena *mem, const u32 n, const f32 width, const enum led_MeshKind kind)
+static struct mesh TriMeshHeightfield(struct arena *mem, const u32 n, const f32 width, const enum led_MeshKind kind)
 {
-	struct triMesh mesh = { .v_count = n*n, .tri_count = 2*(n-1)*(n-1) };
+	struct mesh mesh = { .v_count = n*n, .tri_count = 2*(n-1)*(n-1) };
 	mesh.v = ArenaPush(mem, mesh.v_count*sizeof(v3));
 	mesh.tri = ArenaPush(mem, mesh.tri_count*sizeof(v3u32));
 	ds_Assert(mesh.v && mesh.tri);
@@ -1491,10 +1491,9 @@ static struct triMesh TriMeshHeightfield(struct arena *mem, const u32 n, const f
 static void led_MeshSceneShapeAdd(struct led *led, const char *id, const enum led_MeshKind kind)
 {
 	struct ds_Window *sys_win = ds_WindowAddress(g_editor->window);
-	struct triMesh *tri_mesh = ArenaPush(&led->mem_persistent, sizeof(struct triMesh));
-	*tri_mesh = TriMeshHeightfield(&led->mem_persistent, 32, 20.0f, kind);
 	struct mesh *mesh = ArenaPush(&led->mem_persistent, sizeof(struct mesh));
-	*mesh = MeshConstruct(&led->mem_persistent, tri_mesh, 8);
+	*mesh = TriMeshHeightfield(&led->mem_persistent, 32, 20.0f, kind);
+	MeshConstruct(&led->mem_persistent, mesh, 8);
 	led_CollisionMeshAdd(led, Utf8Cstr(sys_win->ui->mem_frame, id), mesh);
 }
 
@@ -1696,15 +1695,14 @@ void led_WallSmashSimulationSetup(struct led *led)
 	id = Utf8Cstr(sys_win->ui->mem_frame, "c_dsphere");
     led_CollisionDcelAdd(led, id, c_dsphere);
 
-	struct triMesh *tri_mesh = ArenaPush(&led->mem_persistent, sizeof(struct triMesh));
-	*tri_mesh = TriMeshPerlinNoise(&led->mem_persistent, 64, 200.0f);
 	struct mesh *mesh = ArenaPush(&led->mem_persistent, sizeof(struct mesh));
+	*mesh = TriMeshPerlinNoise(&led->mem_persistent, 64, 200.0f);
 	f32 best_cost = F32_INFINITY;
 	u32 best_bin_count = 8;
 	for (u32 i = 8; i < 16; ++i)
 	{
 		ArenaPushRecord(&led->mem_persistent);
-		*mesh = MeshConstruct(&led->mem_persistent, tri_mesh, i);
+		MeshConstruct(&led->mem_persistent, mesh, i);
 		const f32 cost = BVHCost(&mesh->bvh);
 		if (cost < best_cost)
 		{
@@ -1713,7 +1711,7 @@ void led_WallSmashSimulationSetup(struct led *led)
 		}
 		ArenaPopRecord(&led->mem_persistent);
 	}
-	*mesh = MeshConstruct(&led->mem_persistent, tri_mesh, best_bin_count);
+	MeshConstruct(&led->mem_persistent, mesh, best_bin_count);
 	id = Utf8Cstr(sys_win->ui->mem_frame, "c_mesh");
     led_CollisionMeshAdd(led, id, mesh);
 

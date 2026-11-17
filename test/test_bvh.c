@@ -264,23 +264,21 @@ struct test_Output MeshTest(struct test_Environment *env)
     {
         ArenaPushRecord(env->mem_1);
         const u32 tri_count = (round == 0) ? 1 : (round == 1) ? 2 : 50 + round * 137;
-        struct triMesh *tri_mesh = ArenaPush(env->mem_1, sizeof(struct triMesh));
-        tri_mesh->v_count = 3 * tri_count;
-        tri_mesh->tri_count = tri_count;
-        tri_mesh->v = ArenaPush(env->mem_1, tri_mesh->v_count*sizeof(v3));
-        tri_mesh->tri = ArenaPush(env->mem_1, tri_count*sizeof(v3u32));
+        struct mesh mesh = { .v_count = 3*tri_count, .tri_count = tri_count };
+        mesh.v = ArenaPush(env->mem_1, mesh.v_count*sizeof(v3));
+        mesh.tri = ArenaPush(env->mem_1, tri_count*sizeof(v3u32));
         for (u32 i = 0; i < tri_count; ++i)
         {
             const v3 c = V3(RngF32Range(-20.0f, 20.0f), RngF32Range(-2.0f, 2.0f), RngF32Range(-20.0f, 20.0f));
             for (u32 k = 0; k < 3; ++k)
             {
-                tri_mesh->v[3*i + k] = V3Add(c, V3(RngF32Range(-1.0f, 1.0f), RngF32Range(-1.0f, 1.0f), RngF32Range(-1.0f, 1.0f)));
+                mesh.v[3*i + k] = V3Add(c, V3(RngF32Range(-1.0f, 1.0f), RngF32Range(-1.0f, 1.0f), RngF32Range(-1.0f, 1.0f)));
             }
-            tri_mesh->tri[i] = (v3u32) { .buf = { 3*i, 3*i + 1, 3*i + 2 } };
+            mesh.tri[i] = (v3u32) { .buf = { 3*i, 3*i + 1, 3*i + 2 } };
         }
 
-        const struct mesh mesh = MeshConstruct(env->mem_1, tri_mesh, 8);
-        TEST_NOT_ZERO(mesh.tri_count == tri_count && mesh.v == tri_mesh->v && mesh.tri == tri_mesh->tri && mesh.v_count == tri_mesh->v_count);
+        MeshConstruct(env->mem_1, &mesh, 8);
+        TEST_NOT_ZERO(mesh.leaf_tri && mesh.tri_count == tri_count && mesh.v_count == 3*tri_count);
         BVHValidate(&mesh.bvh);
 
         u8 *seen = ArenaPush(env->mem_1, tri_count);
@@ -306,7 +304,7 @@ struct test_Output MeshTest(struct test_Environment *env)
                     TEST_NOT_ZERO(tri < tri_count && !seen[tri]);
                     seen[tri] = 1;
                     covered += 1;
-                    const struct aabb box = BboxTriangle(tri_mesh->v[tri_mesh->tri[tri].x], tri_mesh->v[tri_mesh->tri[tri].y], tri_mesh->v[tri_mesh->tri[tri].z]);
+                    const struct aabb box = BboxTriangle(mesh.v[mesh.tri[tri].x], mesh.v[mesh.tri[tri].y], mesh.v[mesh.tri[tri].z]);
                     TEST_NOT_ZERO(AabbContainsMargin(&n->bbox, &box, 0.0f));
                 }
             }
@@ -318,9 +316,9 @@ struct test_Output MeshTest(struct test_Environment *env)
         ArenaPopRecord(env->mem_1);
     }
 
-    const struct triMesh empty = { 0 };
-    const struct mesh none = MeshConstruct(env->mem_1, &empty, 8);
-    TEST_NOT_ZERO(none.tri_count == 0 && none.bvh.bt.count == 0 && none.bvh.bt.root == BT_INDEX_NULL);
+    struct mesh none = { 0 };
+    MeshConstruct(env->mem_1, &none, 8);
+    TEST_NOT_ZERO(none.leaf_tri == NULL && none.bvh.bt.count == 0 && none.bvh.bt.root == BT_INDEX_NULL);
     BVHValidate(&none.bvh);
 
     return output;

@@ -3017,7 +3017,8 @@ static struct ds_DynamicsWorker mc_worker[DS_THREAD_COUNT_MAX];
 struct c_Shape McTerrain(struct arena *mem, const f32 cell, const f32 relief, const q *rotation)
 {
     const u32 n = MC_GRID + 1;
-    struct triMesh *mesh = ArenaPush(mem, sizeof(struct triMesh));
+    struct c_Shape shape = { .type = C_SHAPE_TRI_MESH };
+    struct mesh *mesh = &shape.mesh;
     mesh->v_count = n*n;
     mesh->tri_count = 2*MC_GRID*MC_GRID;
     mesh->v = ArenaPush(mem, mesh->v_count*sizeof(v3));
@@ -3043,15 +3044,15 @@ struct c_Shape McTerrain(struct arena *mem, const f32 cell, const f32 relief, co
         }
     }
 
-    struct c_Shape shape = { .type = C_SHAPE_TRI_MESH };
-    shape.mesh = MeshConstruct(mem, mesh, 8);
+    MeshConstruct(mem, mesh, 8);
     return shape;
 }
 
 /* a one-triangle mesh (t0, t1, t2) */
 static struct c_Shape McOneTriangle(struct arena *mem, const v3 t0, const v3 t1, const v3 t2)
 {
-    struct triMesh *mesh = ArenaPush(mem, sizeof(struct triMesh));
+    struct c_Shape shape = { .type = C_SHAPE_TRI_MESH };
+    struct mesh *mesh = &shape.mesh;
     mesh->v_count = 3;
     mesh->tri_count = 1;
     mesh->v = ArenaPush(mem, 3*sizeof(v3));
@@ -3061,8 +3062,7 @@ static struct c_Shape McOneTriangle(struct arena *mem, const v3 t0, const v3 t1,
     mesh->v[2] = t2;
     mesh->tri[0] = (v3u32) { .buf = { 0, 1, 2 } };
 
-    struct c_Shape shape = { .type = C_SHAPE_TRI_MESH };
-    shape.mesh = MeshConstruct(mem, mesh, 8);
+    MeshConstruct(mem, mesh, 8);
     return shape;
 }
 

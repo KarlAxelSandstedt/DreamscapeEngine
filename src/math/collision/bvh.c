@@ -632,60 +632,48 @@ void BVHValidate(const struct BVH *bvh)
     while (it.at != it.root);
 }
 
-struct mesh MeshConstruct(struct arena *mem, const struct triMesh *tri_mesh, const u32 bin_count)
+void MeshConstruct(struct arena *mem, struct mesh *mesh, const u32 bin_count)
 {
 	ds_Assert(bin_count && bin_count <= 255);	/* bin indices are bytes */
-	if (!tri_mesh->tri_count)
+	mesh->bvh = (struct BVH) { 0 };
+	BTFlush(mesh->bvh.bt);
+	mesh->leaf_tri = NULL;
+	mesh->depth = 0;
+	if (!mesh->tri_count)
 	{
-		struct mesh none = { 0 };
-		BTFlush(none.bvh.bt);
-		return none;
+		return;
 	}
 
 	ProfZone;
 
 	ArenaPushRecord(mem);
-	const u32 max_node_count_required = 2*tri_mesh->tri_count - 1;
+	const u32 max_node_count_required = 2*mesh->tri_count - 1;
 
-	struct mesh mesh = 
-	{
-		.v = tri_mesh->v,
-		.tri = tri_mesh->tri,
-		.v_count = tri_mesh->v_count,
-		.bvh = 
-		{ 
-            .internal_set = { 0 },
-            .leaf_set = { 0 },
-			.heap_allocated = 0,
-		},
-		.leaf_tri = ArenaPush(mem, tri_mesh->tri_count*sizeof(u32)),
-		.tri_count = tri_mesh->tri_count,
-        .depth = 0,
-	};
-	ds_PoolAlloc(mem, mesh.bvh.pool, max_node_count_required, NOT_GROWABLE);
-    BTFlush(mesh.bvh.bt);
+	mesh->leaf_tri = ArenaPush(mem, mesh->tri_count*sizeof(u32));
+	ds_PoolAlloc(mem, mesh->bvh.pool, max_node_count_required, NOT_GROWABLE);
+    BTFlush(mesh->bvh.bt);
 
     struct arena *tmp1 = ArenaPushScratch();
     struct arena *tmp2 = ArenaPushScratch();
 	struct aabb *axis_bin_bbox[3];
 	u32 *axis_bin_tri_count[3];
 	u8 *centroid_bin_map[3];
-	centroid_bin_map[0] = ArenaPush(tmp1, tri_mesh->tri_count*sizeof(u8));
-	centroid_bin_map[1] = ArenaPush(tmp1, tri_mesh->tri_count*sizeof(u8));
-	centroid_bin_map[2] = ArenaPush(tmp1, tri_mesh->tri_count*sizeof(u8));
+	centroid_bin_map[0] = ArenaPush(tmp1, mesh->tri_count*sizeof(u8));
+	centroid_bin_map[1] = ArenaPush(tmp1, mesh->tri_count*sizeof(u8));
+	centroid_bin_map[2] = ArenaPush(tmp1, mesh->tri_count*sizeof(u8));
 	axis_bin_bbox[0] = ArenaPush(tmp1, bin_count*sizeof(struct aabb));
 	axis_bin_bbox[1] = ArenaPush(tmp1, bin_count*sizeof(struct aabb));
 	axis_bin_bbox[2] = ArenaPush(tmp1, bin_count*sizeof(struct aabb));
 	axis_bin_tri_count[0] = ArenaPush(tmp1, bin_count*sizeof(u32));
 	axis_bin_tri_count[1] = ArenaPush(tmp1, bin_count*sizeof(u32));
 	axis_bin_tri_count[2] = ArenaPush(tmp1, bin_count*sizeof(u32));
-	struct aabb *bbox_tri = ArenaPush(tmp1, tri_mesh->tri_count*sizeof(struct aabb));
+	struct aabb *bbox_tri = ArenaPush(tmp1, mesh->tri_count*sizeof(struct aabb));
 	struct memArray arr = ArenaPushAlignedAll(tmp1, sizeof(u32), 4);
     struct memArray depth_arr = ArenaPushAlignedAll(tmp2, sizeof(u32), 4);
 
 	u32 success = 1;
-	if (!mesh.bvh.pool.length 
-			|| !mesh.leaf_tri 
+	if (!mesh->bvh.pool.length 
+			|| !mesh->leaf_tri 
 			|| !centroid_bin_map[2] 
 			|| !axis_bin_tri_count[2] 
 			|| !axis_bin_bbox[2] 
@@ -700,38 +688,38 @@ struct mesh MeshConstruct(struct arena *mem, const struct triMesh *tri_mesh, con
     u32 *depth_stack = depth_arr.addr;
 	u32 node_stack_size = (u32) arr.len;
 	u32 sc = 1;
-    struct slot root = ds_PoolAdd(mesh.bvh.pool);
-	BTAddRoot(mesh.bvh.bt, mesh.bvh.pool.buf, root.index);
+    struct slot root = ds_PoolAdd(mesh->bvh.pool);
+	BTAddRoot(mesh->bvh.bt, mesh->bvh.pool.buf, root.index);
 	struct BVHNode *node = root.address;
 	/* bt_child[0] = tri_first,
 	 * bt_child[1] = tri_count */
 	node->bt_child[0] = 0;
-	node->bt_child[1] = tri_mesh->tri_count;
+	node->bt_child[1] = mesh->tri_count;
 	node->bbox = BboxTriangle(
-				tri_mesh->v[tri_mesh->tri[0].buf[0]],
-				tri_mesh->v[tri_mesh->tri[0].buf[1]],
-				tri_mesh->v[tri_mesh->tri[0].buf[2]]);
+				mesh->v[mesh->tri[0].buf[0]],
+				mesh->v[mesh->tri[0].buf[1]],
+				mesh->v[mesh->tri[0].buf[2]]);
 	node_stack[0] = root.index;
     depth_stack[0] = 0;
 
-	for (u32 i = 0; i < tri_mesh->tri_count; ++i)
+	for (u32 i = 0; i < mesh->tri_count; ++i)
 	{
-		mesh.leaf_tri[i] = i;
+		mesh->leaf_tri[i] = i;
 		bbox_tri[i] = BboxTriangle(
-				tri_mesh->v[tri_mesh->tri[i].buf[0]],
-				tri_mesh->v[tri_mesh->tri[i].buf[1]],
-				tri_mesh->v[tri_mesh->tri[i].buf[2]]);
+				mesh->v[mesh->tri[i].buf[0]],
+				mesh->v[mesh->tri[i].buf[1]],
+				mesh->v[mesh->tri[i].buf[2]]);
 		node->bbox = BboxUnion(node->bbox, bbox_tri[i]);
 	}
 
 	/* Process triangles from left to right, depth-first. */
 	while (sc--)
 	{
-        if (mesh.depth < depth_stack[sc])
+        if (mesh->depth < depth_stack[sc])
         {
-            mesh.depth = depth_stack[sc];
+            mesh->depth = depth_stack[sc];
         }
-		node = mesh.bvh.pool.buf + node_stack[sc];
+		node = mesh->bvh.pool.buf + node_stack[sc];
 		const u32 tri_first = node->bt_child[0];
 		const u32 tri_count = node->bt_child[1];
 		if (tri_count == 1)
@@ -739,7 +727,7 @@ struct mesh MeshConstruct(struct arena *mem, const struct triMesh *tri_mesh, con
 			continue;
 		}
 
-		ProfZoneNamed("mesh.bvh construction iteration");
+		ProfZoneNamed("mesh->bvh construction iteration");
 		const v3 bbox_max = node->bbox.max;
 		const v3 bbox_min = node->bbox.min;
 
@@ -768,7 +756,7 @@ struct mesh MeshConstruct(struct arena *mem, const struct triMesh *tri_mesh, con
 
 			for (u32 i = tri_first; i < tri_first + tri_count; ++i)
 			{
-				const u32 tri = mesh.leaf_tri[i];
+				const u32 tri = mesh->leaf_tri[i];
 				const f32 val = bin_count * (0.5f*(bbox_tri[tri].min.buf[axis] + bbox_tri[tri].max.buf[axis]) - bbox_min.buf[axis]) / (bbox_max.buf[axis] - bbox_min.buf[axis]);
 				const u8 bi = (u8) F32Clamp(val, 0.0f, bin_count - 0.01f);
 				centroid_bin_map[axis][tri] = bi;
@@ -837,24 +825,24 @@ struct mesh MeshConstruct(struct arena *mem, const struct triMesh *tri_mesh, con
 				u32 right = tri_first + tri_count - 1;
 				while (left < right)
 				{
-					const u32 tri = mesh.leaf_tri[left];
+					const u32 tri = mesh->leaf_tri[left];
 					if (centroid_bin_map[best_axis][tri] <= best_split)
 					{
 						left += 1;
 					}
 					else
 					{
-						mesh.leaf_tri[left] = mesh.leaf_tri[right];
-						mesh.leaf_tri[right] = tri;
+						mesh->leaf_tri[left] = mesh->leaf_tri[right];
+						mesh->leaf_tri[right] = tri;
 						right -= 1;
 					}
 				}
 
 
-				const struct slot slot_left = ds_PoolAdd(mesh.bvh.pool);
-                const struct slot slot_right = ds_PoolAdd(mesh.bvh.pool);
+				const struct slot slot_left = ds_PoolAdd(mesh->bvh.pool);
+                const struct slot slot_right = ds_PoolAdd(mesh->bvh.pool);
 
-				BTAddChildren(mesh.bvh.bt, mesh.bvh.pool.buf, node_stack[sc], slot_left.index, slot_right.index);
+				BTAddChildren(mesh->bvh.bt, mesh->bvh.pool.buf, node_stack[sc], slot_left.index, slot_right.index);
 				ds_Assert(slot_left.address && slot_right.address);
 
 				struct BVHNode *child_left = slot_left.address;
@@ -895,21 +883,28 @@ end:
 	{
 		ArenaPopRecord(mem);
 		const u64 size_required = ds_PoolAllocMemoryRequirement(max_node_count_required, sizeof(struct BVHNode))
-			+ tri_mesh->tri_count*sizeof(u32) 
-			+ tri_mesh->tri_count*sizeof(struct aabb)
-			+ 3*tri_mesh->tri_count*sizeof(u8) 
+			+ mesh->tri_count*sizeof(u32) 
+			+ mesh->tri_count*sizeof(struct aabb)
+			+ 3*mesh->tri_count*sizeof(u8) 
 			+ 3*bin_count*(sizeof(struct aabb) + sizeof(u32));
 		Log(T_SYSTEM, S_ERROR, "Failed to allocate bvh from triangle mesh, minimum size required: %lu", size_required);
-		mesh = (struct mesh) { 0 };
+		mesh->bvh = (struct BVH) { 0 };
+		BTFlush(mesh->bvh.bt);
+		mesh->leaf_tri = NULL;
+		mesh->depth = 0;
 	}
 
     ArenaPopScratch();
     ArenaPopScratch();
 
-	BVHValidate(&mesh.bvh);
+	BVHValidate(&mesh->bvh);
 
 	ProfZoneEnd;
-	return mesh;
+}
+
+struct aabb MeshBbox(const struct mesh *mesh)
+{
+	return BboxVertexSet(mesh->v, mesh->v_count);
 }
 
 /* the box's queue key: the entry t into its volume (0 if the origin is inside), F32_INFINITY on a miss */

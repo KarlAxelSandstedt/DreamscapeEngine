@@ -115,6 +115,11 @@ u32 			    DBVHInsert(struct BVH *bvh, const u32 body, const u32 shape, const st
 /* remove the leaf at node index index (DBVHInsert's return) */
 void 			    DBVHRemove(struct BVH *bvh, const u32 index);
 
+/*
+ * triangle mesh: tri_count triangles, each three indices into the v_count vertices v; no adjacency. Precondition:
+ * every triangle has nonzero area (asserted by the mesh contacts). Collision is two-sided; the CCW winding only
+ * orients render normals.
+ */
 struct mesh
 {
 	v3 *			        v;
@@ -127,10 +132,13 @@ struct mesh
 };
 
 /*
- * Return the mesh of tri_mesh's vertices and triangles (the arrays are shared, not copied) with its bvh
- * (bin_count: split candidates per axis, build quality); empty for an empty mesh.
+ * Build the bvh (bvh, leaf_tri, depth) of the mesh's v, tri, v_count and tri_count, which the caller sets; the
+ * arrays stay the caller's (bin_count: split candidates per axis, build quality). No triangles or out of memory:
+ * an empty bvh, leaf_tri NULL.
  */
-struct mesh         MeshConstruct(struct arena *mem, const struct triMesh *tri_mesh, const u32 bin_count);
+void                MeshConstruct(struct arena *mem, struct mesh *mesh, const u32 bin_count);
+/* Return the bounding box of all v_count vertices, unreferenced ones included; no vertices: the zero box */
+struct aabb         MeshBbox(const struct mesh *mesh);
 
 /********************************** SHAPES **********************************/
 
