@@ -1520,10 +1520,10 @@ struct c_MeshTri
 };
 
 /*
- * Mesh vs convex shape, shared parts: c_MeshContactInit (pose, box, traversal), c_MeshContactNext (the next
- * candidate triangle, in the convex shape's frame), c_MeshContactPush (a record), c_MeshContactFinish (internal
- * edges, output). The shape loops in between test triangles against the convex shape as stored (sphere at the
- * origin, capsule along y, hull with its stored planes).
+ * Mesh vs convex shape, shared parts: c_MeshContactInit (pose, box, candidate triangles, records),
+ * c_MeshContactTriangle (a candidate in the convex shape's frame), c_MeshContactPush (a record), c_MeshContactFinish
+ * (internal edges, output). The shape loops in between test triangles against the convex shape as stored (sphere at
+ * the origin, capsule along y, hull with its stored planes).
  */
 struct c_MeshContactHelper
 {
@@ -1534,13 +1534,10 @@ struct c_MeshContactHelper
     struct aabb                 local;      /* the convex shape's box in its own frame */
 
     ds_Array(u32)               tri;        /* MeshQuery of bbox */
-    u32                         tri_next;
 
-    struct arena *              tmp_records;
     struct arena *              tmp;
-    struct c_MeshTri *          record;
+    struct c_MeshTri *          record;     /* record[tri.length]: at most one per candidate */
     u32                         record_count;
-    u32                         record_len;
 };
 
 static void c_MeshContactInit(struct c_MeshContactHelper *helper, const struct c_Shape *mesh, const ds_TransformWorld *t_mesh, const struct c_Shape *convex, const ds_TransformWorld *t_convex)
@@ -1587,53 +1584,39 @@ static void c_MeshContactInit(struct c_MeshContactHelper *helper, const struct c
     const v3 half = M3V3Mul(rot_abs, V3Scale(V3Sub(local.max, local.min), 0.5f));
     helper->bbox = (struct aabb) { .min = V3Sub(center, half), .max = V3Add(center, half) };
 
-    /* TODO(perf, audit E2): 2 scratch arenas here (records, the rest), c_MeshHullTriangles a third */
-    helper->tmp_records = ArenaPushScratch();
+    /* TODO(perf, audit E2): 1 scratch arena here, c_MeshHullTriangles a second */
     helper->tmp = ArenaPushScratch();
     helper->tri = MeshQuery(helper->tmp, helper->mesh, &helper->bbox);
-    helper->tri_next = 0;
-
-    struct memArray records = ArenaPushAlignedAll(helper->tmp_records, sizeof(struct c_MeshTri), 8);
-    helper->record = records.addr;
+    helper->record = ArenaPush(helper->tmp, helper->tri.length*sizeof(struct c_MeshTri));
     helper->record_count = 0;
-    helper->record_len = (u32) records.len;
-}
-
-/*
- * The next triangle that can touch the convex shape: in a leaf whose box overlaps the shape's (mesh space), with its own
- * box, in the shape's frame, overlapping the shape's local box (exact: the shape lies inside its box; touching kept).
- * Returns its index and vertices in the convex shape's frame.
- */
-static u32 c_MeshContactNext(struct c_MeshContactHelper *helper, u32 *tri_index, v3 tri[3])
-{
-    while (helper->tri_next < helper->tri.length)
-    {
-        *tri_index = helper->tri.buf[helper->tri_next++];
-        const u32 *v = helper->mesh->tri[*tri_index].buf;
-        for (u32 i = 0; i < 3; ++i)
-        {
-            tri[i] = M3V3Mul(helper->rot_inv, V3Sub(helper->mesh->v[v[i]], helper->pos));
-        }
-
-        /* in the shape's frame its box is exact (a leaf's box in mesh space bounds the rotated box: looser) */
-        const struct aabb tri_bbox = { .min = V3Min(V3Min(tri[0], tri[1]), tri[2]), .max = V3Max(V3Max(tri[0], tri[1]), tri[2]) };
-        if (AabbTest(&tri_bbox, &helper->local))
-        {
-            return 1;
-        }
-    }
-
-    return 0;
-}
-
-static struct c_MeshTri *c_MeshContactPush(struct c_MeshContactHelper *helper, const u32 tri_index)
-{
-    if (helper->record_count == helper->record_len)
+    if (helper->tri.length && !helper->record)
     {
         Log(T_SYSTEM, S_FATAL, "Out of memory in %s", __func__);
         FatalCleanupAndExit();
     }
+}
 
+/*
+ * The candidate triangle tri_index (its leaf's box overlaps the shape's, mesh space) in the convex shape's frame;
+ * returns 1 if its own box there overlaps the shape's local box (exact: the shape lies inside its box; touching
+ * kept), else 0.
+ */
+static u32 c_MeshContactTriangle(v3 tri[3], const struct c_MeshContactHelper *helper, const u32 tri_index)
+{
+    const u32 *v = helper->mesh->tri[tri_index].buf;
+    for (u32 i = 0; i < 3; ++i)
+    {
+        tri[i] = M3V3Mul(helper->rot_inv, V3Sub(helper->mesh->v[v[i]], helper->pos));
+    }
+
+    /* in the shape's frame its box is exact (a leaf's box in mesh space bounds the rotated box: looser) */
+    const struct aabb tri_bbox = { .min = V3Min(V3Min(tri[0], tri[1]), tri[2]), .max = V3Max(V3Max(tri[0], tri[1]), tri[2]) };
+    return AabbTest(&tri_bbox, &helper->local);
+}
+
+static struct c_MeshTri *c_MeshContactPush(struct c_MeshContactHelper *helper, const u32 tri_index)
+{
+    ds_Assert(helper->record_count < helper->tri.length);
     struct c_MeshTri *r = helper->record + helper->record_count++;
     r->tri = tri_index;
     r->contact = 0;
@@ -1661,10 +1644,15 @@ static void c_MeshSphereTriangles(struct c_MeshContactHelper *helper, const stru
 {
     const f32 radius = sphere->radius;
     const f32 touch_tolerance = GJK_TOUCH_TOLERANCE * F32_EPSILON;
-    u32 tri_index;
-    v3 tri[3];
-    while (c_MeshContactNext(helper, &tri_index, tri))
+    for (u32 candidate = 0; candidate < helper->tri.length; ++candidate)
     {
+        const u32 tri_index = helper->tri.buf[candidate];
+        v3 tri[3];
+        if (!c_MeshContactTriangle(tri, helper, tri_index))
+        {
+            continue;
+        }
+
         /*
          * as c_HullSphereContact, two-sided: the triangle is a flat hull with faces +-n_t; center = origin.
          * Triangles have area (c_Shape precondition), so VORONOI_INVALID (zero |e|^2 or |n|^2, NaN) and n_t = 0
@@ -1748,10 +1736,15 @@ static void c_MeshCapsuleTriangles(struct c_MeshContactHelper *helper, const str
     /* the core in the capsule's frame (SegmentCapsuleTransform's order) */
     const struct segment core = Segment(V3(0.0f, capsule->half_height, 0.0f), V3(0.0f, -capsule->half_height, 0.0f));
     const f32 touch_tolerance = GJK_TOUCH_TOLERANCE * F32_EPSILON;
-    u32 tri_index;
-    v3 tri[3];
-    while (c_MeshContactNext(helper, &tri_index, tri))
+    for (u32 candidate = 0; candidate < helper->tri.length; ++candidate)
     {
+        const u32 tri_index = helper->tri.buf[candidate];
+        v3 tri[3];
+        if (!c_MeshContactTriangle(tri, helper, tri_index))
+        {
+            continue;
+        }
+
         f32 w[3], s;
         const enum voronoi region = TriSegmentVoronoi(w, &s, tri[0], tri[1], tri[2], core.p[0], core.p[1]);
         ds_AssertString(region != VORONOI_INVALID, "TriSegmentVoronoi: NaN input or distances beyond f32");
@@ -1963,10 +1956,15 @@ static void c_MeshHullTriDelayed(struct c_MeshTri *r, const struct dcel *stub, c
 static void c_MeshHullTriangles(struct c_MeshContactHelper *helper, const struct ds_ConcaveCache *cache, const struct dcel *hull)
 {
     struct ds_DynamicsMetrics *metrics = &g_dynamics_worker[ds_ThreadSelfIndex()].metrics;
-    u32 tri_index;
-    v3 tri[3];
-    while (c_MeshContactNext(helper, &tri_index, tri))
+    for (u32 candidate = 0; candidate < helper->tri.length; ++candidate)
     {
+        const u32 tri_index = helper->tri.buf[candidate];
+        v3 tri[3];
+        if (!c_MeshContactTriangle(tri, helper, tri_index))
+        {
+            continue;
+        }
+
         metrics->mesh_call_count += 1;
         v3 n_t;
         const u32 has_area = TriCcwNormalTryCompute(&n_t, tri[0], tri[1], tri[2]);
@@ -2102,7 +2100,6 @@ static void c_MeshContactFinish(struct arena *tmp, ds_TSlab(ds_TriCache) *slab, 
     }
 
     ArenaPopScratch();
-    ArenaPopScratch();
 }
 
 /*
@@ -2124,76 +2121,4 @@ ds_Array(c_Manifold) c_MeshContact(struct arena *tmp, ds_TSlab(ds_TriCache) *sla
     }
     c_MeshContactFinish(tmp, slab, &result, cache, &helper, convex->type == C_SHAPE_CONVEX_HULL);
     return result;
-}
-
-#define SAT_CACHE_SERIALIZE_SIZE    (sizeof(u32) + 2*sizeof(u32) + sizeof(f32) + 3*sizeof(f32))
-#define GJK_CACHE_SERIALIZE_SIZE    (sizeof(f32) + sizeof(u16) + 8*sizeof(u16))
-
-static void SATCacheSerialize(struct SS *ss, const struct SATCache *sat)
-{
-	SSWriteU32Le(ss, (u32) sat->type);
-	SSWriteU32LeN(ss, sat->feature, 2);
-	SSWriteF32Le(ss, sat->depth);
-	V3Serialize(ss, sat->normal);
-}
-
-/* the caller checked the size; an unused cache holds whatever it held, so nothing is validated */
-static void SATCacheDeserialize(struct SS *ss, struct SATCache *sat)
-{
-	sat->type = (enum sat_CacheType) SSReadU32Le(ss);
-	SSReadU32LeN(ss, sat->feature, 2);
-	sat->depth = SSReadF32Le(ss);
-	V3Deserialize(ss, &sat->normal);
-}
-
-u64 ds_ConvexCacheSerializeSize(const struct ds_ConvexCache *cache)
-{
-	return SAT_CACHE_SERIALIZE_SIZE + GJK_CACHE_SERIALIZE_SIZE;
-}
-
-void ds_ConvexCacheSerialize(struct SS *ss, const struct ds_ConvexCache *cache)
-{
-	SATCacheSerialize(ss, &cache->sat);
-	SSWriteF32Le(ss, cache->gjk.metric);
-	SSWriteU16Le(ss, cache->gjk.count);
-	SSWriteU16LeN(ss, cache->gjk.index_a, 4);
-	SSWriteU16LeN(ss, cache->gjk.index_b, 4);
-}
-
-u32 ds_ConvexCacheTryDeserialize(struct SS *ss, struct ds_ConvexCache *cache)
-{
-	if (SSBytesLeft(ss) < SAT_CACHE_SERIALIZE_SIZE + GJK_CACHE_SERIALIZE_SIZE)
-	{
-		return 0;
-	}
-
-	SATCacheDeserialize(ss, &cache->sat);
-	cache->gjk.metric = SSReadF32Le(ss);
-	cache->gjk.count = SSReadU16Le(ss);
-	SSReadU16LeN(ss, cache->gjk.index_a, 4);
-	SSReadU16LeN(ss, cache->gjk.index_b, 4);
-	return 1;
-}
-
-u64 ds_TriCacheSerializeSize(const struct ds_TriCache *cache)
-{
-	return sizeof(u32) + SAT_CACHE_SERIALIZE_SIZE;
-}
-
-void ds_TriCacheSerialize(struct SS *ss, const struct ds_TriCache *cache)
-{
-	SSWriteU32Le(ss, cache->tri);
-	SATCacheSerialize(ss, &cache->sat);
-}
-
-u32 ds_TriCacheTryDeserialize(struct SS *ss, struct ds_TriCache *cache)
-{
-	if (SSBytesLeft(ss) < sizeof(u32) + SAT_CACHE_SERIALIZE_SIZE)
-	{
-		return 0;
-	}
-
-	cache->tri = SSReadU32Le(ss);
-	SATCacheDeserialize(ss, &cache->sat);
-	return 1;
 }

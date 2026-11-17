@@ -1094,13 +1094,85 @@ DEFINE_CPOOL_SERIALIZE(ds_JointSim, ds_JointSim)
 
 /*************************** contact data ***************************/
 
+#define SAT_CACHE_SERIALIZE_SIZE    (sizeof(u32) + 2*sizeof(u32) + sizeof(f32) + 3*sizeof(f32))
+#define GJK_CACHE_SERIALIZE_SIZE    (sizeof(f32) + sizeof(u16) + 8*sizeof(u16))
+
+static void SATCacheSerialize(struct SS *ss, const struct SATCache *sat)
+{
+	SSWriteU32Le(ss, (u32) sat->type);
+	SSWriteU32LeN(ss, sat->feature, 2);
+	SSWriteF32Le(ss, sat->depth);
+	V3Serialize(ss, sat->normal);
+}
+
+/* the caller checked the size; an unused cache holds whatever it held, so nothing is validated */
+static void SATCacheDeserialize(struct SS *ss, struct SATCache *sat)
+{
+	sat->type = (enum sat_CacheType) SSReadU32Le(ss);
+	SSReadU32LeN(ss, sat->feature, 2);
+	sat->depth = SSReadF32Le(ss);
+	V3Deserialize(ss, &sat->normal);
+}
+
+static u64 ConvexCacheSerializeSize(const struct ds_ConvexCache *cache)
+{
+	return SAT_CACHE_SERIALIZE_SIZE + GJK_CACHE_SERIALIZE_SIZE;
+}
+
+static void ConvexCacheSerialize(struct SS *ss, const struct ds_ConvexCache *cache)
+{
+	SATCacheSerialize(ss, &cache->sat);
+	SSWriteF32Le(ss, cache->gjk.metric);
+	SSWriteU16Le(ss, cache->gjk.count);
+	SSWriteU16LeN(ss, cache->gjk.index_a, 4);
+	SSWriteU16LeN(ss, cache->gjk.index_b, 4);
+}
+
+static u32 ConvexCacheTryDeserialize(struct SS *ss, struct ds_ConvexCache *cache)
+{
+	if (SSBytesLeft(ss) < SAT_CACHE_SERIALIZE_SIZE + GJK_CACHE_SERIALIZE_SIZE)
+	{
+		return 0;
+	}
+
+	SATCacheDeserialize(ss, &cache->sat);
+	cache->gjk.metric = SSReadF32Le(ss);
+	cache->gjk.count = SSReadU16Le(ss);
+	SSReadU16LeN(ss, cache->gjk.index_a, 4);
+	SSReadU16LeN(ss, cache->gjk.index_b, 4);
+	return 1;
+}
+
+static u64 TriCacheSerializeSize(const struct ds_TriCache *cache)
+{
+	return sizeof(u32) + SAT_CACHE_SERIALIZE_SIZE;
+}
+
+static void TriCacheSerialize(struct SS *ss, const struct ds_TriCache *cache)
+{
+	SSWriteU32Le(ss, cache->tri);
+	SATCacheSerialize(ss, &cache->sat);
+}
+
+static u32 TriCacheTryDeserialize(struct SS *ss, struct ds_TriCache *cache)
+{
+	if (SSBytesLeft(ss) < sizeof(u32) + SAT_CACHE_SERIALIZE_SIZE)
+	{
+		return 0;
+	}
+
+	cache->tri = SSReadU32Le(ss);
+	SATCacheDeserialize(ss, &cache->sat);
+	return 1;
+}
+
 /* a concave contact's tri cache: tri_count, then the entries */
 static u64 ContactTriCacheSerializeSize(const struct ds_ContactNarrow *buffer)
 {
 	u64 size = sizeof(u32);
 	for (u32 i = 0; i < buffer->cache.concave.tri_count; ++i)
 	{
-		size += ds_TriCacheSerializeSize(buffer->cache.concave.tri.buf + i);
+		size += TriCacheSerializeSize(buffer->cache.concave.tri.buf + i);
 	}
 	return size;
 }
@@ -1110,7 +1182,7 @@ static void ContactTriCacheSerialize(struct SS *ss, const struct ds_ContactNarro
 	SSWriteU32Le(ss, buffer->cache.concave.tri_count);
 	for (u32 i = 0; i < buffer->cache.concave.tri_count; ++i)
 	{
-		ds_TriCacheSerialize(ss, buffer->cache.concave.tri.buf + i);
+		TriCacheSerialize(ss, buffer->cache.concave.tri.buf + i);
 	}
 }
 
@@ -1142,7 +1214,7 @@ static u32 ContactTriCacheTryDeserialize(struct SS *ss, struct ds_Dynamics *pipe
 
 	for (u32 i = 0; i < count; ++i)
 	{
-		if (!ds_TriCacheTryDeserialize(ss, buffer->cache.concave.tri.buf + i))
+		if (!TriCacheTryDeserialize(ss, buffer->cache.concave.tri.buf + i))
 		{
 			return 0;
 		}
@@ -1161,7 +1233,7 @@ static u64 ContactManifoldSerializeSize(const struct ds_Dynamics *pipeline, cons
 	}
 	if (ds_ContactConvexCheck(pipeline->contact_pool.buf + contact))
 	{
-		size += ds_ConvexCacheSerializeSize(&pipeline->contact_narrow_pool.buf[contact].cache.convex);
+		size += ConvexCacheSerializeSize(&pipeline->contact_narrow_pool.buf[contact].cache.convex);
 	}
 	return size;
 }
@@ -1177,7 +1249,7 @@ static void ContactManifoldSerialize(struct SS *ss, const struct ds_Dynamics *pi
 	V3Serialize(ss, pipeline->contact_narrow_pool.buf[contact].com_offset);
 	if (ds_ContactConvexCheck(pipeline->contact_pool.buf + contact))
 	{
-		ds_ConvexCacheSerialize(ss, &pipeline->contact_narrow_pool.buf[contact].cache.convex);
+		ConvexCacheSerialize(ss, &pipeline->contact_narrow_pool.buf[contact].cache.convex);
 	}
 }
 
@@ -1223,7 +1295,7 @@ static u32 ContactManifoldTryDeserialize(struct SS *ss, struct ds_Dynamics *pipe
 	V3Deserialize(ss, &buffer->com_offset);
 	if (ds_ContactConvexCheck(contact))
 	{
-		return ds_ConvexCacheTryDeserialize(ss, &buffer->cache.convex);
+		return ConvexCacheTryDeserialize(ss, &buffer->cache.convex);
 	}
 	return 1;
 }
