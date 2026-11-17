@@ -23,6 +23,9 @@ struct ds_GeometricMoverPlane
 };
 DEFINE_ARRAY_STRUCT(ds_GeometricMoverPlane);
 
+#define GEOMETRIC_MOVER_PLANE_MAX   64
+ds_StaticAssert(GEOMETRIC_MOVER_PLANE_MAX > 0 && (GEOMETRIC_MOVER_PLANE_MAX & (GEOMETRIC_MOVER_PLANE_MAX - 1)) == 0, "GEOMETRIC_MOVER_PLANE_MAX must be a power of two");
+
 static void ds_GeometricMoverSpherePlane(ds_Array(ds_GeometricMoverPlane) *planes, const struct capsule *mover, const struct sphere *sphere, const ds_Transform *t_shape)
 {
     const f32 r_sum = mover->radius + sphere->radius;
@@ -47,7 +50,8 @@ static void ds_GeometricMoverSpherePlane(ds_Array(ds_GeometricMoverPlane) *plane
         n = V3Scale(V3Sub(q, t_shape->position), 1.0f / distance);
     }
 
-    planes->buf[planes->length].plane = (struct plane) { .normal = n, .signed_distance = r_sum - distance };
+    const u32 index = planes->length & (GEOMETRIC_MOVER_PLANE_MAX - 1);
+    planes->buf[index].plane = (struct plane) { .normal = n, .signed_distance = r_sum - distance };
     planes->length += 1;
 }
 
@@ -77,11 +81,12 @@ static void ds_GeometricMoverCapsulePlane(ds_Array(ds_GeometricMoverPlane) *plan
         n = V3Scale(V3Sub(q, p), 1.0f / distance);
     }
 
-    planes->buf[planes->length].plane = (struct plane) { .normal = n, .signed_distance = r_sum - distance };
+    const u32 index = planes->length & (GEOMETRIC_MOVER_PLANE_MAX - 1);
+    planes->buf[index].plane = (struct plane) { .normal = n, .signed_distance = r_sum - distance };
     planes->length += 1;
 }
 
-static ds_Array(ds_GeometricMoverPlane) ds_GeometricMoverPlanes(struct arena *mem, const struct ds_Dynamics *dynamics, const v3f64 position, const struct capsule *capsule)
+static ds_Array(ds_GeometricMoverPlane) ds_GeometricMoverPlanes(struct ds_GeometricMoverPlane buf[GEOMETRIC_MOVER_PLANE_MAX], const struct ds_Dynamics *dynamics, const v3f64 position, const struct capsule *capsule)
 {
     struct arena *tmp = ArenaPushScratch();
 
@@ -94,27 +99,13 @@ static ds_Array(ds_GeometricMoverPlane) ds_GeometricMoverPlanes(struct arena *me
     struct aabb bbox;
     AabbTranslateOutward(&bbox, &local, position);
 
-    ds_Array(u32) query[3];
-    u32 query_count = 0;
-    for (u32 b = 0; b < 3; ++b)
-    {
-        query[b] = BVHQuery(tmp, bvh[b], &bbox);
-        query_count += query[b].length;
-    }
-
-    struct ds_GeometricMoverPlane *buf = ArenaPush(mem, query_count*sizeof(struct ds_GeometricMoverPlane));
-    if (query_count && !buf)
-    {
-        Log(T_PHYSICS, S_FATAL, "Out of memory in %s", __func__);
-        FatalCleanupAndExit();
-    }
     ds_Array(ds_GeometricMoverPlane) planes = { .buf = buf, .length = 0, .base = U32_MAX };
-
     for (u32 b = 0; b < 3; ++b)
     {
-        for (u32 i = 0; i < query[b].length; ++i)
+        const ds_Array(u32) query = BVHQuery(tmp, bvh[b], &bbox);
+        for (u32 i = 0; i < query.length; ++i)
         {
-            const struct ds_Shape *shape = dynamics->shape_pool.buf + query[b].buf[i];
+            const struct ds_Shape *shape = dynamics->shape_pool.buf + query.buf[i];
             const struct c_Shape *c_shape = c_ShapeDBShape(dynamics->external->cshape_db, shape->cshape_handle);
             ds_TransformWorld t_world;
             ds_ShapeWorldTransform(&t_world, dynamics, shape);
@@ -140,6 +131,12 @@ static ds_Array(ds_GeometricMoverPlane) ds_GeometricMoverPlanes(struct arena *me
         }
     }
 
+    if (planes.length > GEOMETRIC_MOVER_PLANE_MAX)
+    {
+        Log(T_PHYSICS, S_WARNING, "%s: %u planes, %u kept", __func__, planes.length, GEOMETRIC_MOVER_PLANE_MAX);
+        planes.length = GEOMETRIC_MOVER_PLANE_MAX;
+    }
+
     ArenaPopScratch();
 
     return planes;
@@ -161,17 +158,14 @@ void ds_DynamicsGeometricMover(struct ds_Dynamics *dynamics, struct ds_Geometric
 {
     ProfZone;
 
-    struct arena *tmp = ArenaPushScratch();
-
+    struct ds_GeometricMoverPlane plane_buf[GEOMETRIC_MOVER_PLANE_MAX];
     const v3f64 target = V3F64Add(mover->position, V3Promote(V3Scale(mover->velocity, tick)));
     const f32 tol = g_numerics_config->geometric_mover_tolerance;
 
     for (u32 i = 0; i < g_numerics_config->geometric_mover_max_iterations; ++i)
     {
-        ArenaFlush(tmp);
-
         const v3 target_relatve = V3F64Demote(V3F64Sub(target, mover->position));
-        const ds_Array(ds_GeometricMoverPlane) planes = ds_GeometricMoverPlanes(tmp, dynamics, mover->position, &mover->capsule);
+        const ds_Array(ds_GeometricMoverPlane) planes = ds_GeometricMoverPlanes(plane_buf, dynamics, mover->position, &mover->capsule);
         const v3 delta = ds_GeometricMoverSolvePlanes(dynamics, planes, target_relatve);
         const f32 foi = ds_GeometricMoverCast(dynamics, mover, delta);
         const v3 sweep_foi = V3Scale(delta, foi);
@@ -197,8 +191,6 @@ void ds_DynamicsGeometricMover(struct ds_Dynamics *dynamics, struct ds_Geometric
 
     //TODO: impulse on dynamic bodies
     //TODO: mover velocity update
-
-    ArenaPopScratch();
 
     ProfZoneEnd;
 }
