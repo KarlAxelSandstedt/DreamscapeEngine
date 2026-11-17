@@ -23,6 +23,64 @@ struct ds_GeometricMoverPlane
 };
 DEFINE_ARRAY_STRUCT(ds_GeometricMoverPlane);
 
+static void ds_GeometricMoverSpherePlane(ds_Array(ds_GeometricMoverPlane) *planes, const struct capsule *mover, const struct sphere *sphere, const ds_Transform *t_shape)
+{
+    const f32 r_sum = mover->radius + sphere->radius;
+    const v3 axis = V3(0.0f, mover->half_height, 0.0f);
+    const struct segment core = Segment(axis, V3Negate(axis));
+
+    v3 n, q;
+    const f32 distance_sq = SegmentPointDistanceSquared(&q, &core, t_shape->position);
+    if (distance_sq > r_sum*r_sum)
+    {
+        return;
+    }
+
+    f32 distance = F32Sqrt(distance_sq);
+    if (distance < g_solver_config->linear_slop)
+    {
+        n = V3(0.0f, 0.0f, -1.0f);
+        distance = 0.0f;
+    }
+    else
+    {
+        n = V3Scale(V3Sub(q, t_shape->position), 1.0f / distance);
+    }
+
+    planes->buf[planes->length].plane = (struct plane) { .normal = n, .signed_distance = r_sum - distance };
+    planes->length += 1;
+}
+
+static void ds_GeometricMoverCapsulePlane(ds_Array(ds_GeometricMoverPlane) *planes, const struct capsule *mover, const struct capsule *capsule, const ds_Transform *t_shape)
+{
+    const f32 r_sum = mover->radius + capsule->radius;
+    const v3 axis_mover = V3(0.0f, mover->half_height, 0.0f);
+    const v3 axis_shape = QUnitRotate(t_shape->rotation, V3(0.0f, capsule->half_height, 0.0f));
+    const struct segment core = Segment(axis_mover, V3Negate(axis_mover));
+    const struct segment seg = Segment(V3Add(t_shape->position, axis_shape), V3Sub(t_shape->position, axis_shape));
+
+    v3 p, q, n;
+    const f32 distance_sq = SegmentDistanceSquared(&p, &q, &seg, &core);
+    if (distance_sq > r_sum*r_sum)
+    {
+        return;
+    }
+
+    f32 distance = F32Sqrt(distance_sq);
+    if (distance < g_solver_config->linear_slop)
+    {
+        n = V3(0.0f, 0.0f, -1.0f);
+        distance = 0.0f;
+    }
+    else
+    {
+        n = V3Scale(V3Sub(q, p), 1.0f / distance);
+    }
+
+    planes->buf[planes->length].plane = (struct plane) { .normal = n, .signed_distance = r_sum - distance };
+    planes->length += 1;
+}
+
 static ds_Array(ds_GeometricMoverPlane) ds_GeometricMoverPlanes(struct arena *mem, const struct ds_Dynamics *dynamics, const v3f64 position, const struct capsule *capsule)
 {
     struct arena *tmp = ArenaPushScratch();
@@ -36,25 +94,55 @@ static ds_Array(ds_GeometricMoverPlane) ds_GeometricMoverPlanes(struct arena *me
     struct aabb bbox;
     AabbTranslateOutward(&bbox, &local, position);
 
+    struct BVHQuerySet query[3];
+    u32 query_count = 0;
     for (u32 b = 0; b < 3; ++b)
     {
-        const struct BVHQuerySet query = BVHQuery(tmp, bvh[b], &bbox);
-        for (u32 i = 0; i < query.count; ++i)
+        query[b] = BVHQuery(tmp, bvh[b], &bbox);
+        query_count += query[b].count;
+    }
+
+    struct ds_GeometricMoverPlane *buf = ArenaPush(mem, query_count*sizeof(struct ds_GeometricMoverPlane));
+    if (query_count && !buf)
+    {
+        Log(T_PHYSICS, S_FATAL, "Out of memory in %s", __func__);
+        FatalCleanupAndExit();
+    }
+    ds_Array(ds_GeometricMoverPlane) planes = { .buf = buf, .length = 0, .base = U32_MAX };
+
+    for (u32 b = 0; b < 3; ++b)
+    {
+        for (u32 i = 0; i < query[b].count; ++i)
         {
-            const struct ds_Shape *shape = dynamics->shape_pool.buf + query.shape[i];
+            const struct ds_Shape *shape = dynamics->shape_pool.buf + query[b].shape[i];
             const struct c_Shape *c_shape = c_ShapeDBShape(dynamics->external->cshape_db, shape->cshape_handle);
             ds_TransformWorld t_world;
             ds_ShapeWorldTransform(&t_world, dynamics, shape);
             const ds_Transform t_shape = ds_TransformWorldRelative(&t_mover, &t_world);
-            //TODO: the shape's planes in the mover frame
+
+            switch (c_shape->type)
+            {
+                case C_SHAPE_SPHERE:
+                {
+                    ds_GeometricMoverSpherePlane(&planes, capsule, &c_shape->sphere, &t_shape);
+                } break;
+
+                case C_SHAPE_CAPSULE:
+                {
+                    ds_GeometricMoverCapsulePlane(&planes, capsule, &c_shape->capsule, &t_shape);
+                } break;
+
+                default:
+                {
+                    //TODO: hull and mesh planes
+                } break;
+            }
         }
-        ArenaFlush(tmp);
     }
 
     ArenaPopScratch();
 
-    //TODO
-    return (ds_Array(ds_GeometricMoverPlane)) { .buf = NULL, .length = 0, .base = U32_MAX };
+    return planes;
 }
 
 static v3 ds_GeometricMoverSolvePlanes(const struct ds_Dynamics *dynamics, const ds_Array(ds_GeometricMoverPlane) planes, const v3 target_relative)
