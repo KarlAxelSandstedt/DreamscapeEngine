@@ -20,7 +20,7 @@
 struct ds_GeometricMoverPlane
 {
     struct plane    plane;
-    f32             push;
+    f32             distance_pushed;
 };
 DEFINE_ARRAY_STRUCT(ds_GeometricMoverPlane);
 
@@ -52,7 +52,7 @@ static void ds_GeometricMoverSpherePlane(ds_Array(ds_GeometricMoverPlane) *plane
     }
 
     const u32 index = planes->length & (GEOMETRIC_MOVER_PLANE_MAX - 1);
-    planes->buf[index] = (struct ds_GeometricMoverPlane) { .plane = { .normal = n, .signed_distance = r_sum - distance }, .push = 0.0f };
+    planes->buf[index] = (struct ds_GeometricMoverPlane) { .plane = { .normal = n, .signed_distance = r_sum - distance }, .distance_pushed = 0.0f };
     planes->length += 1;
 }
 
@@ -83,7 +83,7 @@ static void ds_GeometricMoverCapsulePlane(ds_Array(ds_GeometricMoverPlane) *plan
     }
 
     const u32 index = planes->length & (GEOMETRIC_MOVER_PLANE_MAX - 1);
-    planes->buf[index] = (struct ds_GeometricMoverPlane) { .plane = { .normal = n, .signed_distance = r_sum - distance }, .push = 0.0f };
+    planes->buf[index] = (struct ds_GeometricMoverPlane) { .plane = { .normal = n, .signed_distance = r_sum - distance }, .distance_pushed = 0.0f };
     planes->length += 1;
 }
 
@@ -106,7 +106,7 @@ static void ds_GeometricMoverHullPlane(ds_Array(ds_GeometricMoverPlane) *planes,
     if (0.0f < distance)
     {
         const u32 index = planes->length & (GEOMETRIC_MOVER_PLANE_MAX - 1);
-        planes->buf[index] = (struct ds_GeometricMoverPlane) { .plane = { .normal = V3Negate(n), .signed_distance = radius - distance }, .push = 0.0f };
+        planes->buf[index] = (struct ds_GeometricMoverPlane) { .plane = { .normal = V3Negate(n), .signed_distance = radius - distance }, .distance_pushed = 0.0f };
         planes->length += 1;
     }
 }
@@ -175,7 +175,7 @@ static void ds_GeometricMoverMeshPlanes(struct arena *mem, ds_Array(ds_Geometric
 
         const v3 n = V3Scale(V3Sub(c_s, c_t), 1.0f / distance);
         const u32 index = planes->length & (GEOMETRIC_MOVER_PLANE_MAX - 1);
-        planes->buf[index] = (struct ds_GeometricMoverPlane) { .plane = { .normal = n, .signed_distance = r - distance }, .push = 0.0f };
+        planes->buf[index] = (struct ds_GeometricMoverPlane) { .plane = { .normal = n, .signed_distance = r - distance }, .distance_pushed = 0.0f };
         planes->length += 1;
     }
 }
@@ -244,11 +244,26 @@ static ds_Array(ds_GeometricMoverPlane) ds_GeometricMoverPlanes(struct ds_Geomet
 
 static v3 ds_GeometricMoverSolvePlanes(const struct ds_Dynamics *dynamics, const ds_Array(ds_GeometricMoverPlane) planes, const v3 target_relative)
 {
-    //TODO
+    const f32 slop = g_solver_config->linear_slop;
+    v3 target = target_relative;
     for (u32 iteration = 0; iteration < g_numerics_config->geometric_mover_solver_iterations; ++iteration)
     {
+        f32 push_total = 0.0f;
         for (u32 i = 0; i < planes.length; ++i)
         {
+            struct ds_GeometricMoverPlane *pl = planes.buf + i;
+            /* + slop: the target ends slop behind the plane */
+            const f32 s = PlanePointSignedDistance(&pl->plane, target) + slop;
+            const f32 distance_pushed_old = pl->distance_pushed;
+            pl->distance_pushed = F32Max(0.0f, distance_pushed_old - s);
+            const f32 push = pl->distance_pushed - distance_pushed_old;
+            target = V3Add(target, V3Scale(pl->plane.normal, push));
+            push_total += F32Abs(push);
+        }
+
+        if (push_total < slop)
+        {
+            break;
         }
     }
 
