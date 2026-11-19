@@ -2120,9 +2120,8 @@ solving its overlap with rigid bodies and minimizing its distance to
     target = position + tick*velocity.
 
 Any dynamic bodies the mover touches have an impulse applied to them
-based on mover state.
-
-//TODO how is velocity affected...
+based on mover state and the mover's velocity is clipped against all
+contact planes that is found.
 */
 struct ds_GeometricMover
 {

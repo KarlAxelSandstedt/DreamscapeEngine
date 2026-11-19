@@ -520,10 +520,11 @@ void ds_DynamicsGeometricMover(struct ds_Dynamics *dynamics, struct ds_Geometric
     const v3f64 target = V3F64Add(mover->position, V3Promote(V3Scale(mover->velocity, tick)));
     const f32 tol = g_numerics_config->geometric_mover_tolerance;
 
+    ds_Array(ds_GeometricMoverPlane) planes = { 0 };
     for (u32 i = 0; i < g_numerics_config->geometric_mover_max_iterations; ++i)
     {
         const v3 target_relatve = V3F64Demote(V3F64Sub(target, mover->position));
-        const ds_Array(ds_GeometricMoverPlane) planes = ds_GeometricMoverPlanes(plane_buf, dynamics, mover->position, &mover->capsule);
+        planes = ds_GeometricMoverPlanes(plane_buf, dynamics, mover->position, &mover->capsule);
         const v3 delta = ds_GeometricMoverSolvePlanes(dynamics, planes, target_relatve);
         const f32 foi = ds_GeometricMoverCast(dynamics, mover, delta);
         const v3 sweep_foi = V3Scale(delta, foi);
@@ -548,7 +549,20 @@ void ds_DynamicsGeometricMover(struct ds_Dynamics *dynamics, struct ds_Geometric
     }
 
     //TODO: impulse on dynamic bodies
-    //TODO: mover velocity update
+    for (u32 i = 0; i < planes.length; ++i)
+    {
+        const struct ds_GeometricMoverPlane *pl = planes.buf + i;
+        if (pl->distance_pushed == 0.0f)
+        {
+            continue;
+        }
+
+        const f32 vn = V3Dot(mover->velocity, pl->plane.normal);
+        if (vn < 0.0f)
+        {
+            mover->velocity = V3Sub(mover->velocity, V3Scale(pl->plane.normal, vn));
+        }
+    }
 
     ProfZoneEnd;
 }
