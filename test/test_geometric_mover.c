@@ -93,8 +93,8 @@ static void MoverTestWorldDealloc(struct mover_TestWorld *world)
     ArenaFree(&world->mem);
 }
 
-/* Add a body with the single shape src at origin + position */
-static void MoverTestAdd(struct mover_TestWorld *world, const struct c_Shape *src, const v3 position, const q rotation, const u32 dynamic)
+/* Add a body with the single shape src at origin + position; return the body */
+static ds_BodyId MoverTestAdd(struct mover_TestWorld *world, const struct c_Shape *src, const v3 position, const q rotation, const u32 dynamic)
 {
     const utf8 id = Utf8Format(&world->mem, "shape%u", world->count);
     const struct slot slot = c_ShapeDBAdd(&world->cshape_db, id, src);
@@ -105,6 +105,7 @@ static void MoverTestAdd(struct mover_TestWorld *world, const struct c_Shape *sr
     const ds_Transform t_local = ds_TransformIdentity();
     ds_ShapeAdd(&world->pipeline, &shape_prefab, &t_local, body);
     world->count += 1;
+    return body;
 }
 
 static void MoverTestBox(struct mover_TestWorld *world, const v3 hw, const v3 position, const q rotation, const u32 dynamic)
@@ -1072,6 +1073,80 @@ static struct test_Output MoverPlaneOverflowTest(struct test_Environment *env)
     return output;
 }
 
+/* the body's velocities: zero outside the active set */
+static void MoverTestBodyVelocity(v3 *linear, v3 *angular, const struct mover_TestWorld *world, const ds_BodyId id)
+{
+    const struct ds_Body *body = ds_BodyLookup(&world->pipeline, id).address;
+    *linear = V3Zero();
+    *angular = V3Zero();
+    if (body->set == SOLVER_SET_ACTIVE)
+    {
+        const struct ds_BodyCompute *compute = world->pipeline.solver_set_pool.buf[SOLVER_SET_ACTIVE].body_compute_pool.buf + body->sim;
+        *linear = compute->linear_velocity;
+        *angular = compute->angular_velocity;
+    }
+}
+
+/*
+ * Walk 3 m/s into a resting dynamic sphere 2 cm ahead on the mover's axis, one tick. A pushing mover stops at the
+ * sphere as at a static one, and the sphere leaves at the mover's 3 m/s along the normal without spin; a sleeping
+ * sphere is woken and pushed alike. A sphere already leaving at 5 m/s is not pulled back; a mover that does not
+ * push (a camera) leaves the sphere at rest.
+ */
+static struct test_Output MoverPushTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+    struct test_Output *out = &output;
+    struct mover_TestWorld world;
+
+    const char *name[4] = { "push", "push sleeping", "sphere leaving", "camera" };
+    for (u32 i = 0; i < 4; ++i)
+    {
+        MoverTestWorldAlloc(&world, V3F64(0.0, 0.0, 0.0));
+        const struct c_Shape src = { .type = C_SHAPE_SPHERE, .sphere = { .radius = 0.5f } };
+        const ds_BodyId id = MoverTestAdd(&world, &src, V3(2.0f, 0.0f, 0.0f), QIdentity(), 1);
+        const struct ds_Body *body = ds_BodyLookup(&world.pipeline, id).address;
+        if (i == 1)
+        {
+            ds_SolverSetSleep(&world.pipeline, body->island);
+            MOVER_CHECK(body->set != SOLVER_SET_ACTIVE);
+        }
+        else if (i == 2)
+        {
+            world.pipeline.solver_set_pool.buf[SOLVER_SET_ACTIVE].body_compute_pool.buf[body->sim].linear_velocity = V3(5.0f, 0.0f, 0.0f);
+        }
+
+        struct ds_GeometricMover mover = MoverTestMover(&world, V3(0.98f, 0.0f, 0.0f), V3(3.0f, 0.0f, 0.0f));
+        mover.apply_impulse = (i != 3);
+        MoverTestStep(&world, &mover, 0);
+
+        v3 linear, angular;
+        MoverTestBodyVelocity(&linear, &angular, &world, id);
+        const v3f64 c = MoverTestCenter(&world, &mover);
+        const f64 gap = 2.0 - c.x - 1.0;
+        fprintf(stdout, "  %-24s sphere v (%+.6f, %+.3e, %+.3e)  |w| %.3e  set %u  mover gap %+.3e\n", name[i], linear.x, linear.y, linear.z, V3Length(angular), body->set, gap);
+        MOVER_CHECK(gap >= -world.slop - MOVER_TEST_EPS && gap <= -0.75*world.slop + MOVER_TEST_EPS);
+        MOVER_CHECK(MoverTestDistance(linear.y, 0.0) < 1e-4 && MoverTestDistance(linear.z, 0.0) < 1e-4);
+        MOVER_CHECK(V3Length(angular) < 1e-4f);
+        if (i < 2)
+        {
+            MOVER_CHECK(body->set == SOLVER_SET_ACTIVE);
+            MOVER_CHECK(MoverTestDistance(linear.x, 3.0) < 1e-4);
+        }
+        else if (i == 2)
+        {
+            MOVER_CHECK(linear.x == 5.0f);
+        }
+        else
+        {
+            MOVER_CHECK(linear.x == 0.0f);
+        }
+        MoverTestWorldDealloc(&world);
+    }
+
+    return output;
+}
+
 /* a world with every shape kind and a scripted walk around it (input on a circle, gravity) */
 static void MoverTestScript(struct mover_TestWorld *world, struct ds_GeometricMover *mover)
 {
@@ -1172,6 +1247,7 @@ static struct test_Output (*geometric_mover_tests[])(struct test_Environment *) 
     MoverSeamWalkTest,
     MoverValleyTest,
     MoverPlaneOverflowTest,
+    MoverPushTest,
     MoverDeterminismTest,
     MoverOriginTest,
 };

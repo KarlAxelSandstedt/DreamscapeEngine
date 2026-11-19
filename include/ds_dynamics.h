@@ -2128,6 +2128,7 @@ struct ds_GeometricMover
     v3f64           position;
     v3              velocity;
     struct capsule  capsule;
+    u32             apply_impulse;
 };
 
 void ds_DynamicsGeometricMover(struct ds_Dynamics *dynamics, struct ds_GeometricMover *mover, const f32 tick);

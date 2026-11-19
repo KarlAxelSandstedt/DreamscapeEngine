@@ -21,13 +21,15 @@ struct ds_GeometricMoverPlane
 {
     struct plane    plane;
     f32             distance_pushed;
+    u32             body;
+    v3              point;
 };
 DEFINE_ARRAY_STRUCT(ds_GeometricMoverPlane);
 
 #define GEOMETRIC_MOVER_PLANE_MAX   64
 ds_StaticAssert(GEOMETRIC_MOVER_PLANE_MAX > 0 && (GEOMETRIC_MOVER_PLANE_MAX & (GEOMETRIC_MOVER_PLANE_MAX - 1)) == 0, "GEOMETRIC_MOVER_PLANE_MAX must be a power of two");
 
-static void ds_GeometricMoverSpherePlane(ds_Array(ds_GeometricMoverPlane) *planes, const struct capsule *mover, const struct sphere *sphere, const ds_Transform *t_shape)
+static void ds_GeometricMoverSpherePlane(ds_Array(ds_GeometricMoverPlane) *planes, const struct capsule *mover, const struct sphere *sphere, const ds_Transform *t_shape, const u32 body)
 {
     const f32 r_sum = mover->radius + sphere->radius;
     const v3 axis = V3(0.0f, mover->half_height, 0.0f);
@@ -52,11 +54,12 @@ static void ds_GeometricMoverSpherePlane(ds_Array(ds_GeometricMoverPlane) *plane
     }
 
     const u32 index = planes->length & (GEOMETRIC_MOVER_PLANE_MAX - 1);
-    planes->buf[index] = (struct ds_GeometricMoverPlane) { .plane = { .normal = n, .signed_distance = r_sum - distance }, .distance_pushed = 0.0f };
+    const v3 point = V3Add(t_shape->position, V3Scale(n, sphere->radius));
+    planes->buf[index] = (struct ds_GeometricMoverPlane) { .plane = { .normal = n, .signed_distance = r_sum - distance }, .distance_pushed = 0.0f, .body = body, .point = point };
     planes->length += 1;
 }
 
-static void ds_GeometricMoverCapsulePlane(ds_Array(ds_GeometricMoverPlane) *planes, const struct capsule *mover, const struct capsule *capsule, const ds_Transform *t_shape)
+static void ds_GeometricMoverCapsulePlane(ds_Array(ds_GeometricMoverPlane) *planes, const struct capsule *mover, const struct capsule *capsule, const ds_Transform *t_shape, const u32 body)
 {
     const f32 r_sum = mover->radius + capsule->radius;
     const v3 axis_mover = V3(0.0f, mover->half_height, 0.0f);
@@ -83,11 +86,12 @@ static void ds_GeometricMoverCapsulePlane(ds_Array(ds_GeometricMoverPlane) *plan
     }
 
     const u32 index = planes->length & (GEOMETRIC_MOVER_PLANE_MAX - 1);
-    planes->buf[index] = (struct ds_GeometricMoverPlane) { .plane = { .normal = n, .signed_distance = r_sum - distance }, .distance_pushed = 0.0f };
+    const v3 point = V3Add(p, V3Scale(n, capsule->radius));
+    planes->buf[index] = (struct ds_GeometricMoverPlane) { .plane = { .normal = n, .signed_distance = r_sum - distance }, .distance_pushed = 0.0f, .body = body, .point = point };
     planes->length += 1;
 }
 
-static void ds_GeometricMoverHullPlane(ds_Array(ds_GeometricMoverPlane) *planes, const struct capsule *mover, const struct c_Shape *hull, const ds_Transform *t_shape)
+static void ds_GeometricMoverHullPlane(ds_Array(ds_GeometricMoverPlane) *planes, const struct capsule *mover, const struct c_Shape *hull, const ds_Transform *t_shape, const u32 body)
 {
     ds_Assert(hull->type == C_SHAPE_CONVEX_HULL);
 
@@ -106,12 +110,12 @@ static void ds_GeometricMoverHullPlane(ds_Array(ds_GeometricMoverPlane) *planes,
     if (0.0f < distance)
     {
         const u32 index = planes->length & (GEOMETRIC_MOVER_PLANE_MAX - 1);
-        planes->buf[index] = (struct ds_GeometricMoverPlane) { .plane = { .normal = V3Negate(n), .signed_distance = radius - distance }, .distance_pushed = 0.0f };
+        planes->buf[index] = (struct ds_GeometricMoverPlane) { .plane = { .normal = V3Negate(n), .signed_distance = radius - distance }, .distance_pushed = 0.0f, .body = body, .point = c[1] };
         planes->length += 1;
     }
 }
 
-static void ds_GeometricMoverMeshPlanes(struct arena *mem, ds_Array(ds_GeometricMoverPlane) *planes, const struct capsule *mover, const struct mesh *mesh, const ds_Transform *mover_to_mesh)
+static void ds_GeometricMoverMeshPlanes(struct arena *mem, ds_Array(ds_GeometricMoverPlane) *planes, const struct capsule *mover, const struct mesh *mesh, const ds_Transform *mover_to_mesh, const u32 body)
 {
     const f32 r = mover->radius;
     const f32 h = mover->half_height + r;
@@ -173,9 +177,13 @@ static void ds_GeometricMoverMeshPlanes(struct arena *mem, ds_Array(ds_Geometric
             continue;
         }
 
+        /*
+         * TODO: internal edges. A triangle touched in its edge or vertex region beside a coplanar triangle gives
+         * a tilted plane (MoverMeshInternalEdgeTest); filter such planes as c_MeshContactFinish does.
+         */
         const v3 n = V3Scale(V3Sub(c_s, c_t), 1.0f / distance);
         const u32 index = planes->length & (GEOMETRIC_MOVER_PLANE_MAX - 1);
-        planes->buf[index] = (struct ds_GeometricMoverPlane) { .plane = { .normal = n, .signed_distance = r - distance }, .distance_pushed = 0.0f };
+        planes->buf[index] = (struct ds_GeometricMoverPlane) { .plane = { .normal = n, .signed_distance = r - distance }, .distance_pushed = 0.0f, .body = body, .point = c_t };
         planes->length += 1;
     }
 }
@@ -209,23 +217,23 @@ static ds_Array(ds_GeometricMoverPlane) ds_GeometricMoverPlanes(struct ds_Geomet
             {
                 case C_SHAPE_SPHERE:
                 {
-                    ds_GeometricMoverSpherePlane(&planes, capsule, &c_shape->sphere, &t_shape);
+                    ds_GeometricMoverSpherePlane(&planes, capsule, &c_shape->sphere, &t_shape, shape->body);
                 } break;
 
                 case C_SHAPE_CAPSULE:
                 {
-                    ds_GeometricMoverCapsulePlane(&planes, capsule, &c_shape->capsule, &t_shape);
+                    ds_GeometricMoverCapsulePlane(&planes, capsule, &c_shape->capsule, &t_shape, shape->body);
                 } break;
 
                 case C_SHAPE_CONVEX_HULL:
                 {
-                    ds_GeometricMoverHullPlane(&planes, capsule, c_shape, &t_shape);
+                    ds_GeometricMoverHullPlane(&planes, capsule, c_shape, &t_shape, shape->body);
                 } break;
 
                 case C_SHAPE_TRI_MESH:
                 {
                     const ds_Transform mover_to_mesh = ds_TransformWorldRelative(&t_world, &t_mover);
-                    ds_GeometricMoverMeshPlanes(tmp, &planes, capsule, &c_shape->mesh, &mover_to_mesh);
+                    ds_GeometricMoverMeshPlanes(tmp, &planes, capsule, &c_shape->mesh, &mover_to_mesh, shape->body);
                 } break;
             }
         }
@@ -548,7 +556,40 @@ void ds_DynamicsGeometricMover(struct ds_Dynamics *dynamics, struct ds_Geometric
         }
     }
 
-    //TODO: impulse on dynamic bodies
+    if (mover->apply_impulse)
+    {
+        for (u32 i = 0; i < planes.length; ++i)
+        {
+            const struct ds_GeometricMoverPlane *pl = planes.buf + i;
+            struct ds_Body *body = dynamics->body_pool.buf + pl->body;
+            if (!ds_BodyDynamicCheck(body))
+            {
+                continue;
+            }
+
+            ds_SolverSetWakeUp(dynamics, body->set);
+            struct ds_SolverSet *set = dynamics->solver_set_pool.buf + SOLVER_SET_ACTIVE;
+            const struct ds_BodySim *sim = set->body_sim_pool.buf + body->sim;
+            struct ds_BodyCompute *compute = set->body_compute_pool.buf + body->sim;
+
+            /* the plane normal points at the mover */
+            const v3 n = V3Negate(pl->plane.normal);
+            const v3 r = V3F64Demote(V3F64Sub(V3F64Add(mover->position, V3Promote(pl->point)), ds_BodySimWorldCenterOfMass(sim)));
+            const m3 rot = M3QUnit(sim->world.rotation);
+            const m3 inv_inertia = M3Mul(M3Mul(rot, sim->local_inv_inertia), M3Transpose(rot));
+
+            /* the mover has infinite mass: push until the point's normal velocity matches the mover's, never pull */
+            const v3 rn = V3Cross(r, n);
+            const f32 k = sim->inv_mass + V3Dot(rn, M3V3Mul(inv_inertia, rn));
+            const v3 v_point = V3Add(compute->linear_velocity, V3Cross(compute->angular_velocity, r));
+            const f32 vn = V3Dot(V3Sub(v_point, mover->velocity), n);
+            const v3 impulse = V3Scale(n, F32Max(-vn / k, 0.0f));
+
+            compute->linear_velocity = V3Add(compute->linear_velocity, V3Scale(impulse, sim->inv_mass));
+            compute->angular_velocity = V3Add(compute->angular_velocity, M3V3Mul(inv_inertia, V3Cross(r, impulse)));
+        }
+    }
+
     for (u32 i = 0; i < planes.length; ++i)
     {
         const struct ds_GeometricMoverPlane *pl = planes.buf + i;
