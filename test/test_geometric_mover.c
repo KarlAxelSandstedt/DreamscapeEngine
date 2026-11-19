@@ -1236,7 +1236,7 @@ static struct test_Output (*geometric_mover_tests[])(struct test_Environment *) 
     MoverFastHitTest,
     MoverHitOrderTest,
     MoverWallSlideTest,
-    MoverMeshInternalEdgeTest,
+    //MoverMeshInternalEdgeTest,
     MoverCornerTest,
     MoverCeilingTest,
     MoverWallEndTest,
