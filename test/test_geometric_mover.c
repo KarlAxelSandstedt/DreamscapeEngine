@@ -559,6 +559,11 @@ static struct test_Output MoverWallSlideTest(struct test_Environment *env)
     MoverTestSlide(out, &world, "box wall");
     MoverTestWorldDealloc(&world);
 
+    MoverTestWorldAlloc(&world, V3F64(0.0, 0.0, 0.0));
+    MoverTestBox(&world, V3(0.25f, 5.0f, 20.0f), V3(2.25f, 0.0f, 0.0f), QIdentity(), 0);
+    MoverTestSlideInput(out, &world, "box wall, input");
+    MoverTestWorldDealloc(&world);
+
     /* its diagonal y + z = 8 stays out of reach */
     MoverTestWorldAlloc(&world, V3F64(0.0, 0.0, 0.0));
     MoverTestGrid(&world, 1, 20.0f, V3(2.0f, -10.0f, -2.0f), MoverTestFacingMinusX());
@@ -582,8 +587,8 @@ static struct test_Output MoverWallSlideTest(struct test_Environment *env)
 }
 
 /*
- * The slides above along meshes whose internal edges (shared by coplanar triangles) come within the mover's
- * reach: every triangle gives its own plane, one touched at such an edge a tilted plane. Same checks as on
+ * The input-driven slides above along meshes whose internal edges (shared by coplanar triangles) come within the
+ * mover's reach: every triangle gives its own plane, one touched at such an edge a tilted plane. Same checks as on
  * flat walls.
  */
 static struct test_Output MoverMeshInternalEdgeTest(struct test_Environment *env)
@@ -594,28 +599,13 @@ static struct test_Output MoverMeshInternalEdgeTest(struct test_Environment *env
 
     MoverTestWorldAlloc(&world, V3F64(0.0, 0.0, 0.0));
     MoverTestGrid(&world, 20, 1.0f, V3(2.0f, -10.0f, -10.0f), MoverTestFacingMinusX());
-    MoverTestSlide(out, &world, "1 m mesh wall");
+    MoverTestSlideInput(out, &world, "1 m mesh wall");
     MoverTestWorldDealloc(&world);
 
     /* its diagonal y + z = 0 crosses the path */
     MoverTestWorldAlloc(&world, V3F64(0.0, 0.0, 0.0));
     MoverTestGrid(&world, 1, 20.0f, V3(2.0f, -10.0f, -10.0f), MoverTestFacingMinusX());
-    MoverTestSlide(out, &world, "one-cell wall, diagonal");
-    MoverTestWorldDealloc(&world);
-
-    MoverTestWorldAlloc(&world, V3F64(0.0, 0.0, 0.0));
-    MoverTestGrid(&world, 20, 1.0f, V3(2.0f, -10.0f, -10.0f), MoverTestFacingMinusX());
-    MoverTestSlideInput(out, &world, "1 m mesh wall, input");
-    MoverTestWorldDealloc(&world);
-
-    MoverTestWorldAlloc(&world, V3F64(0.0, 0.0, 0.0));
-    MoverTestGrid(&world, 1, 20.0f, V3(2.0f, -10.0f, -10.0f), MoverTestFacingMinusX());
-    MoverTestSlideInput(out, &world, "diagonal wall, input");
-    MoverTestWorldDealloc(&world);
-
-    MoverTestWorldAlloc(&world, V3F64(0.0, 0.0, 0.0));
-    MoverTestBox(&world, V3(0.25f, 5.0f, 20.0f), V3(2.25f, 0.0f, 0.0f), QIdentity(), 0);
-    MoverTestSlideInput(out, &world, "box wall, input");
+    MoverTestSlideInput(out, &world, "one-cell wall, diagonal");
     MoverTestWorldDealloc(&world);
 
     MoverTestWorldAlloc(&world, V3F64(0.0, 0.0, 0.0));
