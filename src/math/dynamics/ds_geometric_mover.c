@@ -244,6 +244,8 @@ static ds_Array(ds_GeometricMoverPlane) ds_GeometricMoverPlanes(struct ds_Geomet
 
 static v3 ds_GeometricMoverSolvePlanes(const struct ds_Dynamics *dynamics, const ds_Array(ds_GeometricMoverPlane) planes, const v3 target_relative)
 {
+    ProfZone;
+
     const f32 slop = g_solver_config->linear_slop;
     v3 target = target_relative;
     for (u32 iteration = 0; iteration < g_numerics_config->geometric_mover_solver_iterations; ++iteration)
@@ -252,11 +254,12 @@ static v3 ds_GeometricMoverSolvePlanes(const struct ds_Dynamics *dynamics, const
         for (u32 i = 0; i < planes.length; ++i)
         {
             struct ds_GeometricMoverPlane *pl = planes.buf + i;
-            /* + slop: the target ends slop behind the plane */
             const f32 s = PlanePointSignedDistance(&pl->plane, target) + slop;
+
             const f32 distance_pushed_old = pl->distance_pushed;
             pl->distance_pushed = F32Max(0.0f, distance_pushed_old - s);
             const f32 push = pl->distance_pushed - distance_pushed_old;
+
             target = V3Add(target, V3Scale(pl->plane.normal, push));
             push_total += F32Abs(push);
         }
@@ -267,13 +270,246 @@ static v3 ds_GeometricMoverSolvePlanes(const struct ds_Dynamics *dynamics, const
         }
     }
 
-    return target_relative;
+    ProfZoneEnd;
+
+    return target;
+}
+
+static f32 ds_GeometricMoverCastConvex(const struct capsule *mover, const struct c_Shape *shape, const ds_Transform *t_shape, const v3 delta, const f32 toi)
+{
+    f32 margin = mover->radius;
+    if (shape->type == C_SHAPE_SPHERE)
+    {
+        margin += shape->sphere.radius;
+    }
+    else if (shape->type == C_SHAPE_CAPSULE)
+    {
+        margin += shape->capsule.radius;
+    }
+
+    const f32 slop = g_solver_config->linear_slop;
+    const f32 target_distance = F32Max(slop, margin - slop);
+    const f32 tolerance = 0.25f*slop;
+    const struct c_Shape mover_shape = { .type = C_SHAPE_CAPSULE, .capsule = *mover };
+    const u32 iterations = 20;
+
+    f32 new_toi = 0.0f;
+    ds_Transform t = *t_shape;
+
+    v3 c0, c1, n;
+    struct GJKCache cache[2] = { { .count = 1 }, { .count = 1 } };
+    f32 distance = GJK(&c0, &c1, &n, cache + 1, cache + 0, &mover_shape, shape, &t, F32_INFINITY);
+    if (distance < target_distance + tolerance)
+    {
+        return toi;
+    }
+
+    /*
+     * We begin with new_toi = 0.0f, and monotonically increase it until we find a
+     * new time-of-impact (if it exists).
+     */
+    for (u32 i = 0; i < iterations; ++i)
+    {
+        const f32 separation_velocity = -V3Dot(n, delta);
+        if (separation_velocity >= 0.0f)
+        {
+            return toi;
+        }
+
+        /* 
+         * Advance to pushed-out (by target_distance) old feature plane
+         * => new distance >= target_distance.
+         */
+        new_toi += (target_distance - distance) / separation_velocity;
+        if (new_toi >= toi)
+        {
+            return toi;
+        }
+
+        t.position = V3Sub(t_shape->position, V3Scale(delta, new_toi));
+        distance = GJK(&c0, &c1, &n, cache + (i & 1), cache + ((i + 1) & 1), &mover_shape, shape, &t, F32_INFINITY);
+
+        if (distance < target_distance + tolerance)
+        {
+            return new_toi;
+        }
+    }
+
+    return new_toi;
+}
+
+static f32 ds_GeometricMoverCastConcave(const struct capsule *mover, const struct mesh *mesh, const ds_Transform *mover_to_mesh, const v3 delta, const f32 toi)
+{
+    const f32 r = mover->radius;
+    const f32 h = mover->half_height + r;
+    const struct aabb local = { .min = V3(-r, -h, -r), .max = V3(r, h, r) };
+
+    const m3 rot = M3QUnit(mover_to_mesh->rotation);
+    const m3 rot_inv = M3QUnit(QConj(mover_to_mesh->rotation));
+    const v3 pos = mover_to_mesh->position;
+
+    const m3 rot_abs = M3Abs(rot);
+    const v3 half = M3V3Mul(rot_abs, local.max);
+    const struct aabb bbox = { .min = V3Sub(pos, half), .max = V3Add(pos, half) };
+    const v3 delta_mesh = M3V3Mul(rot, delta);
+
+    struct arena *tmp = ArenaPushScratch();
+    struct BVHCastInfo info = BVHAabbCastInit(tmp, &mesh->bvh, &bbox, delta_mesh);
+    info.hit = u32f32_inline(U32_MAX, toi);
+    while (info.hit_queue.count)
+    {
+        const u32f32 tuple = MQPop(&info.hit_queue);
+        if (info.hit.f < tuple.f)
+        {
+            break;
+        }
+
+        if (BTLeafCheck(info.node + tuple.u))
+        {
+            const u32 tri_first = info.node[tuple.u].bt_child[0];
+            const u32 tri_last = tri_first + info.node[tuple.u].bt_child[1] - 1;
+            for (u32 i = tri_first; i <= tri_last; ++i)
+            {
+                const u32 *v = mesh->tri[mesh->leaf_tri[i]].buf;
+
+                const struct aabb tri_bbox = 
+                { 
+                    .min = V3Min(V3Min(mesh->v[v[0]], mesh->v[v[1]]), mesh->v[v[2]]), 
+                    .max = V3Max(V3Max(mesh->v[v[0]], mesh->v[v[1]]), mesh->v[v[2]]) 
+                };
+                const intv interval = AabbRayCastInterval(&info.ray, &tri_bbox);
+                const f32 t = F32Max(interval.low, 0.0f);
+                if (interval.high < t || info.hit.f < interval.low)
+                {
+                    continue;
+                }
+
+                v3 tri[3];
+                for (u32 k = 0; k < 3; ++k)
+                {
+                    tri[k] = M3V3Mul(rot_inv, V3Sub(mesh->v[v[k]], pos));
+                }
+
+                /*
+                 * TODO: we deviate from ordinary contacts here, we do back side culling. We should consdier
+                 * whether or not back-culling should be done for all cases.
+                 */
+                const v3 cross = V3Cross(V3Sub(tri[1], tri[0]), V3Sub(tri[2], tri[0]));
+                if (V3Dot(cross, tri[0]) > 0.0f)
+                {
+                    continue;
+                }
+
+                struct c_Shape tri_shape = { .type = C_SHAPE_CONVEX_HULL, .hull = DcelTriStub() };
+                tri_shape.hull.v = tri;
+                const ds_Transform t_identity = ds_TransformIdentity();
+                const f32 t_tri = ds_GeometricMoverCastConvex(mover, &tri_shape, &t_identity, delta, info.hit.f);
+                if (t_tri < info.hit.f)
+                {
+                    info.hit = u32f32_inline(mesh->leaf_tri[i], t_tri);
+                }
+            }
+        }
+        else
+        {
+            BVHCastTestAndPushChildren(&info, tuple);
+        }
+    }
+
+    ArenaPopScratch();
+
+    return info.hit.f;
 }
 
 static f32 ds_GeometricMoverCast(const struct ds_Dynamics *dynamics, const struct ds_GeometricMover *mover, const v3 delta)
 {
-    //TODO
-    return 1.0f;
+    /*
+     * 1. The point here is to bound or mover somehow, and find all bound boxes it collides 
+     * with along the way. 
+     *
+     * Answer: Sweep boundign box
+     *
+     * 2. Any bounding boxes we hit runs the chance of returning TOI between both the mover
+     * capsule and the volume bounded by the bounding box, so we must check hit boxes.
+     *
+     * 3. We may cull future bounding boxes on our search if we hit the bounding box after
+     * our current smallest TOI, this is should be damn should considering both capsule 
+     * and AABB bounding box is axis aligned.
+     *
+     * Question: How do we reasonably cull collisions happening after time-of-impact? We
+     * do not get a time-of-impact from the bounding box sweep.
+     *
+     * 4. How we determine TOI for internal volumes, we leave out for now, but this should
+     * give us a full high-level loop which we can implement at least.
+     */
+
+    const f32 r = mover->capsule.radius;
+    const f32 h = mover->capsule.half_height + r;
+    const struct aabb bbox_local =
+    {
+        .min = V3(-r, -h, -r),
+        .max = V3(r, h, r),
+    };
+
+    struct aabb bbox_world;
+    AabbTranslateOutward(&bbox_world, &bbox_local, mover->position);
+
+    const ds_TransformWorld t_mover = { .rotation = QIdentity(), .position = mover->position };
+    const struct BVH *bvh[3] = { &dynamics->static_bvh, &dynamics->kinematic_bvh, &dynamics->dynamic_bvh };
+    struct arena *tmp = ArenaPushScratch();
+
+    u32f32 hit = u32f32_inline(U32_MAX, 1.0f);
+    for (u32 b = 0; b < 3; ++b)
+    {
+        struct BVHCastInfo info = BVHAabbCastInit(tmp, bvh[b], &bbox_world, delta);
+        info.hit = hit;
+        while (info.hit_queue.count)
+        {
+            const u32f32 tuple = MQPop(&info.hit_queue);
+            if (info.hit.f < tuple.f)
+            {
+                break;
+            }
+
+            if (BTLeafCheck(info.node + tuple.u))
+            {
+                const u32 si = info.node[tuple.u].bt_child[0];
+                const struct ds_Shape *shape = dynamics->shape_pool.buf + si;
+                const struct c_Shape *c_shape = c_ShapeDBShape(dynamics->external->cshape_db, shape->cshape_handle);
+                ds_TransformWorld t_world;
+                ds_ShapeWorldTransform(&t_world, dynamics, shape);
+
+                f32 t = info.hit.f;
+                if (c_shape->type == C_SHAPE_TRI_MESH)
+                {
+                    const ds_Transform mover_to_mesh = ds_TransformWorldRelative(&t_world, &t_mover);
+                    t = ds_GeometricMoverCastConcave(&mover->capsule, &c_shape->mesh, &mover_to_mesh, delta, info.hit.f);
+                }
+                else
+                {
+                    const ds_Transform t_shape = ds_TransformWorldRelative(&t_mover, &t_world);
+                    t = ds_GeometricMoverCastConvex(&mover->capsule, c_shape, &t_shape, delta, info.hit.f);
+                }
+
+                if (t < info.hit.f)
+                {
+                    info.hit = u32f32_inline(si, t);
+                }
+
+            }
+            else
+            {
+                BVHCastTestAndPushChildren(&info, tuple);
+            }
+        }
+
+        hit = info.hit;
+        ArenaFlush(tmp);
+    }
+
+    ArenaPopScratch();
+
+    return hit.f;
 }
 
 void ds_DynamicsGeometricMover(struct ds_Dynamics *dynamics, struct ds_GeometricMover *mover, const f32 tick)
