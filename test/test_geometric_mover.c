@@ -493,6 +493,31 @@ static void MoverTestSlide(struct test_Output *out, struct mover_TestWorld *worl
 }
 
 /*
+ * MoverTestSlide with the walking velocity (3, 0, 3) set every tick, as game input: the wall is pushed into every
+ * tick, so the planes, not a clipped velocity, decide the path.
+ */
+static void MoverTestSlideInput(struct test_Output *out, struct mover_TestWorld *world, const char *name)
+{
+    struct ds_GeometricMover mover = MoverTestMover(world, V3(1.0f, 0.0f, 0.0f), V3Zero());
+    f64 gap_min = 1.0;
+    for (u32 t = 0; t < 60; ++t)
+    {
+        mover.velocity = V3(3.0f, 0.0f, 3.0f);
+        MoverTestStep(world, &mover, 0);
+        const v3f64 c = MoverTestCenter(world, &mover);
+        const f64 gap = 2.0 - c.x - MOVER_TEST_RADIUS;
+        gap_min = (gap < gap_min) ? gap : gap_min;
+    }
+
+    const v3f64 c = MoverTestCenter(world, &mover);
+    const f64 z_expected = 60.0 * 3.0 * (f64) world->tick;
+    fprintf(stdout, "  %-24s gap min %+.3e  z %.6f (%.6f)  y %+.3e\n", name, gap_min, c.z, z_expected, c.y);
+    MOVER_CHECK(gap_min >= -world->slop - MOVER_TEST_EPS);
+    MOVER_CHECK(MoverTestDistance(c.z, z_expected) < 1e-3);
+    MOVER_CHECK(MoverTestDistance(c.y, 0.0) < MOVER_TEST_EPS);
+}
+
+/*
  * Walk (3, ., 3) m/s on the ground (height 0) into a wall at x = 2 for 60 ticks under gravity, the walking
  * velocity set every tick: never deeper than slop into either, still on the ground, the full progress along z.
  */
@@ -576,6 +601,21 @@ static struct test_Output MoverMeshInternalEdgeTest(struct test_Environment *env
     MoverTestWorldAlloc(&world, V3F64(0.0, 0.0, 0.0));
     MoverTestGrid(&world, 1, 20.0f, V3(2.0f, -10.0f, -10.0f), MoverTestFacingMinusX());
     MoverTestSlide(out, &world, "one-cell wall, diagonal");
+    MoverTestWorldDealloc(&world);
+
+    MoverTestWorldAlloc(&world, V3F64(0.0, 0.0, 0.0));
+    MoverTestGrid(&world, 20, 1.0f, V3(2.0f, -10.0f, -10.0f), MoverTestFacingMinusX());
+    MoverTestSlideInput(out, &world, "1 m mesh wall, input");
+    MoverTestWorldDealloc(&world);
+
+    MoverTestWorldAlloc(&world, V3F64(0.0, 0.0, 0.0));
+    MoverTestGrid(&world, 1, 20.0f, V3(2.0f, -10.0f, -10.0f), MoverTestFacingMinusX());
+    MoverTestSlideInput(out, &world, "diagonal wall, input");
+    MoverTestWorldDealloc(&world);
+
+    MoverTestWorldAlloc(&world, V3F64(0.0, 0.0, 0.0));
+    MoverTestBox(&world, V3(0.25f, 5.0f, 20.0f), V3(2.25f, 0.0f, 0.0f), QIdentity(), 0);
+    MoverTestSlideInput(out, &world, "box wall, input");
     MoverTestWorldDealloc(&world);
 
     MoverTestWorldAlloc(&world, V3F64(0.0, 0.0, 0.0));
