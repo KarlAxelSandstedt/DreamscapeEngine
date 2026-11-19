@@ -495,11 +495,11 @@ ds_Array(c_Manifold)    c_MeshContact(struct arena *tmp, ds_TSlab(ds_TriCache) *
 /********************************** RAYCASTS **********************************/
 
 /*
-XRaycastParameter: the smallest t >= 0 at which origin + t*dir is on the shape's surface, or F32_INFINITY.
+XRayCastParameter: the smallest t >= 0 at which origin + t*dir is on the shape's surface, or F32_INFINITY.
 Two-sided: an origin inside a solid returns its exit. Three forms with the same t:
-    XRaycastParameter           the ray in the shape's local frame
-    XRaycastWorldParameter      a world ray; the shape placed by a ds_TransformWorld
-    c_XRaycastParameter         the world form on a c_Shape
+    XRayCastParameter           the ray in the shape's local frame
+    XRayCastWorldParameter      a world ray; the shape placed by a ds_TransformWorld
+    c_XRayCastParameter         the world form on a c_Shape
 Precondition: |ray->dir|^2 > 0 (asserted).
 
 Raycasting your own primitives in a BVH's leaves (BVHRayCastInit takes all of mem: pass a scratch arena):
@@ -546,7 +546,7 @@ struct rayAabb  RayAabb(const struct ray *ray);
  * Return the interval [low, high] of t for which origin + t*dir is in the box (the whole line, t < 0 included);
  * empty if high < low. Conservative: rounding never shortens it.
  */
-intv            AabbRaycastInterval(const struct rayAabb *ray, const struct aabb *aabb);
+intv            AabbRayCastInterval(const struct rayAabb *ray, const struct aabb *aabb);
 
 struct BVHCastInfo
 {
@@ -563,7 +563,7 @@ struct BVHCastInfo	BVHAabbCastInit(struct arena *mem, const struct BVH *bvh, con
 /* Queue the popped node's children whose boxes the ray hits, keyed by their entry t */
 void 			        BVHCastTestAndPushChildren(struct BVHCastInfo *info, const u32f32 popped_tuple);
 
-/* the ray prepared for many triangle tests (TriRaycastParameterEx); hits never fall through shared edges */
+/* the ray prepared for many triangle tests (TriRayCastParameterEx); hits never fall through shared edges */
 struct rayWoop
 {
 	v3	origin;
@@ -578,30 +578,30 @@ struct rayWoop
 struct rayWoop  RayWoop(const struct ray *ray);
 
 /* the first surface hit t >= 0 or F32_INFINITY; the ray in the shape's local frame */
-f32 SphereRaycastParameter(const struct sphere *sphere, const struct ray *ray);
-f32 CapsuleRaycastParameter(const struct capsule *capsule, const struct ray *ray);
+f32 SphereRayCastParameter(const struct sphere *sphere, const struct ray *ray);
+f32 CapsuleRayCastParameter(const struct capsule *capsule, const struct ray *ray);
 /* hull: a closed convex polyhedron with planar faces */
-f32 HullRaycastParameter(const struct dcel *hull, const struct ray *ray);
-f32 AabbRaycastParameter(const struct aabb *aabb, const struct ray *ray);
-f32 MeshRaycastParameter(const struct mesh *mesh, const struct ray *ray);
+f32 HullRayCastParameter(const struct dcel *hull, const struct ray *ray);
+f32 AabbRayCastParameter(const struct aabb *aabb, const struct ray *ray);
+f32 MeshRayCastParameter(const struct mesh *mesh, const struct ray *ray);
 /* triangle abc, any winding (no culling) */
-f32 TriRaycastParameter(const v3 a, const v3 b, const v3 c, const struct ray *ray);
-/* TriRaycastParameter with the ray set up once (RayWoop) for many triangles, e.g. a mesh */
-f32 TriRaycastParameterEx(const struct rayWoop *ray, const v3 a, const v3 b, const v3 c);
+f32 TriRayCastParameter(const v3 a, const v3 b, const v3 c, const struct ray *ray);
+/* TriRayCastParameter with the ray set up once (RayWoop) for many triangles, e.g. a mesh */
+f32 TriRayCastParameterEx(const struct rayWoop *ray, const v3 a, const v3 b, const v3 c);
 
 /* the local functions above, the ray in world space and the shape placed by transform */
-f32 SphereRaycastWorldParameter(const struct sphere *sphere, const ds_TransformWorld *transform, const struct rayWorld *ray);
-f32 CapsuleRaycastWorldParameter(const struct capsule *capsule, const ds_TransformWorld *transform, const struct rayWorld *ray);
-f32 HullRaycastWorldParameter(const struct dcel *hull, const ds_TransformWorld *transform, const struct rayWorld *ray);
-f32 AabbRaycastWorldParameter(const struct aabb *aabb, const ds_TransformWorld *transform, const struct rayWorld *ray);
-f32 MeshRaycastWorldParameter(const struct mesh *mesh, const ds_TransformWorld *transform, const struct rayWorld *ray);
-f32 TriRaycastWorldParameter(const v3 a, const v3 b, const v3 c, const ds_TransformWorld *transform, const struct rayWorld *ray);
+f32 SphereRayCastWorldParameter(const struct sphere *sphere, const ds_TransformWorld *transform, const struct rayWorld *ray);
+f32 CapsuleRayCastWorldParameter(const struct capsule *capsule, const ds_TransformWorld *transform, const struct rayWorld *ray);
+f32 HullRayCastWorldParameter(const struct dcel *hull, const ds_TransformWorld *transform, const struct rayWorld *ray);
+f32 AabbRayCastWorldParameter(const struct aabb *aabb, const ds_TransformWorld *transform, const struct rayWorld *ray);
+f32 MeshRayCastWorldParameter(const struct mesh *mesh, const ds_TransformWorld *transform, const struct rayWorld *ray);
+f32 TriRayCastWorldParameter(const v3 a, const v3 b, const v3 c, const ds_TransformWorld *transform, const struct rayWorld *ray);
 
 /* the world functions above on a c_Shape of the matching type */
-f32 c_SphereRaycastParameter(const struct c_Shape *shape, const ds_TransformWorld *transform, const struct rayWorld *ray);
-f32 c_CapsuleRaycastParameter(const struct c_Shape *shape, const ds_TransformWorld *transform, const struct rayWorld *ray);
-f32 c_HullRaycastParameter(const struct c_Shape *shape, const ds_TransformWorld *transform, const struct rayWorld *ray);
-f32 c_MeshRaycastParameter(const struct c_Shape *shape, const ds_TransformWorld *transform, const struct rayWorld *ray);
+f32 c_SphereRayCastParameter(const struct c_Shape *shape, const ds_TransformWorld *transform, const struct rayWorld *ray);
+f32 c_CapsuleRayCastParameter(const struct c_Shape *shape, const ds_TransformWorld *transform, const struct rayWorld *ray);
+f32 c_HullRayCastParameter(const struct c_Shape *shape, const ds_TransformWorld *transform, const struct rayWorld *ray);
+f32 c_MeshRayCastParameter(const struct c_Shape *shape, const ds_TransformWorld *transform, const struct rayWorld *ray);
 
 /********************************** SHAPES: definitions **********************************/
 

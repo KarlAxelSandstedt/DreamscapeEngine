@@ -397,7 +397,7 @@ void        ds_ShapeContact(struct arena *frame, struct ds_Dynamics *pipeline, c
  * two-sided, see ds_collision.h), or F32_INFINITY. The ray is in world space. Precondition: |ray->dir|^2 > 0
  * (asserted).
  */
-f32 	    ds_ShapeRaycastParameter(const struct ds_Dynamics *pipeline, const struct ds_Shape *shape, const struct rayWorld *ray);
+f32 	    ds_ShapeRayCastParameter(const struct ds_Dynamics *pipeline, const struct ds_Shape *shape, const struct rayWorld *ray);
 
 
 /*
@@ -2091,10 +2091,10 @@ u64             ds_DynamicsHash(const struct ds_Dynamics *pipeline);
 /* Validate and ds_Assert internal state of physics pipeline */
 void			ds_DynamicsValidate(const struct ds_Dynamics *pipeline);
 /*
- * Return (shape index, t) of the first surface hit over all shapes (see ds_ShapeRaycastParameter), or
+ * Return (shape index, t) of the first surface hit over all shapes (see ds_ShapeRayCastParameter), or
  * (U32_MAX, F32_INFINITY) on no hit or if |ray->dir|^2 == 0. The ray is in world space.
  */
-u32f32 			ds_DynamicsRaycastParameter(const struct ds_Dynamics *pipeline, const struct rayWorld *ray);
+u32f32 			ds_DynamicsRayCastParameter(const struct ds_Dynamics *pipeline, const struct rayWorld *ray);
 /*
  * Internal: switch sleeping on or off at once; switching off wakes every sleeping set and zeroes every body's rest
  * timer. Callers set config.solver.sleep_enabled instead; ds_DynamicsConfigUpdatePending applies it through these.

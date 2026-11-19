@@ -1423,10 +1423,10 @@ static struct test_Output DynamicsShapeTest(struct test_Environment *env)
                 .dir = V3(RngF32Range(-1.0f, 1.0f), RngF32Range(-1.0f, 1.0f), RngF32Range(-1.0f, 1.0f)),
             };
             if (V3LengthSquared(ray.dir) == 0.0f) { continue; }
-            const f32 expected = (cshape->type == C_SHAPE_SPHERE) ? c_SphereRaycastParameter(cshape, &t, &ray)
-                               : (cshape->type == C_SHAPE_CAPSULE) ? c_CapsuleRaycastParameter(cshape, &t, &ray)
-                               : c_HullRaycastParameter(cshape, &t, &ray);
-            TEST_NOT_ZERO(ds_ShapeRaycastParameter(&pipeline, shape[i], &ray) == expected);
+            const f32 expected = (cshape->type == C_SHAPE_SPHERE) ? c_SphereRayCastParameter(cshape, &t, &ray)
+                               : (cshape->type == C_SHAPE_CAPSULE) ? c_CapsuleRayCastParameter(cshape, &t, &ray)
+                               : c_HullRayCastParameter(cshape, &t, &ray);
+            TEST_NOT_ZERO(ds_ShapeRayCastParameter(&pipeline, shape[i], &ray) == expected);
         }
     }
 

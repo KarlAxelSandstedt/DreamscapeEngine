@@ -974,9 +974,9 @@ ds_Array(u32) MeshQuery(struct arena *mem, const struct mesh *mesh, const struct
 }
 
 /* the box's queue key: the entry t into its volume (0 if the origin is inside), F32_INFINITY on a miss */
-static f32 BVHNodeRaycastParameter(const struct rayAabb *ray, const struct aabb *bbox)
+static f32 BVHNodeRayCastParameter(const struct rayAabb *ray, const struct aabb *bbox)
 {
-	const intv t = AabbRaycastInterval(ray, bbox);
+	const intv t = AabbRayCastInterval(ray, bbox);
 	const f32 t_entry = F32Max(t.low, 0.0f);
 	return (t_entry <= t.high)
 		? t_entry
@@ -995,7 +995,7 @@ static struct BVHCastInfo BVHRayAabbCastInit(struct arena *mem, const struct BVH
 
 	if (bvh->bt.count) 
 	{
-		const f32 root_hit_param = BVHNodeRaycastParameter(&info.ray, &info.node[info.bvh->bt.root].bbox);
+		const f32 root_hit_param = BVHNodeRayCastParameter(&info.ray, &info.node[info.bvh->bt.root].bbox);
 		if (root_hit_param < F32_INFINITY) 
 		{
 			info.hit_queue = MQAllocAll(mem);
@@ -1028,8 +1028,8 @@ struct BVHCastInfo BVHAabbCastInit(struct arena *mem, const struct BVH *bvh, con
 void BVHCastTestAndPushChildren(struct BVHCastInfo *info, const u32f32 popped_tuple)
 {
 	const struct BVHNode *node = info->node;
-	const f32 distance_left = BVHNodeRaycastParameter(&info->ray, &node[node[popped_tuple.u].bt_child[0]].bbox);
-	const f32 distance_right = BVHNodeRaycastParameter(&info->ray, &node[node[popped_tuple.u].bt_child[1]].bbox);
+	const f32 distance_left = BVHNodeRayCastParameter(&info->ray, &node[node[popped_tuple.u].bt_child[0]].bbox);
+	const f32 distance_right = BVHNodeRayCastParameter(&info->ray, &node[node[popped_tuple.u].bt_child[1]].bbox);
 
 	if (distance_left < F32_INFINITY)
 	{

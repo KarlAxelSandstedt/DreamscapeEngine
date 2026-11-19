@@ -585,7 +585,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 					const struct rayWorld ray = led_ViewportPickRay(led, node, pointer);
 					if (node->inter & UI_INTER_HOVER)
 					{
-						const u32f32 hit = ds_DynamicsRaycastParameter(led->physics, &ray);
+						const u32f32 hit = ds_DynamicsRayCastParameter(led->physics, &ray);
 						if (hit.f < F32_INFINITY)
 						{
 							const struct ds_Shape *shape = led->physics->shape_pool.buf + hit.u;	

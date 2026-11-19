@@ -1991,7 +1991,7 @@ u64 ds_DynamicsHash(const struct ds_Dynamics *pipeline)
     return hash;
 }
 
-u32f32 ds_DynamicsRaycastParameter(const struct ds_Dynamics *pipeline, const struct rayWorld *ray)
+u32f32 ds_DynamicsRayCastParameter(const struct ds_Dynamics *pipeline, const struct rayWorld *ray)
 {
     /* the one direction check for the whole query: the per-shape raycasts assume dir != 0 (a NaN
      * direction passes on to their asserts instead of being hidden as a miss) */
@@ -2022,7 +2022,7 @@ u32f32 ds_DynamicsRaycastParameter(const struct ds_Dynamics *pipeline, const str
             {
                 const u32 si = info.node[tuple.u].bt_child[0];
                 const struct ds_Shape *shape = pipeline->shape_pool.buf + si;
-                const f32 t = ds_ShapeRaycastParameter(pipeline, shape, ray);
+                const f32 t = ds_ShapeRayCastParameter(pipeline, shape, ray);
                 if (t < info.hit.f)
                 {
                     info.hit = u32f32_inline(si, t);

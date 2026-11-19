@@ -109,7 +109,7 @@ static f64 RcSphereReference(f64 *graze, const f64 r, const struct ray *ray)
     return (t0 >= 0.0) ? t0 : (t1 >= 0.0) ? t1 : RC_F64_INFINITY;
 }
 
-struct test_Output RaycastSphereTest(struct test_Environment *env)
+struct test_Output RayCastSphereTest(struct test_Environment *env)
 {
     struct test_Output output = { .success = 1, .id = __func__ };
     (void) env;
@@ -120,7 +120,7 @@ struct test_Output RaycastSphereTest(struct test_Environment *env)
     {
         const struct sphere sphere = { .radius = RngF32Range(0.05f, 3.0f) };
         const struct ray ray = RcRandomRay(4.0f);
-        const f32 t = SphereRaycastParameter(&sphere, &ray);
+        const f32 t = SphereRayCastParameter(&sphere, &ray);
         f64 graze;
         const f64 t_ref = RcSphereReference(&graze, sphere.radius, &ray);
         const f64 scale = 4.0 + sphere.radius;
@@ -210,7 +210,7 @@ static f64 RcCapsuleReference(f64 *graze, const f64 r, const f64 h, const struct
     return best;
 }
 
-struct test_Output RaycastCapsuleTest(struct test_Environment *env)
+struct test_Output RayCastCapsuleTest(struct test_Environment *env)
 {
     struct test_Output output = { .success = 1, .id = __func__ };
     (void) env;
@@ -226,7 +226,7 @@ struct test_Output RaycastCapsuleTest(struct test_Environment *env)
             ray.dir = V3(0.0f, ray.dir.y, 0.0f);	/* parallel to the axis: the special branch */
             if (ray.dir.y == 0.0f) { ray.dir.y = 1.0f; }
         }
-        const f32 t = CapsuleRaycastParameter(&capsule, &ray);
+        const f32 t = CapsuleRayCastParameter(&capsule, &ray);
         f64 graze;
         const f64 t_ref = RcCapsuleReference(&graze, capsule.radius, capsule.half_height, &ray);
         const f64 scale = 4.0 + capsule.radius + capsule.half_height;
@@ -270,7 +270,7 @@ static f64 RcTriReference(f64 *edge, const v3 a, const v3 b, const v3 c, const s
     return t;
 }
 
-struct test_Output RaycastTriTest(struct test_Environment *env)
+struct test_Output RayCastTriTest(struct test_Environment *env)
 {
     struct test_Output output = { .success = 1, .id = __func__ };
     (void) env;
@@ -284,7 +284,7 @@ struct test_Output RaycastTriTest(struct test_Environment *env)
         const v3 b = V3(RngF32Range(-size, size), RngF32Range(-size, size), RngF32Range(-size, size));
         const v3 c = V3(RngF32Range(-size, size), RngF32Range(-size, size), RngF32Range(-size, size));
         const struct ray ray = RcRandomRay(3.0f);
-        const f32 t = TriRaycastParameter(a, b, c, &ray);
+        const f32 t = TriRayCastParameter(a, b, c, &ray);
         f64 edge;
         const f64 t_ref = RcTriReference(&edge, a, b, c, &ray);
         if (RcAbs(edge) <= 1e-4)
@@ -340,7 +340,7 @@ static f32 RcMeshBruteForce(const struct mesh *mesh, const struct ray *ray)
     for (u32 i = 0; i < mesh->tri_count; ++i)
     {
         const v3u32 tri = mesh->tri[i];
-        const f32 t = TriRaycastParameterEx(&woop, mesh->v[tri.x], mesh->v[tri.y], mesh->v[tri.z]);
+        const f32 t = TriRayCastParameterEx(&woop, mesh->v[tri.x], mesh->v[tri.y], mesh->v[tri.z]);
         best = (t < best) ? t : best;
     }
     return best;
@@ -369,10 +369,10 @@ static struct dcel RcRandomHull(struct arena *mem, const f32 size, const u32 poi
 }
 
 /*
-Boxes against AabbRaycastParameter (the same box), random hulls against their triangulated faces (TriRaycastParameterEx
+Boxes against AabbRayCastParameter (the same box), random hulls against their triangulated faces (TriRayCastParameterEx
 over the fan triangles: a different algorithm on the same geometry); every finite hit lies on the hull's surface.
 */
-struct test_Output RaycastHullTest(struct test_Environment *env)
+struct test_Output RayCastHullTest(struct test_Environment *env)
 {
     struct test_Output output = { .success = 1, .id = __func__ };
 
@@ -395,7 +395,7 @@ struct test_Output RaycastHullTest(struct test_Environment *env)
         for (u32 k = 0; k < 8; ++k)
         {
             const struct ray ray = RcRandomRay(2.0f*size);
-            const f32 t = HullRaycastParameter(&hull, &ray);
+            const f32 t = HullRayCastParameter(&hull, &ray);
             const f32 t_mesh = RcMeshBruteForce(mesh, &ray);
             const f32 tol = (f32) RAYCAST_TEST_TOLERANCE * 4.0f * size / V3Length(ray.dir);
             /* a ray grazing the hull: the line passes within tol of the surface at its closest approach */
@@ -430,7 +430,7 @@ struct test_Output RaycastHullTest(struct test_Environment *env)
             if (is_box)
             {
                 const struct aabb box = { .min = V3Negate(hw), .max = hw };
-                const f32 t_box = AabbRaycastParameter(&box, &ray);
+                const f32 t_box = AabbRayCastParameter(&box, &ray);
                 if (F32Abs(t - t_box) > tol)
                 {
                     fprintf(stderr, "box round %u: hull t %.9g, aabb t %.9g\n", round, t, t_box);
@@ -481,7 +481,7 @@ static struct c_Shape RcTerrain(struct arena *mem, const u32 cells, const f32 ce
 }
 
 /* the BVH traversal finds exactly the brute-force first hit (the same triangle test with the same ray setup: bit for bit) */
-struct test_Output RaycastMeshTest(struct test_Environment *env)
+struct test_Output RayCastMeshTest(struct test_Environment *env)
 {
     struct test_Output output = { .success = 1, .id = __func__ };
 
@@ -497,7 +497,7 @@ struct test_Output RaycastMeshTest(struct test_Environment *env)
             ray.origin.y = 5.0f;	/* from above, down through the terrain */
             ray.dir.y = -F32Abs(ray.dir.y) - 0.1f;
         }
-        const f32 t = MeshRaycastParameter(&terrain.mesh, &ray);
+        const f32 t = MeshRayCastParameter(&terrain.mesh, &ray);
         const f32 t_brute = RcMeshBruteForce(&terrain.mesh, &ray);
         hits += (t != F32_INFINITY);
         if (t != t_brute)
@@ -517,7 +517,7 @@ struct test_Output RaycastMeshTest(struct test_Environment *env)
 Watertight: a ray from outside a closed mesh (a hull's faces) through a point inside it hits a triangle no later
 than that point, shared edges and vertices included.
 */
-struct test_Output RaycastWatertightTest(struct test_Environment *env)
+struct test_Output RayCastWatertightTest(struct test_Environment *env)
 {
     struct test_Output output = { .success = 1, .id = __func__ };
 
@@ -558,11 +558,11 @@ struct test_Output RaycastWatertightTest(struct test_Environment *env)
             const f32 t = RcMeshBruteForce(mesh, &ray);
             /*
              * The hull's own raycast (Cyrus-Beck on the planes, checked against the mesh on generic rays in
-             * RaycastHullTest) is the reference: the mesh must hit where it does, shared edges and vertices
+             * RayCastHullTest) is the reference: the mesh must hit where it does, shared edges and vertices
              * included. The ray may enter at the target (t = 1), enter earlier and leave at it, or pass over
              * a ridge; a ray that never goes deeper than the tolerance near the target may go either way.
              */
-            const f32 t_hull = HullRaycastParameter(&hull, &ray);
+            const f32 t_hull = HullRayCastParameter(&hull, &ray);
             const f32 tol = 1e-4f;
             if (t == t_hull || (t != F32_INFINITY && t_hull != F32_INFINITY && F32Abs(t - t_hull) <= tol))
             {
@@ -591,7 +591,7 @@ struct test_Output RaycastWatertightTest(struct test_Environment *env)
 /********************************** world forms **********************************/
 
 /* the world form of each shape on a placed shape equals the local form on the ray taken into the shape's frame */
-struct test_Output RaycastWorldTest(struct test_Environment *env)
+struct test_Output RayCastWorldTest(struct test_Environment *env)
 {
     struct test_Output output = { .success = 1, .id = __func__ };
 
@@ -628,19 +628,19 @@ struct test_Output RaycastWorldTest(struct test_Environment *env)
         const v3 c = V3(RngF32Range(-2.0f, 2.0f), RngF32Range(-2.0f, 2.0f), RngF32Range(-2.0f, 2.0f));
         const f32 t[5] =
         {
-            SphereRaycastWorldParameter(&sphere, &transform, &world),
-            CapsuleRaycastWorldParameter(&capsule, &transform, &world),
-            HullRaycastWorldParameter(&hull, &transform, &world),
-            AabbRaycastWorldParameter(&box, &transform, &world),
-            TriRaycastWorldParameter(a, b, c, &transform, &world),
+            SphereRayCastWorldParameter(&sphere, &transform, &world),
+            CapsuleRayCastWorldParameter(&capsule, &transform, &world),
+            HullRayCastWorldParameter(&hull, &transform, &world),
+            AabbRayCastWorldParameter(&box, &transform, &world),
+            TriRayCastWorldParameter(a, b, c, &transform, &world),
         };
         const f32 t_local[5] =
         {
-            SphereRaycastParameter(&sphere, &local),
-            CapsuleRaycastParameter(&capsule, &local),
-            HullRaycastParameter(&hull, &local),
-            AabbRaycastParameter(&box, &local),
-            TriRaycastParameter(a, b, c, &local),
+            SphereRayCastParameter(&sphere, &local),
+            CapsuleRayCastParameter(&capsule, &local),
+            HullRayCastParameter(&hull, &local),
+            AabbRayCastParameter(&box, &local),
+            TriRayCastParameter(a, b, c, &local),
         };
         for (u32 i = 0; i < 5; ++i)
         {
@@ -662,13 +662,13 @@ struct test_Output RaycastWorldTest(struct test_Environment *env)
 
 static struct test_Output (*raycast_tests[])(struct test_Environment *) =
 {
-    RaycastSphereTest,
-    RaycastCapsuleTest,
-    RaycastTriTest,
-    RaycastHullTest,
-    RaycastMeshTest,
-    RaycastWatertightTest,
-    RaycastWorldTest,
+    RayCastSphereTest,
+    RayCastCapsuleTest,
+    RayCastTriTest,
+    RayCastHullTest,
+    RayCastMeshTest,
+    RayCastWatertightTest,
+    RayCastWorldTest,
 };
 
 struct suite_Correctness m_raycast_suite =

@@ -248,10 +248,10 @@ static f32 (*c_distance_methods[C_SHAPE_COUNT][C_SHAPE_COUNT])(v3f64 *c0, v3f64 
 
 static f32 (*c_raycast_parameter_methods[C_SHAPE_COUNT])(const struct c_Shape *, const ds_TransformWorld *, const struct rayWorld *) =
 {
-	c_SphereRaycastParameter,
-	c_CapsuleRaycastParameter,
-	c_HullRaycastParameter,
-	c_MeshRaycastParameter,
+	c_SphereRayCastParameter,
+	c_CapsuleRayCastParameter,
+	c_HullRayCastParameter,
+	c_MeshRayCastParameter,
 };
 
 u32 ds_ShapeTest(const struct ds_Dynamics *pipeline, const struct ds_Shape *s0, const struct ds_Shape *s1)
@@ -481,7 +481,7 @@ void ds_ShapeContact(struct arena *tmp, struct ds_Dynamics *pipeline, const u32 
     ArenaPopRecord(tmp);
 }
 
-f32 ds_ShapeRaycastParameter(const struct ds_Dynamics *pipeline, const struct ds_Shape *shape, const struct rayWorld *ray)
+f32 ds_ShapeRayCastParameter(const struct ds_Dynamics *pipeline, const struct ds_Shape *shape, const struct rayWorld *ray)
 {
     ds_Assert(V3Dot(ray->dir, ray->dir) > 0.0f);
     ds_TransformWorld transform;

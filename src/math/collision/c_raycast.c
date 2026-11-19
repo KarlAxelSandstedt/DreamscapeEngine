@@ -25,7 +25,7 @@
 
 /********************************** RAYCAST **********************************/
 
-f32 SphereRaycastParameter(const struct sphere *sphere, const struct ray *ray)
+f32 SphereRayCastParameter(const struct sphere *sphere, const struct ray *ray)
 {
     /*
             Notes from Ray Tracing Gems (2019), ch. 7, "Precision Improvements for Ray/Sphere
@@ -104,7 +104,7 @@ f32 SphereRaycastParameter(const struct sphere *sphere, const struct ray *ray)
         : t_max / dd;
 }
 
-f32 CapsuleRaycastParameter(const struct capsule *capsule, const struct ray *ray)
+f32 CapsuleRayCastParameter(const struct capsule *capsule, const struct ray *ray)
 {
 	/*
 	References: Inigo Quilez, "Intersectors" (iquilezles.org/articles/intersectors, capsule); Hearn's
@@ -218,7 +218,7 @@ f32 CapsuleRaycastParameter(const struct capsule *capsule, const struct ray *ray
     }
 }
 
-f32 HullRaycastParameter(const struct dcel *hull, const struct ray *ray)
+f32 HullRayCastParameter(const struct dcel *hull, const struct ray *ray)
 {
 	/*
 	References: Ericson, Real-Time Collision Detection, 5.3.8 "Intersecting Ray or Segment Against
@@ -305,7 +305,7 @@ struct rayWoop RayWoop(const struct ray *ray)
 	return woop;
 }
 
-f32 TriRaycastParameterEx(const struct rayWoop *ray, const v3 a, const v3 b, const v3 c)
+f32 TriRayCastParameterEx(const struct rayWoop *ray, const v3 a, const v3 b, const v3 c)
 {
 	/*
 	References: Woop, Benthin, Wald, "Watertight Ray/Triangle Intersection", Journal of Computer Graphics
@@ -369,7 +369,7 @@ f32 TriRaycastParameterEx(const struct rayWoop *ray, const v3 a, const v3 b, con
 
 struct rayAabb RayAabb(const struct ray *ray)
 {
-	/* dir[i] == 0 gives 1/dir[i] = +-inf (signed like the zero), handled in AabbRaycastInterval */
+	/* dir[i] == 0 gives 1/dir[i] = +-inf (signed like the zero), handled in AabbRayCastInterval */
 	const struct rayAabb ray_aabb =
 	{
 		.origin_near = ray->origin,
@@ -380,7 +380,7 @@ struct rayAabb RayAabb(const struct ray *ray)
 	return ray_aabb;
 }
 
-intv AabbRaycastInterval(const struct rayAabb *ray, const struct aabb *aabb)
+intv AabbRayCastInterval(const struct rayAabb *ray, const struct aabb *aabb)
 {
 	/*
 	References: Williams, Barrus, Morley, Shirley, "An Efficient and Robust Ray-Box Intersection Algorithm",
@@ -416,12 +416,12 @@ intv AabbRaycastInterval(const struct rayAabb *ray, const struct aabb *aabb)
 	return Intv(t_min, t_max);
 }
 
-f32 AabbRaycastParameter(const struct aabb *aabb, const struct ray *ray)
+f32 AabbRayCastParameter(const struct aabb *aabb, const struct ray *ray)
 {
 	ds_Assert(V3Dot(ray->dir, ray->dir) > 0.0f);
 
 	const struct rayAabb ray_aabb = RayAabb(ray);
-	const intv t = AabbRaycastInterval(&ray_aabb, aabb);
+	const intv t = AabbRayCastInterval(&ray_aabb, aabb);
 	if (t.high < t.low)
 	{
 		return F32_INFINITY;
@@ -438,7 +438,7 @@ f32 AabbRaycastParameter(const struct aabb *aabb, const struct ray *ray)
 		: F32_INFINITY;
 }
 
-f32 MeshRaycastParameter(const struct mesh *mesh, const struct ray *ray)
+f32 MeshRayCastParameter(const struct mesh *mesh, const struct ray *ray)
 {
 	ProfZone;
 	ds_Assert(V3Dot(ray->dir, ray->dir) > 0.0f);
@@ -464,7 +464,7 @@ f32 MeshRaycastParameter(const struct mesh *mesh, const struct ray *ray)
 			for (u32 i = tri_first; i <= tri_last; ++i)
 			{
 				const v3u32 tri = mesh->tri[mesh->leaf_tri[i]];
-				const f32 t = TriRaycastParameterEx(&woop, mesh->v[tri.x], mesh->v[tri.y], mesh->v[tri.z]);
+				const f32 t = TriRayCastParameterEx(&woop, mesh->v[tri.x], mesh->v[tri.y], mesh->v[tri.z]);
 				if (t < info.hit.f)
 				{
 					info.hit = u32f32_inline(mesh->leaf_tri[i], t);
@@ -482,15 +482,15 @@ f32 MeshRaycastParameter(const struct mesh *mesh, const struct ray *ray)
 	return info.hit.f;
 }
 
-f32 TriRaycastParameter(const v3 a, const v3 b, const v3 c, const struct ray *ray)
+f32 TriRayCastParameter(const v3 a, const v3 b, const v3 c, const struct ray *ray)
 {
 	ds_Assert(V3Dot(ray->dir, ray->dir) > 0.0f);
 
 	const struct rayWoop woop = RayWoop(ray);
-	return TriRaycastParameterEx(&woop, a, b, c);
+	return TriRayCastParameterEx(&woop, a, b, c);
 }
 
-f32 SphereRaycastWorldParameter(const struct sphere *sphere, const ds_TransformWorld *transform, const struct rayWorld *ray)
+f32 SphereRayCastWorldParameter(const struct sphere *sphere, const ds_TransformWorld *transform, const struct rayWorld *ray)
 {
 	/* a sphere is rotation invariant: translating the origin gives its frame */
 	const struct ray local =
@@ -498,79 +498,79 @@ f32 SphereRaycastWorldParameter(const struct sphere *sphere, const ds_TransformW
 		.origin = V3F64Demote(V3F64Sub(ray->origin, transform->position)),
 		.dir = ray->dir,
 	};
-	return SphereRaycastParameter(sphere, &local);
+	return SphereRayCastParameter(sphere, &local);
 }
 
-f32 CapsuleRaycastWorldParameter(const struct capsule *capsule, const ds_TransformWorld *transform, const struct rayWorld *ray)
+f32 CapsuleRayCastWorldParameter(const struct capsule *capsule, const ds_TransformWorld *transform, const struct rayWorld *ray)
 {
 	const struct ray local =
 	{
 		.origin = ds_TransformWorldPointToLocal(transform, ray->origin),
 		.dir = QUnitRotate(QConj(transform->rotation), ray->dir),
 	};
-	return CapsuleRaycastParameter(capsule, &local);
+	return CapsuleRayCastParameter(capsule, &local);
 }
 
-f32 HullRaycastWorldParameter(const struct dcel *hull, const ds_TransformWorld *transform, const struct rayWorld *ray)
+f32 HullRayCastWorldParameter(const struct dcel *hull, const ds_TransformWorld *transform, const struct rayWorld *ray)
 {
 	const struct ray local =
 	{
 		.origin = ds_TransformWorldPointToLocal(transform, ray->origin),
 		.dir = QUnitRotate(QConj(transform->rotation), ray->dir),
 	};
-	return HullRaycastParameter(hull, &local);
+	return HullRayCastParameter(hull, &local);
 }
 
-f32 MeshRaycastWorldParameter(const struct mesh *mesh, const ds_TransformWorld *transform, const struct rayWorld *ray)
+f32 MeshRayCastWorldParameter(const struct mesh *mesh, const ds_TransformWorld *transform, const struct rayWorld *ray)
 {
 	const struct ray local =
 	{
 		.origin = ds_TransformWorldPointToLocal(transform, ray->origin),
 		.dir = QUnitRotate(QConj(transform->rotation), ray->dir),
 	};
-	return MeshRaycastParameter(mesh, &local);
+	return MeshRayCastParameter(mesh, &local);
 }
 
-f32 AabbRaycastWorldParameter(const struct aabb *aabb, const ds_TransformWorld *transform, const struct rayWorld *ray)
+f32 AabbRayCastWorldParameter(const struct aabb *aabb, const ds_TransformWorld *transform, const struct rayWorld *ray)
 {
 	const struct ray local =
 	{
 		.origin = ds_TransformWorldPointToLocal(transform, ray->origin),
 		.dir = QUnitRotate(QConj(transform->rotation), ray->dir),
 	};
-	return AabbRaycastParameter(aabb, &local);
+	return AabbRayCastParameter(aabb, &local);
 }
 
-f32 TriRaycastWorldParameter(const v3 a, const v3 b, const v3 c, const ds_TransformWorld *transform, const struct rayWorld *ray)
+f32 TriRayCastWorldParameter(const v3 a, const v3 b, const v3 c, const ds_TransformWorld *transform, const struct rayWorld *ray)
 {
 	const struct ray local =
 	{
 		.origin = ds_TransformWorldPointToLocal(transform, ray->origin),
 		.dir = QUnitRotate(QConj(transform->rotation), ray->dir),
 	};
-	return TriRaycastParameter(a, b, c, &local);
+	return TriRayCastParameter(a, b, c, &local);
 }
 
-f32 c_SphereRaycastParameter(const struct c_Shape *shape, const ds_TransformWorld *transform, const struct rayWorld *ray)
+f32 c_SphereRayCastParameter(const struct c_Shape *shape, const ds_TransformWorld *transform, const struct rayWorld *ray)
 {
 	ds_Assert(shape->type == C_SHAPE_SPHERE);
-	return SphereRaycastWorldParameter(&shape->sphere, transform, ray);
+	return SphereRayCastWorldParameter(&shape->sphere, transform, ray);
 }
 
-f32 c_CapsuleRaycastParameter(const struct c_Shape *shape, const ds_TransformWorld *transform, const struct rayWorld *ray)
+f32 c_CapsuleRayCastParameter(const struct c_Shape *shape, const ds_TransformWorld *transform, const struct rayWorld *ray)
 {
 	ds_Assert(shape->type == C_SHAPE_CAPSULE);
-	return CapsuleRaycastWorldParameter(&shape->capsule, transform, ray);
+	return CapsuleRayCastWorldParameter(&shape->capsule, transform, ray);
 }
 
-f32 c_HullRaycastParameter(const struct c_Shape *shape, const ds_TransformWorld *transform, const struct rayWorld *ray)
+f32 c_HullRayCastParameter(const struct c_Shape *shape, const ds_TransformWorld *transform, const struct rayWorld *ray)
 {
 	ds_Assert(shape->type == C_SHAPE_CONVEX_HULL);
-	return HullRaycastWorldParameter(&shape->hull, transform, ray);
+	return HullRayCastWorldParameter(&shape->hull, transform, ray);
 }
 
-f32 c_MeshRaycastParameter(const struct c_Shape *shape, const ds_TransformWorld *transform, const struct rayWorld *ray)
+f32 c_MeshRayCastParameter(const struct c_Shape *shape, const ds_TransformWorld *transform, const struct rayWorld *ray)
 {
 	ds_Assert(shape->type == C_SHAPE_TRI_MESH);
-	return MeshRaycastWorldParameter(&shape->mesh, transform, ray);
+	return MeshRayCastWorldParameter(&shape->mesh, transform, ray);
 }
