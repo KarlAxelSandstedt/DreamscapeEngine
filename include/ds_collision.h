@@ -534,8 +534,7 @@ Raycasting your own primitives in a BVH's leaves (BVHRayCastInit takes all of me
 /* the ray prepared for repeated box tests */
 struct rayAabb
 {
-	v3	    origin_near;
-	v3	    origin_far;
+	struct aabb	origin;
 	v3	    inv_dir;	/* 1 / dir, +-inf on an axis where dir is 0 */
 	v3u32	sign;		/* sign bit of dir: 1 -> the near slab plane is the box's max */
 };

@@ -983,13 +983,13 @@ static f32 BVHNodeRayCastParameter(const struct rayAabb *ray, const struct aabb 
 		: F32_INFINITY;
 }
 
-static struct BVHCastInfo BVHRayAabbCastInit(struct arena *mem, const struct BVH *bvh, const struct rayAabb *ray)
+struct BVHCastInfo BVHRayCastInit(struct arena *mem, const struct BVH *bvh, const struct ray *ray)
 {
 	struct BVHCastInfo info =
 	{
 		.hit = u32f32_inline(U32_MAX, F32_INFINITY),
 		.node = (struct BVHNode *) bvh->pool.buf,
-		.ray = *ray,
+		.ray = RayAabb(ray),
 		.bvh = bvh,
 	};
 
@@ -1006,23 +1006,30 @@ static struct BVHCastInfo BVHRayAabbCastInit(struct arena *mem, const struct BVH
 	return info;
 }
 
-struct BVHCastInfo BVHRayCastInit(struct arena *mem, const struct BVH *bvh, const struct ray *ray)
-{
-	const struct rayAabb ray_aabb = RayAabb(ray);
-	return BVHRayAabbCastInit(mem, bvh, &ray_aabb);
-}
-
 struct BVHCastInfo BVHAabbCastInit(struct arena *mem, const struct BVH *bvh, const struct aabb *box, const v3 translation)
 {
-	const struct ray ray = { .origin = box->min, .dir = translation };
-	struct rayAabb ray_aabb = RayAabb(&ray);
-	for (u32 axis = 0; axis < 3; ++axis)
+	const struct ray ray = { .origin = V3Zero(), .dir = translation };
+	struct BVHCastInfo info =
 	{
-		ray_aabb.origin_near.buf[axis] = (ray_aabb.sign.buf[axis]) ? box->min.buf[axis] : box->max.buf[axis];
-		ray_aabb.origin_far.buf[axis] = (ray_aabb.sign.buf[axis]) ? box->max.buf[axis] : box->min.buf[axis];
+		.hit = u32f32_inline(U32_MAX, F32_INFINITY),
+		.node = (struct BVHNode *) bvh->pool.buf,
+		.ray = RayAabb(&ray),
+		.bvh = bvh,
+	};
+
+	info.ray.origin = *box;
+
+	if (bvh->bt.count)
+	{
+		const f32 root_hit_param = BVHNodeRayCastParameter(&info.ray, &info.node[info.bvh->bt.root].bbox);
+		if (root_hit_param < F32_INFINITY)
+		{
+			info.hit_queue = MQAllocAll(mem);
+			MQPush(&info.hit_queue, bvh->bt.root, root_hit_param);
+		}
 	}
 
-	return BVHRayAabbCastInit(mem, bvh, &ray_aabb);
+	return info;
 }
 
 void BVHCastTestAndPushChildren(struct BVHCastInfo *info, const u32f32 popped_tuple)

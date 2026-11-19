@@ -372,8 +372,7 @@ struct rayAabb RayAabb(const struct ray *ray)
 	/* dir[i] == 0 gives 1/dir[i] = +-inf (signed like the zero), handled in AabbRayCastInterval */
 	const struct rayAabb ray_aabb =
 	{
-		.origin_near = ray->origin,
-		.origin_far = ray->origin,
+		.origin = { .min = ray->origin, .max = ray->origin },
 		.inv_dir = V3(1.0f / ray->dir.x, 1.0f / ray->dir.y, 1.0f / ray->dir.z),
 		.sign = V3U32(F32SignBit(ray->dir.x), F32SignBit(ray->dir.y), F32SignBit(ray->dir.z)),
 	};
@@ -405,10 +404,11 @@ intv AabbRayCastInterval(const struct rayAabb *ray, const struct aabb *aabb)
 	f32 t_max = F32_INFINITY;
 	for (u32 axis = 0; axis < 3; ++axis)
 	{
-		const f32 near_plane = (ray->sign.buf[axis]) ? aabb->max.buf[axis] : aabb->min.buf[axis];
-		const f32 far_plane = (ray->sign.buf[axis]) ? aabb->min.buf[axis] : aabb->max.buf[axis];
-		const f32 t_near = (near_plane - ray->origin_near.buf[axis]) * ray->inv_dir.buf[axis];
-		const f32 t_far = (far_plane - ray->origin_far.buf[axis]) * ray->inv_dir.buf[axis] * t_far_scale;
+		const f32 t0 = (aabb->min.buf[axis] - ray->origin.max.buf[axis]) * ray->inv_dir.buf[axis];
+		const f32 t1 = (aabb->max.buf[axis] - ray->origin.min.buf[axis]) * ray->inv_dir.buf[axis];
+		const f32 t_near = (ray->sign.buf[axis]) ? t1 : t0;
+		const f32 t_far_unscaled = (ray->sign.buf[axis]) ? t0 : t1;
+		const f32 t_far = t_far_unscaled * t_far_scale;
 		t_min = F32Max(t_near, t_min);
 		t_max = F32Min(t_far, t_max);
 	}
