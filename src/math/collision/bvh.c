@@ -983,13 +983,13 @@ static f32 BVHNodeRaycastParameter(const struct rayAabb *ray, const struct aabb 
 		: F32_INFINITY;
 }
 
-struct BVHRaycastInfo BVHRaycastInit(struct arena *mem, const struct BVH *bvh, const struct ray *ray)
+static struct BVHCastInfo BVHRayAabbCastInit(struct arena *mem, const struct BVH *bvh, const struct rayAabb *ray)
 {
-	struct BVHRaycastInfo info =
+	struct BVHCastInfo info =
 	{
 		.hit = u32f32_inline(U32_MAX, F32_INFINITY),
 		.node = (struct BVHNode *) bvh->pool.buf,
-		.ray = RayAabb(ray),
+		.ray = *ray,
 		.bvh = bvh,
 	};
 
@@ -1006,7 +1006,26 @@ struct BVHRaycastInfo BVHRaycastInit(struct arena *mem, const struct BVH *bvh, c
 	return info;
 }
 
-void BVHRaycastTestAndPushChildren(struct BVHRaycastInfo *info, const u32f32 popped_tuple)
+struct BVHCastInfo BVHRayCastInit(struct arena *mem, const struct BVH *bvh, const struct ray *ray)
+{
+	const struct rayAabb ray_aabb = RayAabb(ray);
+	return BVHRayAabbCastInit(mem, bvh, &ray_aabb);
+}
+
+struct BVHCastInfo BVHAabbCastInit(struct arena *mem, const struct BVH *bvh, const struct aabb *box, const v3 translation)
+{
+	const struct ray ray = { .origin = box->min, .dir = translation };
+	struct rayAabb ray_aabb = RayAabb(&ray);
+	for (u32 axis = 0; axis < 3; ++axis)
+	{
+		ray_aabb.origin_near.buf[axis] = (ray_aabb.sign.buf[axis]) ? box->min.buf[axis] : box->max.buf[axis];
+		ray_aabb.origin_far.buf[axis] = (ray_aabb.sign.buf[axis]) ? box->max.buf[axis] : box->min.buf[axis];
+	}
+
+	return BVHRayAabbCastInit(mem, bvh, &ray_aabb);
+}
+
+void BVHCastTestAndPushChildren(struct BVHCastInfo *info, const u32f32 popped_tuple)
 {
 	const struct BVHNode *node = info->node;
 	const f32 distance_left = BVHNodeRaycastParameter(&info->ray, &node[node[popped_tuple.u].bt_child[0]].bbox);

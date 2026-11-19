@@ -2002,65 +2002,45 @@ u32f32 ds_DynamicsRaycastParameter(const struct ds_Dynamics *pipeline, const str
 
     /* the BVHs hold f32 world boxes, searched with the demoted ray; shapes test the f64 ray */
     const struct ray ray_bvh = { .origin = V3F64Demote(ray->origin), .dir = ray->dir };
+    const struct BVH *bvh[3] = { &pipeline->static_bvh, &pipeline->kinematic_bvh, &pipeline->dynamic_bvh };
     struct arena *tmp = ArenaPushScratch();
 
-	struct BVHRaycastInfo d_info = BVHRaycastInit(tmp, &pipeline->dynamic_bvh, &ray_bvh);
-	while (d_info.hit_queue.count)
-	{
-		const u32f32 tuple = MQPop(&d_info.hit_queue);
-		if (d_info.hit.f < tuple.f)
-		{
-			break;	
-		}
+    u32f32 hit = u32f32_inline(U32_MAX, F32_INFINITY);
+    for (u32 b = 0; b < 3; ++b)
+    {
+        struct BVHCastInfo info = BVHRayCastInit(tmp, bvh[b], &ray_bvh);
+        info.hit = hit;
+        while (info.hit_queue.count)
+        {
+            const u32f32 tuple = MQPop(&info.hit_queue);
+            if (info.hit.f < tuple.f)
+            {
+                break;
+            }
 
-		if (BTLeafCheck(d_info.node + tuple.u))
-		{
-			const u32 si = d_info.node[tuple.u].bt_child[0];
-			const struct ds_Shape *shape = pipeline->shape_pool.buf + si;
-			const f32 t = ds_ShapeRaycastParameter(pipeline, shape, ray);
-			if (t < d_info.hit.f)
-			{
-				d_info.hit = u32f32_inline(si, t);
-			}
-		}
-		else
-		{
-			BVHRaycastTestAndPushChildren(&d_info, tuple);
-		}
-	}
+            if (BTLeafCheck(info.node + tuple.u))
+            {
+                const u32 si = info.node[tuple.u].bt_child[0];
+                const struct ds_Shape *shape = pipeline->shape_pool.buf + si;
+                const f32 t = ds_ShapeRaycastParameter(pipeline, shape, ray);
+                if (t < info.hit.f)
+                {
+                    info.hit = u32f32_inline(si, t);
+                }
+            }
+            else
+            {
+                BVHCastTestAndPushChildren(&info, tuple);
+            }
+        }
 
-    ArenaFlush(tmp);
-
-	struct BVHRaycastInfo s_info = BVHRaycastInit(tmp, &pipeline->static_bvh, &ray_bvh);
-	while (s_info.hit_queue.count)
-	{
-		const u32f32 tuple = MQPop(&s_info.hit_queue);
-		if (s_info.hit.f < tuple.f)
-		{
-			break;	
-		}
-
-		if (BTLeafCheck(s_info.node + tuple.u))
-		{
-			const u32 si = s_info.node[tuple.u].bt_child[0];
-			const struct ds_Shape *shape = pipeline->shape_pool.buf + si;
-			const f32 t = ds_ShapeRaycastParameter(pipeline, shape, ray);
-			if (t < s_info.hit.f)
-			{
-				s_info.hit = u32f32_inline(si, t);
-			}
-		}
-		else
-		{
-			BVHRaycastTestAndPushChildren(&s_info, tuple);
-		}
-	}
+        hit = info.hit;
+        ArenaFlush(tmp);
+    }
 
     ArenaPopScratch();
 
-	return (d_info.hit.f < s_info.hit.f)
-        ? d_info.hit
-        : s_info.hit;
+    return hit;
 }
 
 struct ds_PhysicsEvent *ds_PhysicsEventPush(struct ds_Dynamics *pipeline)

@@ -372,7 +372,8 @@ struct rayAabb RayAabb(const struct ray *ray)
 	/* dir[i] == 0 gives 1/dir[i] = +-inf (signed like the zero), handled in AabbRaycastInterval */
 	const struct rayAabb ray_aabb =
 	{
-		.origin = ray->origin,
+		.origin_near = ray->origin,
+		.origin_far = ray->origin,
 		.inv_dir = V3(1.0f / ray->dir.x, 1.0f / ray->dir.y, 1.0f / ray->dir.z),
 		.sign = V3U32(F32SignBit(ray->dir.x), F32SignBit(ray->dir.y), F32SignBit(ray->dir.z)),
 	};
@@ -406,8 +407,8 @@ intv AabbRaycastInterval(const struct rayAabb *ray, const struct aabb *aabb)
 	{
 		const f32 near_plane = (ray->sign.buf[axis]) ? aabb->max.buf[axis] : aabb->min.buf[axis];
 		const f32 far_plane = (ray->sign.buf[axis]) ? aabb->min.buf[axis] : aabb->max.buf[axis];
-		const f32 t_near = (near_plane - ray->origin.buf[axis]) * ray->inv_dir.buf[axis];
-		const f32 t_far = (far_plane - ray->origin.buf[axis]) * ray->inv_dir.buf[axis] * t_far_scale;
+		const f32 t_near = (near_plane - ray->origin_near.buf[axis]) * ray->inv_dir.buf[axis];
+		const f32 t_far = (far_plane - ray->origin_far.buf[axis]) * ray->inv_dir.buf[axis] * t_far_scale;
 		t_min = F32Max(t_near, t_min);
 		t_max = F32Min(t_far, t_max);
 	}
@@ -447,7 +448,7 @@ f32 MeshRaycastParameter(const struct mesh *mesh, const struct ray *ray)
 
 	/* nodes are popped in order of their box's entry t: stop once the best hit is nearer than the next box */
 	struct arena *mem_tmp = ArenaPushScratch();
-	struct BVHRaycastInfo info = BVHRaycastInit(mem_tmp, &mesh->bvh, ray);
+	struct BVHCastInfo info = BVHRayCastInit(mem_tmp, &mesh->bvh, ray);
 	while (info.hit_queue.count)
 	{
 		const u32f32 tuple = MQPop(&info.hit_queue);
@@ -472,7 +473,7 @@ f32 MeshRaycastParameter(const struct mesh *mesh, const struct ray *ray)
 		}
 		else
 		{
-			BVHRaycastTestAndPushChildren(&info, tuple);
+			BVHCastTestAndPushChildren(&info, tuple);
 		}
 	}
 	ArenaPopScratch();

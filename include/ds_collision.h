@@ -502,10 +502,10 @@ Two-sided: an origin inside a solid returns its exit. Three forms with the same 
     c_XRaycastParameter         the world form on a c_Shape
 Precondition: |ray->dir|^2 > 0 (asserted).
 
-Raycasting your own primitives in a BVH's leaves (BVHRaycastInit takes all of mem: pass a scratch arena):
+Raycasting your own primitives in a BVH's leaves (BVHRayCastInit takes all of mem: pass a scratch arena):
 
     struct arena *mem = ArenaPushScratch();
-    struct BVHRaycastInfo info = BVHRaycastInit(mem, bvh, ray);
+    struct BVHCastInfo info = BVHRayCastInit(mem, bvh, ray);
     while (info.hit_queue.count)
     {
         const u32f32 tuple = MQPop(&info.hit_queue);
@@ -525,7 +525,7 @@ Raycasting your own primitives in a BVH's leaves (BVHRaycastInit takes all of me
         }
         else
         {
-            BVHRaycastTestAndPushChildren(&info, tuple);
+            BVHCastTestAndPushChildren(&info, tuple);
         }
     }
     ArenaPopScratch();
@@ -534,7 +534,8 @@ Raycasting your own primitives in a BVH's leaves (BVHRaycastInit takes all of me
 /* the ray prepared for repeated box tests */
 struct rayAabb
 {
-	v3	    origin;
+	v3	    origin_near;
+	v3	    origin_far;
 	v3	    inv_dir;	/* 1 / dir, +-inf on an axis where dir is 0 */
 	v3u32	sign;		/* sign bit of dir: 1 -> the near slab plane is the box's max */
 };
@@ -547,7 +548,7 @@ struct rayAabb  RayAabb(const struct ray *ray);
  */
 intv            AabbRaycastInterval(const struct rayAabb *ray, const struct aabb *aabb);
 
-struct BVHRaycastInfo
+struct BVHCastInfo
 {
 	u32f32			hit;
 	struct rayAabb	ray;
@@ -557,9 +558,10 @@ struct BVHRaycastInfo
 };
 
 /* Return the traversal state with the root queued if the ray hits its box; uses all of mem for the queue */
-struct BVHRaycastInfo	BVHRaycastInit(struct arena *mem, const struct BVH *bvh, const struct ray *ray);
+struct BVHCastInfo	BVHRayCastInit(struct arena *mem, const struct BVH *bvh, const struct ray *ray);
+struct BVHCastInfo	BVHAabbCastInit(struct arena *mem, const struct BVH *bvh, const struct aabb *box, const v3 translation);
 /* Queue the popped node's children whose boxes the ray hits, keyed by their entry t */
-void 			        BVHRaycastTestAndPushChildren(struct BVHRaycastInfo *info, const u32f32 popped_tuple);
+void 			        BVHCastTestAndPushChildren(struct BVHCastInfo *info, const u32f32 popped_tuple);
 
 /* the ray prepared for many triangle tests (TriRaycastParameterEx); hits never fall through shared edges */
 struct rayWoop
