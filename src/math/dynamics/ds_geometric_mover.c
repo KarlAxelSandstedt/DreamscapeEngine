@@ -572,21 +572,25 @@ void ds_DynamicsGeometricMover(struct ds_Dynamics *dynamics, struct ds_Geometric
             const struct ds_BodySim *sim = set->body_sim_pool.buf + body->sim;
             struct ds_BodyCompute *compute = set->body_compute_pool.buf + body->sim;
 
-            /* the plane normal points at the mover */
             const v3 n = V3Negate(pl->plane.normal);
             const v3 r = V3F64Demote(V3F64Sub(V3F64Add(mover->position, V3Promote(pl->point)), ds_BodySimWorldCenterOfMass(sim)));
             const m3 rot = M3QUnit(sim->world.rotation);
             const m3 inv_inertia = M3Mul(M3Mul(rot, sim->local_inv_inertia), M3Transpose(rot));
 
-            /* the mover has infinite mass: push until the point's normal velocity matches the mover's, never pull */
-            const v3 rn = V3Cross(r, n);
-            const f32 k = sim->inv_mass + V3Dot(rn, M3V3Mul(inv_inertia, rn));
-            const v3 v_point = V3Add(compute->linear_velocity, V3Cross(compute->angular_velocity, r));
-            const f32 vn = V3Dot(V3Sub(v_point, mover->velocity), n);
-            const v3 impulse = V3Scale(n, F32Max(-vn / k, 0.0f));
+            const v3 c = V3Cross(r, n);                /* (r x n) */
+            const v3 Ic = M3V3Mul(inv_inertia, c);     /* Inv(I)(r x n) */
+            const f32 normal_mass = 1.0f / (sim->inv_mass + V3Dot(Ic, c));
 
-            compute->linear_velocity = V3Add(compute->linear_velocity, V3Scale(impulse, sim->inv_mass));
-            compute->angular_velocity = V3Add(compute->angular_velocity, M3V3Mul(inv_inertia, V3Cross(r, impulse)));
+            v3 relative_velocity = V3Sub(compute->linear_velocity, mover->velocity);
+            relative_velocity = V3Add(relative_velocity, V3Cross(compute->angular_velocity, r));
+            const f32 separating_velocity = V3Dot(n, relative_velocity);
+
+            const f32 delta_impulse = F32Max(0.0f, -normal_mass * separating_velocity);
+
+            const v3 impulse = V3Scale(n, delta_impulse);
+            const v3 delta_w = M3V3Mul(inv_inertia, V3Cross(r, impulse));
+            compute->linear_velocity = V3AddScaled(compute->linear_velocity, impulse, sim->inv_mass);
+            compute->angular_velocity = V3Add(compute->angular_velocity, delta_w);
         }
     }
 
