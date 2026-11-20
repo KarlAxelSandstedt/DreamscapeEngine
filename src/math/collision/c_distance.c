@@ -339,8 +339,8 @@ f32 GJK(v3 *c0, v3 *c1, v3 *n, struct GJKCache *cache_out, const struct GJKCache
      *      4a  |dir|^2 < MIN, count 1                  |dir| is the distance: ~0           return 0, n = 0
      *      4b  |dir|^2 < MIN, count 2-3                degenerate edge/triangle (1b        backup
      *                                                  ruled out touching)
-     *      5   the support bound proves                early exit                          return F32_INFINITY
-     *          distance > cutoff_distance + 1b's band
+     *      5   the support bound proves core distance  early exit                          return F32_INFINITY
+     *          > cutoff_distance + margins + 1b's band
      *      6   the support point makes no progress     converged                           simplex
      *          along dir (repeated support pair)
      *      7   iteration limit                         not converged                       backup (after the loop:
@@ -461,14 +461,14 @@ f32 GJK(v3 *c0, v3 *c1, v3 *n, struct GJKCache *cache_out, const struct GJKCache
         /*
          * 5: B - A lies in the half-space dot(p, dir) <= dot(w, dir) of the support point w, so
          *
-         *      distance >= -dot(w, dir) / |dir|
+         *      core distance >= -dot(w, dir) / |dir|
          *
-         * The bound carries the same ~eps L noise as 1b's closest, so it must clear the cutoff by the touch
-         * band: a pair within the band of the cutoff (cutoff 0: touching) is never cut off on noise, it
-         * runs on and 1b decides.
+         * and the returned distance is the core distance - margin0 - margin1. The bound carries the same ~eps L
+         * noise as 1b's closest, so it must clear the cutoff by the touch band: a pair within the band of the
+         * cutoff (cutoff 0: touching) is never cut off on noise, it runs on and 1b decides.
          */
         const f32 support_dot = V3Dot(simplex.v[simplex.count].minkowski, dir);
-        const f32 cutoff = cutoff_distance + touch_tolerance*F32Sqrt(vertex_length_sq_max);
+        const f32 cutoff = cutoff_distance + vset0->margin + vset1->margin + touch_tolerance*F32Sqrt(vertex_length_sq_max);
         if (support_dot < 0.0f && support_dot*support_dot > cutoff*cutoff*V3LengthSquared(dir))
         {
             /* the candidate isn't counted: the solved simplex is cached */
@@ -638,18 +638,11 @@ f32 c_HullSphereDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const d
 
 	struct GJKVertexSet vset0, vset1;
 	GJKVertexSetHull(&vset0, &s0->hull);
-	GJKVertexSetPoint(&vset1, V3Zero());
+	GJKVertexSetSphere(&vset1, &s1->sphere);
 
 	v3 n;
 	struct GJKCache cache;
-	const f32 dist = GJKWorld(c0, c1, &n, &cache, NULL, &vset0, t0, &vset1, t1, F32_INFINITY);
-	if (dist <= s1->sphere.radius)
-	{  
-        return 0.0f;
-	}
-	
-	*c1 = V3F64Add(*c1, V3Promote(V3Scale(n, -s1->sphere.radius)));
-	return dist - s1->sphere.radius;
+	return GJKWorld(c0, c1, &n, &cache, NULL, &vset0, t0, &vset1, t1, F32_INFINITY);
 }
 
 f32 c_HullCapsuleDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
@@ -659,18 +652,11 @@ f32 c_HullCapsuleDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const 
 
 	struct GJKVertexSet vset0, vset1;
 	GJKVertexSetHull(&vset0, &s0->hull);
-	GJKVertexSetSegment(&vset1, V3(0.0f, s1->capsule.half_height, 0.0f), V3(0.0f, -s1->capsule.half_height, 0.0f));
+	GJKVertexSetCapsule(&vset1, &s1->capsule);
 
 	v3 n;
 	struct GJKCache cache;
-	const f32 dist = GJKWorld(c0, c1, &n, &cache, NULL, &vset0, t0, &vset1, t1, F32_INFINITY);
-	if (dist <= s1->capsule.radius)
-	{
-        return 0.0f;
-	}
-
-	*c1 = V3F64Add(*c1, V3Promote(V3Scale(n, -s1->capsule.radius)));
-	return dist - s1->capsule.radius;
+	return GJKWorld(c0, c1, &n, &cache, NULL, &vset0, t0, &vset1, t1, F32_INFINITY);
 }
 
 f32 c_HullDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)

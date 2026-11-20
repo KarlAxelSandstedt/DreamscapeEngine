@@ -69,12 +69,12 @@ u32 c_HullSphereTest(const struct c_Shape *s0, const ds_TransformWorld *t0, cons
 
     struct GJKVertexSet vset0, vset1;
     GJKVertexSetHull(&vset0, &s0->hull);
-    GJKVertexSetPoint(&vset1, V3Zero());
+    GJKVertexSetSphere(&vset1, &s1->sphere);
 
     v3f64 c0, c1;
     v3 n;
     struct GJKCache cache;
-    return GJKWorld(&c0, &c1, &n, &cache, NULL, &vset0, t0, &vset1, t1, s1->sphere.radius) <= s1->sphere.radius;
+    return GJKWorld(&c0, &c1, &n, &cache, NULL, &vset0, t0, &vset1, t1, 0.0f) == 0.0f;
 }
 
 u32 c_HullCapsuleTest(const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
@@ -84,12 +84,12 @@ u32 c_HullCapsuleTest(const struct c_Shape *s0, const ds_TransformWorld *t0, con
 
     struct GJKVertexSet vset0, vset1;
     GJKVertexSetHull(&vset0, &s0->hull);
-    GJKVertexSetSegment(&vset1, V3(0.0f, s1->capsule.half_height, 0.0f), V3(0.0f, -s1->capsule.half_height, 0.0f));
+    GJKVertexSetCapsule(&vset1, &s1->capsule);
 
     v3f64 c0, c1;
     v3 n;
     struct GJKCache cache;
-    return GJKWorld(&c0, &c1, &n, &cache, NULL, &vset0, t0, &vset1, t1, s1->capsule.radius) <= s1->capsule.radius;
+    return GJKWorld(&c0, &c1, &n, &cache, NULL, &vset0, t0, &vset1, t1, 0.0f) == 0.0f;
 }
 
 u32 c_HullTest(const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)

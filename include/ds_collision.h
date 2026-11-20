@@ -275,7 +275,7 @@ pushed numerics config (gjk_max_iterations).
                         sizes); only an upper bound when the loop stops early: the iteration limit, or a
                         degenerate or non-improving simplex (seen for shapes of very different sizes)
     cache_in            NULL or the pair's previous cache_out (warm start); cache_out is always written
-    cutoff_distance     larger core distances are of no interest (F32_INFINITY: none); the early exit needs the
+    cutoff_distance     larger distances are of no interest (F32_INFINITY: none); the early exit needs the
                         distance to clear it by the touch band, and a finite result can still exceed it:
                         callers compare
 */
