@@ -546,7 +546,8 @@ static void r_EditorDraw(const struct led *led)
 
 	g_scene->view_origin = led->cam.position;
 
-	r_Proxy3dHierarchySpeculate(&g_r_core->frame, led->ns - led->ns_engine_paused);
+	const struct ds_SimHost *host = ds_SimHostLookup(&led->srv, led->sim).address;
+	r_Proxy3dHierarchySpeculate(&g_r_core->frame, 1000 * host->sim.us_time);
 
 	/* the proxies: off while the physics shapes are drawn in their place (z-fighting) */
 	//    HII it;

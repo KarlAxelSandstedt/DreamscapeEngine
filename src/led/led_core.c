@@ -266,13 +266,14 @@ static void led_NodeAttachRigidBodyPrefabInternal(struct led *led, const u32 nod
     struct led_Node *node = led->node_hierarchy.pool.buf + node_index;
     led_NodeDetachRigidBodyPrefabInternal(led, node); 
 
+    const struct ds_SimHost *host = ds_SimHostLookup(&led->srv, led->sim).address;
     struct r_Proxy3d_config config =
 	{
 		.parent = PROXY3D_ROOT,
 		.linear_velocity = V3(0.0f, 0.0f, 0.0f),
 		.angular_velocity = V3(0.0f, 0.0f, 0.0f),
 		.mesh = Utf8Inline(""),
-		.ns_time = led->ns,
+		.ns_time = 1000 * host->sim.us_time,
         .blend = node->blend,
 	};
     config.color = node->color;
@@ -1871,9 +1872,10 @@ void led_DungeonSetup(struct led *led)
     led_RenderMeshAdd(led, Utf8Inline("rm_mover"), Utf8Inline("c_mover"));
     led->mover_spawn_enabled = 1;
     led->mover_spawn = led_ScenePosition(led, V3(0.0f, 1.0f, 12.0f));
+    const struct ds_SimHost *host = ds_SimHostLookup(&led->srv, led->sim).address;
     const struct r_Proxy3d_config mover_config =
     {
-        .ns_time = led->ns,
+        .ns_time = 1000 * host->sim.us_time,
         .parent = PROXY3D_ROOT,
         .position = led->mover_spawn,
         .rotation = QIdentity(),
@@ -2771,7 +2773,7 @@ static void led_EngineRun(struct led *led, const u32 physics_ticked)
 
                         const v3 linear_velocity = V3Zero();
                         const v3 angular_velocity = V3Zero();
-                        const u64 ns = led->ns_physics_start + led->physics->frames_completed*led->physics->ns_tick;
+                        const u64 ns = led->physics->frames_completed*led->physics->ns_tick;
 
 	                	r_Proxy3dLinearSpeculationSet(sim->world.position
 	                			, sim->world.rotation
@@ -2814,7 +2816,7 @@ static void led_EngineRun(struct led *led, const u32 physics_ticked)
 	    	const struct ds_Body *body = led->physics->body_pool.buf + sim->body;
             const struct ds_BodyCompute *compute = active->body_compute_pool.buf + body->sim;
             const struct led_Node *node = led->node_hierarchy.pool.buf + body->entity;
-            const u64 ns = led->ns_physics_start + led->physics->frames_completed*led->physics->ns_tick;
+            const u64 ns = led->physics->frames_completed*led->physics->ns_tick;
 
 	    	r_Proxy3dLinearSpeculationSet(sim->world.position
 	    			, sim->world.rotation
@@ -2832,7 +2834,7 @@ static void led_EngineRun(struct led *led, const u32 physics_ticked)
         if (led->mover_spawn_enabled && host->sim.game.spawned)
         {
             const struct ds_GeometricMover *mover = &host->sim.game.mover;
-            const u64 ns = led->ns_physics_start + led->physics->frames_completed*led->physics->ns_tick;
+            const u64 ns = led->physics->frames_completed*led->physics->ns_tick;
             r_Proxy3dLinearSpeculationSet(mover->position, QIdentity(), mover->velocity, V3Zero(), ns, led->mover_proxy);
         }
     }
@@ -2848,6 +2850,8 @@ static void led_EngineFlush(struct led *led)
 	ds_SimHostReset(&led->srv, led->sim);
 	ds_DynamicsConfigPush(led->physics);
 	led->grab.active = 0;
+    const struct ds_SimHost *host = ds_SimHostLookup(&led->srv, led->sim).address;
+    const u64 ns = 1000 * host->sim.us_time;
 
     HII it; 
     HIIInit(it, led->node_hierarchy, LED_NODE_ROOT);
@@ -2861,7 +2865,7 @@ static void led_EngineFlush(struct led *led)
 					, node->transform.rotation
 					, V3Zero()
 					, V3Zero()
-					, led->ns
+					, ns
 					, node->proxy);
 		    struct r_Proxy3d *proxy = r_Proxy3dAddress(node->proxy);
 
@@ -2877,7 +2881,7 @@ static void led_EngineFlush(struct led *led)
 
     if (led->mover_spawn_enabled)
     {
-        r_Proxy3dLinearSpeculationSet(led->mover_spawn, QIdentity(), V3Zero(), V3Zero(), led->ns, led->mover_proxy);
+        r_Proxy3dLinearSpeculationSet(led->mover_spawn, QIdentity(), V3Zero(), V3Zero(), ns, led->mover_proxy);
     }
 }
 
@@ -2886,8 +2890,6 @@ static void led_EngineInit(struct led *led)
 	//TODO move this into engine flush
 	ds_SimHostReset(&led->srv, led->sim);
 	ds_DynamicsConfigPush(led->physics);
-	led->ns_physics_start = led->ns;
-	led->ns_engine_paused = 0;
 
     /* the scene as the first frame's commands: bodies with their shapes, then the joints */
     ds_CPool(ds_SimCmd) cmds;
@@ -3013,10 +3015,5 @@ void led_Core(struct led *led)
 	{
 		led->ns_engine_running += led->ns_delta;
 		led_EngineRun(led, led->physics->frames_completed != physics_frames_before);
-	}
-
-	if (led->engine_paused)
-	{
-		led->ns_engine_paused += led->ns_delta;
 	}
 }
