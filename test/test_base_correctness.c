@@ -1005,6 +1005,87 @@ static struct test_Output PoseTest(struct test_Environment *env)
 }
 
 /*
+ * QNLerp and ds_TransformLerp: a' (a on b's side) at t = 0 and b at t = 1; unit results on the short arc from a' to b,
+ * moving monotonically along it; t = 1/2 is the halfway turn; a pair with dot < 0 turns the short way; a 180 degree
+ * turn (dot 0) and b = -a are not degenerate; positions exact at the ends and lerped between.
+ */
+static struct test_Output LerpTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    const q one = QIdentity();
+    const v3 x_axis = V3(1.0f, 0.0f, 0.0f);
+    const v3 y_axis = V3(0.0f, 1.0f, 0.0f);
+
+    /* -(0.2 rad about y) is the same rotation: halfway turns 0.1 rad, not the long way */
+    const q flipped = QScale(QUnitAxisAngle(y_axis, 0.2f), -1.0f);
+    TEST_TRUE(VectorTestNear(QUnitRotate(QNLerp(one, flipped, 0.5f), x_axis), QUnitRotate(QUnitAxisAngle(y_axis, 0.1f), x_axis), 1e-6f));
+
+    /* 180 degrees about y: halfway is 90 degrees */
+    const q half_turn = Q(0.0f, 1.0f, 0.0f, 0.0f);
+    TEST_TRUE(VectorTestNear(QUnitRotate(QNLerp(one, half_turn, 0.5f), x_axis), QUnitRotate(QUnitAxisAngle(y_axis, F32_PI / 2.0f), x_axis), 1e-6f));
+
+    struct rng rng;
+    RngLocalInit(&rng, env->seed);
+    for (u32 n = 0; n < 10000; ++n)
+    {
+        const q a = QuaternionTestUnit(&rng);
+        const q b = QuaternionTestUnit(&rng);
+        const v3 axis = VectorTestV3(&rng, -1.0f, 1.0f);
+        const f32 theta = VectorTestF32(&rng, -0.9f * F32_PI, 0.9f * F32_PI);
+        const f32 t = VectorTestF32(&rng, 0.0f, 1.0f);
+        const v3 p0 = VectorTestV3(&rng, -10.0f, 10.0f);
+        const v3 p1 = VectorTestV3(&rng, -10.0f, 10.0f);
+
+        const f32 dot = a.x*b.x + a.y*b.y + a.z*b.z + a.w*b.w;
+        q a_near = a;
+        if (dot < 0.0f)
+        {
+            a_near = QScale(a, -1.0f);
+        }
+        const f32 dot_near = F32Abs(dot);
+
+        TEST_TRUE(QuaternionTestNear(QNLerp(a, b, 0.0f), a_near, 1e-6f));
+        TEST_TRUE(QuaternionTestNear(QNLerp(a, b, 1.0f), b, 1e-6f));
+        TEST_TRUE(QuaternionTestNear(QNLerp(a, QScale(a, -1.0f), t), QScale(a, -1.0f), 1e-6f));
+
+        f32 dot_a_prev = 1.0f;
+        f32 dot_b_prev = dot_near;
+        for (u32 k = 0; k <= 16; ++k)
+        {
+            const q r = QNLerp(a, b, (f32) k / 16.0f);
+            const f32 dot_a = r.x*a_near.x + r.y*a_near.y + r.z*a_near.z + r.w*a_near.w;
+            const f32 dot_b = r.x*b.x + r.y*b.y + r.z*b.z + r.w*b.w;
+            TEST_TRUE(F32Abs(QNorm(r) - 1.0f) <= 1e-6f);
+            TEST_TRUE(dot_a >= dot_near - 1e-6f && dot_b >= dot_near - 1e-6f);
+            TEST_TRUE(dot_a <= dot_a_prev + 1e-6f && dot_b >= dot_b_prev - 1e-6f);
+            dot_a_prev = dot_a;
+            dot_b_prev = dot_b;
+        }
+
+        if (V3Length(axis) >= 0.1f)
+        {
+            const v3 u = V3Normalize(axis);
+            const q turned = QMul(QUnitAxisAngle(u, theta), a);
+            TEST_TRUE(QuaternionTestNear(QNLerp(a, turned, 0.5f), QMul(QUnitAxisAngle(u, theta / 2.0f), a), 1e-5f));
+        }
+
+        const ds_Transform transform0 = { .rotation = a, .position = p0 };
+        const ds_Transform transform1 = { .rotation = b, .position = p1 };
+        const ds_Transform start = ds_TransformLerp(&transform0, &transform1, 0.0f);
+        const ds_Transform end = ds_TransformLerp(&transform0, &transform1, 1.0f);
+        const ds_Transform between = ds_TransformLerp(&transform0, &transform1, t);
+        TEST_TRUE(start.position.x == p0.x && start.position.y == p0.y && start.position.z == p0.z);
+        TEST_TRUE(end.position.x == p1.x && end.position.y == p1.y && end.position.z == p1.z);
+        TEST_TRUE(QuaternionTestNear(start.rotation, a_near, 1e-6f) && QuaternionTestNear(end.rotation, b, 1e-6f));
+        TEST_TRUE(VectorTestNear(between.position, V3Add(p0, V3Scale(V3Sub(p1, p0), t)), 1e-5f));
+        TEST_TRUE(QuaternionTestEqual(between.rotation, QNLerp(a, b, t)));
+    }
+
+	return output;
+}
+
+/*
  * r_CameraInit: the camera looks along direction (pitch within r_CameraUpdateAngles' clamp), its frame is
  * orthonormal with left = up x forward, and r_CameraUpdateAxes on its angles gives the same frame (the frame and
  * the angles agree). Straight down: yaw 0, pitch clamped. yaw = pitch = 0 looks along +z.
@@ -1713,6 +1794,7 @@ static struct test_Output (*base_tests[])(struct test_Environment *) =
     MatrixTest,
     TransformTest,
     PoseTest,
+    LerpTest,
     CameraTest,
     InputNameTest,
 #if __DS_PLATFORM__ == __DS_LINUX__ || __DS_PLATFORM__ == __DS_WIN64__

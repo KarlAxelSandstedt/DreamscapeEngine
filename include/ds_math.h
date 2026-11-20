@@ -115,6 +115,12 @@ static inline ds_Transform ds_TransformRelative(const ds_Transform *reference, c
  */
 static inline v3 ds_TransformPointToLocal(const ds_Transform *reference, const v3 target);
 
+/*
+ * Return the pose at t in [0, 1] between transform0 and transform1: position lerped (exactly transform0's at
+ * t = 0, transform1's at t = 1), rotation QNLerp.
+ */
+static inline ds_Transform ds_TransformLerp(const ds_Transform *transform0, const ds_Transform *transform1, const f32 t);
+
 /*********************************** world poses ************************************/
 
 /*
@@ -238,6 +244,17 @@ static inline ds_Transform ds_TransformRelative(const ds_Transform *reference, c
 static inline v3 ds_TransformPointToLocal(const ds_Transform *reference, const v3 target)
 {
     return QUnitRotate(QConj(reference->rotation), V3Sub(target, reference->position));
+}
+
+static inline ds_Transform ds_TransformLerp(const ds_Transform *transform0, const ds_Transform *transform1, const f32 t)
+{
+    const ds_Transform transform =
+    {
+        .rotation = QNLerp(transform0->rotation, transform1->rotation, t),
+        .position = V3Interpolate(transform1->position, transform0->position, t),
+    };
+
+    return transform;
 }
 
 /************************* world poses: inline definitions **************************/

@@ -110,6 +110,13 @@ static ds_ForceInline f32 QNorm(const q a);
 static ds_ForceInline q QInverse(const q a);
 /* a / |a| (a = 0 gives NaN) */
 static ds_ForceInline q QNormalize(const q a);
+/*
+ * Normalized lerp from unit a to unit b, t in [0, 1]: QNormalize((1 - t) a' + t b), a' = -a if dot(a, b) < 0 (the
+ * same rotation, the shorter way to b), else a. The sum's length is >= 1/sqrt(2): never degenerate. a' at t = 0,
+ * b at t = 1 (up to the normalize's rounding). The angle is not linear in t: a 180 degree turn runs twice as fast
+ * at t = 1/2 as at the ends.
+ */
+static ds_ForceInline q QNLerp(const q a, const q b, const f32 t);
 
 /********************************* rotating vectors *********************************/
 
@@ -236,6 +243,14 @@ static ds_ForceInline q QInverse(const q a)
 static ds_ForceInline q QNormalize(const q a)
 {
 	return QScale(a, 1.0f / QNorm(a));
+}
+
+static ds_ForceInline q QNLerp(const q a, const q b, const f32 t)
+{
+	const f32 dot = a.x*b.x + a.y*b.y + a.z*b.z + a.w*b.w;
+	/* a' = -a by negating a's weight: t - 1 = -(1 - t) exactly */
+	const f32 s = (dot < 0.0f) ? t - 1.0f : 1.0f - t;
+	return QNormalize(Q(s*a.x + t*b.x, s*a.y + t*b.y, s*a.z + t*b.z, s*a.w + t*b.w));
 }
 
 /*********************** rotating vectors: inline definitions ***********************/
