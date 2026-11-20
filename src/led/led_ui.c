@@ -420,6 +420,29 @@ static void led_InputHandler(struct led *led, struct ui_Node *viewport)
 					led->ns_delta_modifier *= 1.0f;
 				} break;
 
+				case DS_P:
+				{
+					if (led->mover_spawn_enabled)
+					{
+						led->play = !led->play;
+						if (!led->play)
+						{
+							const struct ds_SimCmd stop = { .type = SIM_CMD_MOVER_INPUT, .mover_input = { .throttle = V2(0.0f, 0.0f), .yaw = led->cam.yaw } };
+							ds_CPoolPushValue(led->cmds, stop);
+						}
+					}
+				} break;
+
+				case DS_1:
+				{
+					led->play_first_person = 0;
+				} break;
+
+				case DS_2:
+				{
+					led->play_first_person = 1;
+				} break;
+
 				default:
 				{
 					event_consumed = 0;
@@ -435,25 +458,34 @@ static void led_InputHandler(struct led *led, struct ui_Node *viewport)
 		i = next;
 	}
 
-	if (sys_win->ui->inter.key_pressed[DS_W])
+	if (led->play)
 	{
-	    	led->cam_forward_velocity += 9.0f; 
-	} 
+		const f32 right = (f32) sys_win->ui->inter.key_pressed[DS_D] - (f32) sys_win->ui->inter.key_pressed[DS_A];
+		const f32 forward = (f32) sys_win->ui->inter.key_pressed[DS_W] - (f32) sys_win->ui->inter.key_pressed[DS_S];
+		led->play_throttle = V2(right, forward);
+	}
+	else
+	{
+		if (sys_win->ui->inter.key_pressed[DS_W])
+		{
+		    	led->cam_forward_velocity += 9.0f; 
+		} 
 
-	if (sys_win->ui->inter.key_pressed[DS_S])
-	{
-	    	led->cam_forward_velocity -= 9.0f; 
-	} 
+		if (sys_win->ui->inter.key_pressed[DS_S])
+		{
+		    	led->cam_forward_velocity -= 9.0f; 
+		} 
 
-	if (sys_win->ui->inter.key_pressed[DS_A])
-	{
-		led->cam_left_velocity += 9.0f; 
-	} 
+		if (sys_win->ui->inter.key_pressed[DS_A])
+		{
+			led->cam_left_velocity += 9.0f; 
+		} 
 
-	if (sys_win->ui->inter.key_pressed[DS_D])
-	{
-	    	led->cam_left_velocity -= 9.0f; 
-	} 
+		if (sys_win->ui->inter.key_pressed[DS_D])
+		{
+		    	led->cam_left_velocity -= 9.0f; 
+		} 
+	}
 
 	r_CameraUpdateAngles(&led->cam, -sys_win->ui->inter.cursor_delta.x / 300.0f, -sys_win->ui->inter.cursor_delta.y / 300.0f);
 	r_CameraUpdateAxes(&led->cam);
@@ -1441,6 +1473,26 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 
 	led->cam_left_velocity = 0.0f;
 	led->cam_forward_velocity = 0.0f;
+
+	/* play: the frame's input to the mover; the camera follows the capsule where the renderer will draw it */
+	if (led->play)
+	{
+		const struct ds_SimCmd input = { .type = SIM_CMD_MOVER_INPUT, .mover_input = { .throttle = led->play_throttle, .yaw = led->cam.yaw } };
+		ds_CPoolPushValue(led->cmds, input);
+		led->play_throttle = V2(0.0f, 0.0f);
+
+		const struct r_Proxy3d *proxy = r_Proxy3dAddress(led->mover_proxy);
+		const f32 timestep = (f32) ((i64) (led->ns - led->ns_engine_paused) - (i64) proxy->ns_at_update) / NSEC_PER_SEC;
+		const v3f64 eye = V3F64Add(V3F64Add(proxy->position, V3Promote(V3Scale(proxy->linear.linear_velocity, timestep))), V3F64(0.0, 0.6, 0.0));
+		if (led->play_first_person)
+		{
+			led->cam.position = eye;
+		}
+		else
+		{
+			led->cam.position = V3F64Sub(eye, V3Promote(V3Scale(led->cam.forward, 5.0f)));
+		}
+	}
 
 	if (win->tagged_for_destruction) 
 	{
