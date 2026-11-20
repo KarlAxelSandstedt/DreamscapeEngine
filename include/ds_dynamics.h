@@ -290,7 +290,6 @@ a utf8 identifier.
 
 struct ds_ShapePrefab
 {
-    u8      id_buf[PREFAB_BUFSIZE];
     SDB_NODE;
 
 	u32	    cshape;	            /* referenced collisionShape handle  		        */
@@ -317,7 +316,6 @@ struct ds_ShapePrefabInstance
 {
     POOL_NODE;
     struct DLLNode   body_shape;
-    u8                  id_buf[PREFAB_BUFSIZE];
     utf8                id;         /* local identifier within a body    */
     u32                 shape_prefab;
 	ds_Transform	    t_local;	/* local body frame transform        */
@@ -407,7 +405,6 @@ Defines a common set of rigid body properties for easy rigid body building.
 */
 struct ds_BodyPrefab
 {
-    u8              id_buf[PREFAB_BUFSIZE];
     SDB_NODE;
 
     struct DLL   shape_list;         /* shape prefab instance list */

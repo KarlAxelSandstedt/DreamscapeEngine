@@ -180,7 +180,7 @@ struct led *led_Alloc(const utf8 simulation_path, const utf8 record_path, const 
     struct slot slot = ds_PoolAdd(g_editor->shape_prefab_instance_pool);
     const u32 instance_index = slot.index;
     struct ds_ShapePrefabInstance *instance = slot.address;
-    instance->id = Utf8CstrBuffered(instance->id_buf, PREFAB_BUFSIZE, "Stub");
+    instance->id = Utf8Cstr(&g_editor->mem_persistent, "Stub");
 	instance->shape_prefab = ds_SDBReference(g_editor->shape_prefab_db, Utf8Empty()).index;
     instance->t_local = ds_TransformIdentity();
 

@@ -121,13 +121,13 @@ ds_Id led_NodeAdd(struct led *led, const utf8 id, const utf8 parent_id)
         return ds_IdNull();
     }
     struct led_Node *node = slot.address;
-	node->id = Utf8CopyBuffered(node->id_buf, LED_NODE_ID_SIZE, id);	
+	node->id = Utf8Copy(&led->mem_persistent, id);
 	if (!node->id.len)
 	{
         HIRemove(&led->frame, led->node_hierarchy, slot.index);
-		Log(T_LED, S_WARNING, "Failed to allocate led_node: id size must be <= %luB", LED_NODE_ID_SIZE);
+		LogString(T_LED, S_WARNING, "Failed to allocate led_node: persistent memory is full");
         return ds_IdNull();
-	} 
+	}
 	const u32 hash = Utf8Hash(node->id);
 	ds_HashMapAdd(&led->node_map, hash, slot.index);
 
@@ -538,10 +538,9 @@ struct slot led_ShapePrefabAdd(struct led *led, const utf8 id, const utf8 cshape
 			{
 				LogString(T_LED, S_WARNING, "In ds_ShapePrefab: shape not found, stub_shape chosen");
 			}
-			slot = ds_SDBAddAlias(led->shape_prefab_db, copy);
+			slot = ds_SDBAdd(&led->mem_persistent, led->shape_prefab_db, copy);
 
 			struct ds_ShapePrefab *prefab = slot.address;
-            prefab->id = Utf8CopyBuffered(prefab->id_buf, PREFAB_BUFSIZE, copy);
 			prefab->cshape = ref.index;
             prefab->render_mesh = SDB_STUB;
 			prefab->restitution = restitution;
@@ -621,8 +620,7 @@ struct slot led_RigidBodyPrefabAdd(struct led *led, const utf8 id, const u32 dyn
 		}
 		else
 		{
-			struct ds_BodyPrefab *prefab = ds_SDBAddAlias(led->body_prefab_db, copy).address;
-            prefab->id = Utf8CopyBuffered(prefab->id_buf, PREFAB_BUFSIZE, copy);
+			struct ds_BodyPrefab *prefab = ds_SDBAdd(&led->mem_persistent, led->body_prefab_db, copy).address;
             DLLFlush(prefab->shape_list);
 			prefab->dynamic = dynamic;
         }
@@ -665,7 +663,6 @@ void led_RigidBodyPrefabAttachShape(struct led *led, const utf8 rb_id, const utf
 {
     struct ds_BodyPrefab *body_prefab = led_RigidBodyPrefabLookup(led, rb_id).address;
     struct ds_ShapePrefab *shape_prefab = led_ShapePrefabLookup(led, shape_id).address;
-    const u64 id_reqsize = Utf8SizeRequired(local_shape_id);
     if (!body_prefab)
     {
 		Log(T_LED, S_WARNING, "Failed to attach shape to ds_BodyPrefab %k, prefab doesn't exist", &rb_id);
@@ -678,17 +675,13 @@ void led_RigidBodyPrefabAttachShape(struct led *led, const utf8 rb_id, const utf
     {
 		Log(T_LED, S_WARNING, "Failed to attach shape to to ds_BodyPrefab %k, a shape instance with local id %k already exists in the body.", &rb_id, &local_shape_id);
     }
-    else if (PREFAB_BUFSIZE < id_reqsize)
-    {
-		Log(T_LED, S_WARNING, "Failed to attach shape to to ds_BodyPrefab %k, identifier buffer size is %luB but requires %luB.", &rb_id, PREFAB_BUFSIZE, id_reqsize);
-    }
     else
     {
         struct slot slot = ds_PoolAdd(led->shape_prefab_instance_pool);
         struct ds_ShapePrefabInstance *instance = slot.address;
 
         DLLPrepend(body_prefab->shape_list, led->shape_prefab_instance_pool.buf, slot.index, body_shape);
-        instance->id = Utf8CopyBuffered(instance->id_buf, PREFAB_BUFSIZE, local_shape_id);
+        instance->id = Utf8Copy(&led->mem_persistent, local_shape_id);
         instance->shape_prefab = ds_SDBReference(led->shape_prefab_db, shape_id).index;
         instance->t_local = *t_local;
     }
@@ -749,34 +742,24 @@ struct slot led_RenderMeshAdd(struct led *led, const utf8 id, const utf8 shape)
 		LogString(T_LED, S_WARNING, "Failed to allocate render mesh: mesh with given id already exist");
 	}
 	else
-	{ 
-		u8 buf[R_MESH_BUFSIZE];
-		const utf8 copy = Utf8CopyBuffered(buf, R_MESH_BUFSIZE, id);	
-		if (!copy.len)
+	{
+		slot = ds_SDBAdd(&led->mem_persistent, led->render_mesh_db, id);
+		struct r_Mesh *mesh = slot.address;
+
+		struct slot ref = c_ShapeDBLookup(&led->cs_db, shape);
+		if (ref.index == SDB_STUB)
 		{
-			Log(T_LED, S_WARNING, "Failed to allocate render mesh: id size must be <= %luB", R_MESH_BUFSIZE);
+			LogString(T_LED, S_WARNING, "In render_mesh_add: shape not found, stub chosen");
 		}
-		else
+
+	    //TODO Need to come up with a memory allocation strategy for r_Meshes
+		const struct c_Shape *s = ref.address;
+		switch (s->type)
 		{
-			slot = ds_SDBAddAlias(led->render_mesh_db, copy);
-			struct r_Mesh *mesh = slot.address;
-            mesh->id = Utf8CopyBuffered(mesh->id_buf, R_MESH_BUFSIZE, copy);
-
-			struct slot ref = c_ShapeDBLookup(&led->cs_db, shape);
-			if (ref.index == SDB_STUB)
-			{
-				LogString(T_LED, S_WARNING, "In render_mesh_add: shape not found, stub chosen");
-			}
-
-	        //TODO Need to come up with a memory allocation strategy for r_Meshes 
-			const struct c_Shape *s = ref.address;
-			switch (s->type)
-			{
-				case C_SHAPE_SPHERE: { r_MeshSphere(&led->mem_persistent, mesh, s->sphere.radius, 12); } break;
-				case C_SHAPE_CAPSULE: { r_MeshCapsule(&led->mem_persistent, mesh, s->capsule.half_height, s->capsule.radius, 16); } break;
-				case C_SHAPE_CONVEX_HULL: { r_MeshHull(&led->mem_persistent, mesh, &s->hull); } break;
-				case C_SHAPE_TRI_MESH: { r_MeshTriMesh(&led->mem_persistent, mesh, &s->mesh); } break;
-			}
+			case C_SHAPE_SPHERE: { r_MeshSphere(&led->mem_persistent, mesh, s->sphere.radius, 12); } break;
+			case C_SHAPE_CAPSULE: { r_MeshCapsule(&led->mem_persistent, mesh, s->capsule.half_height, s->capsule.radius, 16); } break;
+			case C_SHAPE_CONVEX_HULL: { r_MeshHull(&led->mem_persistent, mesh, &s->hull); } break;
+			case C_SHAPE_TRI_MESH: { r_MeshTriMesh(&led->mem_persistent, mesh, &s->mesh); } break;
 		}
 	}
 
@@ -1583,6 +1566,301 @@ void led_MeshSetup(struct led *led)
             led_JointSceneNodeAdd(led, "waves_drop", k*4 + i, drop, Utf8Inline("rb_box"), dynamic_color);
         }
     }
+}
+
+/* dungeon: one static box with its own collision shape and prefabs, turned by yaw about +y */
+static void led_DungeonBoxAdd(struct led *led, const u32 index, const v3 center, const v3 hw, const f32 yaw, const v4 color)
+{
+    struct ds_Window *sys_win = ds_WindowAddress(g_editor->window);
+    const utf8 c = Utf8Format(sys_win->ui->mem_frame, "c_dungeon_%u", index);
+    const utf8 rm = Utf8Format(sys_win->ui->mem_frame, "rm_dungeon_%u", index);
+    const utf8 sp = Utf8Format(sys_win->ui->mem_frame, "s_dungeon_%u", index);
+    const utf8 rb = Utf8Format(sys_win->ui->mem_frame, "rb_dungeon_%u", index);
+    const utf8 l = Utf8Format(sys_win->ui->mem_frame, "l_s_dungeon_%u", index);
+    const ds_Transform identity = ds_TransformIdentity();
+    led_CollisionBoxAdd(led, c, hw);
+    led_RigidBodyPrefabAdd(led, rb, 0);
+    led_RenderMeshAdd(led, rm, c);
+    led_ShapePrefabAdd(led, sp, c, 1.0f, 0.0f, 0.5f);
+    led_ShapePrefabAttachRenderMesh(led, sp, rm);
+    led_RigidBodyPrefabAttachShape(led, rb, sp, l, &identity);
+    const ds_Id node = led_JointSceneNodeAdd(led, "dungeon", index, center, rb, color);
+    struct led_Node *led_node = led->node_hierarchy.pool.buf + ds_IdIndex(node);
+    led_node->transform.rotation = QUnitAxisAngle(V3(0.0f, 1.0f, 0.0f), yaw);
+}
+
+/*
+ * Mover test map, floor top at y = 0: a 60 x 60 m hall (walls 12 m, open top) with a 20 degree ramp and stairs
+ * (0.2 m risers) up to a 1.6 m platform, a 30 degree V corner, and boxes, spheres and capsules to push. Two ways
+ * up to a gallery along the north wall (9 m), whose parapet has a gap to push its boxes and sphere through: in the
+ * north-west corner a spiral ramp turning twice around a pillar, in the north-east a rocky ridge turning twice
+ * around a column, a gap away from it; each ends at a bridge onto the gallery. Static shapes are all convex.
+ */
+void led_DungeonSetup(struct led *led)
+{
+    ds_CPoolFlush(led->joint_pool);
+    struct ds_Window *sys_win = ds_WindowAddress(g_editor->window);
+
+    const f32 alpha = 0.6f;
+    const v4 static_color = V4(0.8f, 0.6f, 0.6f, alpha);
+    const v4 spiral_color = V4(165.0f/256.0f, 172.0f/256.0f, 243.0f/256.0f, alpha);
+    const v4 box_color = V4(154.0f/256.0f, 101.0f/256.0f, 182.0f/256.0f, alpha);
+    const v4 big_box_color = V4(54.0f/256.0f, 183.0f/256.0f, 122.0f/256.0f, alpha);
+    const v4 sphere_color = V4(254.0f/256.0f, 181.0f/256.0f, 82.0f/256.0f, alpha);
+    const v4 capsule_color = V4(0.1f, 0.4f, 0.8f, alpha);
+    const v4 rock_color = V4(0.55f, 0.5f, 0.45f, alpha);
+    const ds_Transform identity = ds_TransformIdentity();
+
+    /*
+     * floor, walls, platform, gallery (x in [-23.1, 30], z in [-30, -26], top 9), its parapet (open at the bridges
+     * and at x in [4, 6]), the spiral's bridge and the ridge's bridge
+     */
+    const u32 hall_count = 12;
+    const v3 hall_center[12] =
+    {
+        V3(0.0f, -0.5f, 0.0f),
+        V3(0.0f, 6.0f, -30.25f),
+        V3(0.0f, 6.0f, 30.25f),
+        V3(-30.25f, 6.0f, 0.0f),
+        V3(30.25f, 6.0f, 0.0f),
+        V3(8.0f, 0.8f, 0.0f),
+        V3(3.45f, 8.75f, -28.0f),
+        V3(-7.5f, 9.5f, -26.1f),
+        V3(14.9f, 9.5f, -26.1f),
+        V3(28.3f, 9.5f, -26.1f),
+        V3(-21.25f, 8.75f, -25.5f),
+        V3(25.2f, 8.75f, -24.25f),
+    };
+    const v3 hall_hw[12] =
+    {
+        V3(32.0f, 0.5f, 32.0f),
+        V3(30.5f, 6.0f, 0.25f),
+        V3(30.5f, 6.0f, 0.25f),
+        V3(0.25f, 6.0f, 30.5f),
+        V3(0.25f, 6.0f, 30.5f),
+        V3(1.5f, 0.8f, 1.5f),
+        V3(26.55f, 0.25f, 2.0f),
+        V3(11.5f, 0.5f, 0.1f),
+        V3(8.9f, 0.5f, 0.1f),
+        V3(1.7f, 0.5f, 0.1f),
+        V3(1.85f, 0.25f, 1.0f),
+        V3(1.0f, 0.25f, 2.25f),
+    };
+    for (u32 i = 0; i < hall_count; ++i)
+    {
+        led_DungeonBoxAdd(led, i, hall_center[i], hall_hw[i], 0.0f, static_color);
+    }
+
+    /* seven steps down from the platform's east side (x = 9.5), 0.4 m treads */
+    for (u32 i = 0; i < 7; ++i)
+    {
+        const f32 height = 1.4f - 0.2f * (f32) i;
+        led_DungeonBoxAdd(led, hall_count + i, V3(9.7f + 0.4f * (f32) i, 0.5f * height, 0.0f), V3(0.2f, 0.5f * height, 1.5f), 0.0f, static_color);
+    }
+
+    /* V corner: two walls from the apex, opening towards -x */
+    const f32 v_half_angle = F32_PI / 12.0f;
+    const v3 v_apex = V3(13.5f, 1.0f, 10.0f);
+    const v3 v_hw = V3(3.0f, 1.0f, 0.1f);
+    for (u32 i = 0; i < 2; ++i)
+    {
+        const f32 side = (i == 0) ? -1.0f : 1.0f;
+        const v3 center = V3(v_apex.x - v_hw.x * F32Cos(v_half_angle), v_apex.y, v_apex.z + side * v_hw.x * F32Sin(v_half_angle));
+        led_DungeonBoxAdd(led, hall_count + 7 + i, center, v_hw, side * v_half_angle, static_color);
+    }
+
+    /* the ramp: a wedge from x = 2.1 up to the platform's west side (x = 6.5) */
+    const v3 ramp_v[6] =
+    {
+        V3(-2.2f, 0.0f, -1.5f),
+        V3(-2.2f, 0.0f, 1.5f),
+        V3(2.2f, 0.0f, -1.5f),
+        V3(2.2f, 0.0f, 1.5f),
+        V3(2.2f, 1.6f, -1.5f),
+        V3(2.2f, 1.6f, 1.5f),
+    };
+    struct dcel ramp = DcelConvexHull(&led->mem_persistent, ramp_v, 6);
+    led_CollisionDcelAdd(led, Utf8Cstr(sys_win->ui->mem_frame, "c_ramp"), &ramp);
+
+    /*
+     * Spiral segment, in the frame of the spiral's axis: the slab and its outer railing between the angles 0 and
+     * segment_angle about +y (the point at angle a and radius r is (r cos a, y, -r sin a)), rising segment_rise.
+     * Segment k is this turned by k * segment_angle and raised by k * segment_rise.
+     */
+    const v3 spiral_center = V3(-24.5f, 0.0f, -24.5f);
+    const u32 spiral_segments = 48;
+    const f32 segment_angle = F32_PI / 12.0f;
+    const f32 segment_rise = 0.1875f;
+    const f32 spiral_inner = 1.4f;
+    const f32 spiral_outer = 5.1f;
+    const f32 slab_thickness = 0.3f;
+    const f32 rail_inner = spiral_outer - 0.2f;
+    const f32 rail_height = 1.0f;
+    v3 slab_v[8];
+    v3 rail_v[8];
+    for (u32 e = 0; e < 2; ++e)
+    {
+        const f32 c = F32Cos(segment_angle * (f32) e);
+        const f32 s = -F32Sin(segment_angle * (f32) e);
+        const f32 top = segment_rise * (f32) e;
+        const f32 bottom = top - slab_thickness;
+        slab_v[4*e + 0] = V3(spiral_inner * c, top, spiral_inner * s);
+        slab_v[4*e + 1] = V3(spiral_outer * c, top, spiral_outer * s);
+        slab_v[4*e + 2] = V3(spiral_inner * c, bottom, spiral_inner * s);
+        slab_v[4*e + 3] = V3(spiral_outer * c, bottom, spiral_outer * s);
+        rail_v[4*e + 0] = V3(rail_inner * c, top + rail_height, rail_inner * s);
+        rail_v[4*e + 1] = V3(spiral_outer * c, top + rail_height, spiral_outer * s);
+        rail_v[4*e + 2] = V3(rail_inner * c, bottom, rail_inner * s);
+        rail_v[4*e + 3] = V3(spiral_outer * c, bottom, spiral_outer * s);
+    }
+    struct dcel slab = DcelConvexHull(&led->mem_persistent, slab_v, 8);
+    struct dcel rail = DcelConvexHull(&led->mem_persistent, rail_v, 8);
+    led_CollisionDcelAdd(led, Utf8Cstr(sys_win->ui->mem_frame, "c_spiral_slab"), &slab);
+    led_CollisionDcelAdd(led, Utf8Cstr(sys_win->ui->mem_frame, "c_spiral_rail"), &rail);
+
+    led_CollisionCapsuleAdd(led, Utf8Cstr(sys_win->ui->mem_frame, "c_pillar"), 1.5f, 6.0f);
+    led_CollisionCapsuleAdd(led, Utf8Cstr(sys_win->ui->mem_frame, "c_column"), 1.2f, 6.0f);
+    led_CollisionBoxAdd(led, Utf8Cstr(sys_win->ui->mem_frame, "c_box"), V3(0.5f, 0.5f, 0.5f));
+    led_CollisionBoxAdd(led, Utf8Cstr(sys_win->ui->mem_frame, "c_big_box"), V3(1.0f, 1.0f, 1.0f));
+    led_CollisionSphereAdd(led, Utf8Cstr(sys_win->ui->mem_frame, "c_sphere"), 0.5f);
+    led_CollisionCapsuleAdd(led, Utf8Cstr(sys_win->ui->mem_frame, "c_capsule"), 0.3f, 0.6f);
+    led_CollisionSphereAdd(led, Utf8Cstr(sys_win->ui->mem_frame, "c_heavy_sphere"), 0.75f);
+
+    const char *shape[8] = { "ramp", "pillar", "column", "box", "big_box", "sphere", "capsule", "heavy_sphere" };
+    const u32 dynamic[8] = { 0, 0, 0, 1, 1, 1, 1, 1 };
+    const f32 density[8] = { 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 10.0f };
+    for (u32 i = 0; i < 8; ++i)
+    {
+        const utf8 c = Utf8Format(sys_win->ui->mem_frame, "c_%s", shape[i]);
+        const utf8 rm = Utf8Format(sys_win->ui->mem_frame, "rm_%s", shape[i]);
+        const utf8 sp = Utf8Format(sys_win->ui->mem_frame, "s_%s", shape[i]);
+        const utf8 rb = Utf8Format(sys_win->ui->mem_frame, "rb_%s", shape[i]);
+        const utf8 l = Utf8Format(sys_win->ui->mem_frame, "l_s_%s", shape[i]);
+        led_RigidBodyPrefabAdd(led, rb, dynamic[i]);
+        led_RenderMeshAdd(led, rm, c);
+        led_ShapePrefabAdd(led, sp, c, density[i], 0.0f, 0.5f);
+        led_ShapePrefabAttachRenderMesh(led, sp, rm);
+        led_RigidBodyPrefabAttachShape(led, rb, sp, l, &identity);
+    }
+
+    /* one static body per spiral segment: slab and railing */
+    led_RigidBodyPrefabAdd(led, Utf8Inline("rb_spiral"), 0);
+    const char *spiral_part[2] = { "slab", "rail" };
+    for (u32 i = 0; i < 2; ++i)
+    {
+        const utf8 c = Utf8Format(sys_win->ui->mem_frame, "c_spiral_%s", spiral_part[i]);
+        const utf8 rm = Utf8Format(sys_win->ui->mem_frame, "rm_spiral_%s", spiral_part[i]);
+        const utf8 sp = Utf8Format(sys_win->ui->mem_frame, "s_spiral_%s", spiral_part[i]);
+        const utf8 l = Utf8Format(sys_win->ui->mem_frame, "l_s_spiral_%s", spiral_part[i]);
+        led_RenderMeshAdd(led, rm, c);
+        led_ShapePrefabAdd(led, sp, c, 1.0f, 0.0f, 0.5f);
+        led_ShapePrefabAttachRenderMesh(led, sp, rm);
+        led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_spiral"), sp, l, &identity);
+    }
+
+    led_JointSceneNodeAdd(led, "ramp", 0, V3(4.3f, 0.0f, 0.0f), Utf8Inline("rb_ramp"), static_color);
+    led_JointSceneNodeAdd(led, "pillar", 0, V3(spiral_center.x, 5.0f, spiral_center.z), Utf8Inline("rb_pillar"), spiral_color);
+    for (u32 k = 0; k < spiral_segments; ++k)
+    {
+        const v3 position = V3(spiral_center.x, spiral_center.y + segment_rise * (f32) k, spiral_center.z);
+        const ds_Id node = led_JointSceneNodeAdd(led, "spiral", k, position, Utf8Inline("rb_spiral"), spiral_color);
+        struct led_Node *led_node = led->node_hierarchy.pool.buf + ds_IdIndex(node);
+        led_node->transform.rotation = QUnitAxisAngle(V3(0.0f, 1.0f, 0.0f), segment_angle * (f32) k);
+    }
+
+    /*
+     * Ridge, in the frame of its column's axis (angles as the spiral's): edge k is the ridge's cross-section at the
+     * angle k * ridge_angle, a triangle (top inner, top outer, bottom middle) jittered from a fixed seed. Segment k is the hull of edges k and k + 1, so neighbours share their edge. The
+     * first and last edges are not jittered: the ridge starts on the floor and ends at its bridge.
+     */
+    const v3 ridge_center = V3(22.0f, 0.0f, -22.0f);
+    const u32 ridge_segments = 32;
+    const f32 ridge_angle = F32_PI / 8.0f;
+    const f32 ridge_rise = 0.28125f;
+    f32 ridge_inner[33];
+    f32 ridge_outer[33];
+    f32 ridge_top[33];
+    f32 ridge_bottom[33];
+    struct rng rng;
+    RngLocalInit(&rng, 7);
+    for (u32 k = 0; k <= ridge_segments; ++k)
+    {
+        const f32 amplitude = (k == 0 || k == ridge_segments) ? 0.0f : 1.0f;
+        const f32 jitter_inner = (f32) RngLocalU64Range(&rng, 0, 1000) / 1000.0f - 0.5f;
+        const f32 jitter_outer = (f32) RngLocalU64Range(&rng, 0, 1000) / 1000.0f - 0.5f;
+        const f32 jitter_top = (f32) RngLocalU64Range(&rng, 0, 1000) / 1000.0f - 0.5f;
+        const f32 jitter_depth = (f32) RngLocalU64Range(&rng, 0, 1000) / 1000.0f - 0.5f;
+        ridge_inner[k] = 2.2f + 0.4f * amplitude * jitter_inner;
+        ridge_outer[k] = 4.2f + 0.4f * amplitude * jitter_outer;
+        ridge_top[k] = ridge_rise * (f32) k + 0.12f * amplitude * jitter_top;
+        ridge_bottom[k] = ridge_top[k] - 0.7f - 0.4f * amplitude * jitter_depth;
+    }
+
+    led_JointSceneNodeAdd(led, "column", 0, V3(ridge_center.x, 6.0f, ridge_center.z), Utf8Inline("rb_column"), rock_color);
+    for (u32 k = 0; k < ridge_segments; ++k)
+    {
+        v3 rock_v[6];
+        for (u32 e = 0; e < 2; ++e)
+        {
+            const u32 edge = k + e;
+            const f32 c = F32Cos(ridge_angle * (f32) edge);
+            const f32 s = -F32Sin(ridge_angle * (f32) edge);
+            const f32 middle = 0.5f * (ridge_inner[edge] + ridge_outer[edge]);
+            rock_v[3*e + 0] = V3(ridge_inner[edge] * c, ridge_top[edge], ridge_inner[edge] * s);
+            rock_v[3*e + 1] = V3(ridge_outer[edge] * c, ridge_top[edge], ridge_outer[edge] * s);
+            rock_v[3*e + 2] = V3(middle * c, ridge_bottom[edge], middle * s);
+        }
+
+        struct dcel rock = DcelConvexHull(&led->mem_persistent, rock_v, 6);
+        const utf8 c = Utf8Format(sys_win->ui->mem_frame, "c_ridge_%u", k);
+        const utf8 rm = Utf8Format(sys_win->ui->mem_frame, "rm_ridge_%u", k);
+        const utf8 sp = Utf8Format(sys_win->ui->mem_frame, "s_ridge_%u", k);
+        const utf8 rb = Utf8Format(sys_win->ui->mem_frame, "rb_ridge_%u", k);
+        const utf8 l = Utf8Format(sys_win->ui->mem_frame, "l_s_ridge_%u", k);
+        led_CollisionDcelAdd(led, c, &rock);
+        led_RigidBodyPrefabAdd(led, rb, 0);
+        led_RenderMeshAdd(led, rm, c);
+        led_ShapePrefabAdd(led, sp, c, 1.0f, 0.0f, 0.5f);
+        led_ShapePrefabAttachRenderMesh(led, sp, rm);
+        led_RigidBodyPrefabAttachShape(led, rb, sp, l, &identity);
+        led_JointSceneNodeAdd(led, "ridge", k, ridge_center, rb, rock_color);
+    }
+
+    /* hall: a pyramid of ten boxes, big boxes along the west wall, a row of spheres, capsules lying along z */
+    u32 n = 0;
+    for (u32 layer = 0; layer < 4; ++layer)
+    {
+        for (u32 j = 0; j + layer < 4; ++j)
+        {
+            led_JointSceneNodeAdd(led, "box", n, V3(-2.0f + 0.5f * (f32) layer + (f32) j, 0.5f + (f32) layer, 4.0f), Utf8Inline("rb_box"), box_color);
+            n += 1;
+        }
+    }
+
+    for (u32 i = 0; i < 3; ++i)
+    {
+        led_JointSceneNodeAdd(led, "big_box", i, V3(-27.0f, 1.0f, 4.0f * (f32) i), Utf8Inline("rb_big_box"), big_box_color);
+    }
+
+    for (u32 i = 0; i < 5; ++i)
+    {
+        led_JointSceneNodeAdd(led, "sphere", i, V3(-3.0f + 2.0f * (f32) i, 0.5f, 7.0f), Utf8Inline("rb_sphere"), sphere_color);
+        const ds_Id node = led_JointSceneNodeAdd(led, "capsule", i, V3(-10.0f + 2.0f * (f32) i, 0.3f, 11.0f), Utf8Inline("rb_capsule"), capsule_color);
+        struct led_Node *led_node = led->node_hierarchy.pool.buf + ds_IdIndex(node);
+        led_node->transform.rotation = QUnitAxisAngle(V3(1.0f, 0.0f, 0.0f), 0.5f * F32_PI);
+    }
+
+    /* gallery: a pyramid of six boxes and a heavy sphere */
+    n = 0;
+    for (u32 layer = 0; layer < 3; ++layer)
+    {
+        for (u32 j = 0; j + layer < 3; ++j)
+        {
+            led_JointSceneNodeAdd(led, "gallery_box", n, V3(9.0f + 0.5f * (f32) layer + (f32) j, 9.5f + (f32) layer, -28.0f), Utf8Inline("rb_box"), box_color);
+            n += 1;
+        }
+    }
+    led_JointSceneNodeAdd(led, "heavy_sphere", 0, V3(2.0f, 9.75f, -28.0f), Utf8Inline("rb_heavy_sphere"), sphere_color);
 }
 
 void led_WallSmashSimulationSetup(struct led *led)
@@ -2652,7 +2930,8 @@ void led_Core(struct led *led)
 		/* the determinism run's scene: every body sleeps, the run ends */
 		led_WallSmashSimulationSetup(led);
 #else
-		led_JointSetup(led);
+		led_DungeonSetup(led);
+		//led_JointSetup(led);
 		//led_MeshSetup(led);
 		//led_WallSmashSimulationSetup(led);
 		//led_RopeSetup(led);

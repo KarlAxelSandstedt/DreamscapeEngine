@@ -47,7 +47,6 @@ level editor fat struct node that interfaces with all sub-systems.
 #define LED_SHAPE_PREFAB    ((u64) 1 << 33)
 
 
-#define LED_NODE_ID_SIZE    128
 /* bytes of the new-project name buffer (utf8_new_project; the popup writes at most this many) */
 #define LED_PROJECT_NAME_BUFSIZE    (32*sizeof(u32))
 #define LED_NODE_ROOT       2
@@ -57,7 +56,6 @@ typedef struct led_Node
     HI_NODE;
     ds_Id           tagged_id;      /* Generational identifier */
 	u64			    flags;
-    u8              id_buf[LED_NODE_ID_SIZE];
 	utf8			id;             /* User-provided identifier */
 
     ds_TransformWorld transform;    /* Transform relative to parent (or world origin if no parent) */

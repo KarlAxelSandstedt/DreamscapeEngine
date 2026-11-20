@@ -55,15 +55,12 @@ yaw = pitch = 0 (ds_math.h). Mesh triangles are CCW about their outward normal.
  *			r_mesh.c			*
  ********************************************************/
 
-#define R_MESH_BUFSIZE  32
-
 /*
- * a mesh in the mesh database (ds_SDB(r_Mesh), named by id_buf): vertex_count vertices of local_stride bytes,
+ * a mesh in the mesh database (ds_SDB(r_Mesh), named by id): vertex_count vertices of local_stride bytes,
  * drawn through index_data when index_count > 0 (R_CMD_ELEMENTS) and as arrays otherwise
  */
 struct r_Mesh
 {
-    u8      id_buf[R_MESH_BUFSIZE];
     SDB_NODE;
 
 	u32		index_count;		
