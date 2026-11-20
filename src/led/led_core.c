@@ -1568,6 +1568,10 @@ void led_MeshSetup(struct led *led)
     }
 }
 
+/* TODO(Remove/Refactor) the game's mover capsule */
+#define LED_MOVER_HALF_HEIGHT   0.5f
+#define LED_MOVER_RADIUS        0.3f
+
 /* dungeon: one static box with its own collision shape and prefabs, turned by yaw about +y */
 static void led_DungeonBoxAdd(struct led *led, const u32 index, const v3 center, const v3 hw, const f32 yaw, const v4 color)
 {
@@ -1861,6 +1865,25 @@ void led_DungeonSetup(struct led *led)
         }
     }
     led_JointSceneNodeAdd(led, "heavy_sphere", 0, V3(2.0f, 9.75f, -28.0f), Utf8Inline("rb_heavy_sphere"), sphere_color);
+
+    /* the game's mover: spawned at the south end by led_EngineInit, drawn as a capsule proxy */
+    led_CollisionCapsuleAdd(led, Utf8Cstr(sys_win->ui->mem_frame, "c_mover"), LED_MOVER_RADIUS, LED_MOVER_HALF_HEIGHT);
+    led_RenderMeshAdd(led, Utf8Inline("rm_mover"), Utf8Inline("c_mover"));
+    led->mover_spawn_enabled = 1;
+    led->mover_spawn = led_ScenePosition(led, V3(0.0f, 1.0f, 12.0f));
+    const struct r_Proxy3d_config mover_config =
+    {
+        .ns_time = led->ns,
+        .parent = PROXY3D_ROOT,
+        .position = led->mover_spawn,
+        .rotation = QIdentity(),
+        .linear_velocity = V3Zero(),
+        .angular_velocity = V3Zero(),
+        .color = V4(0.95f, 0.85f, 0.2f, alpha),
+        .blend = 1.0f,
+        .mesh = Utf8Inline("rm_mover"),
+    };
+    led->mover_proxy = r_Proxy3dAlloc(&mover_config);
 }
 
 void led_WallSmashSimulationSetup(struct led *led)
@@ -2804,6 +2827,14 @@ static void led_EngineRun(struct led *led, const u32 physics_ticked)
                 led_NodeColorProxies(led, body->entity, led->physics->island_pool.buf[body->island].color);
             }
         }
+
+        const struct ds_SimHost *host = ds_SimHostLookup(&led->srv, led->sim).address;
+        if (led->mover_spawn_enabled && host->sim.game.spawned)
+        {
+            const struct ds_GeometricMover *mover = &host->sim.game.mover;
+            const u64 ns = led->ns_physics_start + led->physics->frames_completed*led->physics->ns_tick;
+            r_Proxy3dLinearSpeculationSet(mover->position, QIdentity(), mover->velocity, V3Zero(), ns, led->mover_proxy);
+        }
     }
         
 	
@@ -2843,6 +2874,11 @@ static void led_EngineFlush(struct led *led)
         }
         HIIAdvance(it, led->node_hierarchy);
 	}
+
+    if (led->mover_spawn_enabled)
+    {
+        r_Proxy3dLinearSpeculationSet(led->mover_spawn, QIdentity(), V3Zero(), V3Zero(), led->ns, led->mover_proxy);
+    }
 }
 
 static void led_EngineInit(struct led *led)
@@ -2909,6 +2945,12 @@ static void led_EngineInit(struct led *led)
             .local_frame = { joint->local_frame[0], joint->local_frame[1] },
         };
         ds_CPoolPushValue(cmds, joint_add);
+    }
+
+    if (led->mover_spawn_enabled)
+    {
+        const struct ds_SimCmd spawn = { .type = SIM_CMD_MOVER_SPAWN, .mover_spawn = { .position = led->mover_spawn, .capsule = { .half_height = LED_MOVER_HALF_HEIGHT, .radius = LED_MOVER_RADIUS } } };
+        ds_CPoolPushValue(cmds, spawn);
     }
 
     const struct ds_SimHost *host = ds_SimHostLookup(&led->srv, led->sim).address;
