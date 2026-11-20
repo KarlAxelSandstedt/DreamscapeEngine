@@ -58,7 +58,7 @@ void GJKVertexSetSphere(struct GJKVertexSet *vset, const struct sphere *sphere)
     vset->v = vset->buf;
     vset->buf[0] = V3Zero();
     vset->v_count = 1;
-    vset->radius = sphere->radius;
+    vset->margin = sphere->radius;
 }
 
 void GJKVertexSetCapsule(struct GJKVertexSet *vset, const struct capsule *capsule)
@@ -67,7 +67,7 @@ void GJKVertexSetCapsule(struct GJKVertexSet *vset, const struct capsule *capsul
     vset->buf[0] = V3(0.0f,  capsule->half_height, 0.0f);
     vset->buf[1] = V3(0.0f, -capsule->half_height, 0.0f);
     vset->v_count = 2;
-    vset->radius = capsule->radius;
+    vset->margin = capsule->radius;
 }
 
 void GJKVertexSetHull(struct GJKVertexSet *vset, const struct dcel *hull)
@@ -75,14 +75,14 @@ void GJKVertexSetHull(struct GJKVertexSet *vset, const struct dcel *hull)
     ds_AssertString(hull->v_count <= U16_MAX + 1, "GJKCache stores vertex indices as u16");
     vset->v = hull->v;
     vset->v_count = hull->v_count;
-    vset->radius = 0.0f;
+    vset->margin = 0.0f;
 }
 
 void GJKVertexSetTriangle(struct GJKVertexSet *vset, const v3 tri[3])
 {
     vset->v = tri;
     vset->v_count = 3;
-    vset->radius = 0.0f;
+    vset->margin = 0.0f;
 }
 
 void GJKVertexSetShape(struct GJKVertexSet *vset, const struct c_Shape *shape)

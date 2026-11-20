@@ -298,7 +298,7 @@ struct GJKVertexSet
 {
     const v3 *  v;
     u32         v_count;
-    f32         radius;
+    f32         margin;
     v3          buf[2];     /* storage for sphere/capsule points */
 };
 
