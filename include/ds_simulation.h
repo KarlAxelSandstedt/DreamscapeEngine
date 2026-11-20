@@ -253,9 +253,7 @@ struct ds_Sim
 
     struct ds_Dynamics  dynamics;           /* physics state                                */
 
-    struct ds_Game      game;             /* TODO: ds_Game undefined */
-    struct ds_HashMap   entity_map;         /* TODO(Remove/Refactor) entity -> body pool index, for the commands and the host */
-    ds_CPool(u64)       joint_entity_pool;  /* TODO(Remove/Refactor) joint entity << 32 | joint pool index */
+    struct ds_Game      game;
 };
 
 /* Allocate a new simulation from config at time 0. The databases are externally owned and must outlive sim.  */
@@ -275,11 +273,6 @@ void    ds_SimTick(struct arena *tmp, struct ds_Sim *sim, ds_CPool(u64) *hash_po
 u64     ds_SimHash(const struct ds_Sim *sim);
 //TODO Serialize API for sim
 
-
-/* TODO(Remove/Refactor) Return the body added for entity (SIM_CMD_BODY_ADD), or the null id. */
-ds_BodyId ds_SimBodyByEntity(const struct ds_Sim *sim, const u32 entity);
-/* TODO(Remove/Refactor) Return the joint added for the joint entity (SIM_CMD_MOUSE_JOINT_ADD), or the null id. */
-ds_JointId ds_SimJointByEntity(const struct ds_Sim *sim, const u32 joint_entity);
 
 
 

@@ -22,14 +22,20 @@
 
 void ds_GameAlloc(struct ds_Game *game)
 {
+    game->unit_map = ds_HashMapAlloc(NULL, 1024, 1024, GROWABLE);
+    ds_CPoolAlloc(NULL, game->joint_unit_pool, 8, GROWABLE);
 }
 
 void ds_GameDealloc(struct ds_Game *game)
 {
+    ds_HashMapDealloc(&game->unit_map);
+    ds_CPoolDealloc(game->joint_unit_pool);
 }
 
 void ds_GameFlush(struct ds_Game *game)
 {
+    ds_HashMapFlush(&game->unit_map);
+    ds_CPoolFlush(game->joint_unit_pool);
 }
 
 void ds_GameTick(struct ds_Game *game, struct ds_Dynamics *dynamics, const u64 ns_tick)
@@ -39,4 +45,35 @@ void ds_GameTick(struct ds_Game *game, struct ds_Dynamics *dynamics, const u64 n
 u64 ds_GameHash(const struct ds_Game *game)
 {
     return 0;
+}
+
+/* TODO(Remove/Refactor) */
+ds_BodyId ds_GameBodyByUnit(const struct ds_Game *game, const struct ds_Dynamics *dynamics, const u32 unit)
+{
+    for (u32 i = ds_HashMapFirst(&game->unit_map, unit); i != HASH_NULL; i = ds_HashMapNext(&game->unit_map, i))
+    {
+        const struct ds_Body *body = dynamics->body_pool.buf + i;
+        if (ds_PoolSlotAllocated(body) && body->entity == unit)
+        {
+            return ds_BodyIdInit(i, body->generation);
+        }
+    }
+
+    return ds_BodyIdNull();
+}
+
+/* TODO(Remove/Refactor) */
+ds_JointId ds_GameJointByUnit(const struct ds_Game *game, const struct ds_Dynamics *dynamics, const u32 joint_unit)
+{
+    for (u32 i = 0; i < game->joint_unit_pool.count; ++i)
+    {
+        const u64 entry = game->joint_unit_pool.buf[i];
+        if ((u32) (entry >> 32) == joint_unit)
+        {
+            const struct ds_Joint *joint = dynamics->joint_pool.buf + (u32) entry;
+            return (ds_PoolSlotAllocated(joint)) ? joint->id : ds_JointIdNull();
+        }
+    }
+
+    return ds_JointIdNull();
 }

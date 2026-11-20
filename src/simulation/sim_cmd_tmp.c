@@ -2,7 +2,7 @@
 sim_cmd_tmp.c
 =============
 TODO(Remove/Refactor): the temporary commands (everything but ConfigLoad), included by sim_cmd.c. They name
-bodies and joints by author-chosen entities (ds_Sim.entity_map, joint_entity_pool) until the id scheme is decided.
+bodies and joints by author-chosen entities (ds_Game.unit_map, joint_unit_pool) until the id scheme is decided.
 */
 
 /* a prefab id: non-empty and within the database's buffer */
@@ -52,7 +52,7 @@ static u32 ds_BodyAddCmdFormVerify(const struct ds_BodyAddCmd *cmd)
 static u32 ds_BodyAddCmdDataVerify(const struct ds_Sim *sim, const struct ds_BodyAddCmd *cmd)
 {
     return ds_SDBLookup(*sim->dynamics.external->body_prefab_db, cmd->prefab).index != SDB_STUB
-        && ds_BodyIdNullCheck(ds_SimBodyByEntity(sim, cmd->entity));
+        && ds_BodyIdNullCheck(ds_GameBodyByUnit(&sim->game, &sim->dynamics, cmd->entity));
 }
 
 static u32 ds_BodyAddCmdTryExecute(struct ds_Sim *sim, const struct ds_BodyAddCmd *cmd)
@@ -70,7 +70,7 @@ static u32 ds_BodyAddCmdTryExecute(struct ds_Sim *sim, const struct ds_BodyAddCm
         Log(T_SYSTEM, S_ERROR, "ds_BodyAddCmdTryExecute: no body for entity %u", cmd->entity);
         return 0;
     }
-    ds_HashMapAdd(&sim->entity_map, cmd->entity, ds_BodyIdIndex(body));
+    ds_HashMapAdd(&sim->game.unit_map, cmd->entity, ds_BodyIdIndex(body));
     return 1;
 }
 
@@ -112,7 +112,7 @@ static u32 ds_ShapeAddCmdFormVerify(const struct ds_ShapeAddCmd *cmd)
 static u32 ds_ShapeAddCmdDataVerify(const struct ds_Sim *sim, const struct ds_ShapeAddCmd *cmd)
 {
     return ds_SDBLookup(*sim->dynamics.external->shape_prefab_db, cmd->prefab).index != SDB_STUB
-        && !ds_BodyIdNullCheck(ds_SimBodyByEntity(sim, cmd->entity));
+        && !ds_BodyIdNullCheck(ds_GameBodyByUnit(&sim->game, &sim->dynamics, cmd->entity));
 }
 
 static u32 ds_ShapeAddCmdTryExecute(struct ds_Sim *sim, const struct ds_ShapeAddCmd *cmd)
@@ -124,7 +124,7 @@ static u32 ds_ShapeAddCmdTryExecute(struct ds_Sim *sim, const struct ds_ShapeAdd
     }
 
     const struct ds_ShapePrefab *prefab = ds_SDBLookup(*sim->dynamics.external->shape_prefab_db, cmd->prefab).address;
-    ds_ShapeAdd(&sim->dynamics, prefab, &cmd->t_local, ds_SimBodyByEntity(sim, cmd->entity));
+    ds_ShapeAdd(&sim->dynamics, prefab, &cmd->t_local, ds_GameBodyByUnit(&sim->game, &sim->dynamics, cmd->entity));
     return 1;
 }
 
@@ -172,8 +172,8 @@ static u32 ds_JointAddCmdFormVerify(const struct ds_JointAddCmd *cmd)
 
 static u32 ds_JointAddCmdDataVerify(const struct ds_Sim *sim, const struct ds_JointAddCmd *cmd)
 {
-    return !ds_BodyIdNullCheck(ds_SimBodyByEntity(sim, cmd->entity[0]))
-        && !ds_BodyIdNullCheck(ds_SimBodyByEntity(sim, cmd->entity[1]));
+    return !ds_BodyIdNullCheck(ds_GameBodyByUnit(&sim->game, &sim->dynamics, cmd->entity[0]))
+        && !ds_BodyIdNullCheck(ds_GameBodyByUnit(&sim->game, &sim->dynamics, cmd->entity[1]));
 }
 
 static u32 ds_JointAddCmdTryExecute(struct ds_Sim *sim, const struct ds_JointAddCmd *cmd)
@@ -195,7 +195,7 @@ static u32 ds_JointAddCmdTryExecute(struct ds_Sim *sim, const struct ds_JointAdd
     }
     prefab.target = F32Clamp(cmd->target, prefab.range.low, prefab.range.high);
     prefab.collide_connected = cmd->collide_connected;
-    ds_DistanceJointAdd(&sim->dynamics, &prefab, ds_SimBodyByEntity(sim, cmd->entity[0]), cmd->local_frame + 0, ds_SimBodyByEntity(sim, cmd->entity[1]), cmd->local_frame + 1);
+    ds_DistanceJointAdd(&sim->dynamics, &prefab, ds_GameBodyByUnit(&sim->game, &sim->dynamics, cmd->entity[0]), cmd->local_frame + 0, ds_GameBodyByUnit(&sim->game, &sim->dynamics, cmd->entity[1]), cmd->local_frame + 1);
     return 1;
 }
 
@@ -255,8 +255,8 @@ static u32 ds_MouseJointAddCmdFormVerify(const struct ds_MouseJointAddCmd *cmd)
 
 static u32 ds_MouseJointAddCmdDataVerify(const struct ds_Sim *sim, const struct ds_MouseJointAddCmd *cmd)
 {
-    const struct ds_Body *body = ds_BodyLookup(&sim->dynamics, ds_SimBodyByEntity(sim, cmd->entity)).address;
-    return body && ds_BodyDynamicCheck(body) && ds_JointIdNullCheck(ds_SimJointByEntity(sim, cmd->joint_entity));
+    const struct ds_Body *body = ds_BodyLookup(&sim->dynamics, ds_GameBodyByUnit(&sim->game, &sim->dynamics, cmd->entity)).address;
+    return body && ds_BodyDynamicCheck(body) && ds_JointIdNullCheck(ds_GameJointByUnit(&sim->game, &sim->dynamics, cmd->joint_entity));
 }
 
 static u32 ds_MouseJointAddCmdTryExecute(struct ds_Sim *sim, const struct ds_MouseJointAddCmd *cmd)
@@ -267,7 +267,7 @@ static u32 ds_MouseJointAddCmdTryExecute(struct ds_Sim *sim, const struct ds_Mou
         return 0;
     }
 
-    const ds_BodyId id = ds_SimBodyByEntity(sim, cmd->entity);
+    const ds_BodyId id = ds_GameBodyByUnit(&sim->game, &sim->dynamics, cmd->entity);
     const struct ds_Body *body = ds_BodyLookup(&sim->dynamics, id).address;
     const struct ds_BodySim *bsim = sim->dynamics.solver_set_pool.buf[body->set].body_sim_pool.buf + body->sim;
     ds_Transform local_frame = ds_TransformIdentity();
@@ -281,7 +281,7 @@ static u32 ds_MouseJointAddCmdTryExecute(struct ds_Sim *sim, const struct ds_Mou
         Log(T_SYSTEM, S_ERROR, "ds_MouseJointAddCmdTryExecute: no joint for entity %u", cmd->joint_entity);
         return 0;
     }
-    ds_CPoolPushValue(sim->joint_entity_pool, ((u64) cmd->joint_entity << 32) | ds_JointIdIndex(joint));
+    ds_CPoolPushValue(sim->game.joint_unit_pool, ((u64) cmd->joint_entity << 32) | ds_JointIdIndex(joint));
     return 1;
 }
 
@@ -329,7 +329,7 @@ static u32 ds_MouseJointTargetSetCmdFormVerify(const struct ds_MouseJointTargetS
 
 static u32 ds_MouseJointTargetSetCmdDataVerify(const struct ds_Sim *sim, const struct ds_MouseJointTargetSetCmd *cmd)
 {
-    const struct ds_Joint *joint = ds_JointLookup(&sim->dynamics, ds_SimJointByEntity(sim, cmd->joint_entity)).address;
+    const struct ds_Joint *joint = ds_JointLookup(&sim->dynamics, ds_GameJointByUnit(&sim->game, &sim->dynamics, cmd->joint_entity)).address;
     return joint && joint->type == DS_JOINT_TYPE_MOUSE;
 }
 
@@ -341,7 +341,7 @@ static u32 ds_MouseJointTargetSetCmdTryExecute(struct ds_Sim *sim, const struct 
         return 0;
     }
 
-    ds_MouseJointTargetSet(&sim->dynamics, ds_SimJointByEntity(sim, cmd->joint_entity), cmd->target);
+    ds_MouseJointTargetSet(&sim->dynamics, ds_GameJointByUnit(&sim->game, &sim->dynamics, cmd->joint_entity), cmd->target);
     return 1;
 }
 
@@ -379,7 +379,7 @@ static u32 ds_JointRemoveCmdFormVerify(const struct ds_JointRemoveCmd *cmd)
 
 static u32 ds_JointRemoveCmdDataVerify(const struct ds_Sim *sim, const struct ds_JointRemoveCmd *cmd)
 {
-    return !ds_JointIdNullCheck(ds_SimJointByEntity(sim, cmd->joint_entity));
+    return !ds_JointIdNullCheck(ds_GameJointByUnit(&sim->game, &sim->dynamics, cmd->joint_entity));
 }
 
 static u32 ds_JointRemoveCmdTryExecute(struct ds_Sim *sim, const struct ds_JointRemoveCmd *cmd)
@@ -390,12 +390,12 @@ static u32 ds_JointRemoveCmdTryExecute(struct ds_Sim *sim, const struct ds_Joint
         return 0;
     }
 
-    const ds_JointId joint = ds_SimJointByEntity(sim, cmd->joint_entity);
-    for (u32 i = 0; i < sim->joint_entity_pool.count; ++i)
+    const ds_JointId joint = ds_GameJointByUnit(&sim->game, &sim->dynamics, cmd->joint_entity);
+    for (u32 i = 0; i < sim->game.joint_unit_pool.count; ++i)
     {
-        if ((u32) (sim->joint_entity_pool.buf[i] >> 32) == cmd->joint_entity)
+        if ((u32) (sim->game.joint_unit_pool.buf[i] >> 32) == cmd->joint_entity)
         {
-            ds_CPoolRemoveAndSwap(sim->joint_entity_pool, i);
+            ds_CPoolRemoveAndSwap(sim->game.joint_unit_pool, i);
             break;
         }
     }

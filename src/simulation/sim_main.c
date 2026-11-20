@@ -193,8 +193,6 @@ void ds_SimAlloc(struct ds_Sim *sim, const struct ds_SimConfig *config, const st
 
     *sim = (struct ds_Sim) { 0 };
     sim->config_seed = *config;
-    sim->entity_map = ds_HashMapAlloc(NULL, 1024, 1024, GROWABLE);
-    ds_CPoolAlloc(NULL, sim->joint_entity_pool, 8, GROWABLE);
     for (u32 i = 0; i < SIM_SYSTEM_COUNT; ++i)
     {
         sim->us_system_tick[i] = config->us_system_tick[i];
@@ -211,47 +209,12 @@ void ds_SimDealloc(struct ds_Sim *sim)
 {
     ds_DynamicsDealloc(&sim->dynamics);
     ds_GameDealloc(&sim->game);
-    ds_HashMapDealloc(&sim->entity_map);
-    ds_CPoolDealloc(sim->joint_entity_pool);
-}
-
-/* TODO(Remove/Refactor) */
-ds_BodyId ds_SimBodyByEntity(const struct ds_Sim *sim, const u32 entity)
-{
-    for (u32 i = ds_HashMapFirst(&sim->entity_map, entity); i != HASH_NULL; i = ds_HashMapNext(&sim->entity_map, i))
-    {
-        const struct ds_Body *body = sim->dynamics.body_pool.buf + i;
-        if (ds_PoolSlotAllocated(body) && body->entity == entity)
-        {
-            return ds_BodyIdInit(i, body->generation);
-        }
-    }
-
-    return ds_BodyIdNull();
-}
-
-/* TODO(Remove/Refactor) */
-ds_JointId ds_SimJointByEntity(const struct ds_Sim *sim, const u32 joint_entity)
-{
-    for (u32 i = 0; i < sim->joint_entity_pool.count; ++i)
-    {
-        const u64 entry = sim->joint_entity_pool.buf[i];
-        if ((u32) (entry >> 32) == joint_entity)
-        {
-            const struct ds_Joint *joint = sim->dynamics.joint_pool.buf + (u32) entry;
-            return (ds_PoolSlotAllocated(joint)) ? joint->id : ds_JointIdNull();
-        }
-    }
-
-    return ds_JointIdNull();
 }
 
 void ds_SimFlush(struct ds_Sim *sim)
 {
     ds_DynamicsFlush(&sim->dynamics);
     ds_GameFlush(&sim->game);
-    ds_HashMapFlush(&sim->entity_map);
-    ds_CPoolFlush(sim->joint_entity_pool);
     ds_SimScheduleInit(sim);
     sim->initialized = 0;
     ds_SimSeed(sim, &sim->config_seed);
@@ -269,7 +232,6 @@ u64 ds_SimHash(const struct ds_Sim *sim)
 {
     u64 words[SIM_SYSTEM_COUNT] = { 0 };
     words[SIM_SYSTEM_DYNAMICS] = ds_DynamicsHash(&sim->dynamics);
-    //TODO words[SIM_SYSTEM_GAME]
     words[SIM_SYSTEM_GAME] = ds_GameHash(&sim->game);
     return XXH3_64bits(words, sizeof(words));
 }
@@ -310,7 +272,6 @@ void ds_SimTick(struct arena *tmp, struct ds_Sim *sim, ds_CPool(u64) *hash_pool,
 
             case SIM_SYSTEM_GAME:
             {
-                //TODO  execute game
                 ds_GameTick(&sim->game, &sim->dynamics, 1000 * sim->us_system_tick[SIM_SYSTEM_GAME]);
             } break;
 
