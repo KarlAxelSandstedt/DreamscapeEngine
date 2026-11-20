@@ -345,6 +345,8 @@ f32 GJK(v3 *c0, v3 *c1, v3 *n, struct GJKCache *cache_out, const struct GJKCache
      *          along dir (repeated support pair)
      *      7   iteration limit                         not converged                       backup (after the loop:
      *                                                                                      drop the unsolved vertex)
+     *      8   after the loop: distance <= margin0 +   the margins overlap                 return 0, n = 0
+     *          margin1
      *
      * backup is the last simplex that passed 1-4, and dir its direction. Initially backup is the first
      * vertex, so dir starts as its direction, checked for 4a before the loop: a cached simplex can fall back
@@ -513,14 +515,22 @@ f32 GJK(v3 *c0, v3 *c1, v3 *n, struct GJKCache *cache_out, const struct GJKCache
      * dir (the feature's geometry), not from p_b - p_a. dir points from the closest point to the origin,
      * and closest = p_b - p_a, so the normal from A to B is -dir.
      */
-    *c0 = p_a;
-    *c1 = p_b;
-    *n = V3Scale(dir, -1.0f / V3Length(dir));
-    GJKCacheInit(cache_out, &simplex);
+    /* the result simplex passed 1b (or is the first vertex, 4a) */
+    const f32 core_distance = V3Length(closest);
+    ds_Assert(core_distance > 0.0f);
 
-    /* the result simplex passed 1b (or is the first vertex, 4a): 0 is only returned through GJKOverlap */
-    const f32 distance = V3Length(closest);
-    ds_Assert(distance > 0.0f);
+    /* 8 */
+    const f32 distance = F32Max(core_distance - vset0->margin - vset1->margin, 0.0f);
+    if (distance == 0.0f)
+    {
+        return GJKOverlap(c0, c1, n, cache_out, &simplex);
+    }
+
+    const v3 normal = V3Scale(dir, -1.0f / V3Length(dir));
+    *c0 = V3AddScaled(p_a, normal, vset0->margin);
+    *c1 = V3AddScaled(p_b, normal, -vset1->margin);
+    *n = normal;
+    GJKCacheInit(cache_out, &simplex);
     return distance;
 }
 

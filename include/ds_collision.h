@@ -259,22 +259,23 @@ u32     c_MeshHullTest(const struct c_Shape *s0, const ds_TransformWorld *t0, co
 /*
 GJK
 ---
-Distance, closest points and normal of two convex shapes' cores: a sphere is its center, a capsule its segment
-(callers add the radii). Shapes closer than GJK_TOUCH_TOLERANCE * eps * L (L ~ the shapes' extent) count as
-touching. Reads the pushed numerics config (gjk_max_iterations).
-    GJK         vset1 given in vset0's frame (p_0 = t_1_to_0.rotation p_1 + t_1_to_0.position); outputs in vset0's frame
+Distance, closest points and normal of two vertex sets: each set's core (the convex hull of its points) grown by
+its margin. Cores closer than GJK_TOUCH_TOLERANCE * eps * L (L ~ the shapes' extent) count as touching. Reads the
+pushed numerics config (gjk_max_iterations).
+    GJK         vset1 given in vset0's frame (p_0 = t_1_to_0.rotation p_1 + t_1_to_0.position); outputs in
+                vset0's frame
     GJKWorld    world transforms; c0, c1 world (f64), n world
 
     const f32 d = GJK(&c0, &c1, &n, &cache, cache_in, vset0, vset1, &t_1_to_0, cutoff_distance);
 
-    d == 0.0f           overlap or touch; c0 == c1, n = 0
+    d == 0.0f           overlap or touch; c0 == c1 (a point of vset0's core, not a closest point), n = 0
     d == F32_INFINITY   farther than cutoff_distance; c0, c1, n garbage
     otherwise           the distance, the closest points and the unit normal from vset0 to vset1 (n accurate to
-                        ~6 eps * L / d radians, rarely worse for shapes of very different sizes); only an upper
-                        bound when the loop stops early: the iteration limit, or a degenerate or non-improving
-                        simplex (seen for shapes of very different sizes)
+                        ~6 eps * L / (d + margin0 + margin1) radians, rarely worse for shapes of very different
+                        sizes); only an upper bound when the loop stops early: the iteration limit, or a
+                        degenerate or non-improving simplex (seen for shapes of very different sizes)
     cache_in            NULL or the pair's previous cache_out (warm start); cache_out is always written
-    cutoff_distance     larger distances are of no interest (F32_INFINITY: none); the early exit needs the
+    cutoff_distance     larger core distances are of no interest (F32_INFINITY: none); the early exit needs the
                         distance to clear it by the touch band, and a finite result can still exceed it:
                         callers compare
 */
