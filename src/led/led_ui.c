@@ -367,7 +367,7 @@ static void led_GrabUpdate(struct led *led, const struct rayWorld *ray)
 
 	const struct ds_SimHost *host = ds_SimHostLookup(&led->srv, led->sim).address;
 	const struct ds_Sim *sim = &host->sim;
-	const u32 exists = !ds_JointIdNullCheck(ds_GameJointByUnit(&sim->game, &sim->dynamics, LED_GRAB_ENTITY));
+	const u32 exists = !ds_JointIdNullCheck(ds_GameJointByEntity(&sim->game, &sim->dynamics, LED_GRAB_ENTITY));
 	if (!g_ui->inter.button_pressed[MOUSE_BUTTON_LEFT] || (!exists && !led->grab.pending))
 	{
 		if (exists)

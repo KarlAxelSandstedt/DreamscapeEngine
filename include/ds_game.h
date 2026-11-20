@@ -46,8 +46,8 @@ struct ds_Game
     u32                 jump;
     u32                 on_ground;
     f32                 pogo_velocity;
-    struct ds_HashMap   unit_map;           /* TODO(Remove/Refactor) unit -> body pool index, for the commands and the host */
-    ds_CPool(u64)       joint_unit_pool;    /* TODO(Remove/Refactor) joint unit << 32 | joint pool index */
+    struct ds_HashMap   entity_map;         /* TODO(Remove/Refactor) entity -> body pool index, for the commands and the host */
+    ds_CPool(u64)       joint_entity_pool;  /* TODO(Remove/Refactor) joint entity << 32 | joint pool index */
 };
 
 void    ds_GameAlloc(struct ds_Game *game);
@@ -56,10 +56,10 @@ void    ds_GameFlush(struct ds_Game *game);
 void    ds_GameTick(struct ds_Game *game, struct ds_Dynamics *dynamics, const u64 ns_tick);
 u64     ds_GameHash(const struct ds_Game *game);
 
-/* TODO(Remove/Refactor) Return the body added for unit (SIM_CMD_BODY_ADD), or the null id. */
-ds_BodyId  ds_GameBodyByUnit(const struct ds_Game *game, const struct ds_Dynamics *dynamics, const u32 unit);
-/* TODO(Remove/Refactor) Return the joint added for the joint unit (SIM_CMD_MOUSE_JOINT_ADD), or the null id. */
-ds_JointId ds_GameJointByUnit(const struct ds_Game *game, const struct ds_Dynamics *dynamics, const u32 joint_unit);
+/* TODO(Remove/Refactor) Return the body added for entity (SIM_CMD_BODY_ADD), or the null id. */
+ds_BodyId  ds_GameBodyByEntity(const struct ds_Game *game, const struct ds_Dynamics *dynamics, const u32 entity);
+/* TODO(Remove/Refactor) Return the joint added for the joint entity (SIM_CMD_MOUSE_JOINT_ADD), or the null id. */
+ds_JointId ds_GameJointByEntity(const struct ds_Game *game, const struct ds_Dynamics *dynamics, const u32 joint_entity);
 
 #ifdef __cplusplus
 }

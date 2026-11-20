@@ -1456,15 +1456,15 @@ static struct test_Output ServerSceneTest(struct test_Environment *env)
     TEST_EQUAL(bodies_before + 3, host->sim.dynamics.body_pool.count);
     TEST_EQUAL(3, host->sim.dynamics.shape_pool.count);
     TEST_EQUAL(1, host->sim.dynamics.joint_pool.count);
-    TEST_EQUAL(0, ds_BodyIdNullCheck(ds_GameBodyByUnit(&host->sim.game, &host->sim.dynamics, 2)));
-    TEST_EQUAL(1, ds_BodyIdNullCheck(ds_GameBodyByUnit(&host->sim.game, &host->sim.dynamics, 4)));
-    TEST_EQUAL(1, ds_BodyIdNullCheck(ds_GameBodyByUnit(&host->sim.game, &host->sim.dynamics, 9)));
+    TEST_EQUAL(0, ds_BodyIdNullCheck(ds_GameBodyByEntity(&host->sim.game, &host->sim.dynamics, 2)));
+    TEST_EQUAL(1, ds_BodyIdNullCheck(ds_GameBodyByEntity(&host->sim.game, &host->sim.dynamics, 4)));
+    TEST_EQUAL(1, ds_BodyIdNullCheck(ds_GameBodyByEntity(&host->sim.game, &host->sim.dynamics, 9)));
 
     for (u32 frame = 0; frame < 120; ++frame)
     {
         ds_ServerTick(&srv, 1000 * period);
     }
-    const struct ds_Body *box = ds_BodyLookup(&host->sim.dynamics, ds_GameBodyByUnit(&host->sim.game, &host->sim.dynamics, 2)).address;
+    const struct ds_Body *box = ds_BodyLookup(&host->sim.dynamics, ds_GameBodyByEntity(&host->sim.game, &host->sim.dynamics, 2)).address;
     const struct ds_BodySim *box_sim = host->sim.dynamics.solver_set_pool.buf[box->set].body_sim_pool.buf + box->sim;
     TEST_TRUE(box_sim->world.position.y < 2.0 && box_sim->world.position.y > 0.5);     /* it fell onto the slab */
     const u64 us_end = host->sim.us_time;
@@ -1551,7 +1551,7 @@ static struct test_Output ServerGrabTest(struct test_Environment *env)
         ds_ServerTick(&srv, 1000 * period);
     }
 
-    const struct ds_Body *box = ds_BodyLookup(&host->sim.dynamics, ds_GameBodyByUnit(&host->sim.game, &host->sim.dynamics, 2)).address;
+    const struct ds_Body *box = ds_BodyLookup(&host->sim.dynamics, ds_GameBodyByEntity(&host->sim.game, &host->sim.dynamics, 2)).address;
     const struct ds_BodySim *box_sim = host->sim.dynamics.solver_set_pool.buf[box->set].body_sim_pool.buf + box->sim;
     const f64 y_rest = box_sim->world.position.y;
     TEST_TRUE(y_rest < 2.5 && y_rest > 0.5);
@@ -1573,8 +1573,8 @@ static struct test_Output ServerGrabTest(struct test_Environment *env)
     ds_CPoolFlush(cmds);
     ds_ServerTick(&srv, 0);
     TEST_EQUAL(1, host->sim.dynamics.joint_pool.count);
-    TEST_EQUAL(0, ds_JointIdNullCheck(ds_GameJointByUnit(&host->sim.game, &host->sim.dynamics, 77)));
-    TEST_EQUAL(1, ds_JointIdNullCheck(ds_GameJointByUnit(&host->sim.game, &host->sim.dynamics, 78)));
+    TEST_EQUAL(0, ds_JointIdNullCheck(ds_GameJointByEntity(&host->sim.game, &host->sim.dynamics, 77)));
+    TEST_EQUAL(1, ds_JointIdNullCheck(ds_GameJointByEntity(&host->sim.game, &host->sim.dynamics, 78)));
 
     /* lift: 2 cm per frame for 2 s */
     for (u32 frame = 0; frame < 120; ++frame)
@@ -1585,7 +1585,7 @@ static struct test_Output ServerGrabTest(struct test_Environment *env)
         ds_CPoolFlush(cmds);
         ds_ServerTick(&srv, 1000 * period);
     }
-    box = ds_BodyLookup(&host->sim.dynamics, ds_GameBodyByUnit(&host->sim.game, &host->sim.dynamics, 2)).address;
+    box = ds_BodyLookup(&host->sim.dynamics, ds_GameBodyByEntity(&host->sim.game, &host->sim.dynamics, 2)).address;
     box_sim = host->sim.dynamics.solver_set_pool.buf[box->set].body_sim_pool.buf + box->sim;
     const f64 y_lifted = box_sim->world.position.y;
     TEST_TRUE(y_lifted > y_rest + 1.0);
@@ -1597,12 +1597,12 @@ static struct test_Output ServerGrabTest(struct test_Environment *env)
     ds_CPoolFlush(cmds);
     ds_ServerTick(&srv, 0);
     TEST_EQUAL(0, host->sim.dynamics.joint_pool.count);
-    TEST_EQUAL(1, ds_JointIdNullCheck(ds_GameJointByUnit(&host->sim.game, &host->sim.dynamics, 77)));
+    TEST_EQUAL(1, ds_JointIdNullCheck(ds_GameJointByEntity(&host->sim.game, &host->sim.dynamics, 77)));
     for (u32 frame = 0; frame < 60; ++frame)
     {
         ds_ServerTick(&srv, 1000 * period);
     }
-    box = ds_BodyLookup(&host->sim.dynamics, ds_GameBodyByUnit(&host->sim.game, &host->sim.dynamics, 2)).address;
+    box = ds_BodyLookup(&host->sim.dynamics, ds_GameBodyByEntity(&host->sim.game, &host->sim.dynamics, 2)).address;
     box_sim = host->sim.dynamics.solver_set_pool.buf[box->set].body_sim_pool.buf + box->sim;
     TEST_TRUE(box_sim->world.position.y < y_lifted - 0.5);
 

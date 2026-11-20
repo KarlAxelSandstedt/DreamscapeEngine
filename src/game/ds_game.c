@@ -35,14 +35,14 @@
 
 void ds_GameAlloc(struct ds_Game *game)
 {
-    game->unit_map = ds_HashMapAlloc(NULL, 1024, 1024, GROWABLE);
-    ds_CPoolAlloc(NULL, game->joint_unit_pool, 8, GROWABLE);
+    game->entity_map = ds_HashMapAlloc(NULL, 1024, 1024, GROWABLE);
+    ds_CPoolAlloc(NULL, game->joint_entity_pool, 8, GROWABLE);
 }
 
 void ds_GameDealloc(struct ds_Game *game)
 {
-    ds_HashMapDealloc(&game->unit_map);
-    ds_CPoolDealloc(game->joint_unit_pool);
+    ds_HashMapDealloc(&game->entity_map);
+    ds_CPoolDealloc(game->joint_entity_pool);
 }
 
 void ds_GameFlush(struct ds_Game *game)
@@ -54,8 +54,8 @@ void ds_GameFlush(struct ds_Game *game)
     game->jump = 0;
     game->on_ground = 0;
     game->pogo_velocity = 0.0f;
-    ds_HashMapFlush(&game->unit_map);
-    ds_CPoolFlush(game->joint_unit_pool);
+    ds_HashMapFlush(&game->entity_map);
+    ds_CPoolFlush(game->joint_entity_pool);
 }
 
 void ds_GameTick(struct ds_Game *game, struct ds_Dynamics *dynamics, const u64 ns_tick)
@@ -172,12 +172,12 @@ u64 ds_GameHash(const struct ds_Game *game)
 }
 
 /* TODO(Remove/Refactor) */
-ds_BodyId ds_GameBodyByUnit(const struct ds_Game *game, const struct ds_Dynamics *dynamics, const u32 unit)
+ds_BodyId ds_GameBodyByEntity(const struct ds_Game *game, const struct ds_Dynamics *dynamics, const u32 entity)
 {
-    for (u32 i = ds_HashMapFirst(&game->unit_map, unit); i != HASH_NULL; i = ds_HashMapNext(&game->unit_map, i))
+    for (u32 i = ds_HashMapFirst(&game->entity_map, entity); i != HASH_NULL; i = ds_HashMapNext(&game->entity_map, i))
     {
         const struct ds_Body *body = dynamics->body_pool.buf + i;
-        if (ds_PoolSlotAllocated(body) && body->entity == unit)
+        if (ds_PoolSlotAllocated(body) && body->entity == entity)
         {
             return ds_BodyIdInit(i, body->generation);
         }
@@ -187,12 +187,12 @@ ds_BodyId ds_GameBodyByUnit(const struct ds_Game *game, const struct ds_Dynamics
 }
 
 /* TODO(Remove/Refactor) */
-ds_JointId ds_GameJointByUnit(const struct ds_Game *game, const struct ds_Dynamics *dynamics, const u32 joint_unit)
+ds_JointId ds_GameJointByEntity(const struct ds_Game *game, const struct ds_Dynamics *dynamics, const u32 joint_entity)
 {
-    for (u32 i = 0; i < game->joint_unit_pool.count; ++i)
+    for (u32 i = 0; i < game->joint_entity_pool.count; ++i)
     {
-        const u64 entry = game->joint_unit_pool.buf[i];
-        if ((u32) (entry >> 32) == joint_unit)
+        const u64 entry = game->joint_entity_pool.buf[i];
+        if ((u32) (entry >> 32) == joint_entity)
         {
             const struct ds_Joint *joint = dynamics->joint_pool.buf + (u32) entry;
             return (ds_PoolSlotAllocated(joint)) ? joint->id : ds_JointIdNull();
