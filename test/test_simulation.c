@@ -855,6 +855,108 @@ static struct test_Output SimMoverCmdTest(struct test_Environment *env)
 	return output;
 }
 
+/* the mover test's run: the scene batch with the first period, then ticks - 1 empty periods; one hash per system tick */
+static void SimMoverTestRun(struct ds_Sim *sim, ds_CPool(u64) *hashes, const ds_CPool(ds_SimCmd) *scene, const ds_CPool(ds_SimCmd) *empty, const u64 period, const u32 ticks)
+{
+    struct arena *tmp = ArenaPushScratch();
+    ds_SimTick(tmp, sim, hashes, scene, period);
+    for (u32 i = 1; i < ticks; ++i)
+    {
+        ds_SimTick(tmp, sim, hashes, empty, period);
+    }
+    ArenaPopScratch();
+}
+
+/*
+ * The game tick: a static slab (top at y = 0) through commands, a mover spawned 0.7 m above it and held at full
+ * forward throttle at yaw 0.5 for 3 s. It lands and rests linear_slop deep, runs at the maximum speed (6 m/s)
+ * along the yaw's forward with no sideways or vertical velocity, and has moved along forward. The game's hash is 0
+ * until the spawn. After ds_SimFlush the same run gives the same hashes.
+ */
+static struct test_Output SimMoverTickTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct c_ShapeDB cshape_db = { 0 };
+    c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
+    const struct c_Shape slab_hull = { .type = C_SHAPE_CONVEX_HULL, .hull = DcelBox(env->mem_1, V3(20.0f, 0.5f, 20.0f)) };
+    const struct slot slab_shape = c_ShapeDBAdd(&cshape_db, Utf8Inline("slab"), &slab_hull);
+    ds_SDB(ds_ShapePrefab) shape_prefab_db = { 0 };
+    ds_SDBAlloc(NULL, shape_prefab_db, 32, GROWABLE);
+    struct ds_ShapePrefab *slab_prefab = ds_SDBAdd(env->mem_1, shape_prefab_db, Utf8Inline("slab_shape")).address;
+    slab_prefab->cshape = slab_shape.index; slab_prefab->density = 1.0f; slab_prefab->friction = 0.5f; slab_prefab->restitution = 0.0f;
+    ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
+    ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
+    ((struct ds_BodyPrefab *) ds_SDBAdd(env->mem_1, prefab_db, Utf8Inline("static")).address)->dynamic = 0;
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db, .body_prefab_db = &prefab_db, .shape_prefab_db = &shape_prefab_db };
+
+    struct ds_SimConfig config = ds_SimConfigDefault();
+    config.dynamics.initial_size = 32;
+    const u64 period = config.us_system_tick[SIM_SYSTEM_GAME];
+    const f32 slop = config.dynamics.solver.linear_slop;
+    const u32 ticks = 180;
+    const f32 yaw = 0.5f;
+    struct ds_Sim sim;
+    ds_SimAlloc(&sim, &config, &external);
+    TEST_EQUAL(0, ds_GameHash(&sim.game));
+
+    const ds_Transform identity = ds_TransformIdentity();
+    const struct capsule capsule = { .half_height = 0.5f, .radius = 0.3f };
+    const struct ds_SimCmd scene_cmds[] =
+    {
+        { .type = SIM_CMD_BODY_ADD, .body_add = { .prefab = Utf8Inline("static"), .t_world = { .rotation = QIdentity(), .position = V3F64(0.0, -0.5, 0.0) }, .entity = 1 } },
+        { .type = SIM_CMD_SHAPE_ADD, .shape_add = { .prefab = Utf8Inline("slab_shape"), .t_local = identity, .entity = 1 } },
+        { .type = SIM_CMD_MOVER_SPAWN, .mover_spawn = { .position = V3F64(0.0, 1.5, 0.0), .capsule = capsule } },
+        { .type = SIM_CMD_MOVER_INPUT, .mover_input = { .throttle = V2(0.0f, 1.0f), .yaw = yaw } },
+    };
+    ds_CPool(ds_SimCmd) scene;
+    ds_CPoolAlloc(env->mem_1, scene, 4, NOT_GROWABLE);
+    for (u32 i = 0; i < 4; ++i)
+    {
+        ds_CPoolPushValue(scene, scene_cmds[i]);
+    }
+    ds_CPool(ds_SimCmd) empty;
+    ds_CPoolAlloc(env->mem_1, empty, 1, NOT_GROWABLE);
+
+    ds_CPool(u64) hashes[2];
+    ds_CPoolAlloc(env->mem_1, hashes[0], 2*ticks + 2, NOT_GROWABLE);
+    ds_CPoolAlloc(env->mem_1, hashes[1], 2*ticks + 2, NOT_GROWABLE);
+
+    SimMoverTestRun(&sim, hashes + 0, &scene, &empty, period, ticks);
+    TEST_EQUAL(1, sim.game.spawned);
+    TEST_TRUE(ds_GameHash(&sim.game) != 0);
+
+    const struct ds_GeometricMover *mover = &sim.game.mover;
+    const v3 forward = V3(F32Sin(yaw), 0.0f, F32Cos(yaw));
+    const v3 right = V3(-F32Cos(yaw), 0.0f, F32Sin(yaw));
+    const f64 rest_y = (f64) (capsule.half_height + capsule.radius - slop);
+    TEST_TRUE(mover->position.y > rest_y - 1e-4 && mover->position.y < rest_y + 1e-4);
+    TEST_TRUE(F32Abs(V3Dot(mover->velocity, forward) - 6.0f) < 1e-3f);
+    TEST_TRUE(F32Abs(V3Dot(mover->velocity, right)) < 1e-3f);
+    TEST_TRUE(F32Abs(mover->velocity.y) < 1e-3f);
+    const v3 moved = V3(mover->position.x, 0.0f, mover->position.z);
+    TEST_TRUE(V3Length(moved) > 15.0f && V3Length(moved) < 18.0f);
+    TEST_TRUE(V3Dot(V3Normalize(moved), forward) > 0.9999f);
+
+    ds_SimFlush(&sim);
+    TEST_EQUAL(0, sim.game.spawned);
+    SimMoverTestRun(&sim, hashes + 1, &scene, &empty, period, ticks);
+    TEST_EQUAL(hashes[0].count, hashes[1].count);
+    TEST_EQUAL(2*ticks, hashes[0].count);
+    u32 equal = 1;
+    for (u32 i = 0; i < hashes[0].count; ++i)
+    {
+        equal = equal && hashes[0].buf[i] == hashes[1].buf[i];
+    }
+    TEST_EQUAL(1, equal);
+
+    ds_SimDealloc(&sim);
+    ds_SDBDealloc(prefab_db);
+    ds_SDBDealloc(shape_prefab_db);
+    c_ShapeDBDealloc(&cshape_db);
+	return output;
+}
+
 /*
  * The server's clock: a hosted simulation ticked through ds_ServerTick with wall-clock deltas. Sub-microsecond
  * deltas accumulate in the host's remainder until they make a microsecond, the budget caps a long frame at the sum
@@ -1745,6 +1847,7 @@ static struct test_Output (*simulation_tests[])(struct test_Environment *) =
     SimTickTest,
     SimConfigLoadTest,
     SimMoverCmdTest,
+    SimMoverTickTest,
     ServerClockTest,
     ServerDoorTest,
     ServerRecordTest,

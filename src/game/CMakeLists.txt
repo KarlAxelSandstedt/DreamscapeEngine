@@ -11,4 +11,6 @@ target_link_libraries(DreamscapeGame
 		Dreamscape::Base
 		Dreamscape::Containers
 		Dreamscape::Dynamics
+	PRIVATE
+		xxHash
 	)

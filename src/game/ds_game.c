@@ -19,6 +19,15 @@
 
 #include "ds_base.h"
 #include "ds_game.h"
+#include "xxhash.h"
+
+/* TODO(Remove/Refactor) the mover's tuning, box3d's GeometricMoverDef: speeds in m/s, rates in 1/s, gravity in m/s^2 */
+#define DS_GAME_MOVER_MAX_SPEED     6.0f
+#define DS_GAME_MOVER_MIN_SPEED     0.01f
+#define DS_GAME_MOVER_STOP_SPEED    1.0f
+#define DS_GAME_MOVER_ACCELERATE    30.0f
+#define DS_GAME_MOVER_FRICTION      4.0f
+#define DS_GAME_MOVER_GRAVITY       15.0f
 
 void ds_GameAlloc(struct ds_Game *game)
 {
@@ -44,11 +53,77 @@ void ds_GameFlush(struct ds_Game *game)
 
 void ds_GameTick(struct ds_Game *game, struct ds_Dynamics *dynamics, const u64 ns_tick)
 {
+    if (!game->spawned)
+    {
+        return;
+    }
+
+    const f32 h = (f32) ((f64) ns_tick / 1000000000.0);
+    v3 v = game->mover.velocity;
+
+    /* friction, horizontal only: proportional above the stop speed, constant below it */
+    const f32 speed = V3Length(v);
+    if (speed < DS_GAME_MOVER_MIN_SPEED)
+    {
+        v.x = 0.0f;
+        v.z = 0.0f;
+    }
+    else
+    {
+        const f32 drop = F32Max(speed, DS_GAME_MOVER_STOP_SPEED) * DS_GAME_MOVER_FRICTION * h;
+        const f32 ratio = F32Max(0.0f, speed - drop) / speed;
+        v.x *= ratio;
+        v.z *= ratio;
+    }
+
+    /* accelerate toward the throttle (x right, y forward) in the frame of the yaw */
+    const f32 c = F32Cos(game->yaw);
+    const f32 s = F32Sin(game->yaw);
+    const v3 forward = V3(s, 0.0f, c);
+    const v3 right = V3(-c, 0.0f, s);
+    const v3 wish = V3Scale(V3Add(V3Scale(right, game->throttle.x), V3Scale(forward, game->throttle.y)), DS_GAME_MOVER_MAX_SPEED);
+    const f32 wish_length = V3Length(wish);
+    if (wish_length > 0.0f)
+    {
+        const v3 direction = V3Scale(wish, 1.0f / wish_length);
+        const f32 wish_speed = F32Min(wish_length, DS_GAME_MOVER_MAX_SPEED);
+        const f32 add = wish_speed - V3Dot(v, direction);
+        if (add > 0.0f)
+        {
+            v = V3AddScaled(v, direction, F32Min(DS_GAME_MOVER_ACCELERATE * DS_GAME_MOVER_MAX_SPEED * h, add));
+        }
+    }
+
+    v.y -= DS_GAME_MOVER_GRAVITY * h;
+    game->mover.velocity = v;
+    ds_DynamicsGeometricMover(dynamics, &game->mover, h);
 }
 
 u64 ds_GameHash(const struct ds_Game *game)
 {
-    return 0;
+    if (!game->spawned)
+    {
+        return 0;
+    }
+
+    const struct ds_GeometricMover *mover = &game->mover;
+    const u64 words[13] =
+    {
+        game->spawned,
+        (b64) { .f = mover->position.x }.u,
+        (b64) { .f = mover->position.y }.u,
+        (b64) { .f = mover->position.z }.u,
+        (b32) { .f = mover->velocity.x }.u,
+        (b32) { .f = mover->velocity.y }.u,
+        (b32) { .f = mover->velocity.z }.u,
+        (b32) { .f = mover->capsule.half_height }.u,
+        (b32) { .f = mover->capsule.radius }.u,
+        mover->apply_impulse,
+        (b32) { .f = game->throttle.x }.u,
+        (b32) { .f = game->throttle.y }.u,
+        (b32) { .f = game->yaw }.u,
+    };
+    return XXH3_64bits(words, sizeof(words));
 }
 
 /* TODO(Remove/Refactor) */
