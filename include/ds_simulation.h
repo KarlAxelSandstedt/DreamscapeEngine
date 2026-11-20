@@ -42,6 +42,7 @@ extern "C" {
 #include "ds_allocator.h"
 #include "ds_serialize.h"
 #include "ds_dynamics.h"
+#include "ds_game.h"
 
 struct ds_Sim;
 
@@ -252,7 +253,7 @@ struct ds_Sim
 
     struct ds_Dynamics  dynamics;           /* physics state                                */
 
-    //struct ds_Game      game;             /* TODO: ds_Game undefined */
+    struct ds_Game      game;             /* TODO: ds_Game undefined */
     struct ds_HashMap   entity_map;         /* TODO(Remove/Refactor) entity -> body pool index, for the commands and the host */
     ds_CPool(u64)       joint_entity_pool;  /* TODO(Remove/Refactor) joint entity << 32 | joint pool index */
 };
