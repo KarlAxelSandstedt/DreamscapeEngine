@@ -1168,9 +1168,12 @@ static u32 ChVerify(struct ch_Stats *stats, const u32 contact, const struct c_Ma
         const u32 deep = (sat < -tol);
         /* the contact's path: its own GJK query (touching up to the touch band -> the deep path) */
         const ds_Transform b_to_a = ds_TransformWorldRelative(&h->t, &c->t);
+        struct GJKVertexSet gjk_vset[2];
+        GJKVertexSetHull(gjk_vset + 0, &h->shape.hull);
+        GJKVertexSetCapsule(gjk_vset + 1, &c->shape.capsule);
         struct GJKCache gjk_cache;
         v3 gjk_c[2], gjk_n;
-        const u32 shallow = (GJK(gjk_c + 0, gjk_c + 1, &gjk_n, &gjk_cache, NULL, &h->shape, &c->shape, &b_to_a, (f32) r) > 0.0f);
+        const u32 shallow = (GJK(gjk_c + 0, gjk_c + 1, &gjk_n, &gjk_cache, NULL, gjk_vset + 0, gjk_vset + 1, &b_to_a, (f32) r) > 0.0f);
         /* a face contact's n is the stored plane normal, bit for bit */
         u32 face_normal = 0;
         for (u32 fi = 0; fi < h->shape.hull.f_count; ++fi)
@@ -2755,9 +2758,12 @@ static u32 SpCheckPair(struct arena *tmp, struct sp_Stats *stats, const sp_Conta
     if (kind == 2)
     {
         const ds_Transform t_1_to_0 = ds_TransformWorldRelative(&t[0], &t[1]);
+        struct GJKVertexSet gjk_vset[2];
+        GJKVertexSetHull(gjk_vset + 0, &s[0]->hull);
+        GJKVertexSetSphere(gjk_vset + 1, &s[1]->sphere);
         struct GJKCache gjk_cache;
         v3 gjk_c[2], gjk_n;
-        gjk_path = (GJK(gjk_c + 0, gjk_c + 1, &gjk_n, &gjk_cache, NULL, s[0], s[1], &t_1_to_0, (f32) r1) > 0.0f);
+        gjk_path = (GJK(gjk_c + 0, gjk_c + 1, &gjk_n, &gjk_cache, NULL, gjk_vset + 0, gjk_vset + 1, &t_1_to_0, (f32) r1) > 0.0f);
     }
     const char *fail = SpVerify(stats, &result, &ref, r1, L, gjk_path);
 

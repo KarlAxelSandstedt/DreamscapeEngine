@@ -96,11 +96,13 @@ static void ds_GeometricMoverHullPlane(ds_Array(ds_GeometricMoverPlane) *planes,
     ds_Assert(hull->type == C_SHAPE_CONVEX_HULL);
 
     const f32 radius = mover->radius;
-    const struct c_Shape mover_shape = { .type = C_SHAPE_CAPSULE, .capsule = *mover };
+    struct GJKVertexSet vset_mover, vset_hull;
+    GJKVertexSetCapsule(&vset_mover, mover);
+    GJKVertexSetHull(&vset_hull, &hull->hull);
 
     struct GJKCache cache;
     v3 c[2], n;
-    const f32 distance = GJK(c+0, c+1, &n, &cache, NULL, &mover_shape, hull, t_shape, radius);
+    const f32 distance = GJK(c+0, c+1, &n, &cache, NULL, &vset_mover, &vset_hull, t_shape, radius);
     if (radius < distance)
     {
         return;
@@ -283,22 +285,15 @@ static v3 ds_GeometricMoverSolvePlanes(const struct ds_Dynamics *dynamics, const
     return target;
 }
 
-static f32 ds_GeometricMoverCastConvex(const struct capsule *mover, const struct c_Shape *shape, const ds_Transform *t_shape, const v3 delta, const f32 toi)
+static f32 ds_GeometricMoverCastConvex(const struct capsule *mover, const struct GJKVertexSet *vset, const ds_Transform *t_shape, const v3 delta, const f32 toi)
 {
-    f32 margin = mover->radius;
-    if (shape->type == C_SHAPE_SPHERE)
-    {
-        margin += shape->sphere.radius;
-    }
-    else if (shape->type == C_SHAPE_CAPSULE)
-    {
-        margin += shape->capsule.radius;
-    }
+    const f32 margin = mover->radius + vset->radius;
 
     const f32 slop = g_solver_config->linear_slop;
     const f32 target_distance = F32Max(slop, margin - slop);
     const f32 tolerance = 0.25f*slop;
-    const struct c_Shape mover_shape = { .type = C_SHAPE_CAPSULE, .capsule = *mover };
+    struct GJKVertexSet vset_mover;
+    GJKVertexSetCapsule(&vset_mover, mover);
     const u32 iterations = 20;
 
     f32 new_toi = 0.0f;
@@ -306,7 +301,7 @@ static f32 ds_GeometricMoverCastConvex(const struct capsule *mover, const struct
 
     v3 c0, c1, n;
     struct GJKCache cache[2] = { { .count = 1 }, { .count = 1 } };
-    f32 distance = GJK(&c0, &c1, &n, cache + 1, cache + 0, &mover_shape, shape, &t, F32_INFINITY);
+    f32 distance = GJK(&c0, &c1, &n, cache + 1, cache + 0, &vset_mover, vset, &t, F32_INFINITY);
     if (distance < target_distance + tolerance)
     {
         return toi;
@@ -335,7 +330,7 @@ static f32 ds_GeometricMoverCastConvex(const struct capsule *mover, const struct
         }
 
         t.position = V3Sub(t_shape->position, V3Scale(delta, new_toi));
-        distance = GJK(&c0, &c1, &n, cache + (i & 1), cache + ((i + 1) & 1), &mover_shape, shape, &t, F32_INFINITY);
+        distance = GJK(&c0, &c1, &n, cache + (i & 1), cache + ((i + 1) & 1), &vset_mover, vset, &t, F32_INFINITY);
 
         if (distance < target_distance + tolerance)
         {
@@ -408,10 +403,10 @@ static f32 ds_GeometricMoverCastConcave(const struct capsule *mover, const struc
                     continue;
                 }
 
-                struct c_Shape tri_shape = { .type = C_SHAPE_CONVEX_HULL, .hull = DcelTriStub() };
-                tri_shape.hull.v = tri;
+                struct GJKVertexSet vset_tri;
+                GJKVertexSetTriangle(&vset_tri, tri);
                 const ds_Transform t_identity = ds_TransformIdentity();
-                const f32 t_tri = ds_GeometricMoverCastConvex(mover, &tri_shape, &t_identity, delta, info.hit.f);
+                const f32 t_tri = ds_GeometricMoverCastConvex(mover, &vset_tri, &t_identity, delta, info.hit.f);
                 if (t_tri < info.hit.f)
                 {
                     info.hit = u32f32_inline(mesh->leaf_tri[i], t_tri);
@@ -496,7 +491,9 @@ static f32 ds_GeometricMoverCast(const struct ds_Dynamics *dynamics, const struc
                 else
                 {
                     const ds_Transform t_shape = ds_TransformWorldRelative(&t_mover, &t_world);
-                    t = ds_GeometricMoverCastConvex(&mover->capsule, c_shape, &t_shape, delta, info.hit.f);
+                    struct GJKVertexSet vset;
+                    GJKVertexSetShape(&vset, c_shape);
+                    t = ds_GeometricMoverCastConvex(&mover->capsule, &vset, &t_shape, delta, info.hit.f);
                 }
 
                 if (t < info.hit.f)

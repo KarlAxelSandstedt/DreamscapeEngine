@@ -23,14 +23,6 @@
 
 /**************************************** GJK ********************************************/
 
-/* Shape vertex set/storage */
-struct GJKVertexSet
-{
-    const v3 *  v;
-    u32         v_count;
-    v3          buf[2];     /* storage for sphere/capsule points */
-};
-
 /* Simplex vertex: both support points in frame A and their difference. */
 struct GJKSimplexVertex
 {
@@ -54,38 +46,62 @@ struct GJKSimplex
  */
 struct GJKHelper
 {
-    struct GJKVertexSet     vset_a;
-    struct GJKVertexSet     vset_b;
+    const struct GJKVertexSet *vset_a;
+    const struct GJKVertexSet *vset_b;
     m3                      rot;        /* B to A: p_A = rot * p_B + pos */
     m3                      rot_t;      /* rot^T: directions from A's frame into B's */
     v3                      pos;
 };
 
-/* Set up the vset of shape (hull, sphere or capsule) in its local frame. */
-static void GJKVertexSetInit(struct GJKVertexSet *vset, const struct c_Shape *shape)
+void GJKVertexSetSphere(struct GJKVertexSet *vset, const struct sphere *sphere)
+{
+    vset->v = vset->buf;
+    vset->buf[0] = V3Zero();
+    vset->v_count = 1;
+    vset->radius = sphere->radius;
+}
+
+void GJKVertexSetCapsule(struct GJKVertexSet *vset, const struct capsule *capsule)
+{
+    vset->v = vset->buf;
+    vset->buf[0] = V3(0.0f,  capsule->half_height, 0.0f);
+    vset->buf[1] = V3(0.0f, -capsule->half_height, 0.0f);
+    vset->v_count = 2;
+    vset->radius = capsule->radius;
+}
+
+void GJKVertexSetHull(struct GJKVertexSet *vset, const struct dcel *hull)
+{
+    ds_AssertString(hull->v_count <= U16_MAX + 1, "GJKCache stores vertex indices as u16");
+    vset->v = hull->v;
+    vset->v_count = hull->v_count;
+    vset->radius = 0.0f;
+}
+
+void GJKVertexSetTriangle(struct GJKVertexSet *vset, const v3 tri[3])
+{
+    vset->v = tri;
+    vset->v_count = 3;
+    vset->radius = 0.0f;
+}
+
+void GJKVertexSetShape(struct GJKVertexSet *vset, const struct c_Shape *shape)
 {
     switch (shape->type)
     {
         case C_SHAPE_SPHERE:
         {
-            vset->v = vset->buf;
-            vset->buf[0] = V3Zero();
-            vset->v_count = 1;
+            GJKVertexSetSphere(vset, &shape->sphere);
         } break;
 
         case C_SHAPE_CAPSULE:
         {
-            vset->v = vset->buf;
-            vset->buf[0] = V3(0.0f,  shape->capsule.half_height, 0.0f);
-            vset->buf[1] = V3(0.0f, -shape->capsule.half_height, 0.0f);
-            vset->v_count = 2;
+            GJKVertexSetCapsule(vset, &shape->capsule);
         } break;
 
         case C_SHAPE_CONVEX_HULL:
         {
-            ds_AssertString(shape->hull.v_count <= U16_MAX + 1, "GJKCache stores vertex indices as u16");
-            vset->v = shape->hull.v;
-            vset->v_count = shape->hull.v_count;
+            GJKVertexSetHull(vset, &shape->hull);
         } break;
 
         default:
@@ -95,10 +111,10 @@ static void GJKVertexSetInit(struct GJKVertexSet *vset, const struct c_Shape *sh
     }
 }
 
-static void GJKHelperInit(struct GJKHelper *helper, const struct c_Shape *shape_a, const struct c_Shape *shape_b, const ds_Transform *b_to_a)
+static void GJKHelperInit(struct GJKHelper *helper, const struct GJKVertexSet *vset_a, const struct GJKVertexSet *vset_b, const ds_Transform *b_to_a)
 {
-    GJKVertexSetInit(&helper->vset_a, shape_a);
-    GJKVertexSetInit(&helper->vset_b, shape_b);
+    helper->vset_a = vset_a;
+    helper->vset_b = vset_b;
     helper->rot = M3QUnit(b_to_a->rotation);
     helper->rot_t = M3Transpose(helper->rot);
     helper->pos = b_to_a->position;
@@ -107,12 +123,12 @@ static void GJKHelperInit(struct GJKHelper *helper, const struct c_Shape *shape_
 /* Simplex vertex of index_a of A and index_b of B; B is moved into A's frame. */
 static struct GJKSimplexVertex GJKSimplexVertexInit(const struct GJKHelper *helper, const u32 index_a, const u32 index_b)
 {
-    ds_Assert(index_a < helper->vset_a.v_count && index_b < helper->vset_b.v_count);
+    ds_Assert(index_a < helper->vset_a->v_count && index_b < helper->vset_b->v_count);
     struct GJKSimplexVertex v;
     v.index_a = index_a;
     v.index_b = index_b;
-    v.a = helper->vset_a.v[index_a];
-    v.b = V3Add(M3V3Mul(helper->rot, helper->vset_b.v[index_b]), helper->pos);
+    v.a = helper->vset_a->v[index_a];
+    v.b = V3Add(M3V3Mul(helper->rot, helper->vset_b->v[index_b]), helper->pos);
     v.minkowski = V3Sub(v.b, v.a);
     return v;
 }
@@ -124,8 +140,8 @@ static struct GJKSimplexVertex GJKSimplexVertexInit(const struct GJKHelper *help
  */
 static void GJKSimplexVertexSupport(struct GJKSimplexVertex *v, const struct GJKHelper *helper, const v3 dir)
 {
-    const u32 index_a = V3Support(helper->vset_a.v, helper->vset_a.v_count, V3Negate(dir));
-    const u32 index_b = V3Support(helper->vset_b.v, helper->vset_b.v_count, M3V3Mul(helper->rot_t, dir));
+    const u32 index_a = V3Support(helper->vset_a->v, helper->vset_a->v_count, V3Negate(dir));
+    const u32 index_b = V3Support(helper->vset_b->v, helper->vset_b->v_count, M3V3Mul(helper->rot_t, dir));
     *v = GJKSimplexVertexInit(helper, index_a, index_b);
 }
 
@@ -261,10 +277,10 @@ static f32 GJKOverlap(v3 *c_a, v3 *c_b, v3 *n, struct GJKCache *cache_out, const
     return 0.0f;
 }
 
-f32 GJK(v3 *c0, v3 *c1, v3 *n, struct GJKCache *cache_out, const struct GJKCache *cache_in, const struct c_Shape *s0, const struct c_Shape *s1, const ds_Transform *t_1_to_0, const f32 cutoff_distance)
+f32 GJK(v3 *c0, v3 *c1, v3 *n, struct GJKCache *cache_out, const struct GJKCache *cache_in, const struct GJKVertexSet *vset0, const struct GJKVertexSet *vset1, const ds_Transform *t_1_to_0, const f32 cutoff_distance)
 {
     struct GJKHelper helper;
-    GJKHelperInit(&helper, s0, s1, t_1_to_0);
+    GJKHelperInit(&helper, vset0, vset1, t_1_to_0);
     /* warm start from the cache unless its length/area/volume changed by more than 2x or is below F32_EPSILON (absolute) */
     struct GJKSimplex simplex = { 0 };
     if (cache_in)
@@ -496,11 +512,11 @@ f32 GJK(v3 *c0, v3 *c1, v3 *n, struct GJKCache *cache_out, const struct GJKCache
     return distance;
 }
 
-f32 GJKWorld(v3f64 *c0, v3f64 *c1, v3 *n, struct GJKCache *cache_out, const struct GJKCache *cache_in, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1, const f32 cutoff_distance)
+f32 GJKWorld(v3f64 *c0, v3f64 *c1, v3 *n, struct GJKCache *cache_out, const struct GJKCache *cache_in, const struct GJKVertexSet *vset0, const ds_TransformWorld *t0, const struct GJKVertexSet *vset1, const ds_TransformWorld *t1, const f32 cutoff_distance)
 {
     const ds_Transform t_1_to_0 = ds_TransformWorldRelative(t0, t1);
     v3 c0_local, c1_local, n_local;
-    const f32 distance = GJK(&c0_local, &c1_local, &n_local, cache_out, cache_in, s0, s1, &t_1_to_0, cutoff_distance);
+    const f32 distance = GJK(&c0_local, &c1_local, &n_local, cache_out, cache_in, vset0, vset1, &t_1_to_0, cutoff_distance);
     if (distance == 0.0f)
     {
         *c0 = ds_TransformWorldPointToWorld(t0, c0_local);
@@ -598,9 +614,13 @@ f32 c_HullSphereDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const d
 	ds_Assert(s0->type == C_SHAPE_CONVEX_HULL);
 	ds_Assert(s1->type == C_SHAPE_SPHERE);
 
+	struct GJKVertexSet vset0, vset1;
+	GJKVertexSetHull(&vset0, &s0->hull);
+	GJKVertexSetSphere(&vset1, &s1->sphere);
+
 	v3 n;
 	struct GJKCache cache;
-	const f32 dist = GJKWorld(c0, c1, &n, &cache, NULL, s0, t0, s1, t1, F32_INFINITY);
+	const f32 dist = GJKWorld(c0, c1, &n, &cache, NULL, &vset0, t0, &vset1, t1, F32_INFINITY);
 	if (dist <= s1->sphere.radius)
 	{  
         return 0.0f;
@@ -615,9 +635,13 @@ f32 c_HullCapsuleDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const 
 	ds_Assert(s0->type == C_SHAPE_CONVEX_HULL);
 	ds_Assert(s1->type == C_SHAPE_CAPSULE);
 
+	struct GJKVertexSet vset0, vset1;
+	GJKVertexSetHull(&vset0, &s0->hull);
+	GJKVertexSetCapsule(&vset1, &s1->capsule);
+
 	v3 n;
 	struct GJKCache cache;
-	const f32 dist = GJKWorld(c0, c1, &n, &cache, NULL, s0, t0, s1, t1, F32_INFINITY);
+	const f32 dist = GJKWorld(c0, c1, &n, &cache, NULL, &vset0, t0, &vset1, t1, F32_INFINITY);
 	if (dist <= s1->capsule.radius)
 	{
         return 0.0f;
@@ -632,9 +656,13 @@ f32 c_HullDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const ds_Tran
 	ds_Assert (s0->type == C_SHAPE_CONVEX_HULL);
 	ds_Assert (s1->type == C_SHAPE_CONVEX_HULL);
 
+	struct GJKVertexSet vset0, vset1;
+	GJKVertexSetHull(&vset0, &s0->hull);
+	GJKVertexSetHull(&vset1, &s1->hull);
+
 	v3 n;
 	struct GJKCache cache;
-	return GJKWorld(c0, c1, &n, &cache, NULL, s0, t0, s1, t1, F32_INFINITY);
+	return GJKWorld(c0, c1, &n, &cache, NULL, &vset0, t0, &vset1, t1, F32_INFINITY);
 }
 
 f32 c_MeshSphereDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)

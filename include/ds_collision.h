@@ -262,14 +262,14 @@ GJK
 Distance, closest points and normal of two convex shapes' cores: a sphere is its center, a capsule its segment
 (callers add the radii). Shapes closer than GJK_TOUCH_TOLERANCE * eps * L (L ~ the shapes' extent) count as
 touching. Reads the pushed numerics config (gjk_max_iterations).
-    GJK         s1 given in s0's frame (p_0 = t_1_to_0.rotation p_1 + t_1_to_0.position); outputs in s0's frame
+    GJK         vset1 given in vset0's frame (p_0 = t_1_to_0.rotation p_1 + t_1_to_0.position); outputs in vset0's frame
     GJKWorld    world transforms; c0, c1 world (f64), n world
 
-    const f32 d = GJK(&c0, &c1, &n, &cache, cache_in, s0, s1, &t_1_to_0, cutoff_distance);
+    const f32 d = GJK(&c0, &c1, &n, &cache, cache_in, vset0, vset1, &t_1_to_0, cutoff_distance);
 
     d == 0.0f           overlap or touch; c0 == c1, n = 0
     d == F32_INFINITY   farther than cutoff_distance; c0, c1, n garbage
-    otherwise           the distance, the closest points and the unit normal from s0 to s1 (n accurate to
+    otherwise           the distance, the closest points and the unit normal from vset0 to vset1 (n accurate to
                         ~6 eps * L / d radians, rarely worse for shapes of very different sizes); only an upper
                         bound when the loop stops early: the iteration limit, or a degenerate or non-improving
                         simplex (seen for shapes of very different sizes)
@@ -291,6 +291,15 @@ struct GJKCache
     u16 count;              /* 1..4 */
     u16 index_a[4];
     u16 index_b[4];
+};
+
+/* Shape vertex set/storage */
+struct GJKVertexSet
+{
+    const v3 *  v;
+    u32         v_count;
+    f32         radius;
+    v3          buf[2];     /* storage for sphere/capsule points */
 };
 
 /*
@@ -387,10 +396,17 @@ struct ds_ConcaveCache
  */
 #define GJK_TOUCH_TOLERANCE 100.0f
 
-/* s1 given in s0's frame; outputs in s0's frame */
-f32     GJK(v3 *c0, v3 *c1, v3 *n, struct GJKCache *cache_out, const struct GJKCache *cache_in, const struct c_Shape *s0, const struct c_Shape *s1, const ds_Transform *t_1_to_0, const f32 cutoff_distance);
+void    GJKVertexSetSphere(struct GJKVertexSet *vset, const struct sphere *sphere);
+void    GJKVertexSetCapsule(struct GJKVertexSet *vset, const struct capsule *capsule);
+void    GJKVertexSetHull(struct GJKVertexSet *vset, const struct dcel *hull);
+void    GJKVertexSetTriangle(struct GJKVertexSet *vset, const v3 tri[3]);
+/* Set up the vset of shape (hull, sphere or capsule) in its local frame. */
+void    GJKVertexSetShape(struct GJKVertexSet *vset, const struct c_Shape *shape);
+
+/* vset1 given in vset0's frame; outputs in vset0's frame */
+f32     GJK(v3 *c0, v3 *c1, v3 *n, struct GJKCache *cache_out, const struct GJKCache *cache_in, const struct GJKVertexSet *vset0, const struct GJKVertexSet *vset1, const ds_Transform *t_1_to_0, const f32 cutoff_distance);
 /* world transforms; c0, c1 world (f64), n world */
-f32     GJKWorld(v3f64 *c0, v3f64 *c1, v3 *n, struct GJKCache *cache_out, const struct GJKCache *cache_in, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1, const f32 cutoff_distance);
+f32     GJKWorld(v3f64 *c0, v3f64 *c1, v3 *n, struct GJKCache *cache_out, const struct GJKCache *cache_in, const struct GJKVertexSet *vset0, const ds_TransformWorld *t0, const struct GJKVertexSet *vset1, const ds_TransformWorld *t1, const f32 cutoff_distance);
 
 /* distance between the surfaces (>= 0); c0, c1 the closest points (world, f64), set only for a distance > 0 */
 f32     c_SphereDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);

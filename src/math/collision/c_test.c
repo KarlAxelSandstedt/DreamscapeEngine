@@ -67,10 +67,14 @@ u32 c_HullSphereTest(const struct c_Shape *s0, const ds_TransformWorld *t0, cons
     ds_Assert(s0->type == C_SHAPE_CONVEX_HULL);
     ds_Assert(s1->type == C_SHAPE_SPHERE);
 
+    struct GJKVertexSet vset0, vset1;
+    GJKVertexSetHull(&vset0, &s0->hull);
+    GJKVertexSetSphere(&vset1, &s1->sphere);
+
     v3f64 c0, c1;
     v3 n;
     struct GJKCache cache;
-    return GJKWorld(&c0, &c1, &n, &cache, NULL, s0, t0, s1, t1, s1->sphere.radius) <= s1->sphere.radius;
+    return GJKWorld(&c0, &c1, &n, &cache, NULL, &vset0, t0, &vset1, t1, s1->sphere.radius) <= s1->sphere.radius;
 }
 
 u32 c_HullCapsuleTest(const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
@@ -78,10 +82,14 @@ u32 c_HullCapsuleTest(const struct c_Shape *s0, const ds_TransformWorld *t0, con
     ds_Assert(s0->type == C_SHAPE_CONVEX_HULL);
     ds_Assert(s1->type == C_SHAPE_CAPSULE);
 
+    struct GJKVertexSet vset0, vset1;
+    GJKVertexSetHull(&vset0, &s0->hull);
+    GJKVertexSetCapsule(&vset1, &s1->capsule);
+
     v3f64 c0, c1;
     v3 n;
     struct GJKCache cache;
-    return GJKWorld(&c0, &c1, &n, &cache, NULL, s0, t0, s1, t1, s1->capsule.radius) <= s1->capsule.radius;
+    return GJKWorld(&c0, &c1, &n, &cache, NULL, &vset0, t0, &vset1, t1, s1->capsule.radius) <= s1->capsule.radius;
 }
 
 u32 c_HullTest(const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
@@ -89,10 +97,14 @@ u32 c_HullTest(const struct c_Shape *s0, const ds_TransformWorld *t0, const stru
     ds_Assert(s0->type == C_SHAPE_CONVEX_HULL);
     ds_Assert(s1->type == C_SHAPE_CONVEX_HULL);
 
+    struct GJKVertexSet vset0, vset1;
+    GJKVertexSetHull(&vset0, &s0->hull);
+    GJKVertexSetHull(&vset1, &s1->hull);
+
     v3f64 c0, c1;
     v3 n;
     struct GJKCache cache;
-    return GJKWorld(&c0, &c1, &n, &cache, NULL, s0, t0, s1, t1, 0.0f) == 0.0f;
+    return GJKWorld(&c0, &c1, &n, &cache, NULL, &vset0, t0, &vset1, t1, 0.0f) == 0.0f;
 }
 
 u32 c_MeshSphereTest(const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)

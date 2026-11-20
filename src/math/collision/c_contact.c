@@ -355,8 +355,12 @@ u32 c_HullSphereContact(struct c_Manifold *out, struct ds_ConvexCache *cache, co
     const v3 p = QUnitRotate(inv, V3F64Demote(V3F64Sub(t1->position, t0->position)));
     const ds_Transform t_1_to_0 = { .rotation = QIdentity(), .position = p };
 
+    struct GJKVertexSet vset0, vset1;
+    GJKVertexSetHull(&vset0, &s0->hull);
+    GJKVertexSetSphere(&vset1, &s1->sphere);
+
     v3 c[2], n;
-    const f32 distance = GJK(c+0, c+1, &n, &cache->gjk, (old.count) ? &old : NULL, s0, s1, &t_1_to_0, radius);
+    const f32 distance = GJK(c+0, c+1, &n, &cache->gjk, (old.count) ? &old : NULL, &vset0, &vset1, &t_1_to_0, radius);
     if (radius < distance)
     {
         return manifold_count;
@@ -498,8 +502,12 @@ u32 c_HullCapsuleContact(struct c_Manifold *out, struct ds_ConvexCache *cache, c
     const f32 radius = s1->capsule.radius;
     const ds_Transform t_1_to_0 = ds_TransformWorldRelative(t0, t1);
 
+    struct GJKVertexSet vset0, vset1;
+    GJKVertexSetHull(&vset0, &s0->hull);
+    GJKVertexSetCapsule(&vset1, &s1->capsule);
+
     v3 c[2], n;
-    const f32 distance = GJK(c+0, c+1, &n, &cache->gjk, (old.count) ? &old : NULL, s0, s1, &t_1_to_0, radius);
+    const f32 distance = GJK(c+0, c+1, &n, &cache->gjk, (old.count) ? &old : NULL, &vset0, &vset1, &t_1_to_0, radius);
     if (radius < distance)
     {
         return manifold_count;
