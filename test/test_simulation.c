@@ -629,6 +629,46 @@ static struct test_Output SimCmdSerializeTest(struct test_Environment *env)
         TEST_EQUAL(0, ds_SimCmdFormVerify(&bad));
     }
 
+    /* the mover commands round trip; malformed: a zero radius, an infinite position, a throttle beyond 1, a NaN throttle */
+    {
+        ds_CPool(ds_SimCmd) mover;
+        ds_CPoolAlloc(env->mem_1, mover, 2, NOT_GROWABLE);
+        const struct ds_SimCmd spawn = { .type = SIM_CMD_MOVER_SPAWN, .mover_spawn = { .position = V3F64(1.5, -2.5, 1000000.25), .capsule = { .half_height = 0.5f, .radius = 0.4f } } };
+        const struct ds_SimCmd input = { .type = SIM_CMD_MOVER_INPUT, .mover_input = { .throttle = V2(-1.0f, 0.75f), .yaw = -2.5f } };
+        ds_CPoolPushValue(mover, spawn);
+        ds_CPoolPushValue(mover, input);
+        TEST_EQUAL(1, ds_SimCmdFormVerify(&spawn));
+        TEST_EQUAL(1, ds_SimCmdFormVerify(&input));
+
+        const struct ds_SimCmdPayload mover_payload = ds_SimCmdPayloadPushAll(env->mem_1, ds_SimIdInit(1, 0), &mover);
+        TEST_EQUAL(2, mover_payload.cmd_count);
+        TEST_EQUAL(1, SSTryView(&view, &mover_payload.stream, 0, mover_payload.stream.bit_index));
+        struct SS cmds = SSSubstreamFromView(&view);
+
+        TEST_EQUAL(1, ds_SimCmdTryDeserializeBitPacked(env->mem_1, &cmds, &read));
+        TEST_EQUAL(SIM_CMD_MOVER_SPAWN, read.type);
+        TEST_TRUE(read.mover_spawn.position.x == 1.5 && read.mover_spawn.position.y == -2.5 && read.mover_spawn.position.z == 1000000.25);
+        TEST_TRUE(read.mover_spawn.capsule.half_height == 0.5f && read.mover_spawn.capsule.radius == 0.4f);
+
+        TEST_EQUAL(1, ds_SimCmdTryDeserializeBitPacked(env->mem_1, &cmds, &read));
+        TEST_EQUAL(SIM_CMD_MOVER_INPUT, read.type);
+        TEST_TRUE(read.mover_input.throttle.x == -1.0f && read.mover_input.throttle.y == 0.75f && read.mover_input.yaw == -2.5f);
+        TEST_EQUAL(0, SSBitsLeft(&cmds));
+
+        struct ds_SimCmd bad = spawn;
+        bad.mover_spawn.capsule.radius = 0.0f;
+        TEST_EQUAL(0, ds_SimCmdFormVerify(&bad));
+        bad = spawn;
+        bad.mover_spawn.position.x = (b64) { .u = 0x7ff0000000000000ull }.f;
+        TEST_EQUAL(0, ds_SimCmdFormVerify(&bad));
+        bad = input;
+        bad.mover_input.throttle.y = 1.5f;
+        TEST_EQUAL(0, ds_SimCmdFormVerify(&bad));
+        bad = input;
+        bad.mover_input.throttle.x = (b32) { .u = 0x7fc00000u }.f;
+        TEST_EQUAL(0, ds_SimCmdFormVerify(&bad));
+    }
+
     /* the serialized config by itself, for the hand-written cases */
     struct SS body = SSAlloc(env->mem_1, body_size);
     ds_SimConfigSerializeBitPacked(&body, &changed);
@@ -743,6 +783,70 @@ static struct test_Output SimConfigLoadTest(struct test_Environment *env)
     ds_SimFlush(&sim);
     TEST_EQUAL(1, sim.initialized);     /* reseeded */
     TEST_EQUAL(iterations, sim.dynamics.config.solver.pgs_iteration_count);
+
+    ds_SimDealloc(&sim);
+    ds_SDBDealloc(prefab_db);
+    ds_SDBDealloc(shape_prefab_db);
+    c_ShapeDBDealloc(&cshape_db);
+	return output;
+}
+
+/*
+ * The mover commands through the tick: an input before any spawn is stored; a spawn places the mover at rest with
+ * its capsule and impulses on; a second spawn respawns it at rest; ds_SimFlush clears the mover and the input.
+ */
+static struct test_Output SimMoverCmdTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct c_ShapeDB cshape_db = { 0 };
+    c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
+    ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
+    ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
+    ds_SDB(ds_ShapePrefab) shape_prefab_db = { 0 };
+    ds_SDBAlloc(NULL, shape_prefab_db, 32, GROWABLE);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db, .body_prefab_db = &prefab_db, .shape_prefab_db = &shape_prefab_db };
+
+    struct ds_SimConfig config = ds_SimConfigDefault();
+    config.dynamics.initial_size = 32;
+    struct ds_Sim sim;
+    ds_SimAlloc(&sim, &config, &external);
+    TEST_EQUAL(0, sim.game.spawned);
+
+    ds_CPool(ds_SimCmd) pool;
+    ds_CPoolAlloc(env->mem_1, pool, 1, NOT_GROWABLE);
+
+    const struct ds_SimCmd input = { .type = SIM_CMD_MOVER_INPUT, .mover_input = { .throttle = V2(0.5f, -1.0f), .yaw = 1.25f } };
+    ds_CPoolPushValue(pool, input);
+    SimTestBatch(&sim, &pool);
+    TEST_EQUAL(0, sim.game.spawned);
+    TEST_TRUE(sim.game.throttle.x == 0.5f && sim.game.throttle.y == -1.0f && sim.game.yaw == 1.25f);
+
+    ds_CPoolFlush(pool);
+    const struct ds_SimCmd spawn = { .type = SIM_CMD_MOVER_SPAWN, .mover_spawn = { .position = V3F64(1.0, 2.0, 1000000.5), .capsule = { .half_height = 0.5f, .radius = 0.4f } } };
+    ds_CPoolPushValue(pool, spawn);
+    SimTestBatch(&sim, &pool);
+    TEST_EQUAL(1, sim.game.spawned);
+    TEST_TRUE(sim.game.mover.position.x == 1.0 && sim.game.mover.position.y == 2.0 && sim.game.mover.position.z == 1000000.5);
+    TEST_TRUE(sim.game.mover.velocity.x == 0.0f && sim.game.mover.velocity.y == 0.0f && sim.game.mover.velocity.z == 0.0f);
+    TEST_TRUE(sim.game.mover.capsule.half_height == 0.5f && sim.game.mover.capsule.radius == 0.4f);
+    TEST_EQUAL(1, sim.game.mover.apply_impulse);
+    TEST_TRUE(sim.game.throttle.x == 0.5f && sim.game.yaw == 1.25f);
+
+    ds_CPoolFlush(pool);
+    struct ds_SimCmd respawn = spawn;
+    respawn.mover_spawn.position = V3F64(-3.0, 0.5, 4.0);
+    ds_CPoolPushValue(pool, respawn);
+    sim.game.mover.velocity = V3(1.0f, 2.0f, 3.0f);
+    SimTestBatch(&sim, &pool);
+    TEST_EQUAL(1, sim.game.spawned);
+    TEST_TRUE(sim.game.mover.position.x == -3.0 && sim.game.mover.position.y == 0.5 && sim.game.mover.position.z == 4.0);
+    TEST_TRUE(sim.game.mover.velocity.x == 0.0f && sim.game.mover.velocity.y == 0.0f && sim.game.mover.velocity.z == 0.0f);
+
+    ds_SimFlush(&sim);
+    TEST_EQUAL(0, sim.game.spawned);
+    TEST_TRUE(sim.game.mover.position.x == 0.0 && sim.game.mover.capsule.radius == 0.0f && sim.game.mover.apply_impulse == 0);
+    TEST_TRUE(sim.game.throttle.x == 0.0f && sim.game.throttle.y == 0.0f && sim.game.yaw == 0.0f);
 
     ds_SimDealloc(&sim);
     ds_SDBDealloc(prefab_db);
@@ -1640,6 +1744,7 @@ static struct test_Output (*simulation_tests[])(struct test_Environment *) =
     SimCmdSerializeTest,
     SimTickTest,
     SimConfigLoadTest,
+    SimMoverCmdTest,
     ServerClockTest,
     ServerDoorTest,
     ServerRecordTest,

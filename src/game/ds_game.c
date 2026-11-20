@@ -34,6 +34,10 @@ void ds_GameDealloc(struct ds_Game *game)
 
 void ds_GameFlush(struct ds_Game *game)
 {
+    game->spawned = 0;
+    game->mover = (struct ds_GeometricMover) { 0 };
+    game->throttle = V2(0.0f, 0.0f);
+    game->yaw = 0.0f;
     ds_HashMapFlush(&game->unit_map);
     ds_CPoolFlush(game->joint_unit_pool);
 }

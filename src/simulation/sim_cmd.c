@@ -107,6 +107,8 @@ u32 ds_SimCmdFormVerify(const struct ds_SimCmd *cmd)
         case SIM_CMD_MOUSE_JOINT_ADD: { return ds_MouseJointAddCmdFormVerify(&cmd->mouse_joint_add); }
         case SIM_CMD_MOUSE_JOINT_TARGET_SET: { return ds_MouseJointTargetSetCmdFormVerify(&cmd->mouse_joint_target_set); }
         case SIM_CMD_JOINT_REMOVE: { return ds_JointRemoveCmdFormVerify(&cmd->joint_remove); }
+        case SIM_CMD_MOVER_SPAWN: { return ds_MoverSpawnCmdFormVerify(&cmd->mover_spawn); }
+        case SIM_CMD_MOVER_INPUT: { return ds_MoverInputCmdFormVerify(&cmd->mover_input); }
         default:                    { return 0; }
     }
 }
@@ -124,6 +126,8 @@ u32 ds_SimCmdTryExecute(struct ds_Sim *sim, const struct ds_SimCmd *cmd)
         case SIM_CMD_MOUSE_JOINT_ADD: { return ds_MouseJointAddCmdTryExecute(sim, &cmd->mouse_joint_add); }
         case SIM_CMD_MOUSE_JOINT_TARGET_SET: { return ds_MouseJointTargetSetCmdTryExecute(sim, &cmd->mouse_joint_target_set); }
         case SIM_CMD_JOINT_REMOVE: { return ds_JointRemoveCmdTryExecute(sim, &cmd->joint_remove); }
+        case SIM_CMD_MOVER_SPAWN: { return ds_MoverSpawnCmdTryExecute(sim, &cmd->mover_spawn); }
+        case SIM_CMD_MOVER_INPUT: { return ds_MoverInputCmdTryExecute(sim, &cmd->mover_input); }
         default:                    { ds_AssertString(0, "ds_SimCmdTryExecute: unknown command type"); return 0; }
     }
 }
@@ -139,6 +143,8 @@ static u64 ds_SimCmdSerializeBitPackedSize(const struct ds_SimCmd *cmd)
         case SIM_CMD_MOUSE_JOINT_ADD: { return DS_SIM_CMD_TYPE_BITS + ds_MouseJointAddCmdSerializeBitPackedSize(&cmd->mouse_joint_add); }
         case SIM_CMD_MOUSE_JOINT_TARGET_SET: { return DS_SIM_CMD_TYPE_BITS + ds_MouseJointTargetSetCmdSerializeBitPackedSize(&cmd->mouse_joint_target_set); }
         case SIM_CMD_JOINT_REMOVE: { return DS_SIM_CMD_TYPE_BITS + ds_JointRemoveCmdSerializeBitPackedSize(&cmd->joint_remove); }
+        case SIM_CMD_MOVER_SPAWN: { return DS_SIM_CMD_TYPE_BITS + ds_MoverSpawnCmdSerializeBitPackedSize(&cmd->mover_spawn); }
+        case SIM_CMD_MOVER_INPUT: { return DS_SIM_CMD_TYPE_BITS + ds_MoverInputCmdSerializeBitPackedSize(&cmd->mover_input); }
         default:                    { ds_AssertString(0, "ds_SimCmdSerializeBitPackedSize: unknown command type"); return 0; }
     }
 }
@@ -157,6 +163,8 @@ static void ds_SimCmdSerializeBitPacked(struct SS *ss, const struct ds_SimCmd *c
         case SIM_CMD_MOUSE_JOINT_ADD: { ds_MouseJointAddCmdSerializeBitPacked(ss, &cmd->mouse_joint_add); } break;
         case SIM_CMD_MOUSE_JOINT_TARGET_SET: { ds_MouseJointTargetSetCmdSerializeBitPacked(ss, &cmd->mouse_joint_target_set); } break;
         case SIM_CMD_JOINT_REMOVE: { ds_JointRemoveCmdSerializeBitPacked(ss, &cmd->joint_remove); } break;
+        case SIM_CMD_MOVER_SPAWN: { ds_MoverSpawnCmdSerializeBitPacked(ss, &cmd->mover_spawn); } break;
+        case SIM_CMD_MOVER_INPUT: { ds_MoverInputCmdSerializeBitPacked(ss, &cmd->mover_input); } break;
         default:                    { ds_AssertString(0, "ds_SimCmdSerializeBitPacked: unknown command type"); } break;
     }
 }
@@ -181,6 +189,8 @@ u32 ds_SimCmdTryDeserializeBitPacked(struct arena *mem, struct SS *ss, struct ds
         case SIM_CMD_MOUSE_JOINT_ADD: { success = ds_MouseJointAddCmdTryDeserializeBitPacked(&ss_mut, &cmd->mouse_joint_add); } break;
         case SIM_CMD_MOUSE_JOINT_TARGET_SET: { success = ds_MouseJointTargetSetCmdTryDeserializeBitPacked(&ss_mut, &cmd->mouse_joint_target_set); } break;
         case SIM_CMD_JOINT_REMOVE: { success = ds_JointRemoveCmdTryDeserializeBitPacked(&ss_mut, &cmd->joint_remove); } break;
+        case SIM_CMD_MOVER_SPAWN: { success = ds_MoverSpawnCmdTryDeserializeBitPacked(&ss_mut, &cmd->mover_spawn); } break;
+        case SIM_CMD_MOVER_INPUT: { success = ds_MoverInputCmdTryDeserializeBitPacked(&ss_mut, &cmd->mover_input); } break;
         default:                    { success = 0; } break;
     }
 

@@ -424,3 +424,94 @@ static u32 ds_JointRemoveCmdTryDeserializeBitPacked(struct SS *ss, struct ds_Joi
     return 1;
 }
 
+/******** MoverSpawn ********/
+
+static u32 ds_MoverSpawnCmdFormVerify(const struct ds_MoverSpawnCmd *cmd)
+{
+    return V3F64FiniteCheck(cmd->position)
+        && F32FiniteCheck(cmd->capsule.half_height) && cmd->capsule.half_height > 0.0f
+        && F32FiniteCheck(cmd->capsule.radius) && cmd->capsule.radius > 0.0f;
+}
+
+static u32 ds_MoverSpawnCmdTryExecute(struct ds_Sim *sim, const struct ds_MoverSpawnCmd *cmd)
+{
+    sim->game.mover = (struct ds_GeometricMover)
+    {
+        .position = cmd->position,
+        .velocity = V3Zero(),
+        .capsule = cmd->capsule,
+        .apply_impulse = 1,
+    };
+    sim->game.spawned = 1;
+    return 1;
+}
+
+#define DS_SIM_CMD_MOVER_SPAWN_BITS (3*64 + 2*32)
+
+static u64 ds_MoverSpawnCmdSerializeBitPackedSize(const struct ds_MoverSpawnCmd *cmd)
+{
+    return DS_SIM_CMD_MOVER_SPAWN_BITS;
+}
+
+static void ds_MoverSpawnCmdSerializeBitPacked(struct SS *ss, const struct ds_MoverSpawnCmd *cmd)
+{
+    V3F64SerializeBitPacked(ss, cmd->position);
+    SSWriteU64Partial(ss, (b32) { .f = cmd->capsule.half_height }.u, 32);
+    SSWriteU64Partial(ss, (b32) { .f = cmd->capsule.radius }.u, 32);
+}
+
+static u32 ds_MoverSpawnCmdTryDeserializeBitPacked(struct SS *ss, struct ds_MoverSpawnCmd *cmd)
+{
+    if (SSBitsLeft(ss) < DS_SIM_CMD_MOVER_SPAWN_BITS)
+    {
+        return 0;
+    }
+
+    V3F64DeserializeBitPacked(ss, &cmd->position);
+    cmd->capsule.half_height = (b32) { .u = (u32) SSReadU64Partial(ss, 32) }.f;
+    cmd->capsule.radius = (b32) { .u = (u32) SSReadU64Partial(ss, 32) }.f;
+    return 1;
+}
+
+/******** MoverInput ********/
+
+static u32 ds_MoverInputCmdFormVerify(const struct ds_MoverInputCmd *cmd)
+{
+    return -1.0f <= cmd->throttle.x && cmd->throttle.x <= 1.0f
+        && -1.0f <= cmd->throttle.y && cmd->throttle.y <= 1.0f
+        && F32FiniteCheck(cmd->yaw);
+}
+
+static u32 ds_MoverInputCmdTryExecute(struct ds_Sim *sim, const struct ds_MoverInputCmd *cmd)
+{
+    sim->game.throttle = cmd->throttle;
+    sim->game.yaw = cmd->yaw;
+    return 1;
+}
+
+#define DS_SIM_CMD_MOVER_INPUT_BITS (3*32)
+
+static u64 ds_MoverInputCmdSerializeBitPackedSize(const struct ds_MoverInputCmd *cmd)
+{
+    return DS_SIM_CMD_MOVER_INPUT_BITS;
+}
+
+static void ds_MoverInputCmdSerializeBitPacked(struct SS *ss, const struct ds_MoverInputCmd *cmd)
+{
+    SSWriteU64Partial(ss, (b32) { .f = cmd->throttle.x }.u, 32);
+    SSWriteU64Partial(ss, (b32) { .f = cmd->throttle.y }.u, 32);
+    SSWriteU64Partial(ss, (b32) { .f = cmd->yaw }.u, 32);
+}
+
+static u32 ds_MoverInputCmdTryDeserializeBitPacked(struct SS *ss, struct ds_MoverInputCmd *cmd)
+{
+    if (SSBitsLeft(ss) < DS_SIM_CMD_MOVER_INPUT_BITS)
+    {
+        return 0;
+    }
+
+    cmd->throttle.x = (b32) { .u = (u32) SSReadU64Partial(ss, 32) }.f;
+    cmd->throttle.y = (b32) { .u = (u32) SSReadU64Partial(ss, 32) }.f;
+    cmd->yaw = (b32) { .u = (u32) SSReadU64Partial(ss, 32) }.f;
+    return 1;
+}

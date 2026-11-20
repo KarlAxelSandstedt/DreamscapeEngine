@@ -105,6 +105,8 @@ enum ds_SimCmdType
     SIM_CMD_MOUSE_JOINT_ADD,        /* a mouse joint (joint entity) grabbing an entity's body at a world point */
     SIM_CMD_MOUSE_JOINT_TARGET_SET, /* move a mouse joint's target */
     SIM_CMD_JOINT_REMOVE,           /* remove a joint by its joint entity */
+    SIM_CMD_MOVER_SPAWN,            /* place the game's mover */
+    SIM_CMD_MOVER_INPUT,            /* the mover's input until the next one */
     SIM_CMD_COUNT
 };
 
@@ -166,6 +168,18 @@ struct ds_SimCmd
         {
             u32                 joint_entity;
         } joint_remove;
+
+        struct ds_MoverSpawnCmd
+        {
+            v3f64               position;
+            struct capsule      capsule;
+        } mover_spawn;
+
+        struct ds_MoverInputCmd
+        {
+            v2                  throttle;       /* x right, y forward, each in [-1, 1] */
+            f32                 yaw;            /* forward is the camera's forward at this yaw */
+        } mover_input;
     };
 };
 DEFINE_CPOOL_STRUCT(ds_SimCmd);
