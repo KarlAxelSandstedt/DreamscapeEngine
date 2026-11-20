@@ -202,6 +202,7 @@ struct led
     u32                     play;                   /* TODO(Remove/Refactor) P: WASD and the mouse drive the mover, the camera follows */
     u32                     play_first_person;      /* TODO(Remove/Refactor) 1: third person, 2: first person */
     v2                      play_throttle;          /* TODO(Remove/Refactor) the frame's WASD throttle, while the viewport has focus */
+    u32                     play_jump;              /* TODO(Remove/Refactor) space was pressed this frame */
 
 	/* TODO move stuff into led project/led_Core or something */
 	struct arena 		    frame;

@@ -198,7 +198,7 @@ static void MoverTestStep(struct mover_TestWorld *world, struct ds_GeometricMove
     {
         mover->velocity = V3Add(mover->velocity, V3Scale(world->pipeline.config.solver.gravity, world->tick));
     }
-    ds_DynamicsGeometricMover(&world->pipeline, mover, world->tick);
+    ds_DynamicsGeometricMover(&world->pipeline, mover, V3Scale(mover->velocity, world->tick));
 }
 
 static f64 MoverTestDistance(const f64 a, const f64 b)

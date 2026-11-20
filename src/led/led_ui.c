@@ -443,6 +443,11 @@ static void led_InputHandler(struct led *led, struct ui_Node *viewport)
 					led->play_first_person = 1;
 				} break;
 
+				case DS_SPACE:
+				{
+					led->play_jump = led->play;
+				} break;
+
 				default:
 				{
 					event_consumed = 0;
@@ -1477,9 +1482,10 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 	/* play: the frame's input to the mover; the camera follows the capsule where the renderer will draw it */
 	if (led->play)
 	{
-		const struct ds_SimCmd input = { .type = SIM_CMD_MOVER_INPUT, .mover_input = { .throttle = led->play_throttle, .yaw = led->cam.yaw } };
+		const struct ds_SimCmd input = { .type = SIM_CMD_MOVER_INPUT, .mover_input = { .throttle = led->play_throttle, .yaw = led->cam.yaw, .jump = led->play_jump } };
 		ds_CPoolPushValue(led->cmds, input);
 		led->play_throttle = V2(0.0f, 0.0f);
+		led->play_jump = 0;
 
 		const struct ds_SimHost *host = ds_SimHostLookup(&led->srv, led->sim).address;
 		const v3f64 eye = V3F64Add(host->sim.game.mover.position, V3F64(0.0, 0.6, 0.0));

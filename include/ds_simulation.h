@@ -179,6 +179,7 @@ struct ds_SimCmd
         {
             v2                  throttle;       /* x right, y forward, each in [-1, 1] */
             f32                 yaw;            /* forward is the camera's forward at this yaw */
+            u32                 jump;           /* 1: jump at the next tick, if on the ground */
         } mover_input;
     };
 };

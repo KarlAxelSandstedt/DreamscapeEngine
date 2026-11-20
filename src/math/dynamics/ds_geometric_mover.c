@@ -520,12 +520,12 @@ static f32 ds_GeometricMoverCast(const struct ds_Dynamics *dynamics, const struc
     return hit.f;
 }
 
-void ds_DynamicsGeometricMover(struct ds_Dynamics *dynamics, struct ds_GeometricMover *mover, const f32 tick)
+void ds_DynamicsGeometricMover(struct ds_Dynamics *dynamics, struct ds_GeometricMover *mover, const v3 translation)
 {
     ProfZone;
 
     struct ds_GeometricMoverPlane plane_buf[GEOMETRIC_MOVER_PLANE_MAX];
-    const v3f64 target = V3F64Add(mover->position, V3Promote(V3Scale(mover->velocity, tick)));
+    const v3f64 target = V3F64Add(mover->position, V3Promote(translation));
     const f32 tol = g_numerics_config->geometric_mover_tolerance;
 
     ds_Array(ds_GeometricMoverPlane) planes = { 0 };

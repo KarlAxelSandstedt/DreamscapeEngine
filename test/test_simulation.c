@@ -629,12 +629,12 @@ static struct test_Output SimCmdSerializeTest(struct test_Environment *env)
         TEST_EQUAL(0, ds_SimCmdFormVerify(&bad));
     }
 
-    /* the mover commands round trip; malformed: a zero radius, an infinite position, a throttle beyond 1, a NaN throttle */
+    /* the mover commands round trip; malformed: a zero radius, an infinite position, a throttle beyond 1, a NaN throttle, jump 2 */
     {
         ds_CPool(ds_SimCmd) mover;
         ds_CPoolAlloc(env->mem_1, mover, 2, NOT_GROWABLE);
         const struct ds_SimCmd spawn = { .type = SIM_CMD_MOVER_SPAWN, .mover_spawn = { .position = V3F64(1.5, -2.5, 1000000.25), .capsule = { .half_height = 0.5f, .radius = 0.4f } } };
-        const struct ds_SimCmd input = { .type = SIM_CMD_MOVER_INPUT, .mover_input = { .throttle = V2(-1.0f, 0.75f), .yaw = -2.5f } };
+        const struct ds_SimCmd input = { .type = SIM_CMD_MOVER_INPUT, .mover_input = { .throttle = V2(-1.0f, 0.75f), .yaw = -2.5f, .jump = 1 } };
         ds_CPoolPushValue(mover, spawn);
         ds_CPoolPushValue(mover, input);
         TEST_EQUAL(1, ds_SimCmdFormVerify(&spawn));
@@ -652,7 +652,7 @@ static struct test_Output SimCmdSerializeTest(struct test_Environment *env)
 
         TEST_EQUAL(1, ds_SimCmdTryDeserializeBitPacked(env->mem_1, &cmds, &read));
         TEST_EQUAL(SIM_CMD_MOVER_INPUT, read.type);
-        TEST_TRUE(read.mover_input.throttle.x == -1.0f && read.mover_input.throttle.y == 0.75f && read.mover_input.yaw == -2.5f);
+        TEST_TRUE(read.mover_input.throttle.x == -1.0f && read.mover_input.throttle.y == 0.75f && read.mover_input.yaw == -2.5f && read.mover_input.jump == 1);
         TEST_EQUAL(0, SSBitsLeft(&cmds));
 
         struct ds_SimCmd bad = spawn;
@@ -666,6 +666,9 @@ static struct test_Output SimCmdSerializeTest(struct test_Environment *env)
         TEST_EQUAL(0, ds_SimCmdFormVerify(&bad));
         bad = input;
         bad.mover_input.throttle.x = (b32) { .u = 0x7fc00000u }.f;
+        TEST_EQUAL(0, ds_SimCmdFormVerify(&bad));
+        bad = input;
+        bad.mover_input.jump = 2;
         TEST_EQUAL(0, ds_SimCmdFormVerify(&bad));
     }
 
@@ -792,8 +795,9 @@ static struct test_Output SimConfigLoadTest(struct test_Environment *env)
 }
 
 /*
- * The mover commands through the tick: an input before any spawn is stored; a spawn places the mover at rest with
- * its capsule and impulses on; a second spawn respawns it at rest; ds_SimFlush clears the mover and the input.
+ * The mover commands through the tick: an input before any spawn is stored, its jump kept by a later input without
+ * one; a spawn places the mover at rest with its capsule and impulses on; a second spawn respawns it at rest;
+ * ds_SimFlush clears the mover, the input and the ground state.
  */
 static struct test_Output SimMoverCmdTest(struct test_Environment *env)
 {
@@ -816,11 +820,20 @@ static struct test_Output SimMoverCmdTest(struct test_Environment *env)
     ds_CPool(ds_SimCmd) pool;
     ds_CPoolAlloc(env->mem_1, pool, 1, NOT_GROWABLE);
 
-    const struct ds_SimCmd input = { .type = SIM_CMD_MOVER_INPUT, .mover_input = { .throttle = V2(0.5f, -1.0f), .yaw = 1.25f } };
+    const struct ds_SimCmd input = { .type = SIM_CMD_MOVER_INPUT, .mover_input = { .throttle = V2(0.5f, -1.0f), .yaw = 1.25f, .jump = 1 } };
     ds_CPoolPushValue(pool, input);
     SimTestBatch(&sim, &pool);
     TEST_EQUAL(0, sim.game.spawned);
     TEST_TRUE(sim.game.throttle.x == 0.5f && sim.game.throttle.y == -1.0f && sim.game.yaw == 1.25f);
+    TEST_EQUAL(1, sim.game.jump);
+
+    /* a later input without the jump keeps the request for the next tick */
+    struct ds_SimCmd no_jump = input;
+    no_jump.mover_input.jump = 0;
+    ds_CPoolFlush(pool);
+    ds_CPoolPushValue(pool, no_jump);
+    SimTestBatch(&sim, &pool);
+    TEST_EQUAL(1, sim.game.jump);
 
     ds_CPoolFlush(pool);
     const struct ds_SimCmd spawn = { .type = SIM_CMD_MOVER_SPAWN, .mover_spawn = { .position = V3F64(1.0, 2.0, 1000000.5), .capsule = { .half_height = 0.5f, .radius = 0.4f } } };
@@ -847,6 +860,7 @@ static struct test_Output SimMoverCmdTest(struct test_Environment *env)
     TEST_EQUAL(0, sim.game.spawned);
     TEST_TRUE(sim.game.mover.position.x == 0.0 && sim.game.mover.capsule.radius == 0.0f && sim.game.mover.apply_impulse == 0);
     TEST_TRUE(sim.game.throttle.x == 0.0f && sim.game.throttle.y == 0.0f && sim.game.yaw == 0.0f);
+    TEST_TRUE(sim.game.jump == 0 && sim.game.on_ground == 0 && sim.game.pogo_velocity == 0.0f);
 
     ds_SimDealloc(&sim);
     ds_SDBDealloc(prefab_db);
@@ -869,9 +883,12 @@ static void SimMoverTestRun(struct ds_Sim *sim, ds_CPool(u64) *hashes, const ds_
 
 /*
  * The game tick: a static slab (top at y = 0) through commands, a mover spawned 0.7 m above it and held at full
- * forward throttle at yaw 0.5 for 3 s. It lands and rests linear_slop deep, runs at the maximum speed (6 m/s)
- * along the yaw's forward with no sideways or vertical velocity, and has moved along forward. The game's hash is 0
- * until the spawn. After ds_SimFlush the same run gives the same hashes.
+ * forward throttle at yaw 0.5 for 3 s. It lands on the pogo: on the ground, the lower core point held at
+ * rest - g h (2 zeta / omega + h) above the slab (the spring-damper's fixed point while the pogo cancels one tick
+ * of gravity; 0.3319 m, the capsule's bottom 3 cm over it), the stored vertical velocity -g h; it runs at the
+ * maximum speed (6 m/s) along the yaw's forward with no sideways velocity and has moved along forward. The game's
+ * hash is 0 until the spawn. After ds_SimFlush the same run gives the same hashes. Then a jump: airborne at 5 m/s
+ * less one tick of gravity, more than 0.5 m above the rest after 20 ticks, back at rest on the ground 3 s later.
  */
 static struct test_Output SimMoverTickTest(struct test_Environment *env)
 {
@@ -893,7 +910,6 @@ static struct test_Output SimMoverTickTest(struct test_Environment *env)
     struct ds_SimConfig config = ds_SimConfigDefault();
     config.dynamics.initial_size = 32;
     const u64 period = config.us_system_tick[SIM_SYSTEM_GAME];
-    const f32 slop = config.dynamics.solver.linear_slop;
     const u32 ticks = 180;
     const f32 yaw = 0.5f;
     struct ds_Sim sim;
@@ -929,11 +945,14 @@ static struct test_Output SimMoverTickTest(struct test_Environment *env)
     const struct ds_GeometricMover *mover = &sim.game.mover;
     const v3 forward = V3(F32Sin(yaw), 0.0f, F32Cos(yaw));
     const v3 right = V3(-F32Cos(yaw), 0.0f, F32Sin(yaw));
-    const f64 rest_y = (f64) (capsule.half_height + capsule.radius - slop);
-    TEST_TRUE(mover->position.y > rest_y - 1e-4 && mover->position.y < rest_y + 1e-4);
+    const f32 h = (f32) ((f64) (1000 * period) / 1000000000.0);
+    const f32 omega = 2.0f * F32_PI * 4.0f;
+    const f64 rest_y = (f64) (capsule.half_height + 0.35f - 15.0f * h * (2.0f * 0.7f / omega + h));
+    TEST_EQUAL(1, sim.game.on_ground);
+    TEST_TRUE(mover->position.y > rest_y - 1e-3 && mover->position.y < rest_y + 1e-3);
     TEST_TRUE(F32Abs(V3Dot(mover->velocity, forward) - 6.0f) < 1e-3f);
     TEST_TRUE(F32Abs(V3Dot(mover->velocity, right)) < 1e-3f);
-    TEST_TRUE(F32Abs(mover->velocity.y) < 1e-3f);
+    TEST_TRUE(F32Abs(mover->velocity.y + 15.0f * h) < 1e-4f);
     const v3 moved = V3(mover->position.x, 0.0f, mover->position.z);
     TEST_TRUE(V3Length(moved) > 15.0f && V3Length(moved) < 18.0f);
     TEST_TRUE(V3Dot(V3Normalize(moved), forward) > 0.9999f);
@@ -949,6 +968,19 @@ static struct test_Output SimMoverTickTest(struct test_Environment *env)
         equal = equal && hashes[0].buf[i] == hashes[1].buf[i];
     }
     TEST_EQUAL(1, equal);
+
+    ds_CPool(ds_SimCmd) jump;
+    ds_CPoolAlloc(env->mem_1, jump, 1, NOT_GROWABLE);
+    const struct ds_SimCmd jump_input = { .type = SIM_CMD_MOVER_INPUT, .mover_input = { .throttle = V2(0.0f, 0.0f), .yaw = yaw, .jump = 1 } };
+    ds_CPoolPushValue(jump, jump_input);
+    SimMoverTestRun(&sim, NULL, &jump, &empty, period, 1);
+    TEST_EQUAL(0, sim.game.on_ground);
+    TEST_TRUE(F32Abs(mover->velocity.y - (5.0f - 15.0f * h)) < 1e-4f);
+    SimMoverTestRun(&sim, NULL, &empty, &empty, period, 19);
+    TEST_TRUE(mover->position.y > rest_y + 0.5);
+    SimMoverTestRun(&sim, NULL, &empty, &empty, period, 180);
+    TEST_EQUAL(1, sim.game.on_ground);
+    TEST_TRUE(mover->position.y > rest_y - 1e-3 && mover->position.y < rest_y + 1e-3);
 
     ds_SimDealloc(&sim);
     ds_SDBDealloc(prefab_db);

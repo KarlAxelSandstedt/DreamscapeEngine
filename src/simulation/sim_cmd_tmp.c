@@ -479,17 +479,19 @@ static u32 ds_MoverInputCmdFormVerify(const struct ds_MoverInputCmd *cmd)
 {
     return -1.0f <= cmd->throttle.x && cmd->throttle.x <= 1.0f
         && -1.0f <= cmd->throttle.y && cmd->throttle.y <= 1.0f
-        && F32FiniteCheck(cmd->yaw);
+        && F32FiniteCheck(cmd->yaw)
+        && cmd->jump <= 1;
 }
 
 static u32 ds_MoverInputCmdTryExecute(struct ds_Sim *sim, const struct ds_MoverInputCmd *cmd)
 {
     sim->game.throttle = cmd->throttle;
     sim->game.yaw = cmd->yaw;
+    sim->game.jump |= cmd->jump;
     return 1;
 }
 
-#define DS_SIM_CMD_MOVER_INPUT_BITS (3*32)
+#define DS_SIM_CMD_MOVER_INPUT_BITS (3*32 + 1)
 
 static u64 ds_MoverInputCmdSerializeBitPackedSize(const struct ds_MoverInputCmd *cmd)
 {
@@ -501,6 +503,7 @@ static void ds_MoverInputCmdSerializeBitPacked(struct SS *ss, const struct ds_Mo
     SSWriteU64Partial(ss, (b32) { .f = cmd->throttle.x }.u, 32);
     SSWriteU64Partial(ss, (b32) { .f = cmd->throttle.y }.u, 32);
     SSWriteU64Partial(ss, (b32) { .f = cmd->yaw }.u, 32);
+    SSWriteU64Partial(ss, cmd->jump, 1);
 }
 
 static u32 ds_MoverInputCmdTryDeserializeBitPacked(struct SS *ss, struct ds_MoverInputCmd *cmd)
@@ -513,5 +516,6 @@ static u32 ds_MoverInputCmdTryDeserializeBitPacked(struct SS *ss, struct ds_Move
     cmd->throttle.x = (b32) { .u = (u32) SSReadU64Partial(ss, 32) }.f;
     cmd->throttle.y = (b32) { .u = (u32) SSReadU64Partial(ss, 32) }.f;
     cmd->yaw = (b32) { .u = (u32) SSReadU64Partial(ss, 32) }.f;
+    cmd->jump = (u32) SSReadU64Partial(ss, 1);
     return 1;
 }

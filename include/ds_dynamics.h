@@ -2114,7 +2114,7 @@ ds_GeometricMover is a capsule with a velocity and position. Calls to
 ds_DynamicsGeometricMover update the capsule's position by iteratively
 solving its overlap with rigid bodies and minimizing its distance to
 
-    target = position + tick*velocity.
+    target = position + translation.
 
 Any dynamic bodies the mover touches have an impulse applied to them
 based on mover state and the mover's velocity is clipped against all
@@ -2128,7 +2128,7 @@ struct ds_GeometricMover
     u32             apply_impulse;
 };
 
-void ds_DynamicsGeometricMover(struct ds_Dynamics *dynamics, struct ds_GeometricMover *mover, const f32 tick);
+void ds_DynamicsGeometricMover(struct ds_Dynamics *dynamics, struct ds_GeometricMover *mover, const v3 translation);
 
 /**************** PHYISCS PIPELINE INTERNAL API ****************/
 

@@ -43,6 +43,9 @@ struct ds_Game
     struct ds_GeometricMover mover;
     v2                  throttle;
     f32                 yaw;
+    u32                 jump;
+    u32                 on_ground;
+    f32                 pogo_velocity;
     struct ds_HashMap   unit_map;           /* TODO(Remove/Refactor) unit -> body pool index, for the commands and the host */
     ds_CPool(u64)       joint_unit_pool;    /* TODO(Remove/Refactor) joint unit << 32 | joint pool index */
 };

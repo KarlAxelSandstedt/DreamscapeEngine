@@ -28,6 +28,10 @@
 #define DS_GAME_MOVER_ACCELERATE    30.0f
 #define DS_GAME_MOVER_FRICTION      4.0f
 #define DS_GAME_MOVER_GRAVITY       15.0f
+#define DS_GAME_MOVER_JUMP_SPEED    5.0f
+#define DS_GAME_MOVER_POGO_REST     0.35f
+#define DS_GAME_MOVER_POGO_HERTZ    4.0f
+#define DS_GAME_MOVER_POGO_DAMPING  0.7f
 
 void ds_GameAlloc(struct ds_Game *game)
 {
@@ -47,6 +51,9 @@ void ds_GameFlush(struct ds_Game *game)
     game->mover = (struct ds_GeometricMover) { 0 };
     game->throttle = V2(0.0f, 0.0f);
     game->yaw = 0.0f;
+    game->jump = 0;
+    game->on_ground = 0;
+    game->pogo_velocity = 0.0f;
     ds_HashMapFlush(&game->unit_map);
     ds_CPoolFlush(game->joint_unit_pool);
 }
@@ -61,6 +68,14 @@ void ds_GameTick(struct ds_Game *game, struct ds_Dynamics *dynamics, const u64 n
     const f32 h = (f32) ((f64) ns_tick / 1000000000.0);
     v3 v = game->mover.velocity;
 
+    /* a jump only leaves the ground; the request is used up either way */
+    if (game->jump && game->on_ground)
+    {
+        v.y = DS_GAME_MOVER_JUMP_SPEED;
+        game->on_ground = 0;
+    }
+    game->jump = 0;
+
     /* friction, horizontal only: proportional above the stop speed, constant below it */
     const f32 speed = V3Length(v);
     if (speed < DS_GAME_MOVER_MIN_SPEED)
@@ -74,6 +89,11 @@ void ds_GameTick(struct ds_Game *game, struct ds_Dynamics *dynamics, const u64 n
         const f32 ratio = F32Max(0.0f, speed - drop) / speed;
         v.x *= ratio;
         v.z *= ratio;
+    }
+
+    if (game->on_ground)
+    {
+        v.y = 0.0f;
     }
 
     /* accelerate toward the throttle (x right, y forward) in the frame of the yaw */
@@ -95,8 +115,30 @@ void ds_GameTick(struct ds_Game *game, struct ds_Dynamics *dynamics, const u64 n
     }
 
     v.y -= DS_GAME_MOVER_GRAVITY * h;
+
+    /*
+     * pogo: a ray down from the lower core point; on a hit within rest + radius a spring-damper holds that point
+     * the rest length above the ground; off while moving up, so a jump is not pulled back
+     */
+    const f32 ray_length = DS_GAME_MOVER_POGO_REST + game->mover.capsule.radius;
+    const struct rayWorld ray = { .origin = V3F64Sub(game->mover.position, V3F64(0.0, (f64) game->mover.capsule.half_height, 0.0)), .dir = V3(0.0f, -1.0f, 0.0f) };
+    const u32f32 hit = ds_DynamicsRayCastParameter(dynamics, &ray);
+    if (hit.u == U32_MAX || hit.f > ray_length || v.y > 0.0f)
+    {
+        game->on_ground = 0;
+        game->pogo_velocity = 0.0f;
+    }
+    else
+    {
+        game->on_ground = 1;
+        const f32 offset = hit.f - DS_GAME_MOVER_POGO_REST;
+        const f32 omega = 2.0f * F32_PI * DS_GAME_MOVER_POGO_HERTZ;
+        const f32 omega_h = omega * h;
+        game->pogo_velocity = (game->pogo_velocity - omega * omega_h * offset) / (1.0f + 2.0f * DS_GAME_MOVER_POGO_DAMPING * omega_h + omega_h * omega_h);
+    }
+
     game->mover.velocity = v;
-    ds_DynamicsGeometricMover(dynamics, &game->mover, h);
+    ds_DynamicsGeometricMover(dynamics, &game->mover, V3Scale(V3Add(v, V3(0.0f, game->pogo_velocity, 0.0f)), h));
 }
 
 u64 ds_GameHash(const struct ds_Game *game)
@@ -107,7 +149,7 @@ u64 ds_GameHash(const struct ds_Game *game)
     }
 
     const struct ds_GeometricMover *mover = &game->mover;
-    const u64 words[13] =
+    const u64 words[16] =
     {
         game->spawned,
         (b64) { .f = mover->position.x }.u,
@@ -122,6 +164,9 @@ u64 ds_GameHash(const struct ds_Game *game)
         (b32) { .f = game->throttle.x }.u,
         (b32) { .f = game->throttle.y }.u,
         (b32) { .f = game->yaw }.u,
+        game->jump,
+        game->on_ground,
+        (b32) { .f = game->pogo_velocity }.u,
     };
     return XXH3_64bits(words, sizeof(words));
 }
