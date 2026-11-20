@@ -612,6 +612,37 @@ static void r_EditorDraw(const struct led *led)
 		r_InternalDrawShapes(led);
 	}
 
+	/* TODO(Remove/Refactor) the game's mover: its capsule at the mover's position, drawn like a body's shape */
+	if (draw_config->draw_shapes && led->mover_spawn_enabled && host->sim.game.spawned)
+	{
+		struct c_Shape *cshape = c_ShapeDBShape(&led->cs_db, led->mover_cshape);
+		const struct r_Mesh *mesh = r_MeshShape(cshape, draw_config->refinement);
+		if (mesh)
+		{
+			struct r_Raw3d *raw = ArenaPush(g_scene->mem_frame, sizeof(struct r_Raw3d));
+			if (raw)
+			{
+				const v3f64 position = host->sim.game.mover.position;
+				const f32 dist = V3Length(V3F64Demote(V3F64Sub(position, led->cam.position)));
+				const u32 unit_exponent = F32ExponentBits(dist);
+				const u64 depth = (unit_exponent <= depth_exponent && unit_exponent > (depth_exponent - 23))
+					? (0x00800000 | F32MantissaBits(dist)) >> (depth_exponent - unit_exponent + 1)
+					: 0;
+				const u64 material = r_MaterialConstructRaw(PROGRAM_PROXY3D, led->mover_cshape, TEXTURE_NONE);
+				const u64 elements = (mesh->index_data) ? R_CMD_ELEMENTS : R_CMD_ARRAYS;
+				const u64 cmd = r_CommandKey(R_CMD_SCREEN_LAYER_GAME, depth, R_CMD_TRANSPARENCY_OPAQUE, material, R_CMD_PRIMITIVE_TRIANGLE, R_CMD_INSTANCED, elements);
+				*raw = (struct r_Raw3d) { .mesh = mesh, .position = position, .rotation = QIdentity(), .color = V4(0.95f, 0.85f, 0.2f, 1.0f), .blend = 1.0f };
+				struct r_Instance *instance = r_InstanceAddNonCached(cmd);
+				instance->type = R_INSTANCE_RAW3D;
+				instance->raw3d = raw;
+			}
+			else
+			{
+				Log(T_RENDERER, S_ERROR, "shape %k: no frame memory for the mover's instance, not drawn", &cshape->id);
+			}
+		}
+	}
+
 	r_InternalDrawSegments(led);
 
 	if (draw_config->draw_bounds)

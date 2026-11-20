@@ -1482,9 +1482,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 		led->play_throttle = V2(0.0f, 0.0f);
 
 		const struct ds_SimHost *host = ds_SimHostLookup(&led->srv, led->sim).address;
-		const struct r_Proxy3d *proxy = r_Proxy3dAddress(led->mover_proxy);
-		const f32 timestep = (f32) (1000 * host->sim.us_time - proxy->ns_at_update) / NSEC_PER_SEC;
-		const v3f64 eye = V3F64Add(V3F64Add(proxy->position, V3Promote(V3Scale(proxy->linear.linear_velocity, timestep))), V3F64(0.0, 0.6, 0.0));
+		const v3f64 eye = V3F64Add(host->sim.game.mover.position, V3F64(0.0, 0.6, 0.0));
 		if (led->play_first_person)
 		{
 			led->cam.position = eye;

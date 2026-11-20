@@ -198,7 +198,7 @@ struct led
     ds_CPool(ds_SimCmd)     cmds;                   /* TODO(Remove/Refactor) the frame's commands: a payload before the server tick */
     u32                     mover_spawn_enabled;    /* TODO(Remove/Refactor) the scene spawns the game's mover at mover_spawn */
     v3f64                   mover_spawn;
-    u32                     mover_proxy;            /* TODO(Remove/Refactor) the mover's capsule, drawn while spawned */
+    u32                     mover_cshape;           /* TODO(Remove/Refactor) the mover's capsule in cs_db, drawn while spawned */
     u32                     play;                   /* TODO(Remove/Refactor) P: WASD and the mouse drive the mover, the camera follows */
     u32                     play_first_person;      /* TODO(Remove/Refactor) 1: third person, 2: first person */
     v2                      play_throttle;          /* TODO(Remove/Refactor) the frame's WASD throttle, while the viewport has focus */
