@@ -53,20 +53,32 @@ struct GJKHelper
     v3                      pos;
 };
 
-void GJKVertexSetSphere(struct GJKVertexSet *vset, const struct sphere *sphere)
+void GJKVertexSetPoint(struct GJKVertexSet *vset, const v3 p)
 {
     vset->v = vset->buf;
-    vset->buf[0] = V3Zero();
+    vset->buf[0] = p;
     vset->v_count = 1;
+    vset->margin = 0.0f;
+}
+
+void GJKVertexSetSegment(struct GJKVertexSet *vset, const v3 p0, const v3 p1)
+{
+    vset->v = vset->buf;
+    vset->buf[0] = p0;
+    vset->buf[1] = p1;
+    vset->v_count = 2;
+    vset->margin = 0.0f;
+}
+
+void GJKVertexSetSphere(struct GJKVertexSet *vset, const struct sphere *sphere)
+{
+    GJKVertexSetPoint(vset, V3Zero());
     vset->margin = sphere->radius;
 }
 
 void GJKVertexSetCapsule(struct GJKVertexSet *vset, const struct capsule *capsule)
 {
-    vset->v = vset->buf;
-    vset->buf[0] = V3(0.0f,  capsule->half_height, 0.0f);
-    vset->buf[1] = V3(0.0f, -capsule->half_height, 0.0f);
-    vset->v_count = 2;
+    GJKVertexSetSegment(vset, V3(0.0f, capsule->half_height, 0.0f), V3(0.0f, -capsule->half_height, 0.0f));
     vset->margin = capsule->radius;
 }
 
@@ -85,18 +97,18 @@ void GJKVertexSetTriangle(struct GJKVertexSet *vset, const v3 tri[3])
     vset->margin = 0.0f;
 }
 
-void GJKVertexSetShape(struct GJKVertexSet *vset, const struct c_Shape *shape)
+void GJKVertexSetShapeNoMargin(struct GJKVertexSet *vset, const struct c_Shape *shape)
 {
     switch (shape->type)
     {
         case C_SHAPE_SPHERE:
         {
-            GJKVertexSetSphere(vset, &shape->sphere);
+            GJKVertexSetPoint(vset, V3Zero());
         } break;
 
         case C_SHAPE_CAPSULE:
         {
-            GJKVertexSetCapsule(vset, &shape->capsule);
+            GJKVertexSetSegment(vset, V3(0.0f, shape->capsule.half_height, 0.0f), V3(0.0f, -shape->capsule.half_height, 0.0f));
         } break;
 
         case C_SHAPE_CONVEX_HULL:
@@ -616,7 +628,7 @@ f32 c_HullSphereDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const d
 
 	struct GJKVertexSet vset0, vset1;
 	GJKVertexSetHull(&vset0, &s0->hull);
-	GJKVertexSetSphere(&vset1, &s1->sphere);
+	GJKVertexSetPoint(&vset1, V3Zero());
 
 	v3 n;
 	struct GJKCache cache;
@@ -637,7 +649,7 @@ f32 c_HullCapsuleDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const 
 
 	struct GJKVertexSet vset0, vset1;
 	GJKVertexSetHull(&vset0, &s0->hull);
-	GJKVertexSetCapsule(&vset1, &s1->capsule);
+	GJKVertexSetSegment(&vset1, V3(0.0f, s1->capsule.half_height, 0.0f), V3(0.0f, -s1->capsule.half_height, 0.0f));
 
 	v3 n;
 	struct GJKCache cache;

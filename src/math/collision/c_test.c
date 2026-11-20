@@ -69,7 +69,7 @@ u32 c_HullSphereTest(const struct c_Shape *s0, const ds_TransformWorld *t0, cons
 
     struct GJKVertexSet vset0, vset1;
     GJKVertexSetHull(&vset0, &s0->hull);
-    GJKVertexSetSphere(&vset1, &s1->sphere);
+    GJKVertexSetPoint(&vset1, V3Zero());
 
     v3f64 c0, c1;
     v3 n;
@@ -84,7 +84,7 @@ u32 c_HullCapsuleTest(const struct c_Shape *s0, const ds_TransformWorld *t0, con
 
     struct GJKVertexSet vset0, vset1;
     GJKVertexSetHull(&vset0, &s0->hull);
-    GJKVertexSetCapsule(&vset1, &s1->capsule);
+    GJKVertexSetSegment(&vset1, V3(0.0f, s1->capsule.half_height, 0.0f), V3(0.0f, -s1->capsule.half_height, 0.0f));
 
     v3f64 c0, c1;
     v3 n;

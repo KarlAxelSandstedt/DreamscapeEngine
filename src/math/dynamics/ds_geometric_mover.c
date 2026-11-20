@@ -97,7 +97,7 @@ static void ds_GeometricMoverHullPlane(ds_Array(ds_GeometricMoverPlane) *planes,
 
     const f32 radius = mover->radius;
     struct GJKVertexSet vset_mover, vset_hull;
-    GJKVertexSetCapsule(&vset_mover, mover);
+    GJKVertexSetSegment(&vset_mover, V3(0.0f, mover->half_height, 0.0f), V3(0.0f, -mover->half_height, 0.0f));
     GJKVertexSetHull(&vset_hull, &hull->hull);
 
     struct GJKCache cache;
@@ -293,7 +293,7 @@ static f32 ds_GeometricMoverCastConvex(const struct capsule *mover, const struct
     const f32 target_distance = F32Max(slop, margin - slop);
     const f32 tolerance = 0.25f*slop;
     struct GJKVertexSet vset_mover;
-    GJKVertexSetCapsule(&vset_mover, mover);
+    GJKVertexSetSegment(&vset_mover, V3(0.0f, mover->half_height, 0.0f), V3(0.0f, -mover->half_height, 0.0f));
     const u32 iterations = 20;
 
     f32 new_toi = 0.0f;
@@ -502,7 +502,7 @@ static f32 ds_GeometricMoverCast(const struct ds_Dynamics *dynamics, const struc
                     }
 
                     struct GJKVertexSet vset;
-                    GJKVertexSetShape(&vset, c_shape);
+                    GJKVertexSetShapeNoMargin(&vset, c_shape);
                     t = ds_GeometricMoverCastConvex(&mover->capsule, &vset, shape_radius, &t_shape, delta, info.hit.f);
                 }
 

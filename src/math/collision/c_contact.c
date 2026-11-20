@@ -357,7 +357,7 @@ u32 c_HullSphereContact(struct c_Manifold *out, struct ds_ConvexCache *cache, co
 
     struct GJKVertexSet vset0, vset1;
     GJKVertexSetHull(&vset0, &s0->hull);
-    GJKVertexSetSphere(&vset1, &s1->sphere);
+    GJKVertexSetPoint(&vset1, V3Zero());
 
     v3 c[2], n;
     const f32 distance = GJK(c+0, c+1, &n, &cache->gjk, (old.count) ? &old : NULL, &vset0, &vset1, &t_1_to_0, radius);
@@ -504,7 +504,7 @@ u32 c_HullCapsuleContact(struct c_Manifold *out, struct ds_ConvexCache *cache, c
 
     struct GJKVertexSet vset0, vset1;
     GJKVertexSetHull(&vset0, &s0->hull);
-    GJKVertexSetCapsule(&vset1, &s1->capsule);
+    GJKVertexSetSegment(&vset1, V3(0.0f, s1->capsule.half_height, 0.0f), V3(0.0f, -s1->capsule.half_height, 0.0f));
 
     v3 c[2], n;
     const f32 distance = GJK(c+0, c+1, &n, &cache->gjk, (old.count) ? &old : NULL, &vset0, &vset1, &t_1_to_0, radius);

@@ -1170,7 +1170,7 @@ static u32 ChVerify(struct ch_Stats *stats, const u32 contact, const struct c_Ma
         const ds_Transform b_to_a = ds_TransformWorldRelative(&h->t, &c->t);
         struct GJKVertexSet gjk_vset[2];
         GJKVertexSetHull(gjk_vset + 0, &h->shape.hull);
-        GJKVertexSetCapsule(gjk_vset + 1, &c->shape.capsule);
+        GJKVertexSetSegment(gjk_vset + 1, V3(0.0f, c->shape.capsule.half_height, 0.0f), V3(0.0f, -c->shape.capsule.half_height, 0.0f));
         struct GJKCache gjk_cache;
         v3 gjk_c[2], gjk_n;
         const u32 shallow = (GJK(gjk_c + 0, gjk_c + 1, &gjk_n, &gjk_cache, NULL, gjk_vset + 0, gjk_vset + 1, &b_to_a, (f32) r) > 0.0f);
@@ -2760,7 +2760,7 @@ static u32 SpCheckPair(struct arena *tmp, struct sp_Stats *stats, const sp_Conta
         const ds_Transform t_1_to_0 = ds_TransformWorldRelative(&t[0], &t[1]);
         struct GJKVertexSet gjk_vset[2];
         GJKVertexSetHull(gjk_vset + 0, &s[0]->hull);
-        GJKVertexSetSphere(gjk_vset + 1, &s[1]->sphere);
+        GJKVertexSetPoint(gjk_vset + 1, V3Zero());
         struct GJKCache gjk_cache;
         v3 gjk_c[2], gjk_n;
         gjk_path = (GJK(gjk_c + 0, gjk_c + 1, &gjk_n, &gjk_cache, NULL, gjk_vset + 0, gjk_vset + 1, &t_1_to_0, (f32) r1) > 0.0f);

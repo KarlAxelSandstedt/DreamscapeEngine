@@ -396,12 +396,14 @@ struct ds_ConcaveCache
  */
 #define GJK_TOUCH_TOLERANCE 100.0f
 
+void    GJKVertexSetPoint(struct GJKVertexSet *vset, const v3 p);
+void    GJKVertexSetSegment(struct GJKVertexSet *vset, const v3 p0, const v3 p1);
 void    GJKVertexSetSphere(struct GJKVertexSet *vset, const struct sphere *sphere);
 void    GJKVertexSetCapsule(struct GJKVertexSet *vset, const struct capsule *capsule);
 void    GJKVertexSetHull(struct GJKVertexSet *vset, const struct dcel *hull);
 void    GJKVertexSetTriangle(struct GJKVertexSet *vset, const v3 tri[3]);
 /* Set up the vset of shape (hull, sphere or capsule) in its local frame. */
-void    GJKVertexSetShape(struct GJKVertexSet *vset, const struct c_Shape *shape);
+void    GJKVertexSetShapeNoMargin(struct GJKVertexSet *vset, const struct c_Shape *shape);
 
 /* vset1 given in vset0's frame; outputs in vset0's frame */
 f32     GJK(v3 *c0, v3 *c1, v3 *n, struct GJKCache *cache_out, const struct GJKCache *cache_in, const struct GJKVertexSet *vset0, const struct GJKVertexSet *vset1, const ds_Transform *t_1_to_0, const f32 cutoff_distance);

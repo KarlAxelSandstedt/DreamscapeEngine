@@ -604,8 +604,8 @@ static u32 GjkTestQuery(struct gjk_TestStats *stats, f32 *d_out, struct GJKCache
     const ds_TransformWorld t_a = ds_TransformPromote(&a->t);
     const ds_TransformWorld t_b = ds_TransformPromote(&b->t);
     struct GJKVertexSet vset_a, vset_b;
-    GJKVertexSetShape(&vset_a, &a->shape);
-    GJKVertexSetShape(&vset_b, &b->shape);
+    GJKVertexSetShapeNoMargin(&vset_a, &a->shape);
+    GJKVertexSetShapeNoMargin(&vset_b, &b->shape);
     v3f64 c_a, c_b;
     v3 n;
     const f32 d = GJKWorld(&c_a, &c_b, &n, cache_out, cache_in, &vset_a, &t_a, &vset_b, &t_b, cutoff);
