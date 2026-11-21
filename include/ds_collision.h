@@ -172,6 +172,7 @@ struct c_Shape
 			                		                the matrix with the given density. */
 	v3	                    center_of_mass;		/* local shape frame center of mass */
 	f32	                    volume;
+	f32	                    center_of_mass_surface_distance;
 	f32	                    extent;
 
 	enum c_ShapeType        type;
@@ -185,7 +186,10 @@ struct c_Shape
 };
 DEFINE_SDB(c_Shape);
 
-/* volume, center of mass and inertia tensor (density 1) from the geometry; not for meshes (asserted) */
+/*
+ * volume, center of mass, inertia tensor (density 1) and center_of_mass_surface_distance from the geometry; not for
+ * meshes (asserted)
+ */
 void	c_ShapeUpdateMassProperties(struct c_Shape *shape);
 
 /*

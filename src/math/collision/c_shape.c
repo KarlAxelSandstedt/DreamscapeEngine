@@ -270,10 +270,10 @@ void c_ShapeUpdateMassProperties(struct c_Shape *shape)
 		shape->volume = integrals[VOL];
 		if (!(shape->volume > 0.0f))
 		{
-			/* no faces (DcelConvexHull's empty dcel, DcelBoxStub) or flat: a unit sphere's properties, never NaN */
 			Log(T_SYSTEM, S_ERROR, "convex hull without volume (%u faces, volume %g): mass properties of a unit sphere", shape->hull.f_count, shape->volume);
 			shape->volume = 4.0f * F32_PI / 3.0f;
 			shape->center_of_mass = V3Zero();
+			shape->center_of_mass_surface_distance = 1.0f;
 			shape->inertia_tensor = M3Scale(M3Identity(), 2.0f * shape->volume / 5.0f);
 			return;
 		}
@@ -283,6 +283,14 @@ void c_ShapeUpdateMassProperties(struct c_Shape *shape)
 			 integrals[T_Y] / shape->volume,
 			 integrals[T_Z] / shape->volume);
 		shape->center_of_mass = V3Add(com, origin);	/* the tensor below is about com either way */
+
+		/* the center of mass is inside: its distance to the surface is its distance to the nearest face plane */
+		f32 surface_distance = F32_INFINITY;
+		for (u32 fi = 0; fi < shape->hull.f_count; ++fi)
+		{
+			surface_distance = F32Min(surface_distance, -PlanePointSignedDistance(shape->hull.plane + fi, shape->center_of_mass));
+		}
+		shape->center_of_mass_surface_distance = surface_distance;
 
 		I_xx = integrals[T_YY] + integrals[T_ZZ] - shape->volume*(com.y*com.y + com.z*com.z);
 		I_yy = integrals[T_XX] + integrals[T_ZZ] - shape->volume*(com.x*com.x + com.z*com.z);
@@ -297,6 +305,7 @@ void c_ShapeUpdateMassProperties(struct c_Shape *shape)
 	else if (shape->type == C_SHAPE_SPHERE)
 	{
 		shape->center_of_mass = V3Zero();
+		shape->center_of_mass_surface_distance = shape->sphere.radius;
 		const f32 r = shape->sphere.radius;
 		const f32 rr = r*r;
 		const f32 rrr = rr*r;
@@ -315,6 +324,7 @@ void c_ShapeUpdateMassProperties(struct c_Shape *shape)
 	else if (shape->type == C_SHAPE_CAPSULE)
 	{
 		shape->center_of_mass = V3Zero();
+		shape->center_of_mass_surface_distance = shape->capsule.radius;
 		const f32 r = shape->capsule.radius;
 		const f32 h = shape->capsule.half_height;
 		shape->volume = 4.0f * F32_PI * r*r*r / 3.0f + 2.0f * h * F32_PI * r*r;
