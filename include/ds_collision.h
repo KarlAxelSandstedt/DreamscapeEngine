@@ -191,6 +191,8 @@ DEFINE_SDB(c_Shape);
  * meshes (asserted)
  */
 void	c_ShapeUpdateMassProperties(struct c_Shape *shape);
+/* the shape's box at transform (shape frame -> parent frame); a mesh's is its rotated BVH root box (not tight) */
+struct aabb c_ShapeBbox(const struct c_Shape *shape, const ds_Transform *transform);
 
 /*
 c_ShapeDB

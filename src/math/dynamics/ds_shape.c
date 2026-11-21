@@ -178,51 +178,23 @@ void ds_ShapeWorldTransform(ds_TransformWorld *t, const struct ds_Dynamics *pipe
 
 struct aabb ds_ShapeWorldBbox(const struct ds_Dynamics *pipeline, const struct ds_Shape *shape)
 {
-	v3 min = V3(F32_INFINITY, F32_INFINITY, F32_INFINITY);
-	v3 max = V3(-F32_INFINITY, -F32_INFINITY, -F32_INFINITY);
-
 	const struct c_Shape *cshape = c_ShapeDBShape(pipeline->external->cshape_db, shape->cshape_handle);
 
     ds_TransformWorld t_world;
     ds_ShapeWorldTransform(&t_world, pipeline, shape);
-	const m3 rot = M3QUnit(t_world.rotation);
     /* the box relative to the shape's position (rotation only), then translated in f64 and rounded outward */
 
-	if (shape->cshape_type == C_SHAPE_CONVEX_HULL)
-	{
-		for (u32 i = 0; i < cshape->hull.v_count; ++i)
-		{
-			const v3 v = M3V3Mul(rot, cshape->hull.v[i]);
-			min = V3Min(min, v);
-			max = V3Max(max, v);
-		}
-	}
-	else if (shape->cshape_type == C_SHAPE_SPHERE)
-	{
-		const f32 r = cshape->sphere.radius;
-		min = V3(-r, -r, -r);
-		max = V3(r, r, r);
-	}
-	else if (shape->cshape_type == C_SHAPE_CAPSULE)
-	{
-		const v3 v = M3V3Mul(rot, V3(0.0f, cshape->capsule.half_height, 0.0f));
-		max = V3AddConstant(V3Abs(v), cshape->capsule.radius);
-		min = V3Negate(max);
-	}
-	else if (shape->cshape_type == C_SHAPE_TRI_MESH)
+	if (shape->cshape_type == C_SHAPE_TRI_MESH)
 	{
 		//TODO "We treat Tri meshes differently; a rigid body who has a tri mesh attached
 		// views the tri mesh triangles and its shapes. Thus such a rigid body treats its
 		// mesh shape to have position 0 and no rotation.
         ds_Assert(V3Length(shape->t_local.position) == 0.0f);
         ds_Assert(shape->t_local.rotation.w == 1.0f);
-		const struct BVHNode *node = cshape->mesh.bvh.pool.buf;
-		const struct aabb bbox = BboxRotate(node[cshape->mesh.bvh.bt.root].bbox, rot);
-		min = bbox.min;
-		max = bbox.max;
 	}
 
-	const struct aabb local = { .min = min, .max = max };
+	const ds_Transform rotation_only = { .rotation = t_world.rotation, .position = V3Zero() };
+	const struct aabb local = c_ShapeBbox(cshape, &rotation_only);
 	struct aabb bbox;
 	AabbTranslateOutward(&bbox, &local, t_world.position);
 	return bbox;

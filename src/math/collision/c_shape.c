@@ -350,6 +350,45 @@ void c_ShapeUpdateMassProperties(struct c_Shape *shape)
 	}
 }
 
+struct aabb c_ShapeBbox(const struct c_Shape *shape, const ds_Transform *transform)
+{
+	v3 min = V3(F32_INFINITY, F32_INFINITY, F32_INFINITY);
+	v3 max = V3(-F32_INFINITY, -F32_INFINITY, -F32_INFINITY);
+	const m3 rot = M3QUnit(transform->rotation);
+
+	if (shape->type == C_SHAPE_CONVEX_HULL)
+	{
+		for (u32 i = 0; i < shape->hull.v_count; ++i)
+		{
+			const v3 v = M3V3Mul(rot, shape->hull.v[i]);
+			min = V3Min(min, v);
+			max = V3Max(max, v);
+		}
+	}
+	else if (shape->type == C_SHAPE_SPHERE)
+	{
+		const f32 r = shape->sphere.radius;
+		min = V3(-r, -r, -r);
+		max = V3(r, r, r);
+	}
+	else if (shape->type == C_SHAPE_CAPSULE)
+	{
+		const v3 v = M3V3Mul(rot, V3(0.0f, shape->capsule.half_height, 0.0f));
+		max = V3AddConstant(V3Abs(v), shape->capsule.radius);
+		min = V3Negate(max);
+	}
+	else if (shape->type == C_SHAPE_TRI_MESH)
+	{
+		const struct BVHNode *node = shape->mesh.bvh.pool.buf;
+		const struct aabb bbox = BboxRotate(node[shape->mesh.bvh.bt.root].bbox, rot);
+		min = bbox.min;
+		max = bbox.max;
+	}
+
+	const struct aabb bbox = { .min = V3Add(min, transform->position), .max = V3Add(max, transform->position) };
+	return bbox;
+}
+
 /* free what the slot owns: its block and the renderer's mesh (ds_Free takes NULL) */
 static void c_ShapeSlotFree(const struct c_Shape *shape)
 {

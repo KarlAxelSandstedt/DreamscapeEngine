@@ -320,6 +320,101 @@ struct test_Output ShapeSurfaceDistanceHullTest(struct test_Environment *env)
     return output;
 }
 
+/* a random unit vector, components drawn one statement at a time */
+static v3 ShapeTestUnit(void)
+{
+    while (1)
+    {
+        const f32 x = RngF32Range(-1.0f, 1.0f);
+        const f32 y = RngF32Range(-1.0f, 1.0f);
+        const f32 z = RngF32Range(-1.0f, 1.0f);
+        const v3 u = V3(x, y, z);
+        if (V3Length(u) >= 0.1f)
+        {
+            return V3Normalize(u);
+        }
+    }
+}
+
+/*
+c_ShapeBbox at random transforms: a hull's box is the box of its vertices rotated by QUnitRotate and moved; a
+sphere's is p +- r; a capsule's the box of its segment's ends +- r; random surface points of the sphere and the
+capsule lie inside their boxes.
+*/
+struct test_Output ShapeBboxTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+
+    for (u32 round = 0; round < 200; ++round)
+    {
+        const struct arena record = *env->mem_1;
+        const f32 qx = RngF32Range(-1.0f, 1.0f);
+        const f32 qy = RngF32Range(-1.0f, 1.0f);
+        const f32 qz = RngF32Range(-1.0f, 1.0f);
+        const f32 qw = RngF32Range(-1.0f, 1.0f);
+        const q rotation = QNormalize(Q(qx, qy, qz, qw));
+        const v3 position = V3(RngF32Range(-10.0f, 10.0f), RngF32Range(-10.0f, 10.0f), RngF32Range(-10.0f, 10.0f));
+        const ds_Transform transform = { .rotation = rotation, .position = position };
+
+        v3 point[16];
+        for (u32 i = 0; i < 16; ++i)
+        {
+            const f32 x = RngF32Range(-2.0f, 2.0f);
+            const f32 y = RngF32Range(-2.0f, 2.0f);
+            const f32 z = RngF32Range(-2.0f, 2.0f);
+            point[i] = V3(x, y, z);
+        }
+        struct c_Shape hull = { .type = C_SHAPE_CONVEX_HULL };
+        hull.hull = DcelConvexHull(env->mem_1, point, 16);
+        v3 hull_min = V3(F32_INFINITY, F32_INFINITY, F32_INFINITY);
+        v3 hull_max = V3(-F32_INFINITY, -F32_INFINITY, -F32_INFINITY);
+        for (u32 i = 0; i < hull.hull.v_count; ++i)
+        {
+            const v3 v = V3Add(QUnitRotate(rotation, hull.hull.v[i]), position);
+            hull_min = V3Min(hull_min, v);
+            hull_max = V3Max(hull_max, v);
+        }
+        const struct aabb hull_box = c_ShapeBbox(&hull, &transform);
+        const f32 scale = V3Length(position) + 4.0f;
+        if (!ShapeTestV3Near(hull_box.min, hull_min, scale) || !ShapeTestV3Near(hull_box.max, hull_max, scale))
+        {
+            fprintf(stderr, "hull %u: box (%.6g %.6g %.6g) (%.6g %.6g %.6g), expected (%.6g %.6g %.6g) (%.6g %.6g %.6g)\n", round, hull_box.min.x, hull_box.min.y, hull_box.min.z, hull_box.max.x, hull_box.max.y, hull_box.max.z, hull_min.x, hull_min.y, hull_min.z, hull_max.x, hull_max.y, hull_max.z);
+            TEST_FAILURE;
+        }
+
+        const f32 r = RngF32Range(0.05f, 2.0f);
+        const f32 h = RngF32Range(0.05f, 2.0f);
+        const struct c_Shape sphere = { .type = C_SHAPE_SPHERE, .sphere.radius = r };
+        const struct c_Shape capsule = { .type = C_SHAPE_CAPSULE, .capsule.radius = r, .capsule.half_height = h };
+        const struct aabb sphere_box = c_ShapeBbox(&sphere, &transform);
+        const struct aabb capsule_box = c_ShapeBbox(&capsule, &transform);
+
+        const v3 radius = V3(r, r, r);
+        const v3 end_0 = V3Add(QUnitRotate(rotation, V3(0.0f, h, 0.0f)), position);
+        const v3 end_1 = V3Add(QUnitRotate(rotation, V3(0.0f, -h, 0.0f)), position);
+        TEST_TRUE(ShapeTestV3Near(sphere_box.min, V3Sub(position, radius), scale) && ShapeTestV3Near(sphere_box.max, V3Add(position, radius), scale));
+        TEST_TRUE(ShapeTestV3Near(capsule_box.min, V3Sub(V3Min(end_0, end_1), radius), scale) && ShapeTestV3Near(capsule_box.max, V3Add(V3Max(end_0, end_1), radius), scale));
+
+        const f32 tolerance = SHAPE_TEST_TOLERANCE * scale;
+        for (u32 k = 0; k < 32; ++k)
+        {
+            const v3 u = ShapeTestUnit();
+            const f32 s = RngF32Range(-1.0f, 1.0f);
+            const v3 on_sphere = V3AddScaled(position, u, r);
+            const v3 on_capsule = V3AddScaled(V3Add(QUnitRotate(rotation, V3(0.0f, s * h, 0.0f)), position), u, r);
+            for (u32 c = 0; c < 3; ++c)
+            {
+                TEST_TRUE(sphere_box.min.buf[c] - tolerance <= on_sphere.buf[c] && on_sphere.buf[c] <= sphere_box.max.buf[c] + tolerance);
+                TEST_TRUE(capsule_box.min.buf[c] - tolerance <= on_capsule.buf[c] && on_capsule.buf[c] <= capsule_box.max.buf[c] + tolerance);
+            }
+        }
+
+        *env->mem_1 = record;
+    }
+
+    return output;
+}
+
 /********************************** overlap tests **********************************/
 
 static ds_TransformWorld ShapeTestPlacement(const f32 range)
@@ -709,6 +804,7 @@ static struct test_Output (*shape_tests[])(struct test_Environment *) =
     ShapeMassSphereTest,
     ShapeMassCapsuleTest,
     ShapeSurfaceDistanceHullTest,
+    ShapeBboxTest,
     ShapeOverlapTest,
     ShapeDistanceTest,
 };
