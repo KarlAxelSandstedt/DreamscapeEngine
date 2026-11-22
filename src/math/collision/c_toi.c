@@ -78,7 +78,8 @@ static struct ds_TOIPlane ds_TOIPlane(const struct ds_TimeOfImpactArg *arg0, con
 
     const v3 world_axis = QUnitRotate(t0->rotation, n);
 
-    //TODO check box3d's edge-edge plane (b3_separationEdges); edge-edge uses the world axis for now (agent_notes/AGENT_TODO.txt, 2026-11-22)
+    //TODO check box3d's edge-edge plane (b3_separationEdges); edge-edge uses the 
+    //world axis for now (TOI_PLANE_VERITCES)
     struct ds_TOIPlane sep = { .arg = { arg0, arg1 }, };
 
     if (unique0 == 3)
@@ -167,7 +168,7 @@ static f32 ds_TOIPlaneDeepest(u32 index[2], const struct ds_TOIPlane *sep, const
     return ds_TOIPlaneSignedDistance(sep, index, transform);
 }
 
-f32 ds_TimeOfImpact(const struct ds_TimeOfImpactArg *arg0, const struct ds_TimeOfImpactArg *arg1, const f32 max_toi)
+f32 ds_TimeOfImpactConvex(const struct ds_TimeOfImpactArg *arg0, const struct ds_TimeOfImpactArg *arg1, const f32 max_toi)
 {
     ds_Assert(arg0->vset.margin == 0.0f && arg1->vset.margin == 0.0f);
 
@@ -282,4 +283,10 @@ f32 ds_TimeOfImpact(const struct ds_TimeOfImpactArg *arg0, const struct ds_TimeO
     }
 
     return toi;
+}
+
+f32 ds_TimeOfImpactConcave(struct arena *mem, const struct mesh *mesh, const struct ds_TimeOfImpactArg *arg, const f32 fallback_radius, const f32 max_toi)
+{
+    //TODO
+    return max_toi;
 }

@@ -645,7 +645,9 @@ struct ds_TimeOfImpactArg
  *
  * Note: If returned toi is 0.0f, the pair is left to discrete collision detection.
  */
-f32     ds_TimeOfImpact(const struct ds_TimeOfImpactArg *arg0, const struct ds_TimeOfImpactArg *arg1, const f32 max_toi);
+f32     ds_TimeOfImpactConvex(const struct ds_TimeOfImpactArg *arg0, const struct ds_TimeOfImpactArg *arg1, const f32 max_toi);
+
+f32     ds_TimeOfImpactConcave(struct arena *mem, const struct mesh *mesh, const struct ds_TimeOfImpactArg *arg, const f32 fallback_radius, const f32 max_toi);
 
 
 

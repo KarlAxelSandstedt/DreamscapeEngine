@@ -25,7 +25,7 @@
 /*
 Time of impact tests
 ====================
-ds_TimeOfImpact on hand-made sweeps with known outcomes (max_toi = 1). A hit is checked by the core distance
+ds_TimeOfImpactConvex on hand-made sweeps with known outcomes (max_toi = 1). A hit is checked by the core distance
 (GJK, margins 0) at the returned toi: it lies in [target - tol, target + tol], with
 
     target  = max(slop, r0 + r1 - slop)
@@ -55,7 +55,7 @@ static void ToiTestConfigPush(void)
     ds_NumericsConfigPush(&g_toi_test_numerics_config);
 }
 
-/* the core distance of the args at t, posed as ds_TimeOfImpact poses them */
+/* the core distance of the args at t, posed as ds_TimeOfImpactConvex poses them */
 static f32 ToiTestDistance(const struct ds_TimeOfImpactArg *arg0, const struct ds_TimeOfImpactArg *arg1, const f32 t)
 {
     ds_Transform t0 = ds_TransformLerp(arg0->sweep + 0, arg0->sweep + 1, t);
@@ -109,10 +109,10 @@ struct test_Output ToiBoxSegmentTest(struct test_Environment *env)
     };
     GJKVertexSetSegment(&arg1.vset, V3(0.0f, -1.0f, 0.0f), V3(0.0f, 1.0f, 0.0f));
 
-    const f32 toi = ds_TimeOfImpact(&arg0, &arg1, 1.0f);
+    const f32 toi = ds_TimeOfImpactConvex(&arg0, &arg1, 1.0f);
     TEST_TRUE(ToiTestHitCheck(&arg0, &arg1, toi, 1.0f));
 
-    const f32 toi_swapped = ds_TimeOfImpact(&arg1, &arg0, 1.0f);
+    const f32 toi_swapped = ds_TimeOfImpactConvex(&arg1, &arg0, 1.0f);
     TEST_TRUE(ToiTestHitCheck(&arg1, &arg0, toi_swapped, 1.0f));
 
     return output;
@@ -143,10 +143,10 @@ struct test_Output ToiBeyondMaxToiTest(struct test_Environment *env)
     };
     GJKVertexSetSegment(&arg1.vset, V3(0.0f, -1.0f, 0.0f), V3(0.0f, 1.0f, 0.0f));
 
-    const f32 toi = ds_TimeOfImpact(&arg0, &arg1, 0.4f);
+    const f32 toi = ds_TimeOfImpactConvex(&arg0, &arg1, 0.4f);
     TEST_EQUAL(0.4f, toi);
 
-    const f32 toi_swapped = ds_TimeOfImpact(&arg1, &arg0, 0.4f);
+    const f32 toi_swapped = ds_TimeOfImpactConvex(&arg1, &arg0, 0.4f);
     TEST_EQUAL(0.4f, toi_swapped);
 
     return output;
@@ -176,10 +176,10 @@ struct test_Output ToiSphereSphereTest(struct test_Environment *env)
     };
     GJKVertexSetPoint(&arg1.vset, V3Zero());
 
-    const f32 toi = ds_TimeOfImpact(&arg0, &arg1, 1.0f);
+    const f32 toi = ds_TimeOfImpactConvex(&arg0, &arg1, 1.0f);
     TEST_TRUE(ToiTestHitCheck(&arg0, &arg1, toi, 1.0f));
 
-    const f32 toi_swapped = ds_TimeOfImpact(&arg1, &arg0, 1.0f);
+    const f32 toi_swapped = ds_TimeOfImpactConvex(&arg1, &arg0, 1.0f);
     TEST_TRUE(ToiTestHitCheck(&arg1, &arg0, toi_swapped, 1.0f));
 
     return output;
@@ -210,10 +210,10 @@ struct test_Output ToiOverlapTest(struct test_Environment *env)
     };
     GJKVertexSetHull(&arg1.vset, &box);
 
-    const f32 toi = ds_TimeOfImpact(&arg0, &arg1, 1.0f);
+    const f32 toi = ds_TimeOfImpactConvex(&arg0, &arg1, 1.0f);
     TEST_EQUAL(0.0f, toi);
 
-    const f32 toi_swapped = ds_TimeOfImpact(&arg1, &arg0, 1.0f);
+    const f32 toi_swapped = ds_TimeOfImpactConvex(&arg1, &arg0, 1.0f);
     TEST_EQUAL(0.0f, toi_swapped);
 
     return output;
@@ -243,10 +243,10 @@ struct test_Output ToiSeparatingTest(struct test_Environment *env)
     };
     GJKVertexSetPoint(&arg1.vset, V3Zero());
 
-    const f32 toi = ds_TimeOfImpact(&arg0, &arg1, 1.0f);
+    const f32 toi = ds_TimeOfImpactConvex(&arg0, &arg1, 1.0f);
     TEST_EQUAL(1.0f, toi);
 
-    const f32 toi_swapped = ds_TimeOfImpact(&arg1, &arg0, 1.0f);
+    const f32 toi_swapped = ds_TimeOfImpactConvex(&arg1, &arg0, 1.0f);
     TEST_EQUAL(1.0f, toi_swapped);
 
     return output;
@@ -280,10 +280,10 @@ struct test_Output ToiGlancingMissTest(struct test_Environment *env)
     };
     GJKVertexSetPoint(&arg1.vset, V3Zero());
 
-    const f32 toi = ds_TimeOfImpact(&arg0, &arg1, 1.0f);
+    const f32 toi = ds_TimeOfImpactConvex(&arg0, &arg1, 1.0f);
     TEST_EQUAL(1.0f, toi);
 
-    const f32 toi_swapped = ds_TimeOfImpact(&arg1, &arg0, 1.0f);
+    const f32 toi_swapped = ds_TimeOfImpactConvex(&arg1, &arg0, 1.0f);
     TEST_EQUAL(1.0f, toi_swapped);
 
     return output;
@@ -317,10 +317,10 @@ struct test_Output ToiSpinningSegmentTest(struct test_Environment *env)
     };
     GJKVertexSetSegment(&arg1.vset, V3(-1.2f, 0.0f, 0.0f), V3(1.2f, 0.0f, 0.0f));
 
-    const f32 toi = ds_TimeOfImpact(&arg0, &arg1, 1.0f);
+    const f32 toi = ds_TimeOfImpactConvex(&arg0, &arg1, 1.0f);
     TEST_TRUE(ToiTestHitCheck(&arg0, &arg1, toi, 1.0f));
 
-    const f32 toi_swapped = ds_TimeOfImpact(&arg1, &arg0, 1.0f);
+    const f32 toi_swapped = ds_TimeOfImpactConvex(&arg1, &arg0, 1.0f);
     TEST_TRUE(ToiTestHitCheck(&arg1, &arg0, toi_swapped, 1.0f));
 
     return output;
@@ -610,7 +610,7 @@ static void ToiTestScenarioRun(struct toi_TestCount *count, struct arena *mem, c
 
         const struct ds_TimeOfImpactArg *first = (i & 1) ? &arg1 : &arg0;
         const struct ds_TimeOfImpactArg *second = (i & 1) ? &arg0 : &arg1;
-        const f32 toi = ds_TimeOfImpact(first, second, max_toi);
+        const f32 toi = ds_TimeOfImpactConvex(first, second, max_toi);
         if (toi != toi)
         {
             count->nan += 1;
