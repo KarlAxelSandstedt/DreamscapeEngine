@@ -508,7 +508,7 @@ static f64 GjkTestSimplexDistance(struct d3 *x, u32 *x_mask, const struct d3 *w,
 }
 
 /*
- * Certified distance bounds lo <= d* <= hi: GJK in double, warm-started from the simplex (index_a, index_b)
+ * Certified distance bounds lo <= d* <= hi: GJK in double, warm-started from the simplex (index0, index1)
  * of GJK's result. Every iteration's support point gives the lower bound g(x / |x|); the closest simplex
  * point the upper bound |x|. Returns hi; stops when hi - lo <= 1e-12 * scale or the support repeats.
  */
@@ -519,8 +519,8 @@ static f64 GjkTestReference(f64 *lo, const struct gjk_TestShape *a, const struct
     u32 count = cache->count;
     for (u32 i = 0; i < count; ++i)
     {
-        ia[i] = cache->index_a[i];
-        ib[i] = cache->index_b[i];
+        ia[i] = cache->index0[i];
+        ib[i] = cache->index1[i];
         w[i] = D3Sub(b->v[ib[i]], a->v[ia[i]]);
     }
 
@@ -636,7 +636,7 @@ static u32 GjkTestQuery(struct gjk_TestStats *stats, f32 *d_out, struct GJKCache
     {
         for (u32 i = 0; i < cache_out->count; ++i)
         {
-            if (cache_out->index_a[i] >= a->v_count || cache_out->index_b[i] >= b->v_count)
+            if (cache_out->index0[i] >= a->v_count || cache_out->index1[i] >= b->v_count)
             {
                 failure = "cache index out of range";
             }
@@ -702,7 +702,7 @@ static u32 GjkTestQuery(struct gjk_TestStats *stats, f32 *d_out, struct GJKCache
         u32 x_mask;
         for (u32 i = 0; i < cache_out->count; ++i)
         {
-            w[i] = D3Sub(b->v[cache_out->index_b[i]], a->v[cache_out->index_a[i]]);
+            w[i] = D3Sub(b->v[cache_out->index1[i]], a->v[cache_out->index0[i]]);
         }
         d_s = GjkTestSimplexDistance(&x_s, &x_mask, w, cache_out->count);
         sat = GjkTestSatSeparation(a, b);

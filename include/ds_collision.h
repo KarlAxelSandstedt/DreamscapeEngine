@@ -296,8 +296,8 @@ struct GJKCache
     f32 metric;             /* length/area/volume of the cached simplex; flushed if it changes > 2x or (count > 1) falls
                                below F32_EPSILON, an absolute threshold: tetrahedra below ~5 mm restart cold */
     u16 count;              /* 1..4 */
-    u16 index_a[4];
-    u16 index_b[4];
+    u16 index0[4];
+    u16 index1[4];
 };
 
 /* Shape vertex set/storage */

@@ -23,14 +23,14 @@
 
 /**************************************** GJK ********************************************/
 
-/* Simplex vertex: both support points in frame A and their difference. */
+/* Simplex vertex: both support points in set 0's frame and their difference. */
 struct GJKSimplexVertex
 {
-    v3  a;                  /* support point of A */
-    v3  b;                  /* support point of B, moved into frame A */
-    v3  minkowski;          /* b - a */
-    u32 index_a;            /* GJKVertexSet vertex indices of a and b */
-    u32 index_b;
+    v3  p0;                 /* support point of set 0 */
+    v3  p1;                 /* support point of set 1, moved into set 0's frame */
+    v3  minkowski;          /* p1 - p0 */
+    u32 index0;             /* GJKVertexSet vertex indices of p0 and p1 */
+    u32 index1;
 };
 
 struct GJKSimplex
@@ -41,15 +41,15 @@ struct GJKSimplex
 };
 
 /*
- * Data shared by the GJK functions of one query: both vertex sets (local frames) and the transform of B into
- * A's frame.
+ * Data shared by the GJK functions of one query: both vertex sets (local frames) and the transform of set 1
+ * into set 0's frame.
  */
 struct GJKHelper
 {
-    const struct GJKVertexSet *vset_a;
-    const struct GJKVertexSet *vset_b;
-    m3                      rot;        /* B to A: p_A = rot * p_B + pos */
-    m3                      rot_t;      /* rot^T: directions from A's frame into B's */
+    const struct GJKVertexSet *vset0;
+    const struct GJKVertexSet *vset1;
+    m3                      rot;        /* 1 to 0: p_0 = rot * p_1 + pos */
+    m3                      rot_t;      /* rot^T: directions from set 0's frame into set 1's */
     v3                      pos;
 };
 
@@ -123,38 +123,38 @@ void GJKVertexSetShapeNoMargin(struct GJKVertexSet *vset, const struct c_Shape *
     }
 }
 
-static void GJKHelperInit(struct GJKHelper *helper, const struct GJKVertexSet *vset_a, const struct GJKVertexSet *vset_b, const ds_Transform *b_to_a)
+static void GJKHelperInit(struct GJKHelper *helper, const struct GJKVertexSet *vset0, const struct GJKVertexSet *vset1, const ds_Transform *t_1_to_0)
 {
-    helper->vset_a = vset_a;
-    helper->vset_b = vset_b;
-    helper->rot = M3QUnit(b_to_a->rotation);
+    helper->vset0 = vset0;
+    helper->vset1 = vset1;
+    helper->rot = M3QUnit(t_1_to_0->rotation);
     helper->rot_t = M3Transpose(helper->rot);
-    helper->pos = b_to_a->position;
+    helper->pos = t_1_to_0->position;
 }
 
-/* Simplex vertex of index_a of A and index_b of B; B is moved into A's frame. */
-static struct GJKSimplexVertex GJKSimplexVertexInit(const struct GJKHelper *helper, const u32 index_a, const u32 index_b)
+/* Simplex vertex of index0 of set 0 and index1 of set 1; set 1 is moved into set 0's frame. */
+static struct GJKSimplexVertex GJKSimplexVertexInit(const struct GJKHelper *helper, const u32 index0, const u32 index1)
 {
-    ds_Assert(index_a < helper->vset_a->v_count && index_b < helper->vset_b->v_count);
+    ds_Assert(index0 < helper->vset0->v_count && index1 < helper->vset1->v_count);
     struct GJKSimplexVertex v;
-    v.index_a = index_a;
-    v.index_b = index_b;
-    v.a = helper->vset_a->v[index_a];
-    v.b = V3Add(M3V3Mul(helper->rot, helper->vset_b->v[index_b]), helper->pos);
-    v.minkowski = V3Sub(v.b, v.a);
+    v.index0 = index0;
+    v.index1 = index1;
+    v.p0 = helper->vset0->v[index0];
+    v.p1 = V3Add(M3V3Mul(helper->rot, helper->vset1->v[index1]), helper->pos);
+    v.minkowski = V3Sub(v.p1, v.p0);
     return v;
 }
 
 /*
- * Set v to the support point of B - A in direction dir (frame A):
+ * Set v to the support point of set 1 - set 0 in direction dir (set 0's frame):
  *
- *      max_ab dot(b - a, dir) = max_b dot(b, dir) - min_a dot(a, dir)
+ *      max dot(p1 - p0, dir) = max_p1 dot(p1, dir) - min_p0 dot(p0, dir)
  */
 static void GJKSimplexVertexSupport(struct GJKSimplexVertex *v, const struct GJKHelper *helper, const v3 dir)
 {
-    const u32 index_a = V3Support(helper->vset_a->v, helper->vset_a->v_count, V3Negate(dir));
-    const u32 index_b = V3Support(helper->vset_b->v, helper->vset_b->v_count, M3V3Mul(helper->rot_t, dir));
-    *v = GJKSimplexVertexInit(helper, index_a, index_b);
+    const u32 index0 = V3Support(helper->vset0->v, helper->vset0->v_count, V3Negate(dir));
+    const u32 index1 = V3Support(helper->vset1->v, helper->vset1->v_count, M3V3Mul(helper->rot_t, dir));
+    *v = GJKSimplexVertexInit(helper, index0, index1);
 }
 
 /* Absolute volume/area/length (times a constant) of the simplex; decides whether cache_in is reused. */
@@ -239,12 +239,13 @@ static v3 GJKSimplexSearchDirection(const struct GJKSimplex *simplex)
 /*
  * Touch tolerance (1b; GJK_TOUCH_TOLERANCE in ds_collision.h). The shapes are reported as touching when
  *
- *      |closest| <= GJK_TOUCH_TOLERANCE * eps * L,     L = max(|a|, |b|) over the query's support points
+ *      |closest| <= GJK_TOUCH_TOLERANCE * eps * L,     L = max(|p0|, |p1|) over the query's support points
  *
- * Safe for any simplex: closest = sum_i w_i v_i lies in B - A, so |closest| bounds the distance from above.
+ * Safe for any simplex: closest = sum_i w_i v_i lies in set 1 - set 0, so |closest| bounds the distance
+ * from above.
  *
- * L is the noise scale: a support point v = b - a is computed from a and b in A's frame, so it carries a
- * rounding error of ~eps * max(|a|, |b|), also near contact where v itself cancels to a face's size.
+ * L is the noise scale: a support point v = p1 - p0 is computed from p0 and p1 in set 0's frame, so it carries
+ * a rounding error of ~eps * max(|p0|, |p1|), also near contact where v itself cancels to a face's size.
  *
  * GJK_TOUCH_TOLERANCE is the band's width in units of that noise (eps * L). Its value bounds the error of
  * the returned normal: a separation d with that noise gives a normal off by (measured)
@@ -254,7 +255,7 @@ static v3 GJKSimplexSearchDirection(const struct GJKSimplex *simplex)
  * so with a width of 100, every separated result has d > 100 eps * L and theta <= ~6 / 100 = 0.06 rad;
  * closer pairs report touching, and contacts take their deep paths (feature normals). At L = 1 m the band
  * is 100 * eps * 1 m = 0.012 mm, Box3D's 100 * FLT_EPSILON contact threshold, but it scales with the
- * shapes. It is independent of the world position (L is measured in A's frame).
+ * shapes. It is independent of the world position (L is measured in set 0's frame).
  */
 
 /* Write the simplex's support indices and metric to cache. */
@@ -266,24 +267,24 @@ static void GJKCacheInit(struct GJKCache *cache, const struct GJKSimplex *simple
     for (u32 i = 0; i < 4; ++i)
     {
         const u32 used = (i < simplex->count);
-        cache->index_a[i] = (used) ? (u16) simplex->v[i].index_a : 0;
-        cache->index_b[i] = (used) ? (u16) simplex->v[i].index_b : 0;
+        cache->index0[i] = (used) ? (u16) simplex->v[i].index0 : 0;
+        cache->index1[i] = (used) ? (u16) simplex->v[i].index1 : 0;
     }
 }
 
 /*
- * Overlap/touching result (1, 1b, 4a): the origin lies on the simplex of B - A (within the touch band), so
- * sum_i w_i b_i ~ sum_i w_i a_i. Both witness points are taken from A's blend: c_a == c_b, n = 0.
+ * Overlap/touching result (1, 1b, 4a): the origin lies on the simplex of set 1 - set 0 (within the touch band),
+ * so sum_i w_i p1_i ~ sum_i w_i p0_i. Both witness points are taken from set 0's blend: c0 == c1, n = 0.
  */
-static f32 GJKOverlap(v3 *c_a, v3 *c_b, v3 *n, struct GJKCache *cache_out, const struct GJKSimplex *simplex)
+static f32 GJKOverlap(v3 *c0, v3 *c1, v3 *n, struct GJKCache *cache_out, const struct GJKSimplex *simplex)
 {
     v3 c = V3Zero();
     for (u32 i = 0; i < simplex->count; ++i)
     {
-        c = V3AddScaled(c, simplex->v[i].a, simplex->weight[i]);
+        c = V3AddScaled(c, simplex->v[i].p0, simplex->weight[i]);
     }
-    *c_a = c;
-    *c_b = c;
+    *c0 = c;
+    *c1 = c;
     *n = V3Zero();
     GJKCacheInit(cache_out, simplex);
     return 0.0f;
@@ -301,7 +302,7 @@ f32 GJK(v3 *c0, v3 *c1, v3 *n, struct GJKCache *cache_out, const struct GJKCache
         simplex.count = cache_in->count;
         for (u32 i = 0; i < simplex.count; ++i)
         {
-            simplex.v[i] = GJKSimplexVertexInit(&helper, cache_in->index_a[i], cache_in->index_b[i]);
+            simplex.v[i] = GJKSimplexVertexInit(&helper, cache_in->index0[i], cache_in->index1[i]);
         }
 
         const f32 metric_old = cache_in->metric;
@@ -319,11 +320,11 @@ f32 GJK(v3 *c0, v3 *c1, v3 *n, struct GJKCache *cache_out, const struct GJKCache
     }
     struct GJKSimplex backup = { .count = 1, .v[0] = simplex.v[0], .weight[0] = 1.0f };
 
-    /* running max of |a|^2, |b|^2 over the support points, the scale of the touch band (1b, 5) */
+    /* running max of |p0|^2, |p1|^2 over the support points, the scale of the touch band (1b, 5) */
     f32 vertex_length_sq_max = 0.0f;
     for (u32 j = 0; j < simplex.count; ++j)
     {
-        vertex_length_sq_max = F32Max(vertex_length_sq_max, F32Max(V3LengthSquared(simplex.v[j].a), V3LengthSquared(simplex.v[j].b)));
+        vertex_length_sq_max = F32Max(vertex_length_sq_max, F32Max(V3LengthSquared(simplex.v[j].p0), V3LengthSquared(simplex.v[j].p1)));
     }
     const f32 touch_tolerance = GJK_TOUCH_TOLERANCE * F32_EPSILON;
 
@@ -456,10 +457,10 @@ f32 GJK(v3 *c0, v3 *c1, v3 *n, struct GJKCache *cache_out, const struct GJKCache
 
         /* candidate vertex in the free slot; added below if it passes 5 and 6 */
         GJKSimplexVertexSupport(simplex.v + simplex.count, &helper, dir);
-        vertex_length_sq_max = F32Max(vertex_length_sq_max, F32Max(V3LengthSquared(simplex.v[simplex.count].a), V3LengthSquared(simplex.v[simplex.count].b)));
+        vertex_length_sq_max = F32Max(vertex_length_sq_max, F32Max(V3LengthSquared(simplex.v[simplex.count].p0), V3LengthSquared(simplex.v[simplex.count].p1)));
 
         /*
-         * 5: B - A lies in the half-space dot(p, dir) <= dot(w, dir) of the support point w, so
+         * 5: set 1 - set 0 lies in the half-space dot(p, dir) <= dot(w, dir) of the support point w, so
          *
          *      core distance >= -dot(w, dir) / |dir|
          *
@@ -476,12 +477,12 @@ f32 GJK(v3 *c0, v3 *c1, v3 *n, struct GJKCache *cache_out, const struct GJKCache
             return F32_INFINITY;
         }
 
-        /* 6: the support pair is already in the simplex: no point of B - A lies further along dir.  */
+        /* 6: the support pair is already in the simplex: no point of set 1 - set 0 lies further along dir.  */
         u32 repeated = 0;
         for (u32 j = 0; j < simplex.count; ++j)
         {
-            repeated |= (simplex.v[j].index_a == simplex.v[simplex.count].index_a
-                      && simplex.v[j].index_b == simplex.v[simplex.count].index_b);
+            repeated |= (simplex.v[j].index0 == simplex.v[simplex.count].index0
+                      && simplex.v[j].index1 == simplex.v[simplex.count].index1);
         }
 
         if (repeated)
@@ -499,21 +500,21 @@ f32 GJK(v3 *c0, v3 *c1, v3 *n, struct GJKCache *cache_out, const struct GJKCache
         simplex.count -= 1;
     }
 
-    v3 p_a = V3Zero();
-    v3 p_b = V3Zero();
+    v3 p0 = V3Zero();
+    v3 p1 = V3Zero();
     v3 closest = V3Zero();
     for (u32 j = 0; j < simplex.count; ++j)
     {
-        p_a = V3AddScaled(p_a, simplex.v[j].a, simplex.weight[j]);
-        p_b = V3AddScaled(p_b, simplex.v[j].b, simplex.weight[j]);
+        p0 = V3AddScaled(p0, simplex.v[j].p0, simplex.weight[j]);
+        p1 = V3AddScaled(p1, simplex.v[j].p1, simplex.weight[j]);
         closest = V3AddScaled(closest, simplex.v[j].minkowski, simplex.weight[j]);
     }
 
     /*
      * The distance from the minkowski blend: it repeats the loop's blend bit for bit, so the result agrees
-     * with 1b and 3 (|p_b - p_a| is no more precise: both carry ~eps L at any distance). The normal from
-     * dir (the feature's geometry), not from p_b - p_a. dir points from the closest point to the origin,
-     * and closest = p_b - p_a, so the normal from A to B is -dir.
+     * with 1b and 3 (|p1 - p0| is no more precise: both carry ~eps L at any distance). The normal from
+     * dir (the feature's geometry), not from p1 - p0. dir points from the closest point to the origin,
+     * and closest = p1 - p0, so the normal from 0 to 1 is -dir.
      */
     /* the result simplex passed 1b (or is the first vertex, 4a) */
     const f32 core_distance = V3Length(closest);
@@ -527,8 +528,8 @@ f32 GJK(v3 *c0, v3 *c1, v3 *n, struct GJKCache *cache_out, const struct GJKCache
     }
 
     const v3 normal = V3Scale(dir, -1.0f / V3Length(dir));
-    *c0 = V3AddScaled(p_a, normal, vset0->margin);
-    *c1 = V3AddScaled(p_b, normal, -vset1->margin);
+    *c0 = V3AddScaled(p0, normal, vset0->margin);
+    *c1 = V3AddScaled(p1, normal, -vset1->margin);
     *n = normal;
     GJKCacheInit(cache_out, &simplex);
     return distance;

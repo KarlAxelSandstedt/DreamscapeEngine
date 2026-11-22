@@ -1130,8 +1130,8 @@ static void ConvexCacheSerialize(struct SS *ss, const struct ds_ConvexCache *cac
 	SATCacheSerialize(ss, &cache->sat);
 	SSWriteF32Le(ss, cache->gjk.metric);
 	SSWriteU16Le(ss, cache->gjk.count);
-	SSWriteU16LeN(ss, cache->gjk.index_a, 4);
-	SSWriteU16LeN(ss, cache->gjk.index_b, 4);
+	SSWriteU16LeN(ss, cache->gjk.index0, 4);
+	SSWriteU16LeN(ss, cache->gjk.index1, 4);
 }
 
 static u32 ConvexCacheTryDeserialize(struct SS *ss, struct ds_ConvexCache *cache)
@@ -1144,8 +1144,8 @@ static u32 ConvexCacheTryDeserialize(struct SS *ss, struct ds_ConvexCache *cache
 	SATCacheDeserialize(ss, &cache->sat);
 	cache->gjk.metric = SSReadF32Le(ss);
 	cache->gjk.count = SSReadU16Le(ss);
-	SSReadU16LeN(ss, cache->gjk.index_a, 4);
-	SSReadU16LeN(ss, cache->gjk.index_b, 4);
+	SSReadU16LeN(ss, cache->gjk.index0, 4);
+	SSReadU16LeN(ss, cache->gjk.index1, 4);
 	return 1;
 }
 

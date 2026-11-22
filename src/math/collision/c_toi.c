@@ -73,7 +73,8 @@ static void ds_TOIPlaneFace(struct ds_TOIPlane *sep, const u32 face, const ds_Tr
     /* point the normal at the other set */
     const v3 other = QUnitRotate(t_other->rotation, vset_other->v[index_other]);
     const v3 face_point = QUnitRotate(t_face->rotation, point);
-    const v3 delta = V3Add(V3Sub(other, face_point), V3Sub(t_other->position, t_face->position));
+    const v3 other_relative = V3Sub(t_other->position, t_face->position);
+    const v3 delta = V3Add(V3Sub(other, face_point), other_relative);
     if (V3Dot(delta, QUnitRotate(t_face->rotation, normal)) < 0.0f)
     {
         normal = V3Negate(normal);
@@ -89,8 +90,8 @@ static struct ds_TOIPlane ds_TOIPlane(const struct ds_TimeOfImpactArg *arg0, con
 {
     ds_Assert(1 <= cache->count && cache->count <= 3);
 
-    const u32 unique0 = ds_TOIUniqueCount(cache->index_a, cache->count);
-    const u32 unique1 = ds_TOIUniqueCount(cache->index_b, cache->count);
+    const u32 unique0 = ds_TOIUniqueCount(cache->index0, cache->count);
+    const u32 unique1 = ds_TOIUniqueCount(cache->index1, cache->count);
 
     //TODO
     struct ds_TOIPlane sep =
@@ -102,11 +103,11 @@ static struct ds_TOIPlane ds_TOIPlane(const struct ds_TimeOfImpactArg *arg0, con
 
     if (unique0 == 3)
     {
-        ds_TOIPlaneFace(&sep, 0, t0, t1, cache->index_a, cache->index_b[0]);
+        ds_TOIPlaneFace(&sep, 0, t0, t1, cache->index0, cache->index1[0]);
     }
     else if (unique1 == 3)
     {
-        ds_TOIPlaneFace(&sep, 1, t1, t0, cache->index_b, cache->index_a[0]);
+        ds_TOIPlaneFace(&sep, 1, t1, t0, cache->index1, cache->index0[0]);
     }
 
     return sep;
