@@ -103,6 +103,9 @@ struct ds_NumericsConfig
     f32 geometric_mover_tolerance;
     u32 geometric_mover_solver_iterations;
 
+    u32 toi_max_iterations;
+    u32 toi_root_max_iterations;
+
     f32 proxy_margin_min;
     f32 proxy_margin_scale;
 };

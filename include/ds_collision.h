@@ -627,6 +627,28 @@ f32 c_CapsuleRayCastParameter(const struct c_Shape *shape, const ds_TransformWor
 f32 c_HullRayCastParameter(const struct c_Shape *shape, const ds_TransformWorld *transform, const struct rayWorld *ray);
 f32 c_MeshRayCastParameter(const struct c_Shape *shape, const ds_TransformWorld *transform, const struct rayWorld *ray);
 
+/********************************** Time Of Impact **********************************/
+
+struct ds_TimeOfImpactArg
+{
+    struct GJKVertexSet vset;
+    f32                 radius;
+    ds_Transform        sweep[2];
+    v3                  local_center;
+};
+
+/*
+ * Return the toi if a time-of-impact was found in [0, max_toi).
+ * Return the last t in [0, max_toi) at which the inputs neither overlap nor have passed
+ *        through each other, if an iteration limit was reached first.
+ * Otherwise return max_toi (no collision).
+ *
+ * Note: If returned toi is 0.0f, the pair is left to discrete collision detection.
+ */
+f32     ds_TimeOfImpact(const struct ds_TimeOfImpactArg *arg0, const struct ds_TimeOfImpactArg *arg1, const f32 max_toi);
+
+
+
 /********************************** SHAPES: definitions **********************************/
 
 static ds_ForceInline struct c_Shape *c_ShapeDBShape(const struct c_ShapeDB *db, const u32 handle)

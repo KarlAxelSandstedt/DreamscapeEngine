@@ -58,8 +58,8 @@ Example (repetition testing):
 
 /*************************** configs ***************************/
 
-#define DS_NUMERICS_CONFIG_VERSION  4u
-#define DS_NUMERICS_CONFIG_BITS     (32 + 13*32)
+#define DS_NUMERICS_CONFIG_VERSION  5u
+#define DS_NUMERICS_CONFIG_BITS     (32 + 15*32)
 
 u64 ds_NumericsConfigSerializeBitPackedSize(const struct ds_NumericsConfig *config)
 {
@@ -82,6 +82,8 @@ void ds_NumericsConfigSerializeBitPacked(struct SS *ss, const struct ds_Numerics
     SSWriteU64Partial(ss, config->geometric_mover_max_iterations, 32);
     SSWriteU64Partial(ss, (b32) { .f = config->geometric_mover_tolerance }.u, 32);
     SSWriteU64Partial(ss, config->geometric_mover_solver_iterations, 32);
+    SSWriteU64Partial(ss, config->toi_max_iterations, 32);
+    SSWriteU64Partial(ss, config->toi_root_max_iterations, 32);
     SSWriteU64Partial(ss, (b32) { .f = config->proxy_margin_min }.u, 32);
     SSWriteU64Partial(ss, (b32) { .f = config->proxy_margin_scale }.u, 32);
 }
@@ -106,6 +108,8 @@ u32 ds_NumericsConfigTryDeserializeBitPacked(struct SS *ss, struct ds_NumericsCo
     config->geometric_mover_max_iterations = (u32) SSReadU64Partial(&ss_mut, 32);
     config->geometric_mover_tolerance = (b32) { .u = (u32) SSReadU64Partial(&ss_mut, 32) }.f;
     config->geometric_mover_solver_iterations = (u32) SSReadU64Partial(&ss_mut, 32);
+    config->toi_max_iterations = (u32) SSReadU64Partial(&ss_mut, 32);
+    config->toi_root_max_iterations = (u32) SSReadU64Partial(&ss_mut, 32);
     config->proxy_margin_min = (b32) { .u = (u32) SSReadU64Partial(&ss_mut, 32) }.f;
     config->proxy_margin_scale = (b32) { .u = (u32) SSReadU64Partial(&ss_mut, 32) }.f;
     *config = ds_NumericsConfigDerive(config);

@@ -1,5 +1,6 @@
 #include "c_shape.c"
 #include "c_distance.c"
+#include "c_toi.c"
 #include "c_test.c"
 #include "c_hull.c"
 #include "c_contact.c"
