@@ -552,7 +552,7 @@ ds_JointId ds_DistanceJointAdd(struct ds_Dynamics *pipeline, const struct ds_Dis
             /* the sim's frames, not the caller's: the add may have swapped the slots (static body in slot 1) */
             const struct ds_Body *body = pipeline->body_pool.buf + joint->body[i];
             const struct ds_BodySim *bsim = pipeline->solver_set_pool.buf[body->set].body_sim_pool.buf + body->sim;
-            anchor[i] = V3F64Add(bsim->world.position, V3Promote(QUnitRotate(bsim->world.rotation, sim->local_frame[i].position)));
+            anchor[i] = V3F64Transform(sim->local_frame[i].position, &bsim->world);
         }
 
         const f32 distance = V3Length(V3F64Demote(V3F64Sub(anchor[1], anchor[0])));

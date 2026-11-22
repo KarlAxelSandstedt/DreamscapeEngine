@@ -572,7 +572,7 @@ static f64 StCoreDistance(const struct c_Shape *s0, const ds_TransformWorld *t0,
 /* how far a world point is from a shape's surface, in its local frame: 0 on the surface, < 0 inside */
 static f32 StSurfaceDistance(const struct c_Shape *s, const ds_TransformWorld *t, const v3f64 p_world)
 {
-    const v3 p = ds_TransformWorldPointToLocal(t, p_world);
+    const v3 p = V3F64InverseTransform(p_world, t);
     switch (s->type)
     {
         case C_SHAPE_SPHERE:

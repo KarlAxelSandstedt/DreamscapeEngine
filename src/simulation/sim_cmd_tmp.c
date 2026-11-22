@@ -271,7 +271,7 @@ static u32 ds_MouseJointAddCmdTryExecute(struct ds_Sim *sim, const struct ds_Mou
     const struct ds_Body *body = ds_BodyLookup(&sim->dynamics, id).address;
     const struct ds_BodySim *bsim = sim->dynamics.solver_set_pool.buf[body->set].body_sim_pool.buf + body->sim;
     ds_Transform local_frame = ds_TransformIdentity();
-    local_frame.position = ds_TransformWorldPointToLocal(&bsim->world, cmd->target);
+    local_frame.position = V3F64InverseTransform(cmd->target, &bsim->world);
 
     struct ds_MouseJointPrefab prefab;
     ds_MouseJointPrefabFromBody(&prefab, &sim->dynamics, id, cmd->target, cmd->hertz, cmd->damping_ratio, cmd->force_scale, cmd->torque_scale, ds_BreakageOptionNone());

@@ -129,7 +129,7 @@ u32 c_SphereContact(struct c_Manifold *out, struct ds_ConvexCache *cache, const 
     u32 manifold_count = 0;
 
     const f32 r_sum = s0->sphere.radius + s1->sphere.radius;
-    const v3 p = QUnitRotate(QConj(t0->rotation), V3F64Demote(V3F64Sub(t1->position, t0->position)));
+    const v3 p = V3F64InverseTransform(t1->position, t0);
     const f32 dist_sq = V3LengthSquared(p);
     if (dist_sq <= r_sum*r_sum)
     {
@@ -172,7 +172,7 @@ u32 c_CapsuleSphereContact(struct c_Manifold *out, struct ds_ConvexCache *cache,
 
     u32 manifold_count = 0;
 
-    const v3 p = QUnitRotate(QConj(t0->rotation), V3F64Demote(V3F64Sub(t1->position, t0->position)));
+    const v3 p = V3F64InverseTransform(t1->position, t0);
     const f32 r_sum = s0->capsule.radius + s1->sphere.radius;
 
     const f32 clamp_y = F32Clamp(p.y, -s0->capsule.half_height, s0->capsule.half_height);
@@ -254,7 +254,7 @@ u32 c_CapsuleContact(struct c_Manifold *out, struct ds_ConvexCache *cache, const
 
     const f32 r_sum = s0->capsule.radius + s1->capsule.radius;
     const q inv = QConj(t0->rotation);
-    const v3 c = QUnitRotate(inv, V3F64Demote(V3F64Sub(t1->position, t0->position)));
+    const v3 c = V3F64InverseTransform(t1->position, t0);
     const v3 e = QUnitRotate(inv, QYUnitRotate(t1->rotation, s1->capsule.half_height));
 
     const f32 e_len_sq_xz = e.x*e.x + e.z*e.z;
@@ -351,8 +351,7 @@ u32 c_HullSphereContact(struct c_Manifold *out, struct ds_ConvexCache *cache, co
     const struct GJKCache old = cache->gjk;
 
     const f32 radius = s1->sphere.radius;
-    const q inv = QConj(t0->rotation);
-    const v3 p = QUnitRotate(inv, V3F64Demote(V3F64Sub(t1->position, t0->position)));
+    const v3 p = V3F64InverseTransform(t1->position, t0);
     const ds_Transform t_1_to_0 = { .rotation = QIdentity(), .position = p };
 
     struct GJKVertexSet vset0, vset1;

@@ -1368,7 +1368,7 @@ static struct test_Output DynamicsShapeTest(struct test_Environment *env)
         {
             for (u32 v = 0; v < cshape->hull.v_count; ++v)
             {
-                contained &= DynamicsTestBboxContains(&box, ds_TransformWorldPointToWorld(&t, cshape->hull.v[v]));
+                contained &= DynamicsTestBboxContains(&box, V3F64Transform(cshape->hull.v[v], &t));
             }
         }
         else
@@ -1381,9 +1381,9 @@ static struct test_Output DynamicsShapeTest(struct test_Environment *env)
                 v3 local = V3Zero();
                 local.buf[k % 3] = (k < 3) ? r : -r;
                 local.y += (k < 3) ? h : -h;
-                contained &= DynamicsTestBboxContains(&box, ds_TransformWorldPointToWorld(&t, local));
+                contained &= DynamicsTestBboxContains(&box, V3F64Transform(local, &t));
                 local.y -= (k < 3) ? 2.0f*h : -2.0f*h;
-                contained &= DynamicsTestBboxContains(&box, ds_TransformWorldPointToWorld(&t, local));
+                contained &= DynamicsTestBboxContains(&box, V3F64Transform(local, &t));
             }
         }
         if (!contained)

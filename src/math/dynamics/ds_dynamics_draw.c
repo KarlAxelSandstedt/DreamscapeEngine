@@ -194,7 +194,7 @@ static v3f64 JointAnchorStart(const struct ds_BodySim *sim, const struct ds_Join
 /* the anchor at the end pose */
 static v3f64 JointAnchorEnd(const struct ds_BodySim *sim, const struct ds_JointSim *jsim, const u32 b)
 {
-    return V3F64Add(sim->world.position, V3Promote(QUnitRotate(sim->world.rotation, jsim->local_frame[b].position)));
+    return V3F64Transform(jsim->local_frame[b].position, &sim->world);
 }
 
 void ds_ContactDrawRange(struct ds_Dynamics *pipeline, const u32 color_index, const u32 low, const u32 high)

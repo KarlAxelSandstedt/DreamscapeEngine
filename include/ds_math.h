@@ -113,7 +113,9 @@ static inline ds_Transform ds_TransformRelative(const ds_Transform *reference, c
  *
  *      ref->rot*rel + ref->pos = ref->rot*ref->rot_inv*(target - ref->pos) + ref->pos = target
  */
-static inline v3 ds_TransformPointToLocal(const ds_Transform *reference, const v3 target);
+static inline v3 V3InverseTransform(const v3 target, const ds_Transform *reference);
+
+static inline v3 V3Transform(const v3 local, const ds_Transform *reference);
 
 /*
  * Return the pose at t in [0, 1] between transform0 and transform1: position lerped (exactly transform0's at
@@ -167,10 +169,10 @@ static inline ds_Transform ds_TransformWorldRelative(const ds_TransformWorld *re
 static inline ds_TransformWorld ds_TransformWorldChild(const ds_TransformWorld *parent, const ds_Transform *child);
 
 /* Return the local position of the world point target within reference's frame */
-static inline v3 ds_TransformWorldPointToLocal(const ds_TransformWorld *reference, const v3f64 target);
+static inline v3 V3F64InverseTransform(const v3f64 target, const ds_TransformWorld *reference);
 
 /* Return the world position of the point local, given in reference's frame */
-static inline v3f64 ds_TransformWorldPointToWorld(const ds_TransformWorld *reference, const v3 local);
+static inline v3f64 V3F64Transform(const v3 local, const ds_TransformWorld *reference);
 
 /************************* local poses: inline definitions **************************/
 
@@ -241,9 +243,14 @@ static inline ds_Transform ds_TransformRelative(const ds_Transform *reference, c
     return relative;
 }
 
-static inline v3 ds_TransformPointToLocal(const ds_Transform *reference, const v3 target)
+static inline v3 V3InverseTransform(const v3 target, const ds_Transform *reference)
 {
     return QUnitRotate(QConj(reference->rotation), V3Sub(target, reference->position));
+}
+
+static inline v3 V3Transform(const v3 local, const ds_Transform *reference)
+{
+    return V3Add(QUnitRotate(reference->rotation, local), reference->position);
 }
 
 static inline ds_Transform ds_TransformLerp(const ds_Transform *transform0, const ds_Transform *transform1, const f32 t)
@@ -345,12 +352,12 @@ static inline ds_TransformWorld ds_TransformWorldChild(const ds_TransformWorld *
     return result;
 }
 
-static inline v3 ds_TransformWorldPointToLocal(const ds_TransformWorld *reference, const v3f64 target)
+static inline v3 V3F64InverseTransform(const v3f64 target, const ds_TransformWorld *reference)
 {
     return QUnitRotate(QConj(reference->rotation), V3F64Demote(V3F64Sub(target, reference->position)));
 }
 
-static inline v3f64 ds_TransformWorldPointToWorld(const ds_TransformWorld *reference, const v3 local)
+static inline v3f64 V3F64Transform(const v3 local, const ds_TransformWorld *reference)
 {
     return V3F64Add(reference->position, V3Promote(QUnitRotate(reference->rotation, local)));
 }

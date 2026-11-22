@@ -38,8 +38,19 @@ struct ds_TOIPlane
 {
     const struct ds_TimeOfImpactArg *   arg[2];
     enum ds_TOIPlaneType                type;
-    u32                                 face;       /* TOI_PLANE_FACE: index holding face */
-    v3                                  witness[2];
+    union
+    {
+        struct
+        {
+            v3  axis;
+        } vertices;
+
+        struct
+        {
+            u32             index;      /* TOI_PLANE_FACE: index holding face */
+            struct plane    plane;
+        } face;
+    };
 };
 
 static u32 ds_TOIUniqueCount(const u16 *index, const u32 count)
@@ -67,7 +78,7 @@ static void ds_TOIPlaneFace(struct ds_TOIPlane *sep, const u32 face, const ds_Tr
     const v3 v1 = vset_face->v[index_face[1]];
     const v3 v2 = vset_face->v[index_face[2]];
     //TODO degenerate: v0, v1, v2 (nearly) collinear, the cross is ~0
-    v3 normal = V3Normalize(V3Cross(V3Sub(v1, v0), V3Sub(v2, v0)));
+    v3 normal = V3Cross(V3Sub(v1, v0), V3Sub(v2, v0));
     const v3 point = V3Scale(V3Add(V3Add(v0, v1), v2), 1.0f / 3.0f);
 
     /* point the normal at the other set */
@@ -81,9 +92,8 @@ static void ds_TOIPlaneFace(struct ds_TOIPlane *sep, const u32 face, const ds_Tr
     }
 
     sep->type = TOI_PLANE_FACE;
-    sep->face = face;
-    sep->witness[0] = normal;
-    sep->witness[1] = point;
+    sep->face.index = face;
+    sep->face.plane = PlaneNormalized(normal, point);
 }
 
 static struct ds_TOIPlane ds_TOIPlane(const struct ds_TimeOfImpactArg *arg0, const ds_Transform *t0, const struct ds_TimeOfImpactArg *arg1, const ds_Transform *t1, const struct GJKCache *cache, const v3 n)
@@ -98,7 +108,7 @@ static struct ds_TOIPlane ds_TOIPlane(const struct ds_TimeOfImpactArg *arg0, con
     {
         .arg = { arg0, arg1 },
         .type = TOI_PLANE_VERTICES,
-        .witness[0] = QUnitRotate(t0->rotation, n),
+        .vertices.axis = QUnitRotate(t0->rotation, n),
     };
 
     if (unique0 == 3)
@@ -122,9 +132,9 @@ static f32 ds_TOIPlaneSignedDistance(const struct ds_TOIPlane *sep, const u32 in
     {
         case TOI_PLANE_VERTICES:
         {
-            const v3 p0 = V3Add(QUnitRotate(transform[0].rotation, vset[0]->v[index[0]]), transform[0].position);
-            const v3 p1 = V3Add(QUnitRotate(transform[1].rotation, vset[1]->v[index[1]]), transform[1].position);
-            signed_distance = V3Dot(V3Sub(p1, p0), sep->witness[0]);
+            const v3 p0 = V3Transform(vset[0]->v[index[0]], transform + 0);
+            const v3 p1 = V3Transform(vset[1]->v[index[1]], transform + 1);
+            signed_distance = V3Dot(V3Sub(p1, p0), sep->vertices.axis);
         } break;
 
         case TOI_PLANE_EDGES:
@@ -133,12 +143,10 @@ static f32 ds_TOIPlaneSignedDistance(const struct ds_TOIPlane *sep, const u32 in
 
         case TOI_PLANE_FACE:
         {
-            const u32 i = sep->face;
+            const u32 i = sep->face.index;
             const u32 j = 1 - i;
-            const v3 normal = QUnitRotate(transform[i].rotation, sep->witness[0]);
-            const v3 point = V3Add(QUnitRotate(transform[i].rotation, sep->witness[1]), transform[i].position);
-            const v3 p = V3Add(QUnitRotate(transform[j].rotation, vset[j]->v[index[j]]), transform[j].position);
-            signed_distance = V3Dot(V3Sub(p, point), normal);
+            const v3 p = V3Transform(vset[j]->v[index[j]], transform + j);
+            signed_distance = PlanePointSignedDistance(&sep->face.plane, V3InverseTransform(p, transform + i));
         } break;
     }
 
@@ -154,8 +162,8 @@ static f32 ds_TOIPlaneDeepest(u32 index[2], const struct ds_TOIPlane *sep, const
     {
         case TOI_PLANE_VERTICES:
         {
-            const v3 axis0 = QUnitRotate(QConj(transform[0].rotation), sep->witness[0]);
-            const v3 axis1 = QUnitRotate(QConj(transform[1].rotation), V3Negate(sep->witness[0]));
+            const v3 axis0 = QUnitRotate(QConj(transform[0].rotation), sep->vertices.axis);
+            const v3 axis1 = QUnitRotate(QConj(transform[1].rotation), V3Negate(sep->vertices.axis));
             index[0] = V3Support(vset[0]->v, vset[0]->v_count, axis0);
             index[1] = V3Support(vset[1]->v, vset[1]->v_count, axis1);
         } break;
@@ -166,9 +174,9 @@ static f32 ds_TOIPlaneDeepest(u32 index[2], const struct ds_TOIPlane *sep, const
 
         case TOI_PLANE_FACE:
         {
-            const u32 i = sep->face;
+            const u32 i = sep->face.index;
             const u32 j = 1 - i;
-            const v3 normal = QUnitRotate(transform[i].rotation, sep->witness[0]);
+            const v3 normal = QUnitRotate(transform[i].rotation, sep->face.plane.normal);
             const v3 axis = QUnitRotate(QConj(transform[j].rotation), V3Negate(normal));
             index[i] = U32_MAX;
             index[j] = V3Support(vset[j]->v, vset[j]->v_count, axis);

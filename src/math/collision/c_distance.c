@@ -542,14 +542,14 @@ f32 GJKWorld(v3f64 *c0, v3f64 *c1, v3 *n, struct GJKCache *cache_out, const stru
     const f32 distance = GJK(&c0_local, &c1_local, &n_local, cache_out, cache_in, vset0, vset1, &t_1_to_0, cutoff_distance);
     if (distance == 0.0f)
     {
-        *c0 = ds_TransformWorldPointToWorld(t0, c0_local);
+        *c0 = V3F64Transform(c0_local, t0);
         *c1 = *c0;
         *n = V3Zero();
     }
     else if (distance != F32_INFINITY)
     {
-        *c0 = ds_TransformWorldPointToWorld(t0, c0_local);
-        *c1 = ds_TransformWorldPointToWorld(t0, c1_local);
+        *c0 = V3F64Transform(c0_local, t0);
+        *c1 = V3F64Transform(c1_local, t0);
         *n = QUnitRotate(t0->rotation, n_local);
     }
 

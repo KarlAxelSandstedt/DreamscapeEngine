@@ -505,7 +505,7 @@ f32 CapsuleRayCastWorldParameter(const struct capsule *capsule, const ds_Transfo
 {
 	const struct ray local =
 	{
-		.origin = ds_TransformWorldPointToLocal(transform, ray->origin),
+		.origin = V3F64InverseTransform(ray->origin, transform),
 		.dir = QUnitRotate(QConj(transform->rotation), ray->dir),
 	};
 	return CapsuleRayCastParameter(capsule, &local);
@@ -515,7 +515,7 @@ f32 HullRayCastWorldParameter(const struct dcel *hull, const ds_TransformWorld *
 {
 	const struct ray local =
 	{
-		.origin = ds_TransformWorldPointToLocal(transform, ray->origin),
+		.origin = V3F64InverseTransform(ray->origin, transform),
 		.dir = QUnitRotate(QConj(transform->rotation), ray->dir),
 	};
 	return HullRayCastParameter(hull, &local);
@@ -525,7 +525,7 @@ f32 MeshRayCastWorldParameter(const struct mesh *mesh, const ds_TransformWorld *
 {
 	const struct ray local =
 	{
-		.origin = ds_TransformWorldPointToLocal(transform, ray->origin),
+		.origin = V3F64InverseTransform(ray->origin, transform),
 		.dir = QUnitRotate(QConj(transform->rotation), ray->dir),
 	};
 	return MeshRayCastParameter(mesh, &local);
@@ -535,7 +535,7 @@ f32 AabbRayCastWorldParameter(const struct aabb *aabb, const ds_TransformWorld *
 {
 	const struct ray local =
 	{
-		.origin = ds_TransformWorldPointToLocal(transform, ray->origin),
+		.origin = V3F64InverseTransform(ray->origin, transform),
 		.dir = QUnitRotate(QConj(transform->rotation), ray->dir),
 	};
 	return AabbRayCastParameter(aabb, &local);
@@ -545,7 +545,7 @@ f32 TriRayCastWorldParameter(const v3 a, const v3 b, const v3 c, const ds_Transf
 {
 	const struct ray local =
 	{
-		.origin = ds_TransformWorldPointToLocal(transform, ray->origin),
+		.origin = V3F64InverseTransform(ray->origin, transform),
 		.dir = QUnitRotate(QConj(transform->rotation), ray->dir),
 	};
 	return TriRayCastParameter(a, b, c, &local);

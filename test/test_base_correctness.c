@@ -971,7 +971,7 @@ static struct test_Output PoseTest(struct test_Environment *env)
         const ds_TransformWorld reference = { .rotation = reference_rotation, .position = reference_position };
         const ds_TransformWorld target = { .rotation = target_rotation, .position = V3F64Add(reference_position, V3Promote(offset)) };
 
-        const v3 back = ds_TransformWorldPointToLocal(&reference, ds_TransformWorldPointToWorld(&reference, p));
+        const v3 back = V3F64InverseTransform(V3F64Transform(p, &reference), &reference);
         TEST_TRUE(VectorTestNear(back, p, 1e-6f));
 
         const ds_Transform relative = ds_TransformWorldRelative(&reference, &target);
@@ -979,15 +979,15 @@ static struct test_Output PoseTest(struct test_Environment *env)
         TEST_TRUE(QuaternionTestNear(composed.rotation, target.rotation, 1e-6f));
         TEST_TRUE(VectorTestNear(V3F64Demote(V3F64Sub(composed.position, target.position)), V3Zero(), 1e-5f));
 
-        const v3 via_world = ds_TransformWorldPointToLocal(&reference, ds_TransformWorldPointToWorld(&target, p));
-        const v3 via_relative = V3Add(QUnitRotate(relative.rotation, p), relative.position);
+        const v3 via_world = V3F64InverseTransform(V3F64Transform(p, &target), &reference);
+        const v3 via_relative = V3Transform(p, &relative);
         TEST_TRUE(VectorTestNear(via_world, via_relative, 1e-5f));
 
         const ds_Transform a = { .rotation = reference_rotation, .position = local_position };
         const ds_Transform b = { .rotation = target_rotation, .position = V3Add(local_position, offset) };
         const ds_Transform local_relative = ds_TransformRelative(&a, &b);
-        const v3 local_via_parent = ds_TransformPointToLocal(&a, V3Add(QUnitRotate(b.rotation, p), b.position));
-        TEST_TRUE(VectorTestNear(local_via_parent, V3Add(QUnitRotate(local_relative.rotation, p), local_relative.position), 1e-5f));
+        const v3 local_via_parent = V3InverseTransform(V3Transform(p, &b), &a);
+        TEST_TRUE(VectorTestNear(local_via_parent, V3Transform(p, &local_relative), 1e-5f));
 
         const ds_TransformWorld promoted = ds_TransformPromote(&a);
         TEST_TRUE(QuaternionTestEqual(promoted.rotation, a.rotation));
@@ -995,8 +995,8 @@ static struct test_Output PoseTest(struct test_Environment *env)
 
         const ds_Transform identity = ds_TransformIdentity();
         const ds_TransformWorld world_identity = ds_TransformWorldIdentity();
-        const v3 p_identity = ds_TransformPointToLocal(&identity, p);
-        const v3 p_world_identity = ds_TransformWorldPointToLocal(&world_identity, V3Promote(p));
+        const v3 p_identity = V3InverseTransform(p, &identity);
+        const v3 p_world_identity = V3F64InverseTransform(V3Promote(p), &world_identity);
         TEST_TRUE(p_identity.x == p.x && p_identity.y == p.y && p_identity.z == p.z);
         TEST_TRUE(p_world_identity.x == p.x && p_world_identity.y == p.y && p_world_identity.z == p.z);
     }
