@@ -69,55 +69,36 @@ static u32 ds_TOIUniqueCount(const u16 *index, const u32 count)
     return unique;
 }
 
-static void ds_TOIPlaneFace(struct ds_TOIPlane *sep, const u32 face, const ds_Transform *t_face, const ds_Transform *t_other, const u16 index_face[3], const u16 index_other)
-{
-    const struct GJKVertexSet *vset_face = &sep->arg[face]->vset;
-    const struct GJKVertexSet *vset_other = &sep->arg[1 - face]->vset;
-
-    const v3 v0 = vset_face->v[index_face[0]];
-    const v3 v1 = vset_face->v[index_face[1]];
-    const v3 v2 = vset_face->v[index_face[2]];
-    //TODO degenerate: v0, v1, v2 (nearly) collinear, the cross is ~0
-    v3 normal = V3Cross(V3Sub(v1, v0), V3Sub(v2, v0));
-    const v3 point = V3Scale(V3Add(V3Add(v0, v1), v2), 1.0f / 3.0f);
-
-    /* point the normal at the other set */
-    const v3 other = QUnitRotate(t_other->rotation, vset_other->v[index_other]);
-    const v3 face_point = QUnitRotate(t_face->rotation, point);
-    const v3 other_relative = V3Sub(t_other->position, t_face->position);
-    const v3 delta = V3Add(V3Sub(other, face_point), other_relative);
-    if (V3Dot(delta, QUnitRotate(t_face->rotation, normal)) < 0.0f)
-    {
-        normal = V3Negate(normal);
-    }
-
-    sep->type = TOI_PLANE_FACE;
-    sep->face.index = face;
-    sep->face.plane = PlaneNormalized(normal, point);
-}
-
-static struct ds_TOIPlane ds_TOIPlane(const struct ds_TimeOfImpactArg *arg0, const ds_Transform *t0, const struct ds_TimeOfImpactArg *arg1, const ds_Transform *t1, const struct GJKCache *cache, const v3 n)
+static struct ds_TOIPlane ds_TOIPlane(const struct ds_TimeOfImpactArg *arg0, const ds_Transform *t0, const struct ds_TimeOfImpactArg *arg1, const ds_Transform *t1, const struct GJKCache *cache, const v3 c0, const v3 c1, const v3 n)
 {
     ds_Assert(1 <= cache->count && cache->count <= 3);
 
     const u32 unique0 = ds_TOIUniqueCount(cache->index0, cache->count);
     const u32 unique1 = ds_TOIUniqueCount(cache->index1, cache->count);
 
+    const v3 world_axis = QUnitRotate(t0->rotation, n);
+
     //TODO
     struct ds_TOIPlane sep =
     {
         .arg = { arg0, arg1 },
         .type = TOI_PLANE_VERTICES,
-        .vertices.world_axis = QUnitRotate(t0->rotation, n),
+        .vertices.world_axis = world_axis,
     };
 
     if (unique0 == 3)
     {
-        ds_TOIPlaneFace(&sep, 0, t0, t1, cache->index0, cache->index1[0]);
+        sep.type = TOI_PLANE_FACE;
+        sep.face.index = 0;
+        sep.face.plane = Plane(n, c0);
     }
     else if (unique1 == 3)
     {
-        ds_TOIPlaneFace(&sep, 1, t1, t0, cache->index1, cache->index0[0]);
+        const v3 n1 = QUnitRotate(QConj(t1->rotation), V3Negate(world_axis));
+        const v3 p1 = V3InverseTransform(V3Transform(c1, t0), t1);
+        sep.type = TOI_PLANE_FACE;
+        sep.face.index = 1;
+        sep.face.plane = Plane(n1, p1);
     }
 
     return sep;
@@ -215,7 +196,7 @@ f32 ds_TimeOfImpact(const struct ds_TimeOfImpactArg *arg0, const struct ds_TimeO
         }
 
         u32 index[2];
-        const struct ds_TOIPlane sep = ds_TOIPlane(arg0, t_toi + 0, arg1, t_toi + 1, cache_out, n);
+        const struct ds_TOIPlane sep = ds_TOIPlane(arg0, t_toi + 0, arg1, t_toi + 1, cache_out, c0, c1, n);
 
         /*
          * The plane is built from the GJK cache, not from the geometries, so it may be
