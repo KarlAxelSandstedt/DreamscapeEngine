@@ -29,6 +29,7 @@ add_library(DreamscapeTestAPI
 	test_config.c
 	test_dynamics.c
 	test_geometric_mover.c
+	test_toi.c
 	test_simulation.c
 )
 

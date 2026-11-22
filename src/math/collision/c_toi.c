@@ -47,20 +47,78 @@ struct ds_TOIPlane
 static struct ds_TOIPlane ds_TOIPlane(const struct ds_TimeOfImpactArg *arg0, const ds_Transform *t0, const struct ds_TimeOfImpactArg *arg1, const ds_Transform *t1, const struct GJKCache *cache, const v3 n)
 {
     //TODO
-    const struct ds_TOIPlane sep = { 0 };
+    const struct ds_TOIPlane sep =
+    {
+        .arg0 = arg0,
+        .arg1 = arg1,
+        .type = TOI_PLANE_VERTICES,
+        .witness0 = QUnitRotate(t0->rotation, n),
+    };
     return sep;
 }
 
 static f32 ds_TOIPlaneSignedDistance(u32 *index0, u32 *index1, const struct ds_TOIPlane *sep, const f32 t)
 {
-    //TODO
-    return 0.0f;
+    const ds_Transform t0 = ds_TOITransform(sep->arg0, t);
+    const ds_Transform t1 = ds_TOITransform(sep->arg1, t);
+
+    f32 signed_distance = 0.0f;
+    switch (sep->type)
+    {
+        case TOI_PLANE_VERTICES:
+        {
+            *index0 = V3Support(sep->arg0->vset.v, sep->arg0->vset.v_count, QUnitRotate(QConj(t0.rotation), sep->witness0));
+            *index1 = V3Support(sep->arg1->vset.v, sep->arg1->vset.v_count, QUnitRotate(QConj(t1.rotation), V3Negate(sep->witness0)));
+            const v3 p0 = V3Add(QUnitRotate(t0.rotation, sep->arg0->vset.v[*index0]), t0.position);
+            const v3 p1 = V3Add(QUnitRotate(t1.rotation, sep->arg1->vset.v[*index1]), t1.position);
+            signed_distance = V3Dot(V3Sub(p1, p0), sep->witness0);
+        } break;
+
+        case TOI_PLANE_EDGES:
+        {
+        } break;
+
+        case TOI_PLANE_FACE0:
+        {
+        } break;
+
+        case TOI_PLANE_FACE1:
+        {
+        } break;
+    }
+
+    return signed_distance;
 }
 
 static f32 ds_TOIPlaneEvaluate(const struct ds_TOIPlane *sep, const u32 index0, const u32 index1, const f32 t)
 {
-    //TODO
-    return 0.0f;
+    const ds_Transform t0 = ds_TOITransform(sep->arg0, t);
+    const ds_Transform t1 = ds_TOITransform(sep->arg1, t);
+
+    f32 signed_distance = 0.0f;
+    switch (sep->type)
+    {
+        case TOI_PLANE_VERTICES:
+        {
+            const v3 p0 = V3Add(QUnitRotate(t0.rotation, sep->arg0->vset.v[index0]), t0.position);
+            const v3 p1 = V3Add(QUnitRotate(t1.rotation, sep->arg1->vset.v[index1]), t1.position);
+            signed_distance = V3Dot(V3Sub(p1, p0), sep->witness0);
+        } break;
+
+        case TOI_PLANE_EDGES:
+        {
+        } break;
+
+        case TOI_PLANE_FACE0:
+        {
+        } break;
+
+        case TOI_PLANE_FACE1:
+        {
+        } break;
+    }
+
+    return signed_distance;
 }
 
 f32 ds_TimeOfImpact(const struct ds_TimeOfImpactArg *arg0, const struct ds_TimeOfImpactArg *arg1, const f32 max_toi)
