@@ -42,7 +42,7 @@ struct ds_TOIPlane
     {
         struct
         {
-            v3  axis;
+            v3  world_axis;
         } vertices;
 
         struct
@@ -108,7 +108,7 @@ static struct ds_TOIPlane ds_TOIPlane(const struct ds_TimeOfImpactArg *arg0, con
     {
         .arg = { arg0, arg1 },
         .type = TOI_PLANE_VERTICES,
-        .vertices.axis = QUnitRotate(t0->rotation, n),
+        .vertices.world_axis = QUnitRotate(t0->rotation, n),
     };
 
     if (unique0 == 3)
@@ -134,7 +134,7 @@ static f32 ds_TOIPlaneSignedDistance(const struct ds_TOIPlane *sep, const u32 in
         {
             const v3 p0 = V3Transform(vset[0]->v[index[0]], transform + 0);
             const v3 p1 = V3Transform(vset[1]->v[index[1]], transform + 1);
-            signed_distance = V3Dot(V3Sub(p1, p0), sep->vertices.axis);
+            signed_distance = V3Dot(V3Sub(p1, p0), sep->vertices.world_axis);
         } break;
 
         case TOI_PLANE_EDGES:
@@ -162,8 +162,8 @@ static f32 ds_TOIPlaneDeepest(u32 index[2], const struct ds_TOIPlane *sep, const
     {
         case TOI_PLANE_VERTICES:
         {
-            const v3 axis0 = QUnitRotate(QConj(transform[0].rotation), sep->vertices.axis);
-            const v3 axis1 = QUnitRotate(QConj(transform[1].rotation), V3Negate(sep->vertices.axis));
+            const v3 axis0 = QUnitRotate(QConj(transform[0].rotation), sep->vertices.world_axis);
+            const v3 axis1 = QUnitRotate(QConj(transform[1].rotation), V3Negate(sep->vertices.world_axis));
             index[0] = V3Support(vset[0]->v, vset[0]->v_count, axis0);
             index[1] = V3Support(vset[1]->v, vset[1]->v_count, axis1);
         } break;
