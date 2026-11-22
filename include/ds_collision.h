@@ -631,10 +631,11 @@ f32 c_MeshRayCastParameter(const struct c_Shape *shape, const ds_TransformWorld 
 
 struct ds_TimeOfImpactArg
 {
-    struct GJKVertexSet vset;
-    f32                 radius;
-    ds_Transform        sweep[2];
-    v3                  local_center;
+    const struct c_Shape *  shape;
+    struct GJKVertexSet     vset;
+    f32                     margin;
+    ds_Transform            sweep[2];
+    v3                      local_center;
 };
 
 /*
@@ -647,7 +648,7 @@ struct ds_TimeOfImpactArg
  */
 f32     ds_TimeOfImpactConvex(const struct ds_TimeOfImpactArg *arg0, const struct ds_TimeOfImpactArg *arg1, const f32 max_toi);
 
-f32     ds_TimeOfImpactConcave(struct arena *mem, const struct mesh *mesh, const struct ds_TimeOfImpactArg *arg, const f32 fallback_radius, const f32 max_toi);
+f32     ds_TimeOfImpactConcave(struct arena *mem, const struct ds_TimeOfImpactArg *mesh, const struct ds_TimeOfImpactArg *convex, const f32 max_toi);
 
 
 

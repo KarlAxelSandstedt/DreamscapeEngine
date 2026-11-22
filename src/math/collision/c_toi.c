@@ -174,7 +174,7 @@ f32 ds_TimeOfImpactConvex(const struct ds_TimeOfImpactArg *arg0, const struct ds
 
     const f32 slop = g_solver_config->linear_slop;
     const f32 tol = 0.25f*slop;
-    const f32 target = F32Max(slop, arg0->radius + arg1->radius - slop);
+    const f32 target = F32Max(slop, arg0->margin + arg1->margin - slop);
         
     struct GJKCache cache[2];
     const struct GJKCache *cache_in = NULL;
@@ -285,7 +285,7 @@ f32 ds_TimeOfImpactConvex(const struct ds_TimeOfImpactArg *arg0, const struct ds
     return toi;
 }
 
-f32 ds_TimeOfImpactConcave(struct arena *mem, const struct mesh *mesh, const struct ds_TimeOfImpactArg *arg, const f32 fallback_radius, const f32 max_toi)
+f32 ds_TimeOfImpactConcave(struct arena *mem, const struct ds_TimeOfImpactArg *mesh, const struct ds_TimeOfImpactArg *convex, const f32 max_toi)
 {
     //TODO
     return max_toi;
