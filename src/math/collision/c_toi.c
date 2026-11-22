@@ -78,13 +78,8 @@ static struct ds_TOIPlane ds_TOIPlane(const struct ds_TimeOfImpactArg *arg0, con
 
     const v3 world_axis = QUnitRotate(t0->rotation, n);
 
-    //TODO
-    struct ds_TOIPlane sep =
-    {
-        .arg = { arg0, arg1 },
-        .type = TOI_PLANE_VERTICES,
-        .vertices.world_axis = world_axis,
-    };
+    //TODO check box3d's edge-edge plane (b3_separationEdges); edge-edge uses the world axis for now (agent_notes/AGENT_TODO.txt, 2026-11-22)
+    struct ds_TOIPlane sep = { .arg = { arg0, arg1 }, };
 
     if (unique0 == 3)
     {
@@ -99,6 +94,11 @@ static struct ds_TOIPlane ds_TOIPlane(const struct ds_TimeOfImpactArg *arg0, con
         sep.type = TOI_PLANE_FACE;
         sep.face.index = 1;
         sep.face.plane = Plane(n1, p1);
+    }
+    else
+    {
+        sep.type = TOI_PLANE_VERTICES;
+        sep.vertices.world_axis = world_axis;
     }
 
     return sep;
