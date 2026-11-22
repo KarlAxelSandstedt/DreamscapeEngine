@@ -113,9 +113,8 @@ static struct ds_TOIPlane ds_TOIPlane(const struct ds_TimeOfImpactArg *arg0, con
     return sep;
 }
 
-static f32 ds_TOIPlaneSignedDistance(u32 index[2], const struct ds_TOIPlane *sep, const f32 t)
+static f32 ds_TOIPlaneSignedDistance(const struct ds_TOIPlane *sep, const u32 index[2], const ds_Transform transform[2])
 {
-    const ds_Transform transform[2] = { ds_TOITransform(sep->arg[0], t), ds_TOITransform(sep->arg[1], t) };
     const struct GJKVertexSet *vset[2] = { &sep->arg[0]->vset, &sep->arg[1]->vset };
 
     f32 signed_distance = 0.0f;
@@ -123,10 +122,6 @@ static f32 ds_TOIPlaneSignedDistance(u32 index[2], const struct ds_TOIPlane *sep
     {
         case TOI_PLANE_VERTICES:
         {
-            const v3 axis0 = QUnitRotate(QConj(transform[0].rotation), sep->witness[0]);
-            const v3 axis1 = QUnitRotate(QConj(transform[1].rotation), V3Negate(sep->witness[0]));
-            index[0] = V3Support(vset[0]->v, vset[0]->v_count, axis0);
-            index[1] = V3Support(vset[1]->v, vset[1]->v_count, axis1);
             const v3 p0 = V3Add(QUnitRotate(transform[0].rotation, vset[0]->v[index[0]]), transform[0].position);
             const v3 p1 = V3Add(QUnitRotate(transform[1].rotation, vset[1]->v[index[1]]), transform[1].position);
             signed_distance = V3Dot(V3Sub(p1, p0), sep->witness[0]);
@@ -142,9 +137,6 @@ static f32 ds_TOIPlaneSignedDistance(u32 index[2], const struct ds_TOIPlane *sep
             const u32 j = 1 - i;
             const v3 normal = QUnitRotate(transform[i].rotation, sep->witness[0]);
             const v3 point = V3Add(QUnitRotate(transform[i].rotation, sep->witness[1]), transform[i].position);
-            const v3 axis = QUnitRotate(QConj(transform[j].rotation), V3Negate(normal));
-            index[i] = U32_MAX;
-            index[j] = V3Support(vset[j]->v, vset[j]->v_count, axis);
             const v3 p = V3Add(QUnitRotate(transform[j].rotation, vset[j]->v[index[j]]), transform[j].position);
             signed_distance = V3Dot(V3Sub(p, point), normal);
         } break;
@@ -153,19 +145,19 @@ static f32 ds_TOIPlaneSignedDistance(u32 index[2], const struct ds_TOIPlane *sep
     return signed_distance;
 }
 
-static f32 ds_TOIPlaneEvaluate(const struct ds_TOIPlane *sep, const u32 index[2], const f32 t)
+static f32 ds_TOIPlaneDeepest(u32 index[2], const struct ds_TOIPlane *sep, const f32 t)
 {
     const ds_Transform transform[2] = { ds_TOITransform(sep->arg[0], t), ds_TOITransform(sep->arg[1], t) };
     const struct GJKVertexSet *vset[2] = { &sep->arg[0]->vset, &sep->arg[1]->vset };
 
-    f32 signed_distance = 0.0f;
     switch (sep->type)
     {
         case TOI_PLANE_VERTICES:
         {
-            const v3 p0 = V3Add(QUnitRotate(transform[0].rotation, vset[0]->v[index[0]]), transform[0].position);
-            const v3 p1 = V3Add(QUnitRotate(transform[1].rotation, vset[1]->v[index[1]]), transform[1].position);
-            signed_distance = V3Dot(V3Sub(p1, p0), sep->witness[0]);
+            const v3 axis0 = QUnitRotate(QConj(transform[0].rotation), sep->witness[0]);
+            const v3 axis1 = QUnitRotate(QConj(transform[1].rotation), V3Negate(sep->witness[0]));
+            index[0] = V3Support(vset[0]->v, vset[0]->v_count, axis0);
+            index[1] = V3Support(vset[1]->v, vset[1]->v_count, axis1);
         } break;
 
         case TOI_PLANE_EDGES:
@@ -177,13 +169,13 @@ static f32 ds_TOIPlaneEvaluate(const struct ds_TOIPlane *sep, const u32 index[2]
             const u32 i = sep->face;
             const u32 j = 1 - i;
             const v3 normal = QUnitRotate(transform[i].rotation, sep->witness[0]);
-            const v3 point = V3Add(QUnitRotate(transform[i].rotation, sep->witness[1]), transform[i].position);
-            const v3 p = V3Add(QUnitRotate(transform[j].rotation, vset[j]->v[index[j]]), transform[j].position);
-            signed_distance = V3Dot(V3Sub(p, point), normal);
+            const v3 axis = QUnitRotate(QConj(transform[j].rotation), V3Negate(normal));
+            index[i] = U32_MAX;
+            index[j] = V3Support(vset[j]->v, vset[j]->v_count, axis);
         } break;
     }
 
-    return signed_distance;
+    return ds_TOIPlaneSignedDistance(sep, index, transform);
 }
 
 f32 ds_TimeOfImpact(const struct ds_TimeOfImpactArg *arg0, const struct ds_TimeOfImpactArg *arg1, const f32 max_toi)
@@ -200,9 +192,8 @@ f32 ds_TimeOfImpact(const struct ds_TimeOfImpactArg *arg0, const struct ds_TimeO
     f32 toi = 0.0f;
     for (u32 i = 0; i < g_numerics_config->toi_max_iterations; ++i)
     {
-        const ds_Transform t0 = ds_TOITransform(arg0, toi);
-        const ds_Transform t1 = ds_TOITransform(arg1, toi);
-        const ds_Transform t_1_to_0 = ds_TransformRelative(&t0, &t1);
+        const ds_Transform t_toi[2] = { ds_TOITransform(arg0, toi), ds_TOITransform(arg1, toi) };
+        const ds_Transform t_1_to_0 = ds_TransformRelative(t_toi + 0, t_toi + 1);
 
         v3 c0, c1, n;
         struct GJKCache *cache_out = cache + (i & 1);
@@ -216,7 +207,7 @@ f32 ds_TimeOfImpact(const struct ds_TimeOfImpactArg *arg0, const struct ds_TimeO
         }
 
         u32 index[2];
-        const struct ds_TOIPlane sep = ds_TOIPlane(arg0, &t0, arg1, &t1, cache_out, n);
+        const struct ds_TOIPlane sep = ds_TOIPlane(arg0, t_toi + 0, arg1, t_toi + 1, cache_out, n);
 
         /*
          * The plane is built from the GJK cache, not from the geometries, so it may be
@@ -224,13 +215,13 @@ f32 ds_TimeOfImpact(const struct ds_TimeOfImpactArg *arg0, const struct ds_TimeO
          * toi. If the plane puts a point within tolerance at toi although GJK does not,
          * there is nothing to push back: return toi.  
          */
-        if (ds_TOIPlaneSignedDistance(index, &sep, toi) <= target + tol)
+        if (ds_TOIPlaneDeepest(index, &sep, toi) <= target + tol)
         {
             return toi;
         }
 
         intv plane_distance_at = { 0 };
-        plane_distance_at.high = ds_TOIPlaneSignedDistance(index, &sep, max_toi);
+        plane_distance_at.high = ds_TOIPlaneDeepest(index, &sep, max_toi);
 
         /* 
          * Geometries still separated and have not passed through each other at max_toi. 
@@ -257,7 +248,7 @@ f32 ds_TimeOfImpact(const struct ds_TimeOfImpactArg *arg0, const struct ds_TimeO
                 break;
             }
 
-            plane_distance_at.low = ds_TOIPlaneEvaluate(&sep, index, toi);
+            plane_distance_at.low = ds_TOIPlaneSignedDistance(&sep, index, t_toi);
 
             /* Root find deepest point plane itersection */
             intv root = Intv(toi, plane_toi);
@@ -267,7 +258,8 @@ f32 ds_TimeOfImpact(const struct ds_TimeOfImpactArg *arg0, const struct ds_TimeO
                           ? root.low + (target - plane_distance_at.low)*(root.high - root.low)/(plane_distance_at.high - plane_distance_at.low)
                           : 0.5f*(root.low + root.high);
 
-                const f32 s = ds_TOIPlaneEvaluate(&sep, index, t);
+                const ds_Transform transform[2] = { ds_TOITransform(arg0, t), ds_TOITransform(arg1, t) };
+                const f32 s = ds_TOIPlaneSignedDistance(&sep, index, transform);
                 if (F32Abs(s - target) <= tol)
                 {
                     plane_toi = t;
@@ -286,7 +278,7 @@ f32 ds_TimeOfImpact(const struct ds_TimeOfImpactArg *arg0, const struct ds_TimeO
                 }
             }
 
-            plane_distance_at.high = ds_TOIPlaneSignedDistance(index, &sep, plane_toi);
+            plane_distance_at.high = ds_TOIPlaneDeepest(index, &sep, plane_toi);
         }
 
         /*
