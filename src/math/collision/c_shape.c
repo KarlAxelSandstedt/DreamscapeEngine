@@ -358,12 +358,9 @@ struct aabb c_ShapeBbox(const struct c_Shape *shape, const ds_Transform *transfo
 
 	if (shape->type == C_SHAPE_CONVEX_HULL)
 	{
-		for (u32 i = 0; i < shape->hull.v_count; ++i)
-		{
-			const v3 v = M3V3Mul(rot, shape->hull.v[i]);
-			min = V3Min(min, v);
-			max = V3Max(max, v);
-		}
+		const struct aabb bbox = BboxRotate(shape->hull.bbox, rot);
+		min = bbox.min;
+		max = bbox.max;
 	}
 	else if (shape->type == C_SHAPE_SPHERE)
 	{

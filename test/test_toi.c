@@ -32,8 +32,8 @@ ds_TimeOfImpactConvex on hand-made sweeps with known outcomes (max_toi = 1). A h
     tol     = slop / 4
 
 Static shapes sit at the origin. Every case also runs with the args swapped (arg1 first), with the same
-expected outcome. An arg's vertex set is built in place: a sphere's or capsule's points live in the vertex set
-itself, so an arg is never copied.
+expected outcome. An arg's vertex set is built in place (ds_TimeOfImpactArg*): a sphere's or capsule's points
+live in the vertex set itself, so an arg is never copied.
 
 ToiRandomTest runs tables of random shape pairs and sweeps against an oracle, the core distance sampled at
 TOI_TEST_SAMPLES times along the sweep (alternate sweeps call with the args swapped). It fails on NaN, on a hit
@@ -69,21 +69,6 @@ static f32 ToiTestDistance(const struct ds_TimeOfImpactArg *arg0, const struct d
     return GJK(&c0, &c1, &n, &cache, NULL, &arg0->vset, &arg1->vset, &t_1_to_0, F32_INFINITY);
 }
 
-/* the margin around the shape's core: a sphere's or capsule's radius, 0 for hulls */
-static f32 ToiTestRadius(const struct c_Shape *shape)
-{
-    f32 radius = 0.0f;
-    if (shape->type == C_SHAPE_SPHERE)
-    {
-        radius = shape->sphere.radius;
-    }
-    else if (shape->type == C_SHAPE_CAPSULE)
-    {
-        radius = shape->capsule.radius;
-    }
-
-    return radius;
-}
 
 /* toi is a hit in (0, max_toi): the core distance at it lies in [target - tol, target + tol] */
 static u32 ToiTestHitCheck(const struct ds_TimeOfImpactArg *arg0, const struct ds_TimeOfImpactArg *arg1, const f32 toi, const f32 max_toi)
@@ -108,25 +93,21 @@ struct test_Output ToiBoxSegmentTest(struct test_Environment *env)
 
     const struct c_Shape box = { .type = C_SHAPE_CONVEX_HULL, .hull = DcelBox(env->mem_1, V3(1.0f, 1.0f, 1.0f)) };
     const struct c_Shape capsule = { .type = C_SHAPE_CAPSULE, .capsule = { .half_height = 1.0f, .radius = 0.05f } };
-    struct ds_TimeOfImpactArg arg0 =
+    const ds_Transform sweep0[2] =
     {
-        .shape = &box,
-        .sweep[0] = { .rotation = QIdentity(), .position = V3Zero() },
-        .sweep[1] = { .rotation = QIdentity(), .position = V3Zero() },
-        .local_center = V3Zero(),
+        { .rotation = QIdentity(), .position = V3Zero() },
+        { .rotation = QIdentity(), .position = V3Zero() },
     };
-    GJKVertexSetShapeNoMargin(&arg0.vset, arg0.shape);
-    arg0.margin = ToiTestRadius(arg0.shape);
+    struct ds_TimeOfImpactArg arg0;
+    ds_TimeOfImpactArgHull(&arg0, &box, sweep0, V3Zero());
 
-    struct ds_TimeOfImpactArg arg1 =
+    const ds_Transform sweep1[2] =
     {
-        .shape = &capsule,
-        .sweep[0] = { .rotation = QIdentity(), .position = V3(2.0f, 0.0f, 0.0f) },
-        .sweep[1] = { .rotation = QIdentity(), .position = V3Zero() },
-        .local_center = V3Zero(),
+        { .rotation = QIdentity(), .position = V3(2.0f, 0.0f, 0.0f) },
+        { .rotation = QIdentity(), .position = V3Zero() },
     };
-    GJKVertexSetShapeNoMargin(&arg1.vset, arg1.shape);
-    arg1.margin = ToiTestRadius(arg1.shape);
+    struct ds_TimeOfImpactArg arg1;
+    ds_TimeOfImpactArgCapsule(&arg1, &capsule, sweep1, V3Zero());
 
     const f32 toi = ds_TimeOfImpactConvex(&arg0, &arg1, 1.0f);
     TEST_TRUE(ToiTestHitCheck(&arg0, &arg1, toi, 1.0f));
@@ -145,25 +126,21 @@ struct test_Output ToiBeyondMaxToiTest(struct test_Environment *env)
 
     const struct c_Shape box = { .type = C_SHAPE_CONVEX_HULL, .hull = DcelBox(env->mem_1, V3(1.0f, 1.0f, 1.0f)) };
     const struct c_Shape capsule = { .type = C_SHAPE_CAPSULE, .capsule = { .half_height = 1.0f, .radius = 0.05f } };
-    struct ds_TimeOfImpactArg arg0 =
+    const ds_Transform sweep0[2] =
     {
-        .shape = &box,
-        .sweep[0] = { .rotation = QIdentity(), .position = V3Zero() },
-        .sweep[1] = { .rotation = QIdentity(), .position = V3Zero() },
-        .local_center = V3Zero(),
+        { .rotation = QIdentity(), .position = V3Zero() },
+        { .rotation = QIdentity(), .position = V3Zero() },
     };
-    GJKVertexSetShapeNoMargin(&arg0.vset, arg0.shape);
-    arg0.margin = ToiTestRadius(arg0.shape);
+    struct ds_TimeOfImpactArg arg0;
+    ds_TimeOfImpactArgHull(&arg0, &box, sweep0, V3Zero());
 
-    struct ds_TimeOfImpactArg arg1 =
+    const ds_Transform sweep1[2] =
     {
-        .shape = &capsule,
-        .sweep[0] = { .rotation = QIdentity(), .position = V3(2.0f, 0.0f, 0.0f) },
-        .sweep[1] = { .rotation = QIdentity(), .position = V3Zero() },
-        .local_center = V3Zero(),
+        { .rotation = QIdentity(), .position = V3(2.0f, 0.0f, 0.0f) },
+        { .rotation = QIdentity(), .position = V3Zero() },
     };
-    GJKVertexSetShapeNoMargin(&arg1.vset, arg1.shape);
-    arg1.margin = ToiTestRadius(arg1.shape);
+    struct ds_TimeOfImpactArg arg1;
+    ds_TimeOfImpactArgCapsule(&arg1, &capsule, sweep1, V3Zero());
 
     const f32 toi = ds_TimeOfImpactConvex(&arg0, &arg1, 0.4f);
     TEST_EQUAL(0.4f, toi);
@@ -181,25 +158,21 @@ struct test_Output ToiSphereSphereTest(struct test_Environment *env)
     ToiTestConfigPush();
 
     const struct c_Shape sphere = { .type = C_SHAPE_SPHERE, .sphere = { .radius = 0.5f } };
-    struct ds_TimeOfImpactArg arg0 =
+    const ds_Transform sweep0[2] =
     {
-        .shape = &sphere,
-        .sweep[0] = { .rotation = QIdentity(), .position = V3Zero() },
-        .sweep[1] = { .rotation = QIdentity(), .position = V3Zero() },
-        .local_center = V3Zero(),
+        { .rotation = QIdentity(), .position = V3Zero() },
+        { .rotation = QIdentity(), .position = V3Zero() },
     };
-    GJKVertexSetShapeNoMargin(&arg0.vset, arg0.shape);
-    arg0.margin = ToiTestRadius(arg0.shape);
+    struct ds_TimeOfImpactArg arg0;
+    ds_TimeOfImpactArgSphere(&arg0, &sphere, sweep0, V3Zero());
 
-    struct ds_TimeOfImpactArg arg1 =
+    const ds_Transform sweep1[2] =
     {
-        .shape = &sphere,
-        .sweep[0] = { .rotation = QIdentity(), .position = V3(3.0f, 0.0f, 0.0f) },
-        .sweep[1] = { .rotation = QIdentity(), .position = V3(-3.0f, 0.0f, 0.0f) },
-        .local_center = V3Zero(),
+        { .rotation = QIdentity(), .position = V3(3.0f, 0.0f, 0.0f) },
+        { .rotation = QIdentity(), .position = V3(-3.0f, 0.0f, 0.0f) },
     };
-    GJKVertexSetShapeNoMargin(&arg1.vset, arg1.shape);
-    arg1.margin = ToiTestRadius(arg1.shape);
+    struct ds_TimeOfImpactArg arg1;
+    ds_TimeOfImpactArgSphere(&arg1, &sphere, sweep1, V3Zero());
 
     const f32 toi = ds_TimeOfImpactConvex(&arg0, &arg1, 1.0f);
     TEST_TRUE(ToiTestHitCheck(&arg0, &arg1, toi, 1.0f));
@@ -217,25 +190,21 @@ struct test_Output ToiOverlapTest(struct test_Environment *env)
     ToiTestConfigPush();
 
     const struct c_Shape box = { .type = C_SHAPE_CONVEX_HULL, .hull = DcelBox(env->mem_1, V3(1.0f, 1.0f, 1.0f)) };
-    struct ds_TimeOfImpactArg arg0 =
+    const ds_Transform sweep0[2] =
     {
-        .shape = &box,
-        .sweep[0] = { .rotation = QIdentity(), .position = V3Zero() },
-        .sweep[1] = { .rotation = QIdentity(), .position = V3Zero() },
-        .local_center = V3Zero(),
+        { .rotation = QIdentity(), .position = V3Zero() },
+        { .rotation = QIdentity(), .position = V3Zero() },
     };
-    GJKVertexSetShapeNoMargin(&arg0.vset, arg0.shape);
-    arg0.margin = ToiTestRadius(arg0.shape);
+    struct ds_TimeOfImpactArg arg0;
+    ds_TimeOfImpactArgHull(&arg0, &box, sweep0, V3Zero());
 
-    struct ds_TimeOfImpactArg arg1 =
+    const ds_Transform sweep1[2] =
     {
-        .shape = &box,
-        .sweep[0] = { .rotation = QIdentity(), .position = V3(1.5f, 0.0f, 0.0f) },
-        .sweep[1] = { .rotation = QIdentity(), .position = V3(5.0f, 0.0f, 0.0f) },
-        .local_center = V3Zero(),
+        { .rotation = QIdentity(), .position = V3(1.5f, 0.0f, 0.0f) },
+        { .rotation = QIdentity(), .position = V3(5.0f, 0.0f, 0.0f) },
     };
-    GJKVertexSetShapeNoMargin(&arg1.vset, arg1.shape);
-    arg1.margin = ToiTestRadius(arg1.shape);
+    struct ds_TimeOfImpactArg arg1;
+    ds_TimeOfImpactArgHull(&arg1, &box, sweep1, V3Zero());
 
     const f32 toi = ds_TimeOfImpactConvex(&arg0, &arg1, 1.0f);
     TEST_EQUAL(0.0f, toi);
@@ -253,25 +222,21 @@ struct test_Output ToiSeparatingTest(struct test_Environment *env)
     ToiTestConfigPush();
 
     const struct c_Shape sphere = { .type = C_SHAPE_SPHERE, .sphere = { .radius = 0.5f } };
-    struct ds_TimeOfImpactArg arg0 =
+    const ds_Transform sweep0[2] =
     {
-        .shape = &sphere,
-        .sweep[0] = { .rotation = QIdentity(), .position = V3Zero() },
-        .sweep[1] = { .rotation = QIdentity(), .position = V3Zero() },
-        .local_center = V3Zero(),
+        { .rotation = QIdentity(), .position = V3Zero() },
+        { .rotation = QIdentity(), .position = V3Zero() },
     };
-    GJKVertexSetShapeNoMargin(&arg0.vset, arg0.shape);
-    arg0.margin = ToiTestRadius(arg0.shape);
+    struct ds_TimeOfImpactArg arg0;
+    ds_TimeOfImpactArgSphere(&arg0, &sphere, sweep0, V3Zero());
 
-    struct ds_TimeOfImpactArg arg1 =
+    const ds_Transform sweep1[2] =
     {
-        .shape = &sphere,
-        .sweep[0] = { .rotation = QIdentity(), .position = V3(3.0f, 0.0f, 0.0f) },
-        .sweep[1] = { .rotation = QIdentity(), .position = V3(6.0f, 0.0f, 0.0f) },
-        .local_center = V3Zero(),
+        { .rotation = QIdentity(), .position = V3(3.0f, 0.0f, 0.0f) },
+        { .rotation = QIdentity(), .position = V3(6.0f, 0.0f, 0.0f) },
     };
-    GJKVertexSetShapeNoMargin(&arg1.vset, arg1.shape);
-    arg1.margin = ToiTestRadius(arg1.shape);
+    struct ds_TimeOfImpactArg arg1;
+    ds_TimeOfImpactArgSphere(&arg1, &sphere, sweep1, V3Zero());
 
     const f32 toi = ds_TimeOfImpactConvex(&arg0, &arg1, 1.0f);
     TEST_EQUAL(1.0f, toi);
@@ -293,25 +258,21 @@ struct test_Output ToiGlancingMissTest(struct test_Environment *env)
 
     const struct c_Shape box = { .type = C_SHAPE_CONVEX_HULL, .hull = DcelBox(env->mem_1, V3(1.0f, 1.0f, 1.0f)) };
     const struct c_Shape sphere = { .type = C_SHAPE_SPHERE, .sphere = { .radius = 0.1f } };
-    struct ds_TimeOfImpactArg arg0 =
+    const ds_Transform sweep0[2] =
     {
-        .shape = &box,
-        .sweep[0] = { .rotation = QIdentity(), .position = V3Zero() },
-        .sweep[1] = { .rotation = QIdentity(), .position = V3Zero() },
-        .local_center = V3Zero(),
+        { .rotation = QIdentity(), .position = V3Zero() },
+        { .rotation = QIdentity(), .position = V3Zero() },
     };
-    GJKVertexSetShapeNoMargin(&arg0.vset, arg0.shape);
-    arg0.margin = ToiTestRadius(arg0.shape);
+    struct ds_TimeOfImpactArg arg0;
+    ds_TimeOfImpactArgHull(&arg0, &box, sweep0, V3Zero());
 
-    struct ds_TimeOfImpactArg arg1 =
+    const ds_Transform sweep1[2] =
     {
-        .shape = &sphere,
-        .sweep[0] = { .rotation = QIdentity(), .position = V3(-3.0f, 1.5f, 0.0f) },
-        .sweep[1] = { .rotation = QIdentity(), .position = V3(3.0f, 1.5f, 0.0f) },
-        .local_center = V3Zero(),
+        { .rotation = QIdentity(), .position = V3(-3.0f, 1.5f, 0.0f) },
+        { .rotation = QIdentity(), .position = V3(3.0f, 1.5f, 0.0f) },
     };
-    GJKVertexSetShapeNoMargin(&arg1.vset, arg1.shape);
-    arg1.margin = ToiTestRadius(arg1.shape);
+    struct ds_TimeOfImpactArg arg1;
+    ds_TimeOfImpactArgSphere(&arg1, &sphere, sweep1, V3Zero());
 
     const f32 toi = ds_TimeOfImpactConvex(&arg0, &arg1, 1.0f);
     TEST_EQUAL(1.0f, toi);
@@ -333,25 +294,21 @@ struct test_Output ToiSpinningSegmentTest(struct test_Environment *env)
 
     const struct c_Shape box = { .type = C_SHAPE_CONVEX_HULL, .hull = DcelBox(env->mem_1, V3(1.0f, 1.0f, 1.0f)) };
     const struct c_Shape capsule = { .type = C_SHAPE_CAPSULE, .capsule = { .half_height = 1.2f, .radius = 0.05f } };
-    struct ds_TimeOfImpactArg arg0 =
+    const ds_Transform sweep0[2] =
     {
-        .shape = &box,
-        .sweep[0] = { .rotation = QIdentity(), .position = V3Zero() },
-        .sweep[1] = { .rotation = QIdentity(), .position = V3Zero() },
-        .local_center = V3Zero(),
+        { .rotation = QIdentity(), .position = V3Zero() },
+        { .rotation = QIdentity(), .position = V3Zero() },
     };
-    GJKVertexSetShapeNoMargin(&arg0.vset, arg0.shape);
-    arg0.margin = ToiTestRadius(arg0.shape);
+    struct ds_TimeOfImpactArg arg0;
+    ds_TimeOfImpactArgHull(&arg0, &box, sweep0, V3Zero());
 
-    struct ds_TimeOfImpactArg arg1 =
+    const ds_Transform sweep1[2] =
     {
-        .shape = &capsule,
-        .sweep[0] = { .rotation = QUnitAxisAngle(V3(0.0f, 0.0f, 1.0f), -0.5f*F32_PI), .position = V3(0.0f, 2.0f, 0.0f) },
-        .sweep[1] = { .rotation = QIdentity(), .position = V3(0.0f, 2.0f, 0.0f) },
-        .local_center = V3Zero(),
+        { .rotation = QUnitAxisAngle(V3(0.0f, 0.0f, 1.0f), -0.5f*F32_PI), .position = V3(0.0f, 2.0f, 0.0f) },
+        { .rotation = QIdentity(), .position = V3(0.0f, 2.0f, 0.0f) },
     };
-    GJKVertexSetShapeNoMargin(&arg1.vset, arg1.shape);
-    arg1.margin = ToiTestRadius(arg1.shape);
+    struct ds_TimeOfImpactArg arg1;
+    ds_TimeOfImpactArgCapsule(&arg1, &capsule, sweep1, V3Zero());
 
     const f32 toi = ds_TimeOfImpactConvex(&arg0, &arg1, 1.0f);
     TEST_TRUE(ToiTestHitCheck(&arg0, &arg1, toi, 1.0f));
@@ -511,8 +468,25 @@ static void ToiTestShapeInit(struct toi_TestShape *shape, struct arena *mem, con
     }
 }
 
-/* the sweeps of one random case; returns the scene's size L for the noise bound */
-static f32 ToiTestSweeps(struct ds_TimeOfImpactArg *arg0, struct ds_TimeOfImpactArg *arg1, const struct toi_TestScenario *scenario, const struct toi_TestShape *shape0, const struct toi_TestShape *shape1)
+/* the arg of a sphere, capsule or hull */
+static void ToiTestArgInit(struct ds_TimeOfImpactArg *arg, const struct c_Shape *shape, const ds_Transform sweep[2], const v3 local_center)
+{
+    if (shape->type == C_SHAPE_SPHERE)
+    {
+        ds_TimeOfImpactArgSphere(arg, shape, sweep, local_center);
+    }
+    else if (shape->type == C_SHAPE_CAPSULE)
+    {
+        ds_TimeOfImpactArgCapsule(arg, shape, sweep, local_center);
+    }
+    else
+    {
+        ds_TimeOfImpactArgHull(arg, shape, sweep, local_center);
+    }
+}
+
+/* the sweeps (and centers of mass) of one random case; returns the scene's size L for the noise bound */
+static f32 ToiTestSweeps(ds_Transform sweep0[2], v3 *center0, ds_Transform sweep1[2], v3 *center1, const struct toi_TestScenario *scenario, const struct toi_TestShape *shape0, const struct toi_TestShape *shape1)
 {
     const f32 ext = shape0->extent + shape1->extent;
     const v3 offset_dir = ToiTestUnit();
@@ -539,10 +513,10 @@ static f32 ToiTestSweeps(struct ds_TimeOfImpactArg *arg0, struct ds_TimeOfImpact
         const q dq1 = QMul(tilt, QUnitAxisAngle(V3(0.0f, 0.0f, 1.0f), -2.0f*delta));
         const v3 above = V3Add(origin, V3(dx, dy, h));
         const v3 below = V3Add(origin, V3(dx, dy, -h));
-        arg0->sweep[0] = (ds_Transform) { .rotation = q0, .position = origin };
-        arg0->sweep[1] = (ds_Transform) { .rotation = q0, .position = origin };
-        arg1->sweep[0] = (ds_Transform) { .rotation = q1, .position = above };
-        arg1->sweep[1] = (ds_Transform) { .rotation = QMul(dq1, q1), .position = below };
+        sweep0[0] = (ds_Transform) { .rotation = q0, .position = origin };
+        sweep0[1] = (ds_Transform) { .rotation = q0, .position = origin };
+        sweep1[0] = (ds_Transform) { .rotation = q1, .position = above };
+        sweep1[1] = (ds_Transform) { .rotation = QMul(dq1, q1), .position = below };
         scene = h + ext;
     }
     else
@@ -559,21 +533,21 @@ static f32 ToiTestSweeps(struct ds_TimeOfImpactArg *arg0, struct ds_TimeOfImpact
         const v3 drift_dir = ToiTestUnit();
         const v3 start1 = V3Add(origin, V3Scale(u, reach));
         const v3 end1 = V3Add(V3Add(origin, V3Scale(u, -0.5f*reach)), V3Scale(side_dir, side));
-        arg0->sweep[0] = (ds_Transform) { .rotation = q0, .position = origin };
-        arg0->sweep[1] = (ds_Transform) { .rotation = QMul(dq0, q0), .position = V3Add(origin, V3Scale(drift_dir, 0.1f*shape0->extent)) };
-        arg1->sweep[0] = (ds_Transform) { .rotation = q1, .position = start1 };
-        arg1->sweep[1] = (ds_Transform) { .rotation = QMul(dq1, q1), .position = end1 };
+        sweep0[0] = (ds_Transform) { .rotation = q0, .position = origin };
+        sweep0[1] = (ds_Transform) { .rotation = QMul(dq0, q0), .position = V3Add(origin, V3Scale(drift_dir, 0.1f*shape0->extent)) };
+        sweep1[0] = (ds_Transform) { .rotation = q1, .position = start1 };
+        sweep1[1] = (ds_Transform) { .rotation = QMul(dq1, q1), .position = end1 };
         scene = reach + side + ext;
     }
 
-    arg0->local_center = V3Zero();
-    arg1->local_center = V3Zero();
+    *center0 = V3Zero();
+    *center1 = V3Zero();
     if (scenario->center > 0.0f)
     {
-        const v3 center0 = ToiTestUnit();
-        const v3 center1 = ToiTestUnit();
-        arg0->local_center = V3Scale(center0, scenario->center*shape0->extent);
-        arg1->local_center = V3Scale(center1, scenario->center*shape1->extent);
+        const v3 dir0 = ToiTestUnit();
+        const v3 dir1 = ToiTestUnit();
+        *center0 = V3Scale(dir0, scenario->center*shape0->extent);
+        *center1 = V3Scale(dir1, scenario->center*shape1->extent);
     }
 
     return scenario->offset + scene;
@@ -594,13 +568,12 @@ static void ToiTestScenarioRun(struct toi_TestCount *count, struct arena *mem, c
         const f32 size1 = ratio*RngF32Range(scenario->size_min, scenario->size_max);
         ToiTestShapeInit(&shape1, mem, scenario->kind1, size1);
 
-        struct ds_TimeOfImpactArg arg0 = { .shape = &shape0.shape };
-        struct ds_TimeOfImpactArg arg1 = { .shape = &shape1.shape };
-        GJKVertexSetShapeNoMargin(&arg0.vset, arg0.shape);
-        GJKVertexSetShapeNoMargin(&arg1.vset, arg1.shape);
-        arg0.margin = ToiTestRadius(arg0.shape);
-        arg1.margin = ToiTestRadius(arg1.shape);
-        const f32 scene = ToiTestSweeps(&arg0, &arg1, scenario, &shape0, &shape1);
+        ds_Transform sweep0[2], sweep1[2];
+        v3 center0, center1;
+        const f32 scene = ToiTestSweeps(sweep0, &center0, sweep1, &center1, scenario, &shape0, &shape1);
+        struct ds_TimeOfImpactArg arg0, arg1;
+        ToiTestArgInit(&arg0, &shape0.shape, sweep0, center0);
+        ToiTestArgInit(&arg1, &shape1.shape, sweep1, center1);
         const f32 noise = 64.0f*F32_EPSILON*scene;
         const f32 target = F32Max(slop, arg0.margin + arg1.margin - slop);
 

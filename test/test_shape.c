@@ -337,9 +337,9 @@ static v3 ShapeTestUnit(void)
 }
 
 /*
-c_ShapeBbox at random transforms: a hull's box is the box of its vertices rotated by QUnitRotate and moved; a
-sphere's is p +- r; a capsule's the box of its segment's ends +- r; random surface points of the sphere and the
-capsule lie inside their boxes.
+c_ShapeBbox at random transforms: a hull's box is its local box rotated (BboxRotate) and moved, and holds every
+vertex; a sphere's is p +- r; a capsule's the box of its segment's ends +- r; random surface points of the sphere
+and the capsule lie inside their boxes.
 */
 struct test_Output ShapeBboxTest(struct test_Environment *env)
 {
@@ -366,20 +366,25 @@ struct test_Output ShapeBboxTest(struct test_Environment *env)
         }
         struct c_Shape hull = { .type = C_SHAPE_CONVEX_HULL };
         hull.hull = DcelConvexHull(env->mem_1, point, 16);
-        v3 hull_min = V3(F32_INFINITY, F32_INFINITY, F32_INFINITY);
-        v3 hull_max = V3(-F32_INFINITY, -F32_INFINITY, -F32_INFINITY);
-        for (u32 i = 0; i < hull.hull.v_count; ++i)
-        {
-            const v3 v = V3Add(QUnitRotate(rotation, hull.hull.v[i]), position);
-            hull_min = V3Min(hull_min, v);
-            hull_max = V3Max(hull_max, v);
-        }
+        const struct aabb rotated = BboxRotate(hull.hull.bbox, M3QUnit(rotation));
+        const v3 hull_min = V3Add(rotated.min, position);
+        const v3 hull_max = V3Add(rotated.max, position);
         const struct aabb hull_box = c_ShapeBbox(&hull, &transform);
         const f32 scale = V3Length(position) + 4.0f;
         if (!ShapeTestV3Near(hull_box.min, hull_min, scale) || !ShapeTestV3Near(hull_box.max, hull_max, scale))
         {
             fprintf(stderr, "hull %u: box (%.6g %.6g %.6g) (%.6g %.6g %.6g), expected (%.6g %.6g %.6g) (%.6g %.6g %.6g)\n", round, hull_box.min.x, hull_box.min.y, hull_box.min.z, hull_box.max.x, hull_box.max.y, hull_box.max.z, hull_min.x, hull_min.y, hull_min.z, hull_max.x, hull_max.y, hull_max.z);
             TEST_FAILURE;
+        }
+
+        const f32 hull_tolerance = SHAPE_TEST_TOLERANCE * scale;
+        for (u32 i = 0; i < hull.hull.v_count; ++i)
+        {
+            const v3 v = V3Add(QUnitRotate(rotation, hull.hull.v[i]), position);
+            for (u32 c = 0; c < 3; ++c)
+            {
+                TEST_TRUE(hull_box.min.buf[c] - hull_tolerance <= v.buf[c] && v.buf[c] <= hull_box.max.buf[c] + hull_tolerance);
+            }
         }
 
         const f32 r = RngF32Range(0.05f, 2.0f);

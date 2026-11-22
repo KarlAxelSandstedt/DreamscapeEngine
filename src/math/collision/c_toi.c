@@ -290,15 +290,11 @@ f32 ds_TimeOfImpactConcave(struct arena *mem, const struct ds_TimeOfImpactArg *m
     ds_Assert(mesh->shape->type == C_SHAPE_TRI_MESH && convex->shape->type != C_SHAPE_TRI_MESH);
     const struct mesh *m = &mesh->shape->mesh;
 
-    /* 1. frames: the mesh is static (its pose at t = 0); triangles go into the convex's frame at t = 0 */
-    const ds_Transform mesh_pose = ds_TOITransform(mesh, 0.0f);
-    const ds_Transform frame = ds_TOITransform(convex, 0.0f);
-    const ds_Transform convex_to_mesh = ds_TransformRelative(&mesh_pose, &frame);
-    const m3 mesh_to_convex_rot = M3QUnit(QConj(convex_to_mesh.rotation));
-    //TODO 1. the convex's sweep in its own frame at t = 0 (for the triangle TOIs)
+    /* the mesh is static, local_center 0 => constant pose is sweep[0] */
+    const ds_Transform *mesh_pose = mesh->sweep + 0;
 
     /*
-     * 2. cast a box around the center of mass along its translation (mesh frame). Its half width, the distance
+     * Cast a box around the center of mass along its translation (mesh frame). Its half width, the distance
      * from the center of mass to the farthest corner of the shape's local box, covers every orientation.
      */
     const ds_Transform identity = ds_TransformIdentity();
@@ -307,9 +303,9 @@ f32 ds_TimeOfImpactConcave(struct arena *mem, const struct ds_TimeOfImpactArg *m
     const f32 reach = V3Length(corner);
     const v3 half = V3(reach, reach, reach);
 
-    const v3 center = V3InverseTransform(convex->sweep[0].position, &mesh_pose);
+    const v3 center = V3InverseTransform(convex->sweep[0].position, mesh_pose);
     const v3 displacement = V3Sub(convex->sweep[1].position, convex->sweep[0].position);
-    const v3 translation = QUnitRotate(QConj(mesh_pose.rotation), displacement);
+    const v3 translation = QUnitRotate(QConj(mesh_pose->rotation), displacement);
     const struct aabb bbox = { .min = V3Sub(center, half), .max = V3Add(center, half) };
 
     ArenaPushRecord(mem);
@@ -343,17 +339,11 @@ f32 ds_TimeOfImpactConcave(struct arena *mem, const struct ds_TimeOfImpactArg *m
                     continue;
                 }
 
-                /* 3. the triangle in the convex's frame at t = 0 */
-                v3 tri[3];
-                for (u32 k = 0; k < 3; ++k)
-                {
-                    tri[k] = M3V3Mul(mesh_to_convex_rot, V3Sub(m->v[v[k]], convex_to_mesh.position));
-                }
-
                 //TODO 4. early-outs on the shape's centroid: starts behind the triangle (one-sided, as the mover; to
                 //        evaluate), ends in front having moved less than the fallback radius
                 //        max(0.5 center_of_mass_surface_distance, slop)
-                //TODO 5. TOI of the triangle (mesh shape, triangle vset, margin 0) and the convex; max_toi: info.hit.f
+                //TODO 5. TOI of the triangle (ds_TimeOfImpactArgTriangle of the mesh arg, its mesh-local vertices) and the
+                //        convex: ds_TimeOfImpactConvex(convex, &triangle, info.hit.f), the convex first (GJK in its frame)
                 //TODO 6. fallback: a TOI of 0 (touching) retried with a point at the centroid, margin fallback radius
                 //        + slop
             }

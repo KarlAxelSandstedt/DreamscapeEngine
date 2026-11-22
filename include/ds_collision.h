@@ -191,7 +191,10 @@ DEFINE_SDB(c_Shape);
  * meshes (asserted)
  */
 void	c_ShapeUpdateMassProperties(struct c_Shape *shape);
-/* the shape's box at transform (shape frame -> parent frame); a mesh's is its rotated BVH root box (not tight) */
+/*
+ * the shape's box at transform (shape frame -> parent frame); a hull's is its local box (dcel bbox) rotated, a mesh's
+ * its rotated BVH root box (both not tight)
+ */
 struct aabb c_ShapeBbox(const struct c_Shape *shape, const ds_Transform *transform);
 
 /*
@@ -638,6 +641,13 @@ struct ds_TimeOfImpactArg
     v3                      local_center;
 };
 
+/* TimeOfImpact shape initializers */
+static inline void ds_TimeOfImpactArgSphere(struct ds_TimeOfImpactArg *arg, const struct c_Shape *shape, const ds_Transform sweep[2], const v3 local_center);
+static inline void ds_TimeOfImpactArgCapsule(struct ds_TimeOfImpactArg *arg, const struct c_Shape *shape, const ds_Transform sweep[2], const v3 local_center);
+static inline void ds_TimeOfImpactArgHull(struct ds_TimeOfImpactArg *arg, const struct c_Shape *shape, const ds_Transform sweep[2], const v3 local_center);
+static inline void ds_TimeOfImpactArgMesh(struct ds_TimeOfImpactArg *arg, const struct c_Shape *shape, const ds_Transform *pose);
+static inline void ds_TimeOfImpactArgTriangle(struct ds_TimeOfImpactArg *arg, const struct ds_TimeOfImpactArg *mesh, const v3 tri[3]);
+
 /*
  * Return the toi if a time-of-impact was found in [0, max_toi).
  * Return the last t in [0, max_toi) at which the inputs neither overlap nor have passed
@@ -676,6 +686,64 @@ static ds_ForceInline c_PointId c_PointIdConstant(const u32 constant)
 static ds_ForceInline u32 c_PointIdEqual(const c_PointId a, const c_PointId b)
 {
     return a.val == b.val;
+}
+
+/********************************** Time Of Impact: definitions **********************************/
+
+static inline void ds_TimeOfImpactArgSphere(struct ds_TimeOfImpactArg *arg, const struct c_Shape *shape, const ds_Transform sweep[2], const v3 local_center)
+{
+    ds_Assert(shape->type == C_SHAPE_SPHERE);
+    GJKVertexSetPoint(&arg->vset, V3Zero());
+    arg->shape = shape;
+    arg->margin = shape->sphere.radius;
+    arg->sweep[0] = sweep[0];
+    arg->sweep[1] = sweep[1];
+    arg->local_center = local_center;
+}
+
+static inline void ds_TimeOfImpactArgCapsule(struct ds_TimeOfImpactArg *arg, const struct c_Shape *shape, const ds_Transform sweep[2], const v3 local_center)
+{
+    ds_Assert(shape->type == C_SHAPE_CAPSULE);
+    const f32 h = shape->capsule.half_height;
+    GJKVertexSetSegment(&arg->vset, V3(0.0f, h, 0.0f), V3(0.0f, -h, 0.0f));
+    arg->shape = shape;
+    arg->margin = shape->capsule.radius;
+    arg->sweep[0] = sweep[0];
+    arg->sweep[1] = sweep[1];
+    arg->local_center = local_center;
+}
+
+static inline void ds_TimeOfImpactArgHull(struct ds_TimeOfImpactArg *arg, const struct c_Shape *shape, const ds_Transform sweep[2], const v3 local_center)
+{
+    ds_Assert(shape->type == C_SHAPE_CONVEX_HULL);
+    GJKVertexSetHull(&arg->vset, &shape->hull);
+    arg->shape = shape;
+    arg->margin = 0.0f;
+    arg->sweep[0] = sweep[0];
+    arg->sweep[1] = sweep[1];
+    arg->local_center = local_center;
+}
+
+static inline void ds_TimeOfImpactArgMesh(struct ds_TimeOfImpactArg *arg, const struct c_Shape *shape, const ds_Transform *pose)
+{
+    ds_Assert(shape->type == C_SHAPE_TRI_MESH);
+    arg->vset = (struct GJKVertexSet) { 0 };
+    arg->shape = shape;
+    arg->margin = 0.0f;
+    arg->sweep[0] = *pose;
+    arg->sweep[1] = *pose;
+    arg->local_center = V3Zero();
+}
+
+static inline void ds_TimeOfImpactArgTriangle(struct ds_TimeOfImpactArg *arg, const struct ds_TimeOfImpactArg *mesh, const v3 tri[3])
+{
+    ds_Assert(mesh->shape->type == C_SHAPE_TRI_MESH);
+    arg->shape = mesh->shape;
+    GJKVertexSetTriangle(&arg->vset, tri);
+    arg->margin = 0.0f;
+    arg->sweep[0] = mesh->sweep[0];
+    arg->sweep[1] = mesh->sweep[1];
+    arg->local_center = mesh->local_center;
 }
 
 #ifdef __cplusplus
