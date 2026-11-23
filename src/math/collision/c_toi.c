@@ -379,15 +379,39 @@ f32 ds_TimeOfImpactConcave(struct arena *mem, const struct ds_TimeOfImpactArg *m
         struct ds_TimeOfImpactArg triangle;
         ds_TimeOfImpactArgTriangle(&triangle, mesh, tri);
 
-        //TODO a TOI of 0 (touching at the start) is left to discrete contacts, which need speculative contacts first
-        //     (agent_notes/toi_ccd_plan.txt C3)
         const f32 t = ds_TimeOfImpactConvex(convex, &triangle, toi);
-        if (0.0f < t && t < toi)
+        if (t == 0.0f)
+        {
+            /*
+             * Fallback: we've found a contact at t=0.0f; in theory, such a contact should
+             * already have been solved, but for some reason it
+             *
+             *  1. wasn't found in the narrowphase, or
+             *  2. wasn't sufficiently solved in the solver phase.
+             *
+             * In either case, since we are dealing with walls and ground here (static mesh),
+             * we try to advance towards the triangle by running TimeOfImpact on the COM
+             * sphere, a subset of the shape; if that fails to produce a toi > 0.0f, we are
+             * off the rails and CCD fails.
+             *
+             * But why advance at all? Why not just be an honest citizen and stop at
+             * toi=0.0f? Because we must allow DCD to actually discover new contact points,
+             * something it may not be able to do at toi=0.0f. Otherwise we may get stuck at
+             * toi=0.0f, never creating a contact that reduces the velocity.
+             */
+            struct ds_TimeOfImpactArg fallback_sphere = *convex;
+            GJKVertexSetPoint(&fallback_sphere.vset, convex->shape->center_of_mass);
+            fallback_sphere.margin = fallback_radius + slop;
+            const f32 t_fallback = ds_TimeOfImpactConvex(&fallback_sphere, &triangle, toi);
+            if (0.0f < t_fallback && t_fallback < toi)
+            {
+                toi = t_fallback;
+            }
+        }
+        else if (t < toi)
         {
             toi = t;
         }
-
-        //TODO 6. fallback: a TOI of 0 (touching) retried with a point at the centroid, margin fallback radius + slop
     }
 
     ArenaPopRecord(mem);
