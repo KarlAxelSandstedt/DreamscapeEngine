@@ -117,8 +117,8 @@ u32 ds_NumericsConfigTryDeserializeBitPacked(struct SS *ss, struct ds_NumericsCo
     return 1;
 }
 
-#define DS_SOLVER_CONFIG_VERSION    1u
-#define DS_SOLVER_CONFIG_BITS       (32 + 18*32)
+#define DS_SOLVER_CONFIG_VERSION    2u
+#define DS_SOLVER_CONFIG_BITS       (32 + 20*32)
 
 u64 ds_SolverConfigSerializeBitPackedSize(const struct ds_SolverConfig *config)
 {
@@ -148,6 +148,8 @@ void ds_SolverConfigSerializeBitPacked(struct SS *ss, const struct ds_SolverConf
     SSWriteU64Partial(ss, (b32) { .f = config->sleep_time_threshold }.u, 32);
     SSWriteU64Partial(ss, (b32) { .f = config->sleep_linear_velocity_sq_limit }.u, 32);
     SSWriteU64Partial(ss, (b32) { .f = config->sleep_angular_velocity_sq_limit }.u, 32);
+    SSWriteU64Partial(ss, config->enable_continuous, 32);
+    SSWriteU64Partial(ss, (b32) { .f = config->ccd_safe_advancement_factor }.u, 32);
 }
 
 u32 ds_SolverConfigTryDeserializeBitPacked(struct SS *ss, struct ds_SolverConfig *config)
@@ -177,6 +179,8 @@ u32 ds_SolverConfigTryDeserializeBitPacked(struct SS *ss, struct ds_SolverConfig
     config->sleep_time_threshold = (b32) { .u = (u32) SSReadU64Partial(&ss_mut, 32) }.f;
     config->sleep_linear_velocity_sq_limit = (b32) { .u = (u32) SSReadU64Partial(&ss_mut, 32) }.f;
     config->sleep_angular_velocity_sq_limit = (b32) { .u = (u32) SSReadU64Partial(&ss_mut, 32) }.f;
+    config->enable_continuous = (u32) SSReadU64Partial(&ss_mut, 32);
+    config->ccd_safe_advancement_factor = (b32) { .u = (u32) SSReadU64Partial(&ss_mut, 32) }.f;
     *config = ds_SolverConfigDerive(config);
     *ss = ss_mut;
     return 1;

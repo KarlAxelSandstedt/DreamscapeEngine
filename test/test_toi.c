@@ -47,7 +47,7 @@ touches; about 1 in 20000 sweeps), at 3 rad more often (4 in 32000).
 The ToiMesh* tests run ds_TimeOfImpactConcave: a static mesh (a 4 x 4 m floor at y = 0 facing +y, optionally walls
 at x = 4 and z = 4 facing inwards; or a random terrain grid) against a convex body (shape = body, its center of
 mass the shape's). The oracle replays Concave's early-outs, computed as Concave computes them: a triangle the
-shape's COM starts behind, or ends more than fallback_radius in front of having advanced less than that, is not
+shape's COM starts behind, or ends more than safe_advancement in front of having advanced less than that, is not
 the TOI's business. The other triangles ("candidates") are checked as above: at a hit their smallest core distance
 lies in [target - tol, target + tol]; after a fallback the COM sphere's distance lies in its own band (target
 fallback_radius). ToiMeshRandomTest also limits the candidates to Concave's MeshQuery (the union of the shape's
@@ -856,7 +856,7 @@ static u32 *ToiTestMeshCandidates(struct arena *mem, u32 *count, const struct ds
     const ds_Transform shape_to_anchor1 = { .rotation = convex->rotation_shape_world[1], .position = shape_origin_anchor_world_diff1 };
     const ds_Transform shape_to_mesh0 = ds_TransformRelative(&mesh_to_anchor, &shape_to_anchor0);
     const ds_Transform shape_to_mesh1 = ds_TransformRelative(&mesh_to_anchor, &shape_to_anchor1);
-    const f32 fallback_radius = F32Max(0.5f*convex->shape->center_of_mass_surface_distance, slop);
+    const f32 safe_advancement = F32Max(g_solver_config->ccd_safe_advancement_factor*convex->shape->center_of_mass_surface_distance, slop);
     const v3 shape_com_mesh0 = V3Transform(convex->shape->center_of_mass, &shape_to_mesh0);
     const v3 shape_com_mesh1 = V3Transform(convex->shape->center_of_mass, &shape_to_mesh1);
 
@@ -895,7 +895,7 @@ static u32 *ToiTestMeshCandidates(struct arena *mem, u32 *count, const struct ds
         const f32 offset0 = V3Dot(n, V3Sub(shape_com_mesh0, tri[0]));
         const f32 offset1 = V3Dot(n, V3Sub(shape_com_mesh1, tri[0]));
         const u32 behind = offset0 < 0.0f;
-        const u32 safe = offset1 - offset0 > -fallback_radius && offset1 > fallback_radius;
+        const u32 safe = offset1 - offset0 > -safe_advancement && offset1 > safe_advancement;
         const struct aabb tri_bbox = { .min = V3Min(V3Min(tri[0], tri[1]), tri[2]), .max = V3Max(V3Max(tri[0], tri[1]), tri[2]) };
         if (!behind && !safe && queried[i] && AabbTest(&reach_box, &tri_bbox))
         {

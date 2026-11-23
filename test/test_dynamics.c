@@ -1662,6 +1662,72 @@ static struct test_Output DynamicsBodyExtentTest(struct test_Environment *env)
     return output;
 }
 
+/*
+Fast check, one tick without gravity, the bodies far apart. A 1 m box at rest is not fast; one at 30 m/s moves
+0.5 m, over half its min_extent 0.5, and is. A 4 x 0.2 x 0.2 m stick (min_extent 0.1, max_extent (2, 0.1, 0.1))
+spinning at 3 rad/s about its long axis has the per-axis speed bound |(0, 0.3, 0.3)| = 0.42 m/s, 0.007 m per tick:
+not fast. About a short axis the bound is |(0.3, 0, 6)| = 6.0 m/s, 0.1 m per tick: fast (a scalar max extent,
+3 * 2.005 / 60 = 0.1 m, would flag both). With enable_continuous off nothing is fast.
+*/
+static struct test_Output DynamicsFastCheckTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct arena mem = ArenaAlloc(NULL, 64*1024*1024);
+    struct c_ShapeDB cshape_db = { 0 };
+    c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
+    struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&external, NSEC_PER_SEC / 60);
+    ds_DynamicsConfigPush(&pipeline);
+    pipeline.config_pending.solver.gravity = V3Zero();
+    pipeline.config_pending.solver.sleep_enabled = 0;
+    ds_DynamicsConfigUpdatePending(&pipeline);
+
+    const struct dynamics_TestBox box[4] =
+    {
+        { .position = V3(0.0f, 10.0f, 0.0f), .rotation = QIdentity(), .hw = V3(0.5f, 0.5f, 0.5f), .dynamic = 1, .friction = 0.5f },
+        { .position = V3(10.0f, 10.0f, 0.0f), .rotation = QIdentity(), .hw = V3(0.5f, 0.5f, 0.5f), .dynamic = 1, .friction = 0.5f },
+        { .position = V3(20.0f, 10.0f, 0.0f), .rotation = QIdentity(), .hw = V3(2.0f, 0.1f, 0.1f), .dynamic = 1, .friction = 0.5f },
+        { .position = V3(30.0f, 10.0f, 0.0f), .rotation = QIdentity(), .hw = V3(2.0f, 0.1f, 0.1f), .dynamic = 1, .friction = 0.5f },
+    };
+    const v3 linear_velocity[4] = { V3Zero(), V3(30.0f, 0.0f, 0.0f), V3Zero(), V3Zero() };
+    const v3 angular_velocity[4] = { V3Zero(), V3Zero(), V3(3.0f, 0.0f, 0.0f), V3(0.0f, 3.0f, 0.0f) };
+    const u32 fast[4] = { 0, 1, 0, 1 };
+    ds_BodyId body[4];
+    for (u32 i = 0; i < 4; ++i)
+    {
+        body[i] = DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, box + i, (v3f64) { 0 }, i);
+        const struct ds_Body *b = ds_BodyLookup(&pipeline, body[i]).address;
+        struct ds_BodyCompute *compute = pipeline.solver_set_pool.buf[b->set].body_compute_pool.buf + b->sim;
+        compute->linear_velocity = linear_velocity[i];
+        compute->angular_velocity = angular_velocity[i];
+    }
+
+    ds_DynamicsTick(DynamicsTestTickArena(), &pipeline, NSEC_PER_SEC / 60);
+    for (u32 i = 0; i < 4; ++i)
+    {
+        const struct ds_Body *b = ds_BodyLookup(&pipeline, body[i]).address;
+        const struct ds_BodySim *sim = pipeline.solver_set_pool.buf[b->set].body_sim_pool.buf + b->sim;
+        TEST_EQUAL(fast[i], (sim->flags & BODY_FLAG_FAST) >> BODY_FLAG_FAST_BIT);
+    }
+
+    pipeline.config_pending.solver.enable_continuous = 0;
+    ds_DynamicsConfigUpdatePending(&pipeline);
+    ds_DynamicsTick(DynamicsTestTickArena(), &pipeline, NSEC_PER_SEC / 60);
+    for (u32 i = 0; i < 4; ++i)
+    {
+        const struct ds_Body *b = ds_BodyLookup(&pipeline, body[i]).address;
+        const struct ds_BodySim *sim = pipeline.solver_set_pool.buf[b->set].body_sim_pool.buf + b->sim;
+        TEST_EQUAL(0u, sim->flags & BODY_FLAG_FAST);
+    }
+
+    ds_DynamicsConfigPop(&pipeline);
+    ds_DynamicsDealloc(&pipeline);
+    c_ShapeDBDealloc(&cshape_db);
+    ArenaFree(&mem);
+    return output;
+}
+
 /********************************** contacts (ds_contact.c) **********************************/
 
 /*
@@ -4947,6 +5013,7 @@ static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
     DynamicsShapeTest,
     DynamicsBodyTest,
     DynamicsBodyExtentTest,
+    DynamicsFastCheckTest,
     DynamicsContactTest,
     DynamicsIslandTest,
     DynamicsSleepTest,

@@ -48,6 +48,8 @@ struct ds_SolverConfig ds_SolverConfigDerive(const struct ds_SolverConfig *pendi
     config.sleep_time_threshold = F32Clamp(config.sleep_time_threshold, F32MinPositiveNormal(), F32MaxPositiveNormal());
     config.sleep_linear_velocity_sq_limit = F32Clamp(config.sleep_linear_velocity_sq_limit, F32MinPositiveNormal(), F32MaxPositiveNormal());
     config.sleep_angular_velocity_sq_limit = F32Clamp(config.sleep_angular_velocity_sq_limit, F32MinPositiveNormal(), F32MaxPositiveNormal());
+    config.enable_continuous = U32Min(config.enable_continuous, 1);
+    config.ccd_safe_advancement_factor = F32Clamp(config.ccd_safe_advancement_factor, 0.0f, 1.0f);
 
     /* a limit of 0 is no limit: the inverse 0 makes every speed ratio 0 (an infinite inverse froze moving bodies and made 0*inf NaN at rest) */
     config.max_linear_velocity_magnitude_inv = (0.0f == config.max_linear_velocity_magnitude)
@@ -79,6 +81,8 @@ struct ds_SolverConfig ds_SolverConfigDefault(void)
     config.sleep_time_threshold = 0.5f;
     config.sleep_linear_velocity_sq_limit = 0.01f*0.01f;
     config.sleep_angular_velocity_sq_limit = 0.05f*0.05f;
+    config.enable_continuous = 1;
+    config.ccd_safe_advancement_factor = 0.5f;
 
     config = ds_SolverConfigDerive(&config);
     return config;
@@ -201,8 +205,27 @@ void ds_BodyIntegrateVelocitiesRange(struct ds_Dynamics *pipeline, const u32 low
 
 static u32 ds_BodyFastCheck(const struct ds_Dynamics *pipeline, const struct ds_BodySim *sim, const struct ds_BodyCompute *bcomp)
 {
-    //TODO
-    return 0;
+    /*
+     * Upper bounds on how far any body point p moves this step, r = p - center of mass in the body frame of the
+     * step's start (max_extent bounds |r| per axis there):
+     *
+     *      velocity:       (|v| + |w x r|) h
+     *      displacement:   |delta_position| + 2 |s x r|,   s = sin(theta/2) axis, the delta rotation's vector part
+     *
+     * (2 |s x r| is the chord r moves along when turned by theta), with |(a x r).x| <= |a.y| |r.z| + |a.z| |r.y|
+     * and likewise for y and z.
+     */
+    const q rotation0 = sim->world.rotation;
+    const q delta_rotation = QMul(bcomp->rotation, QConj(rotation0));
+    const v3 w = V3Abs(QUnitRotate(QConj(rotation0), bcomp->angular_velocity));
+    const v3 s = V3Abs(QUnitRotate(QConj(rotation0), V3(delta_rotation.x, delta_rotation.y, delta_rotation.z)));
+    const v3 e = sim->max_extent;
+    const v3 velocity_arc = V3(w.y*e.z + w.z*e.y, w.z*e.x + w.x*e.z, w.x*e.y + w.y*e.x);
+    const v3 rotation_arc = V3(s.y*e.z + s.z*e.y, s.z*e.x + s.x*e.z, s.x*e.y + s.y*e.x);
+    const f32 max_velocity = V3Length(bcomp->linear_velocity) + V3Length(velocity_arc);
+    const f32 max_delta_position = V3Length(bcomp->delta_position) + 2.0f*V3Length(rotation_arc);
+    const f32 max_motion = F32Max(max_delta_position, max_velocity*pipeline->timestep);
+    return g_solver_config->enable_continuous && max_motion > g_solver_config->ccd_safe_advancement_factor*sim->min_extent;
 }
 
 void ds_BodyCCDStatic(struct ds_BodyCompute *bcomp, const struct ds_Dynamics *pipeline, const struct ds_BodySim *sim)
@@ -219,9 +242,9 @@ void ds_BodyUpdateOrientationRange(struct ds_Dynamics *pipeline, struct ds_Proxy
      * (O) Bodies marked as fast
      * (O) Run CCD against static tree (skeleton call??)
      * (O) draw fast moving bodies
-     * (O) fast-moving check
      *
      * TODO:
+     * () fast-moving check
      * () Run CCD against static tree (full)
      * () Bullets?
      *

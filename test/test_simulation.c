@@ -186,6 +186,8 @@ static struct test_Output DynamicsConfigSerializeTest(struct test_Environment *e
     changed.solver.max_linear_velocity_magnitude = 0.0f;
     changed.solver.linear_slop = 0.001f;
     changed.solver.sleep_enabled = 0;
+    changed.solver.enable_continuous = 0;
+    changed.solver.ccd_safe_advancement_factor = 0.25f;
     changed.numerics.gjk_max_iterations = 7;
     changed.numerics.edge_parallel_max_degrees = 45.0f;
     changed.numerics.sat_face_bias = 0.0f;
@@ -243,6 +245,8 @@ static struct test_Output DynamicsConfigSerializeTest(struct test_Environment *e
     out.solver.pgs_iteration_count = 0;
     out.solver.baumgarte_constant = 1.5f;
     out.solver.linear_slop = 0.0f;
+    out.solver.enable_continuous = 2;
+    out.solver.ccd_safe_advancement_factor = 2.0f;
     out.numerics.capsule_parallel_max_degrees = 46.0f;
 
     const struct ds_DynamicsConfig derived = ds_DynamicsConfigDerive(&out);
@@ -261,6 +265,8 @@ static struct test_Output DynamicsConfigSerializeTest(struct test_Environment *e
     TEST_EQUAL(1u, read.solver.pgs_iteration_count);
     TEST_TRUE(read.solver.baumgarte_constant == 1.0f);
     TEST_TRUE(read.solver.linear_slop > 0.0f);
+    TEST_EQUAL(1u, read.solver.enable_continuous);
+    TEST_TRUE(read.solver.ccd_safe_advancement_factor == 1.0f);
     TEST_TRUE(read.numerics.capsule_parallel_max_degrees == 45.0f);
 
     /* the draw config on its own */

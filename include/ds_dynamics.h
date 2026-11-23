@@ -1327,6 +1327,9 @@ struct ds_SolverConfig
 	f32 	sleep_time_threshold; /* > 0 : time (s) a body must have low velocity before it may fall asleep */
 	f32 	sleep_linear_velocity_sq_limit; /* > 0 : maximum linear velocity squared of a body falling asleep */
 	f32 	sleep_angular_velocity_sq_limit; /* > 0 : maximum angular velocity squared of a body falling asleep */
+
+	u32 	enable_continuous;	/* bool : continuous collision of fast bodies against static shapes */
+	f32 	ccd_safe_advancement_factor; /* [0, 1] : a body is fast if a point may move further than this times its min_extent in a step */
 };
 extern struct ds_SolverConfig *g_solver_config;
 
