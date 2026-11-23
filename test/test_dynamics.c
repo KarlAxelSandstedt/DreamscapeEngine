@@ -1565,6 +1565,103 @@ static struct test_Output DynamicsBodyTest(struct test_Environment *env)
 }
 
 
+/*
+Body extents: min_extent is the smallest center_of_mass_surface_distance of the body's shapes, max_extent per axis
+the largest distance of a shape point from the body's center of mass. Checked after the first shape (a sphere: its
+radius on every axis) and after three (sphere, quarter-turned capsule and box) against the shapes' boxes, which are
+tight at quarter turns. A static body with a shape and a dynamic body without shapes keep the no-shape values.
+*/
+static struct test_Output DynamicsBodyExtentTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct arena mem = ArenaAlloc(NULL, 64*1024*1024);
+    struct c_ShapeDB cshape_db = { 0 };
+    c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
+    struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&external, NSEC_PER_SEC / 60);
+    ds_DynamicsConfigPush(&pipeline);
+
+    const utf8 id_sphere = Utf8Format(&mem, "sphere");
+    const utf8 id_capsule = Utf8Format(&mem, "capsule");
+    const utf8 id_box = Utf8Format(&mem, "box");
+    const struct dcel hull = DcelBox(&mem, V3(0.5f, 0.3f, 0.2f));
+    const struct c_Shape src[3] =
+    {
+        { .type = C_SHAPE_SPHERE, .sphere.radius = 0.5f },
+        { .type = C_SHAPE_CAPSULE, .capsule = { .half_height = 0.75f, .radius = 0.25f } },
+        { .type = C_SHAPE_CONVEX_HULL, .hull = hull },
+    };
+    struct slot slot[3];
+    slot[0] = c_ShapeDBAdd(&cshape_db, id_sphere, src + 0);
+    slot[1] = c_ShapeDBAdd(&cshape_db, id_capsule, src + 1);
+    slot[2] = c_ShapeDBAdd(&cshape_db, id_box, src + 2);
+
+    const struct ds_ShapePrefab prefab[3] =
+    {
+        { .cshape = slot[0].index, .density = 1.0f, .friction = 0.5f },
+        { .cshape = slot[1].index, .density = 2.0f, .friction = 0.5f },
+        { .cshape = slot[2].index, .density = 3.0f, .friction = 0.5f },
+    };
+    const ds_Transform t[3] =
+    {
+        { .rotation = QIdentity(), .position = V3(2.0f, 0.0f, 0.0f) },
+        { .rotation = QUnitAxisAngle(V3(0.0f, 0.0f, 1.0f), 0.5f*F32_PI), .position = V3(0.0f, 1.0f, -0.5f) },
+        { .rotation = QUnitAxisAngle(V3(0.0f, 1.0f, 0.0f), 0.5f*F32_PI), .position = V3(-1.0f, 0.5f, 0.5f) },
+    };
+
+    const struct ds_BodyPrefab dynamic_prefab = { .dynamic = 1 };
+    const struct ds_BodyPrefab static_prefab = { .dynamic = 0 };
+    const ds_TransformWorld t_world = { .rotation = QIdentity(), .position = V3F64(0.0, 0.0, 0.0) };
+    const ds_BodyId a = ds_BodyAdd(&pipeline, &dynamic_prefab, &t_world, 0);
+    const ds_BodyId b = ds_BodyAdd(&pipeline, &static_prefab, &t_world, 1);
+    const ds_BodyId c = ds_BodyAdd(&pipeline, &dynamic_prefab, &t_world, 2);
+
+    /* one sphere: the center of mass is its center */
+    const ds_ShapeId shape0 = ds_ShapeAdd(&pipeline, prefab + 0, t + 0, a);
+    TEST_NOT_ZERO(!ds_ShapeIdNullCheck(shape0));
+    {
+        const struct ds_Body *body = ds_BodyLookup(&pipeline, a).address;
+        const struct ds_BodySim *sim = pipeline.solver_set_pool.buf[body->set].body_sim_pool.buf + body->sim;
+        TEST_NOT_ZERO(DynamicsTestNear(sim->min_extent, 0.5f, 1.0f));
+        TEST_NOT_ZERO(DynamicsTestNear(sim->max_extent.x, 0.5f, 1.0f) && DynamicsTestNear(sim->max_extent.y, 0.5f, 1.0f) && DynamicsTestNear(sim->max_extent.z, 0.5f, 1.0f));
+    }
+
+    const ds_ShapeId shape1 = ds_ShapeAdd(&pipeline, prefab + 1, t + 1, a);
+    const ds_ShapeId shape2 = ds_ShapeAdd(&pipeline, prefab + 2, t + 2, a);
+    TEST_NOT_ZERO(!ds_ShapeIdNullCheck(shape1) && !ds_ShapeIdNullCheck(shape2));
+    {
+        const struct ds_Body *body = ds_BodyLookup(&pipeline, a).address;
+        const struct ds_BodySim *sim = pipeline.solver_set_pool.buf[body->set].body_sim_pool.buf + body->sim;
+        v3 extent = V3Zero();
+        for (u32 i = 0; i < 3; ++i)
+        {
+            const struct aabb bbox = c_ShapeBbox(slot[i].address, t + i);
+            const v3 far = V3Max(V3Abs(V3Sub(bbox.min, sim->local_center_of_mass)), V3Abs(V3Sub(bbox.max, sim->local_center_of_mass)));
+            extent = V3Max(extent, far);
+        }
+        TEST_NOT_ZERO(DynamicsTestNear(sim->min_extent, 0.2f, 1.0f));
+        TEST_NOT_ZERO(DynamicsTestNear(sim->max_extent.x, extent.x, 1.0f) && DynamicsTestNear(sim->max_extent.y, extent.y, 1.0f) && DynamicsTestNear(sim->max_extent.z, extent.z, 1.0f));
+    }
+
+    /* no extents for a static body or a body without shapes */
+    const ds_ShapeId shape3 = ds_ShapeAdd(&pipeline, prefab + 0, t + 0, b);
+    TEST_NOT_ZERO(!ds_ShapeIdNullCheck(shape3));
+    const ds_BodyId no_extent[2] = { b, c };
+    for (u32 i = 0; i < 2; ++i)
+    {
+        const struct ds_Body *body = ds_BodyLookup(&pipeline, no_extent[i]).address;
+        const struct ds_BodySim *sim = pipeline.solver_set_pool.buf[body->set].body_sim_pool.buf + body->sim;
+        TEST_NOT_ZERO(sim->min_extent == F32_MAX_POSITIVE_NORMAL && sim->max_extent.x == 0.0f && sim->max_extent.y == 0.0f && sim->max_extent.z == 0.0f);
+    }
+
+    ds_DynamicsConfigPop(&pipeline);
+    ds_DynamicsDealloc(&pipeline);
+    c_ShapeDBDealloc(&cshape_db);
+    ArenaFree(&mem);
+    return output;
+}
+
 /********************************** contacts (ds_contact.c) **********************************/
 
 /*
@@ -4849,6 +4946,7 @@ static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
     DynamicsMeshArrayStatsTest,
     DynamicsShapeTest,
     DynamicsBodyTest,
+    DynamicsBodyExtentTest,
     DynamicsContactTest,
     DynamicsIslandTest,
     DynamicsSleepTest,

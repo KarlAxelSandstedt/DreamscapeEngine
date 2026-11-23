@@ -435,9 +435,11 @@ ds_BodyCompute.
 
 #define BODY_FLAG_DYNAMIC_BIT    0
 #define BODY_FLAG_KINEMATIC_BIT  1
+#define BODY_FLAG_FAST_BIT       2
 
 #define BODY_FLAG_DYNAMIC		((u32) 1 << BODY_FLAG_DYNAMIC_BIT)
 #define BODY_FLAG_KINEMATIC		((u32) 1 << BODY_FLAG_KINEMATIC_BIT)   /* not simulated yet: drawn only */
+#define BODY_FLAG_FAST			((u32) 1 << BODY_FLAG_FAST_BIT)        /* sim only, set per step: the body needs CCD */
 #define BODY_FLAG_ALL           (BODY_FLAG_DYNAMIC)
 
 #define ds_BodyStaticCheck(b)	(!((b)->flags & BODY_FLAG_DYNAMIC))
@@ -492,6 +494,8 @@ struct ds_BodySim
                                                    moves it by ds_BodyCompute.delta_position            */
 	m3 		        local_inv_inertia;          /* local inertia tensor                                 */
 	m3 		        world_inv_inertia;          /* world inertia tensor                                 */
+    f32             min_extent;
+    v3              max_extent;
 };
 DEFINE_CPOOL_STRUCT(ds_BodySim);
 
@@ -542,6 +546,8 @@ void            ds_BodyUpdateSolverDataRange(struct ds_Dynamics *pipeline, const
 void            ds_BodyIntegrateVelocitiesRange(struct ds_Dynamics *pipeline, const u32 low, const u32 high);
 /* Internal: Update orientation of active bodies in range [low, high) */
 void            ds_BodyUpdateOrientationRange(struct ds_Dynamics *pipeline, struct ds_ProxyRange *proxy_range, const u32 low, const u32 high);
+/* Internal: Sweep a fast body against the static shapes; cut its end pose (bcomp) short at the time of impact */
+void            ds_BodyCCDStatic(struct ds_BodyCompute *bcomp, const struct ds_Dynamics *pipeline, const struct ds_BodySim *sim);
 
 
 /*
@@ -1439,6 +1445,7 @@ enum ds_ShapeColorMode
     DRAW_COLOR_BODY_TYPE,           /* kinematic blue, dynamic white */
     DRAW_COLOR_VELOCITY,            /* blue to red by linear kinetic energy, energy_max red */
     DRAW_COLOR_TOUCHING,            /* lit while in contact */
+    DRAW_COLOR_FAST,                /* lit while fast (BODY_FLAG_FAST: needed CCD in the last step) */
     DRAW_COLOR_MODE_COUNT
 };
 
@@ -1496,6 +1503,7 @@ struct ds_DynamicsDrawConfig
     v4      color_velocity_high;    /* ... and at energy_max */
     v4      color_touching;         /* TOUCHING */
     v4      color_not_touching;
+    v4      color_fast;             /* FAST; the other dynamic bodies color_dynamic */
     v4      color_point[DRAW_POINT_COLOR_COUNT];    /* [constraint colour] under GRAPH_COLOR; else [CG_COLOR_COUNT + mode] */
     v4      color_contact_force;
     v4      color_friction_force;

@@ -316,6 +316,18 @@ static v4 r_InternalShapeColor(const struct ds_Dynamics *pipeline, const struct 
 			return r_InternalShapeTouching(pipeline, shape_index) ? config->color_touching : config->color_not_touching;
 		}
 
+		case DRAW_COLOR_FAST:
+		{
+			/* a sleeping body is not fast */
+			u32 fast = 0;
+			if (body->set == SOLVER_SET_ACTIVE)
+			{
+				const struct ds_SolverSet *set = pipeline->solver_set_pool.buf + body->set;
+				fast = set->body_sim_pool.buf[body->sim].flags & BODY_FLAG_FAST;
+			}
+			return (fast) ? config->color_fast : config->color_dynamic;
+		}
+
 		default: { return config->color_shape; }
 	}
 }

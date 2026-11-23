@@ -66,6 +66,7 @@ struct ds_DynamicsDrawConfig ds_DynamicsDrawConfigDerive(const struct ds_Dynamic
     config.color_velocity_high = ds_DynamicsDrawConfigColor(config.color_velocity_high);
     config.color_touching = ds_DynamicsDrawConfigColor(config.color_touching);
     config.color_not_touching = ds_DynamicsDrawConfigColor(config.color_not_touching);
+    config.color_fast = ds_DynamicsDrawConfigColor(config.color_fast);
     for (u32 i = 0; i < DRAW_POINT_COLOR_COUNT; ++i)
     {
         config.color_point[i] = ds_DynamicsDrawConfigColor(config.color_point[i]);
@@ -112,6 +113,7 @@ struct ds_DynamicsDrawConfig ds_DynamicsDrawConfigDefault(void)
         .color_velocity_high = V4(1.0f, 0.2f, 0.2f, 0.9f),
         .color_touching = V4(1.0f, 0.8f, 0.2f, 0.9f),
         .color_not_touching = V4(0.35f, 0.35f, 0.35f, 0.9f),
+        .color_fast = V4(1.0f, 0.55f, 0.0f, 0.9f),
         /* the graph palette: saturated hues, spread so index neighbours differ; then one colour per mode */
         .color_point =
         {

@@ -224,8 +224,8 @@ u32 ds_DynamicsConfigTryDeserializeBitPacked(struct SS *ss, struct ds_DynamicsCo
     return 1;
 }
 
-#define DS_DYNAMICS_DRAW_CONFIG_VERSION 1u
-#define DS_DYNAMICS_DRAW_CONFIG_SIZE    (4 + 15*4 + 8*4 + (22 + DRAW_POINT_COLOR_COUNT)*16)
+#define DS_DYNAMICS_DRAW_CONFIG_VERSION 2u
+#define DS_DYNAMICS_DRAW_CONFIG_SIZE    (4 + 15*4 + 8*4 + (23 + DRAW_POINT_COLOR_COUNT)*16)
 
 u64 ds_DynamicsDrawConfigSerializeSize(const struct ds_DynamicsDrawConfig *config)
 {
@@ -274,6 +274,7 @@ void ds_DynamicsDrawConfigSerialize(struct SS *ss, const struct ds_DynamicsDrawC
     V4Serialize(ss, config->color_velocity_high);
     V4Serialize(ss, config->color_touching);
     V4Serialize(ss, config->color_not_touching);
+    V4Serialize(ss, config->color_fast);
     for (u32 i = 0; i < DRAW_POINT_COLOR_COUNT; ++i)
     {
         V4Serialize(ss, config->color_point[i]);
@@ -334,6 +335,7 @@ u32 ds_DynamicsDrawConfigTryDeserialize(struct SS *ss, struct ds_DynamicsDrawCon
     V4Deserialize(&ss_mut, &config->color_velocity_high);
     V4Deserialize(&ss_mut, &config->color_touching);
     V4Deserialize(&ss_mut, &config->color_not_touching);
+    V4Deserialize(&ss_mut, &config->color_fast);
     for (u32 i = 0; i < DRAW_POINT_COLOR_COUNT; ++i)
     {
         V4Deserialize(&ss_mut, &config->color_point[i]);
@@ -736,7 +738,7 @@ u32 ds_ProxyQueryTryDeserialize(struct SS *ss, struct ds_ProxyQuery *query)
 	return 1;
 }
 
-#define DS_BODY_SIM_SERIALIZE_SIZE (2*sizeof(u32) + 2*sizeof(f32) + SNAPSHOT_TRANSFORM_WORLD_SIZE + SNAPSHOT_V3_SIZE + SNAPSHOT_V3F64_SIZE + 2*SNAPSHOT_M3_SIZE)
+#define DS_BODY_SIM_SERIALIZE_SIZE (2*sizeof(u32) + 3*sizeof(f32) + SNAPSHOT_TRANSFORM_WORLD_SIZE + 2*SNAPSHOT_V3_SIZE + SNAPSHOT_V3F64_SIZE + 2*SNAPSHOT_M3_SIZE)
 
 u64 ds_BodySimSerializeSize(const struct ds_BodySim *bsim)
 {
@@ -754,6 +756,8 @@ void ds_BodySimSerialize(struct SS *ss, const struct ds_BodySim *bsim)
 	V3F64Serialize(ss, bsim->world_center_of_mass);
 	M3Serialize(ss, bsim->local_inv_inertia);
 	M3Serialize(ss, bsim->world_inv_inertia);
+	SSWriteF32Le(ss, bsim->min_extent);
+	V3Serialize(ss, bsim->max_extent);
 }
 
 u32 ds_BodySimTryDeserialize(struct SS *ss, struct ds_BodySim *bsim)
@@ -772,6 +776,8 @@ u32 ds_BodySimTryDeserialize(struct SS *ss, struct ds_BodySim *bsim)
 	V3F64Deserialize(ss, &bsim->world_center_of_mass);
 	M3Deserialize(ss, &bsim->local_inv_inertia);
 	M3Deserialize(ss, &bsim->world_inv_inertia);
+	bsim->min_extent = SSReadF32Le(ss);
+	V3Deserialize(ss, &bsim->max_extent);
 	return 1;
 }
 

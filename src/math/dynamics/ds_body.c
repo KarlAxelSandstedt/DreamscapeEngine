@@ -103,6 +103,8 @@ ds_BodyId ds_BodyAdd(struct ds_Dynamics *pipeline, const struct ds_BodyPrefab *p
     sim->local_inv_inertia = M3Scale(M3Identity(), 0.0f);
     /* a static sim's world inverse inertia is read by the joint prepare and never updated per tick */
     sim->world_inv_inertia = sim->local_inv_inertia;
+    sim->min_extent = F32_MAX_POSITIVE_NORMAL;
+    sim->max_extent = V3Zero();
 
 	return id;
 }
@@ -220,6 +222,8 @@ void ds_BodyUpdateMassProperties(struct ds_Dynamics *pipeline, const ds_BodyId i
 
 	sim->mass = 0.0f;
     sim->local_center_of_mass = V3Zero();
+    sim->min_extent = F32_MAX_POSITIVE_NORMAL;
+    sim->max_extent = V3Zero();
 
     /* static bodies and bodies without shapes: zero mass, center of mass at the body origin */
     if (!ds_BodyDynamicCheck(body) || body->shape_list.count == 0)
@@ -288,7 +292,45 @@ void ds_BodyUpdateMassProperties(struct ds_Dynamics *pipeline, const ds_BodyId i
     /* positive mass gives a positive definite tensor; det <= 0 or NaN would make the inverse inf/NaN */
     const f32 det = M3Inverse(&sim->local_inv_inertia, body_inertia_tensor);
     ds_Assert(det > 0.0f);
-    
+
+    /*
+     * min_extent: the smallest center_of_mass_surface_distance of the shapes; 
+     * max_extent: per axis, the largest |p - local_center_of_mass| over the
+     *             shapes' points p (body frame)
+     */
+    s = body->shape_list.first;
+    for (u32 i = 0; i < body->shape_list.count; ++i)
+    {
+        shape = pipeline->shape_pool.buf + s;
+        s = shape->body_shape.next;
+        const struct c_Shape *cshape = c_ShapeDBShape(pipeline->external->cshape_db, shape->cshape_handle);
+        sim->min_extent = F32Min(sim->min_extent, cshape->center_of_mass_surface_distance);
+
+        if (cshape->type == C_SHAPE_SPHERE)
+        {
+            const v3 center = V3Sub(shape->t_local.position, sim->local_center_of_mass);
+            const v3 max_extent = V3AddConstant(V3Abs(center), cshape->sphere.radius);
+            sim->max_extent = V3Max(sim->max_extent, max_extent);
+        }
+        else if (cshape->type == C_SHAPE_CAPSULE)
+        {
+            const v3 center = V3Sub(shape->t_local.position, sim->local_center_of_mass);
+            const v3 axis = QUnitRotate(shape->t_local.rotation, V3(0.0f, cshape->capsule.half_height, 0.0f));
+            const v3 low_extent = V3Abs(V3Sub(center, axis));
+            const v3 high_extent = V3Abs(V3Add(center, axis));
+            const v3 max_extent = V3Max(high_extent, low_extent);
+            sim->max_extent = V3Max(sim->max_extent, V3AddConstant(max_extent, cshape->capsule.radius));
+        }
+        else if (cshape->type == C_SHAPE_CONVEX_HULL)
+        {
+            for (u32 v = 0; v < cshape->hull.v_count; ++v)
+            {
+                const v3 p = V3Sub(V3Transform(cshape->hull.v[v], &shape->t_local), sim->local_center_of_mass);
+                sim->max_extent = V3Max(sim->max_extent, V3Abs(p));
+            }
+        }
+    }
+
     ArenaPopScratch();
 }
 

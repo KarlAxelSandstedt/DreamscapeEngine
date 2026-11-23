@@ -56,6 +56,7 @@ const char *shape_color_mode_str_buf[DRAW_COLOR_MODE_COUNT] =
 	"DRAW_COLOR_BODY_TYPE",
 	"DRAW_COLOR_VELOCITY",
 	"DRAW_COLOR_TOUCHING",
+	"DRAW_COLOR_FAST",
 };
 const char **shape_color_mode_str = shape_color_mode_str_buf;
 

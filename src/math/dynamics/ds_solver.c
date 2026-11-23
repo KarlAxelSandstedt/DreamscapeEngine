@@ -199,9 +199,50 @@ void ds_BodyIntegrateVelocitiesRange(struct ds_Dynamics *pipeline, const u32 low
     ProfZoneEnd;
 }
 
+static u32 ds_BodyFastCheck(const struct ds_Dynamics *pipeline, const struct ds_BodySim *sim, const struct ds_BodyCompute *bcomp)
+{
+    //TODO
+    return 0;
+}
+
+void ds_BodyCCDStatic(struct ds_BodyCompute *bcomp, const struct ds_Dynamics *pipeline, const struct ds_BodySim *sim)
+{
+    //TODO
+}
+
 void ds_BodyUpdateOrientationRange(struct ds_Dynamics *pipeline, struct ds_ProxyRange *proxy_range, const u32 low, const u32 high)
 {
     ProfZone;
+    /*
+     *
+     * Completed: 
+     * (O) Bodies marked as fast
+     * (O) Run CCD against static tree (skeleton call??)
+     * (O) draw fast moving bodies
+     * (O) fast-moving check
+     *
+     * TODO:
+     * () Run CCD against static tree (full)
+     * () Bullets?
+     *
+     * Fast-check discussion:
+     *
+     * Anything move above "safe-advancement" is tagged as fast and continuous collision
+     * detection applies. Safe is per-body dependent, I presume we use a heuristic based
+     * on the body's COM translation vs. the minimum shape.center_of_mass_surface_distance
+     * among its shapes. This makes sense since individually, shape vs. shape CCD uses 
+     * the local COM surface distance as a way to construct a safe advancement.
+     *
+     * body->min_shape_com_surface_distance = min { i : shape_i.com_surface_distance }
+     * body->max_com_surface_distance = max extent to any point on shape surface from body com
+     *
+     * safe-advacement: body->min_shape_com_surface_distance
+     *
+     * velocity upper bound:  linear_velocity + velocity_due_to_angular_velocity_at_point
+     *                      = linear_velocity + | w x p | 
+     *                     <= linear_velocity + | w | x | p | 
+     *                     <= linear_veolcity + | w |*max_extent
+     */
 
     struct arena *frame = pipeline->runtime.worker[ds_ThreadSelfIndex()].frame;
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
@@ -216,9 +257,16 @@ void ds_BodyUpdateOrientationRange(struct ds_Dynamics *pipeline, struct ds_Proxy
     for (u32 i = low; i < high; ++i)
     {
         struct ds_BodySim *sim = active->body_sim_pool.buf + i;
-        const struct ds_BodyCompute *bcomp = active->body_compute_pool.buf + i;
+        struct ds_BodyCompute *bcomp = active->body_compute_pool.buf + i;
         const struct ds_Body *body = pipeline->body_pool.buf + sim->body;
-    
+
+        sim->flags &= ~BODY_FLAG_FAST;
+        if (ds_BodyFastCheck(pipeline, sim, bcomp))
+        {
+            sim->flags |= BODY_FLAG_FAST;
+            ds_BodyCCDStatic(bcomp, pipeline, sim);
+        }
+
         /* derive new world transform from updated angle and world center of mass */
         const q rotation = bcomp->rotation;
         const v3 rotated_local_center_of_mass = QUnitRotate(rotation, sim->local_center_of_mass);
