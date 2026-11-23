@@ -331,17 +331,62 @@ f32 ds_TimeOfImpactConcave(struct arena *mem, const struct ds_TimeOfImpactArg *m
 
     /* Limitation: pointy, fast-rotating shapes may leave the path's bounding box temporarily. */
 
+    const f32 slop = g_solver_config->linear_slop;
+    const f32 fallback_radius = F32Max(0.5f*convex->shape->center_of_mass_surface_distance, slop);
+    const v3 shape_com_mesh0 = V3Transform(convex->shape->center_of_mass, &shape_to_mesh0);
+    const v3 shape_com_mesh1 = V3Transform(convex->shape->center_of_mass, &shape_to_mesh1);
+
     ArenaPushRecord(mem);
     const ds_Array(u32) query = MeshQuery(mem, m, &bbox);
     f32 toi = max_toi;
     for (u32 i = 0; i < query.length; ++i)
     {
-        //TODO 4. early-outs on the shape's centroid: starts behind the triangle (one-sided, as the mover; to
-        //        evaluate), ends in front having moved less than the fallback radius
-        //        max(0.5 center_of_mass_surface_distance, slop)
-        //TODO 5. TOI of the triangle m->tri[query.buf[i]] (ds_TimeOfImpactArgTriangle of the mesh arg, its mesh-local
-        //        vertices) and the convex: ds_TimeOfImpactConvex(convex, &triangle, toi), the convex first (GJK in its
-        //        frame); toi = the minimum so far
+        const u32 *v = m->tri[query.buf[i]].buf;
+        const v3 tri[3] = { m->v[v[0]], m->v[v[1]], m->v[v[2]] };
+
+        /*
+         * We have two triangle skip conditions:
+         *
+         * 1. The shape's COM starts behind the triangle; we are already behind, so CCD does
+         * not apply.
+         *
+         * 2. The shape's COM ends sufficiently far in front of the triangle, and advanced
+         * towards the triangle sufficiently slowly.
+         *
+         * Limitation: This is not fail-safe, but perhaps good enough. The source of the
+         *  problem is that we have detected a shape-triangle pair which we ***believe***
+         *  DCD will solve correctly in the next frame (here correctly means keeping the
+         *  shape in front of the triangle).
+         *
+         *  The COM advancement is simply a heuristic for safety, not a guarantee. For
+         *  example, it does not take rotation into account: for all we know, the shape
+         *  may be a fast-rotating spike which kept COM1 in front while its pointy end
+         *  ended up behind the triangle.
+         */
+        const v3 n = V3Normalize(V3Cross(V3Sub(tri[1], tri[0]), V3Sub(tri[2], tri[0])));
+        const f32 offset0 = V3Dot(n, V3Sub(shape_com_mesh0, tri[0]));
+        const f32 offset1 = V3Dot(n, V3Sub(shape_com_mesh1, tri[0]));
+        if (offset0 < 0.0f)
+        {
+            continue;
+        }
+
+        if (offset1 - offset0 > -fallback_radius && offset1 > fallback_radius)
+        {
+            continue;
+        }
+
+        struct ds_TimeOfImpactArg triangle;
+        ds_TimeOfImpactArgTriangle(&triangle, mesh, tri);
+
+        //TODO a TOI of 0 (touching at the start) is left to discrete contacts, which need speculative contacts first
+        //     (agent_notes/toi_ccd_plan.txt C3)
+        const f32 t = ds_TimeOfImpactConvex(convex, &triangle, toi);
+        if (0.0f < t && t < toi)
+        {
+            toi = t;
+        }
+
         //TODO 6. fallback: a TOI of 0 (touching) retried with a point at the centroid, margin fallback radius + slop
     }
 

@@ -1532,6 +1532,9 @@ struct c_MeshTri
  * (internal edges, output). The shape loops in between test triangles against the convex shape as stored (sphere at
  * the origin, capsule along y, hull with its stored planes).
  */
+//TODO one-sided triangle contacts: none while the convex shape's center of mass is behind the triangle's plane (by
+//     more than slop, with hysteresis), so a triangle only pushes to its front. The mesh TOI's early-outs
+//     (ds_TimeOfImpactConcave) are only safe then; the mover already culls back sides.
 struct c_MeshContactHelper
 {
     const struct mesh *         mesh;
