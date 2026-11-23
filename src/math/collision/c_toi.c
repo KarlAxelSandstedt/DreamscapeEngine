@@ -172,6 +172,8 @@ static f32 ds_TOIPlaneDeepest(u32 index[2], const struct ds_TOIPlane *sep, const
 
 f32 ds_TimeOfImpactConvex(const struct ds_TimeOfImpactArg *arg0, const struct ds_TimeOfImpactArg *arg1, const f32 max_toi)
 {
+    ProfZone;
+
     ds_Assert(arg0->vset.margin == 0.0f && arg1->vset.margin == 0.0f);
 
     const f32 slop = g_solver_config->linear_slop;
@@ -184,6 +186,8 @@ f32 ds_TimeOfImpactConvex(const struct ds_TimeOfImpactArg *arg0, const struct ds
     f32 toi = 0.0f;
     for (u32 i = 0; i < g_numerics_config->toi_max_iterations; ++i)
     {
+        ProfZoneNamed("Local TOI Advancement");
+
         const ds_Transform t_toi[2] = { ds_TOITransform(arg0, toi), ds_TOITransform(arg1, toi) };
         const ds_Transform t_1_to_0 = ds_TransformRelative(t_toi + 0, t_toi + 1);
 
@@ -195,7 +199,8 @@ f32 ds_TimeOfImpactConvex(const struct ds_TimeOfImpactArg *arg0, const struct ds
         /* Geomtries within tolerance at toi, or we begin with overlap at toi = 0.0f */
         if (distance <= target + tol)
         {
-            return toi;
+            ProfZoneEnd;
+            goto end;
         }
 
         u32 index[2];
@@ -209,7 +214,8 @@ f32 ds_TimeOfImpactConvex(const struct ds_TimeOfImpactArg *arg0, const struct ds
          */
         if (ds_TOIPlaneDeepest(index, &sep, toi) <= target + tol)
         {
-            return toi;
+            ProfZoneEnd;
+            goto end;
         }
 
         intv plane_distance_at = { 0 };
@@ -223,7 +229,9 @@ f32 ds_TimeOfImpactConvex(const struct ds_TimeOfImpactArg *arg0, const struct ds
          */
         if (plane_distance_at.high > target + tol)
         {
-            return max_toi;
+            toi = max_toi;
+            ProfZoneEnd;
+            goto end;
         }
 
         /* 
@@ -243,6 +251,7 @@ f32 ds_TimeOfImpactConvex(const struct ds_TimeOfImpactArg *arg0, const struct ds
             plane_distance_at.low = ds_TOIPlaneSignedDistance(&sep, index, t_toi);
 
             /* Root find deepest point plane itersection */
+            ProfZoneNamed("RootFind");
             intv root = Intv(toi, plane_toi);
             for (u32 k = 0; k < g_numerics_config->toi_root_max_iterations; ++k)
             {
@@ -269,6 +278,7 @@ f32 ds_TimeOfImpactConvex(const struct ds_TimeOfImpactArg *arg0, const struct ds
                     plane_distance_at.high = s;
                 }
             }
+            ProfZoneEnd;
 
             plane_distance_at.high = ds_TOIPlaneDeepest(index, &sep, plane_toi);
         }
@@ -279,16 +289,23 @@ f32 ds_TimeOfImpactConvex(const struct ds_TimeOfImpactArg *arg0, const struct ds
          */
         if (plane_distance_at.high < target - tol)
         {
-            return toi;
+            ProfZoneEnd;
+            goto end;
         }
         toi = plane_toi;
+
+        ProfZoneEnd;
     }
 
+end:
+    ProfZoneEnd;
     return toi;
 }
 
 f32 ds_TimeOfImpactConcave(struct arena *mem, const struct ds_TimeOfImpactArg *mesh, const struct ds_TimeOfImpactArg *convex, const f32 max_toi)
 {
+    ProfZone;
+
     ds_Assert(mesh->shape->type == C_SHAPE_TRI_MESH && convex->shape->type != C_SHAPE_TRI_MESH);
     const struct mesh *m = &mesh->shape->mesh;
 
@@ -329,5 +346,8 @@ f32 ds_TimeOfImpactConcave(struct arena *mem, const struct ds_TimeOfImpactArg *m
     }
 
     ArenaPopRecord(mem);
+
+    ProfZoneEnd;
+
     return toi;
 }
