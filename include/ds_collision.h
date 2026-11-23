@@ -637,7 +637,8 @@ struct ds_TimeOfImpactArg
     const struct c_Shape *  shape;
     struct GJKVertexSet     vset;
     f32                     margin;
-    ds_Transform            sweep[2];
+    q                       rotation_shape_world[2];
+    v3                      com_anchor[2];
     v3                      com_shape;
 };
 
@@ -646,7 +647,7 @@ struct ds_TimeOfImpactArg
  *
  *      com_shape    = t_local^-1 (com_body)                                    center-of-mass in shape space
  *      rotation_k   = t_body_world_k.rotation t_local.rotation                 ordinary shape-to-world rotation
- *      position_k   = t_body_world_k.position - anchor + t_body_world_k.rotation com_body
+ *      com_k        = t_body_world_k.position - anchor + t_body_world_k.rotation com_body
  *                   = com_world - world_anchor
  *                   = world_shape.rot*com_shape + world_shape.position  - world_anchor
  */
@@ -705,10 +706,10 @@ static inline void ds_TimeOfImpactArgSweep(struct ds_TimeOfImpactArg *arg, const
 {
     const v3 position0 = V3F64Demote(V3F64Sub(t_body_world0->position, anchor));
     const v3 position1 = V3F64Demote(V3F64Sub(t_body_world1->position, anchor));
-    arg->sweep[0].rotation = QMul(t_body_world0->rotation, t_local->rotation);
-    arg->sweep[1].rotation = QMul(t_body_world1->rotation, t_local->rotation);
-    arg->sweep[0].position = V3Add(position0, QUnitRotate(t_body_world0->rotation, com_body));
-    arg->sweep[1].position = V3Add(position1, QUnitRotate(t_body_world1->rotation, com_body));
+    arg->rotation_shape_world[0] = QMul(t_body_world0->rotation, t_local->rotation);
+    arg->rotation_shape_world[1] = QMul(t_body_world1->rotation, t_local->rotation);
+    arg->com_anchor[0] = V3Add(position0, QUnitRotate(t_body_world0->rotation, com_body));
+    arg->com_anchor[1] = V3Add(position1, QUnitRotate(t_body_world1->rotation, com_body));
     arg->com_shape = V3InverseTransform(com_body, t_local);
 }
 
@@ -755,8 +756,10 @@ static inline void ds_TimeOfImpactArgTriangle(struct ds_TimeOfImpactArg *arg, co
     arg->shape = mesh->shape;
     GJKVertexSetTriangle(&arg->vset, tri);
     arg->margin = 0.0f;
-    arg->sweep[0] = mesh->sweep[0];
-    arg->sweep[1] = mesh->sweep[1];
+    arg->rotation_shape_world[0] = mesh->rotation_shape_world[0];
+    arg->rotation_shape_world[1] = mesh->rotation_shape_world[1];
+    arg->com_anchor[0] = mesh->com_anchor[0];
+    arg->com_anchor[1] = mesh->com_anchor[1];
     arg->com_shape = mesh->com_shape;
 }
 

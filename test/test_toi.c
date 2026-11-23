@@ -59,10 +59,14 @@ static void ToiTestConfigPush(void)
 /* the core distance of the args at t, posed as ds_TimeOfImpactConvex poses them */
 static f32 ToiTestDistance(const struct ds_TimeOfImpactArg *arg0, const struct ds_TimeOfImpactArg *arg1, const f32 t)
 {
-    ds_Transform t0 = ds_TransformLerp(arg0->sweep + 0, arg0->sweep + 1, t);
-    t0.position = V3Sub(t0.position, QUnitRotate(t0.rotation, arg0->com_shape));
-    ds_Transform t1 = ds_TransformLerp(arg1->sweep + 0, arg1->sweep + 1, t);
-    t1.position = V3Sub(t1.position, QUnitRotate(t1.rotation, arg1->com_shape));
+    const q rotation_shape_world0 = QNLerp(arg0->rotation_shape_world[0], arg0->rotation_shape_world[1], t);
+    const q rotation_shape_world1 = QNLerp(arg1->rotation_shape_world[0], arg1->rotation_shape_world[1], t);
+    const v3 com_anchor0 = V3Interpolate(arg0->com_anchor[1], arg0->com_anchor[0], t);
+    const v3 com_anchor1 = V3Interpolate(arg1->com_anchor[1], arg1->com_anchor[0], t);
+    const v3 origin_to_com0 = QUnitRotate(rotation_shape_world0, arg0->com_shape);
+    const v3 origin_to_com1 = QUnitRotate(rotation_shape_world1, arg1->com_shape);
+    const ds_Transform t0 = { .rotation = rotation_shape_world0, .position = V3Sub(com_anchor0, origin_to_com0) };
+    const ds_Transform t1 = { .rotation = rotation_shape_world1, .position = V3Sub(com_anchor1, origin_to_com1) };
     const ds_Transform t_1_to_0 = ds_TransformRelative(&t0, &t1);
 
     v3 c0, c1, n;

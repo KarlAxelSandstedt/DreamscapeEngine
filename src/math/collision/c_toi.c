@@ -22,9 +22,11 @@
 
 static ds_Transform ds_TOITransform(const struct ds_TimeOfImpactArg *arg, const f32 t)
 {
-    ds_Transform transform = ds_TransformLerp(arg->sweep + 0, arg->sweep + 1, t);
-    transform.position = V3Sub(transform.position, QUnitRotate(transform.rotation, arg->com_shape));
-    return transform;
+    const q rotation_shape_world = QNLerp(arg->rotation_shape_world[0], arg->rotation_shape_world[1], t);
+    const v3 com_anchor = V3Interpolate(arg->com_anchor[1], arg->com_anchor[0], t);
+    const v3 shape_origin_anchor_world_diff = V3Sub(com_anchor, QUnitRotate(rotation_shape_world, arg->com_shape));
+    const ds_Transform t_shape_anchor = { .rotation = rotation_shape_world, .position = shape_origin_anchor_world_diff };
+    return t_shape_anchor;
 }
 
 enum ds_TOIPlaneType
@@ -290,24 +292,22 @@ f32 ds_TimeOfImpactConcave(struct arena *mem, const struct ds_TimeOfImpactArg *m
     ds_Assert(mesh->shape->type == C_SHAPE_TRI_MESH && convex->shape->type != C_SHAPE_TRI_MESH);
     const struct mesh *m = &mesh->shape->mesh;
 
-    /* the mesh is static, and com_shape = 0 => constant pose is sweep[0] */
-    const ds_Transform *t_mesh_anchor = mesh->sweep + 0;
+    /* the mesh is static, and com_shape = 0 => constant pose is (rotation_shape_world[0], com_anchor[0]) */
+    const ds_Transform mesh_to_anchor = { .rotation = mesh->rotation_shape_world[0], .position = mesh->com_anchor[0] };
 
     /* 
-     * We have shape -> world-anchor-com-diff-space
      * we want shape -> world-anchor-shape-diff-space
      *
-     * Note: for meshes, com_shape = 0, so the two transforms are equal:
+     * Note: for meshes, com_shape = 0, so we have
      *         
-     *          mesh -> world-anchor-com-diff-space
      *          mesh -> world-anchor-shape-diff-space
      */
-    const v3 shape_origin_anchor_diff0 = V3Sub(convex->sweep[0].position, QUnitRotate(convex->sweep[0].rotation, convex->com_shape));
-    const v3 shape_origin_anchor_diff1 = V3Sub(convex->sweep[1].position, QUnitRotate(convex->sweep[1].rotation, convex->com_shape));
-    const ds_Transform shape_to_anchor0 = { .rotation = convex->sweep[0].rotation, .position = shape_origin_anchor_diff0 };
-    const ds_Transform shape_to_anchor1 = { .rotation = convex->sweep[1].rotation, .position = shape_origin_anchor_diff1 };
-    const ds_Transform shape_to_mesh0 = ds_TransformRelative(t_mesh_anchor, &shape_to_anchor0);
-    const ds_Transform shape_to_mesh1 = ds_TransformRelative(t_mesh_anchor, &shape_to_anchor1);
+    const v3 shape_origin_anchor_world_diff0 = V3Sub(convex->com_anchor[0], QUnitRotate(convex->rotation_shape_world[0], convex->com_shape));
+    const v3 shape_origin_anchor_world_diff1 = V3Sub(convex->com_anchor[1], QUnitRotate(convex->rotation_shape_world[1], convex->com_shape));
+    const ds_Transform shape_to_anchor0 = { .rotation = convex->rotation_shape_world[0], .position = shape_origin_anchor_world_diff0 };
+    const ds_Transform shape_to_anchor1 = { .rotation = convex->rotation_shape_world[1], .position = shape_origin_anchor_world_diff1 };
+    const ds_Transform shape_to_mesh0 = ds_TransformRelative(&mesh_to_anchor, &shape_to_anchor0);
+    const ds_Transform shape_to_mesh1 = ds_TransformRelative(&mesh_to_anchor, &shape_to_anchor1);
     const struct aabb bbox0 = c_ShapeBbox(convex->shape, &shape_to_mesh0);
     const struct aabb bbox1 = c_ShapeBbox(convex->shape, &shape_to_mesh1);
     const struct aabb bbox = BboxUnion(bbox0, bbox1);
