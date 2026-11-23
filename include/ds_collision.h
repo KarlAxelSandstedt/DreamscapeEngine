@@ -638,14 +638,25 @@ struct ds_TimeOfImpactArg
     struct GJKVertexSet     vset;
     f32                     margin;
     ds_Transform            sweep[2];
-    v3                      local_center;
+    v3                      com_shape;
 };
 
+/*
+ * Setup the shape -> world-anchor-com-diff-space transform
+ *
+ *      com_shape    = t_local^-1 (com_body)                                    center-of-mass in shape space
+ *      rotation_k   = t_body_world_k.rotation t_local.rotation                 ordinary shape-to-world rotation
+ *      position_k   = t_body_world_k.position - anchor + t_body_world_k.rotation com_body
+ *                   = com_world - world_anchor
+ *                   = world_shape.rot*com_shape + world_shape.position  - world_anchor
+ */
+static inline void ds_TimeOfImpactArgSweep(struct ds_TimeOfImpactArg *arg, const ds_Transform *t_local, const ds_TransformWorld *t_body_world0, const ds_TransformWorld *t_body_world1, const v3 com_body, const v3f64 anchor);
+
 /* TimeOfImpact shape initializers */
-static inline void ds_TimeOfImpactArgSphere(struct ds_TimeOfImpactArg *arg, const struct c_Shape *shape, const ds_Transform sweep[2], const v3 local_center);
-static inline void ds_TimeOfImpactArgCapsule(struct ds_TimeOfImpactArg *arg, const struct c_Shape *shape, const ds_Transform sweep[2], const v3 local_center);
-static inline void ds_TimeOfImpactArgHull(struct ds_TimeOfImpactArg *arg, const struct c_Shape *shape, const ds_Transform sweep[2], const v3 local_center);
-static inline void ds_TimeOfImpactArgMesh(struct ds_TimeOfImpactArg *arg, const struct c_Shape *shape, const ds_Transform *pose);
+static inline void ds_TimeOfImpactArgSphere(struct ds_TimeOfImpactArg *arg, const struct c_Shape *shape, const ds_Transform *t_local, const ds_TransformWorld *t_body_world0, const ds_TransformWorld *t_body_world1, const v3 com_body, const v3f64 anchor);
+static inline void ds_TimeOfImpactArgCapsule(struct ds_TimeOfImpactArg *arg, const struct c_Shape *shape, const ds_Transform *t_local, const ds_TransformWorld *t_body_world0, const ds_TransformWorld *t_body_world1, const v3 com_body, const v3f64 anchor);
+static inline void ds_TimeOfImpactArgHull(struct ds_TimeOfImpactArg *arg, const struct c_Shape *shape, const ds_Transform *t_local, const ds_TransformWorld *t_body_world0, const ds_TransformWorld *t_body_world1, const v3 com_body, const v3f64 anchor);
+static inline void ds_TimeOfImpactArgMesh(struct ds_TimeOfImpactArg *arg, const struct c_Shape *shape, const ds_Transform *t_local, const ds_TransformWorld *t_body_world, const v3f64 anchor);
 static inline void ds_TimeOfImpactArgTriangle(struct ds_TimeOfImpactArg *arg, const struct ds_TimeOfImpactArg *mesh, const v3 tri[3]);
 
 /*
@@ -690,49 +701,52 @@ static ds_ForceInline u32 c_PointIdEqual(const c_PointId a, const c_PointId b)
 
 /********************************** Time Of Impact: definitions **********************************/
 
-static inline void ds_TimeOfImpactArgSphere(struct ds_TimeOfImpactArg *arg, const struct c_Shape *shape, const ds_Transform sweep[2], const v3 local_center)
+static inline void ds_TimeOfImpactArgSweep(struct ds_TimeOfImpactArg *arg, const ds_Transform *t_local, const ds_TransformWorld *t_body_world0, const ds_TransformWorld *t_body_world1, const v3 com_body, const v3f64 anchor)
+{
+    const v3 position0 = V3F64Demote(V3F64Sub(t_body_world0->position, anchor));
+    const v3 position1 = V3F64Demote(V3F64Sub(t_body_world1->position, anchor));
+    arg->sweep[0].rotation = QMul(t_body_world0->rotation, t_local->rotation);
+    arg->sweep[1].rotation = QMul(t_body_world1->rotation, t_local->rotation);
+    arg->sweep[0].position = V3Add(position0, QUnitRotate(t_body_world0->rotation, com_body));
+    arg->sweep[1].position = V3Add(position1, QUnitRotate(t_body_world1->rotation, com_body));
+    arg->com_shape = V3InverseTransform(com_body, t_local);
+}
+
+static inline void ds_TimeOfImpactArgSphere(struct ds_TimeOfImpactArg *arg, const struct c_Shape *shape, const ds_Transform *t_local, const ds_TransformWorld *t_body_world0, const ds_TransformWorld *t_body_world1, const v3 com_body, const v3f64 anchor)
 {
     ds_Assert(shape->type == C_SHAPE_SPHERE);
     GJKVertexSetPoint(&arg->vset, V3Zero());
     arg->shape = shape;
     arg->margin = shape->sphere.radius;
-    arg->sweep[0] = sweep[0];
-    arg->sweep[1] = sweep[1];
-    arg->local_center = local_center;
+    ds_TimeOfImpactArgSweep(arg, t_local, t_body_world0, t_body_world1, com_body, anchor);
 }
 
-static inline void ds_TimeOfImpactArgCapsule(struct ds_TimeOfImpactArg *arg, const struct c_Shape *shape, const ds_Transform sweep[2], const v3 local_center)
+static inline void ds_TimeOfImpactArgCapsule(struct ds_TimeOfImpactArg *arg, const struct c_Shape *shape, const ds_Transform *t_local, const ds_TransformWorld *t_body_world0, const ds_TransformWorld *t_body_world1, const v3 com_body, const v3f64 anchor)
 {
     ds_Assert(shape->type == C_SHAPE_CAPSULE);
     const f32 h = shape->capsule.half_height;
     GJKVertexSetSegment(&arg->vset, V3(0.0f, h, 0.0f), V3(0.0f, -h, 0.0f));
     arg->shape = shape;
     arg->margin = shape->capsule.radius;
-    arg->sweep[0] = sweep[0];
-    arg->sweep[1] = sweep[1];
-    arg->local_center = local_center;
+    ds_TimeOfImpactArgSweep(arg, t_local, t_body_world0, t_body_world1, com_body, anchor);
 }
 
-static inline void ds_TimeOfImpactArgHull(struct ds_TimeOfImpactArg *arg, const struct c_Shape *shape, const ds_Transform sweep[2], const v3 local_center)
+static inline void ds_TimeOfImpactArgHull(struct ds_TimeOfImpactArg *arg, const struct c_Shape *shape, const ds_Transform *t_local, const ds_TransformWorld *t_body_world0, const ds_TransformWorld *t_body_world1, const v3 com_body, const v3f64 anchor)
 {
     ds_Assert(shape->type == C_SHAPE_CONVEX_HULL);
     GJKVertexSetHull(&arg->vset, &shape->hull);
     arg->shape = shape;
     arg->margin = 0.0f;
-    arg->sweep[0] = sweep[0];
-    arg->sweep[1] = sweep[1];
-    arg->local_center = local_center;
+    ds_TimeOfImpactArgSweep(arg, t_local, t_body_world0, t_body_world1, com_body, anchor);
 }
 
-static inline void ds_TimeOfImpactArgMesh(struct ds_TimeOfImpactArg *arg, const struct c_Shape *shape, const ds_Transform *pose)
+static inline void ds_TimeOfImpactArgMesh(struct ds_TimeOfImpactArg *arg, const struct c_Shape *shape, const ds_Transform *t_local, const ds_TransformWorld *t_body_world, const v3f64 anchor)
 {
     ds_Assert(shape->type == C_SHAPE_TRI_MESH);
     arg->vset = (struct GJKVertexSet) { 0 };
     arg->shape = shape;
     arg->margin = 0.0f;
-    arg->sweep[0] = *pose;
-    arg->sweep[1] = *pose;
-    arg->local_center = V3Zero();
+    ds_TimeOfImpactArgSweep(arg, t_local, t_body_world, t_body_world, t_local->position, anchor);
 }
 
 static inline void ds_TimeOfImpactArgTriangle(struct ds_TimeOfImpactArg *arg, const struct ds_TimeOfImpactArg *mesh, const v3 tri[3])
@@ -743,7 +757,7 @@ static inline void ds_TimeOfImpactArgTriangle(struct ds_TimeOfImpactArg *arg, co
     arg->margin = 0.0f;
     arg->sweep[0] = mesh->sweep[0];
     arg->sweep[1] = mesh->sweep[1];
-    arg->local_center = mesh->local_center;
+    arg->com_shape = mesh->com_shape;
 }
 
 #ifdef __cplusplus

@@ -23,7 +23,7 @@
 static ds_Transform ds_TOITransform(const struct ds_TimeOfImpactArg *arg, const f32 t)
 {
     ds_Transform transform = ds_TransformLerp(arg->sweep + 0, arg->sweep + 1, t);
-    transform.position = V3Sub(transform.position, QUnitRotate(transform.rotation, arg->local_center));
+    transform.position = V3Sub(transform.position, QUnitRotate(transform.rotation, arg->com_shape));
     return transform;
 }
 
@@ -290,70 +290,44 @@ f32 ds_TimeOfImpactConcave(struct arena *mem, const struct ds_TimeOfImpactArg *m
     ds_Assert(mesh->shape->type == C_SHAPE_TRI_MESH && convex->shape->type != C_SHAPE_TRI_MESH);
     const struct mesh *m = &mesh->shape->mesh;
 
-    /* the mesh is static, local_center 0 => constant pose is sweep[0] */
-    const ds_Transform *mesh_pose = mesh->sweep + 0;
+    /* the mesh is static, and com_shape = 0 => constant pose is sweep[0] */
+    const ds_Transform *t_mesh_anchor = mesh->sweep + 0;
 
-    /*
-     * Cast a box around the center of mass along its translation (mesh frame). Its half width, the distance
-     * from the center of mass to the farthest corner of the shape's local box, covers every orientation.
+    /* 
+     * We have shape -> world-anchor-com-diff-space
+     * we want shape -> world-anchor-shape-diff-space
+     *
+     * Note: for meshes, com_shape = 0, so the two transforms are equal:
+     *         
+     *          mesh -> world-anchor-com-diff-space
+     *          mesh -> world-anchor-shape-diff-space
      */
-    const ds_Transform identity = ds_TransformIdentity();
-    const struct aabb local = c_ShapeBbox(convex->shape, &identity);
-    const v3 corner = V3Max(V3Abs(V3Sub(local.min, convex->local_center)), V3Abs(V3Sub(local.max, convex->local_center)));
-    const f32 reach = V3Length(corner);
-    const v3 half = V3(reach, reach, reach);
+    const v3 shape_origin_anchor_diff0 = V3Sub(convex->sweep[0].position, QUnitRotate(convex->sweep[0].rotation, convex->com_shape));
+    const v3 shape_origin_anchor_diff1 = V3Sub(convex->sweep[1].position, QUnitRotate(convex->sweep[1].rotation, convex->com_shape));
+    const ds_Transform shape_to_anchor0 = { .rotation = convex->sweep[0].rotation, .position = shape_origin_anchor_diff0 };
+    const ds_Transform shape_to_anchor1 = { .rotation = convex->sweep[1].rotation, .position = shape_origin_anchor_diff1 };
+    const ds_Transform shape_to_mesh0 = ds_TransformRelative(t_mesh_anchor, &shape_to_anchor0);
+    const ds_Transform shape_to_mesh1 = ds_TransformRelative(t_mesh_anchor, &shape_to_anchor1);
+    const struct aabb bbox0 = c_ShapeBbox(convex->shape, &shape_to_mesh0);
+    const struct aabb bbox1 = c_ShapeBbox(convex->shape, &shape_to_mesh1);
+    const struct aabb bbox = BboxUnion(bbox0, bbox1);
 
-    const v3 center = V3InverseTransform(convex->sweep[0].position, mesh_pose);
-    const v3 displacement = V3Sub(convex->sweep[1].position, convex->sweep[0].position);
-    const v3 translation = QUnitRotate(QConj(mesh_pose->rotation), displacement);
-    const struct aabb bbox = { .min = V3Sub(center, half), .max = V3Add(center, half) };
+    /* Limitation: pointy, fast-rotating shapes may leave the path's bounding box temporarily. */
 
     ArenaPushRecord(mem);
-    struct BVHCastInfo info = BVHAabbCastInit(mem, &m->bvh, &bbox, translation);
-    info.hit = u32f32_inline(U32_MAX, max_toi);
-    while (info.hit_queue.count)
+    const ds_Array(u32) query = MeshQuery(mem, m, &bbox);
+    f32 toi = max_toi;
+    for (u32 i = 0; i < query.length; ++i)
     {
-        const u32f32 tuple = MQPop(&info.hit_queue);
-        if (info.hit.f < tuple.f)
-        {
-            break;
-        }
-
-        if (BTLeafCheck(info.node + tuple.u))
-        {
-            const u32 tri_first = info.node[tuple.u].bt_child[0];
-            const u32 tri_last = tri_first + info.node[tuple.u].bt_child[1] - 1;
-            for (u32 i = tri_first; i <= tri_last; ++i)
-            {
-                const u32 *v = m->tri[m->leaf_tri[i]].buf;
-
-                const struct aabb tri_bbox = 
-                { 
-                    .min = V3Min(V3Min(m->v[v[0]], m->v[v[1]]), m->v[v[2]]), 
-                    .max = V3Max(V3Max(m->v[v[0]], m->v[v[1]]), m->v[v[2]]) 
-                };
-                const intv interval = AabbRayCastInterval(&info.ray, &tri_bbox);
-                const f32 t = F32Max(interval.low, 0.0f);
-                if (interval.high < t || info.hit.f < interval.low)
-                {
-                    continue;
-                }
-
-                //TODO 4. early-outs on the shape's centroid: starts behind the triangle (one-sided, as the mover; to
-                //        evaluate), ends in front having moved less than the fallback radius
-                //        max(0.5 center_of_mass_surface_distance, slop)
-                //TODO 5. TOI of the triangle (ds_TimeOfImpactArgTriangle of the mesh arg, its mesh-local vertices) and the
-                //        convex: ds_TimeOfImpactConvex(convex, &triangle, info.hit.f), the convex first (GJK in its frame)
-                //TODO 6. fallback: a TOI of 0 (touching) retried with a point at the centroid, margin fallback radius
-                //        + slop
-            }
-        }
-        else
-        {
-            BVHCastTestAndPushChildren(&info, tuple);
-        }
+        //TODO 4. early-outs on the shape's centroid: starts behind the triangle (one-sided, as the mover; to
+        //        evaluate), ends in front having moved less than the fallback radius
+        //        max(0.5 center_of_mass_surface_distance, slop)
+        //TODO 5. TOI of the triangle m->tri[query.buf[i]] (ds_TimeOfImpactArgTriangle of the mesh arg, its mesh-local
+        //        vertices) and the convex: ds_TimeOfImpactConvex(convex, &triangle, toi), the convex first (GJK in its
+        //        frame); toi = the minimum so far
+        //TODO 6. fallback: a TOI of 0 (touching) retried with a point at the centroid, margin fallback radius + slop
     }
 
     ArenaPopRecord(mem);
-    return info.hit.f;
+    return toi;
 }
