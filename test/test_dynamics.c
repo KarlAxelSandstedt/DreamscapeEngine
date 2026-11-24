@@ -170,11 +170,12 @@ sleeps with its joint sim in the set, out of the colours; a target move wakes it
 the side within 1 cm; a strength set wakes it; removing the sleeping joint wakes it and it falls, and the setters
 on the removed joint are NO-OPs.
 
-Solver (DynamicsSlideTest, DynamicsBounceTest): a frictionless box on a 30 degree slope slides for a second;
-its downhill speed matches the per-tick recurrence v = (v + g sin(a) dt) / (1 + d dt) of the solver's gravity
-and damping within 1 % (the contacts cancel only the normal part), nothing across the slope, no spin. A box
-dropped flat with restitution 1 leaves the ground with its impact speed (within the tick's gravity), one with
-restitution 0 keeps less than 5 % of it.
+Solver (DynamicsSlideTest, DynamicsBounceTest, DynamicsRestingBounceTest): a frictionless box on a 30 degree
+slope slides for a second; its downhill speed matches the per-tick recurrence v = (v + g sin(a) dt) / (1 + d dt)
+of the solver's gravity and damping within 1 % (the contacts cancel only the normal part), nothing across the
+slope, no spin. A box dropped flat with restitution 1 leaves the ground with its impact speed (within the
+tick's gravity), one with restitution 0 keeps less than 5 % of it. A box with restitution 1 resting on the
+floor rises less than 1 mm in two seconds.
 
 Pipeline (DynamicsFirstTickTest, DynamicsFlushTest): 101 bodies added to a pipeline of initial size 64, two of
 the new ones joined before the first tick: the joint is coloured at once, and after one tick every contact is
@@ -4106,7 +4107,7 @@ static struct test_Output DynamicsSlideTest(struct test_Environment *env)
         id[i] = DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, scene + i, (v3f64) { 0 }, i);
     }
 
-    /* each tick adds the downhill gravity and damps (ds_BodyUpdateSolverDataRange); the contacts only cancel the normal part */
+    /* each tick adds the downhill gravity and damps (ds_BodyIntegrateExternalForcesRange); the contacts only cancel the normal part */
     const f32 g_t = V3Dot(gravity, downhill);
     const f32 damp = 1.0f / (1.0f + pipeline.config.solver.linear_dampening * pipeline.timestep);
     f32 expected = 0.0f;
@@ -4192,6 +4193,53 @@ static struct test_Output DynamicsBounceTest(struct test_Environment *env)
     {
         SnapshotTestTick(&pipeline);
         TEST_NOT_ZERO(F32Abs(SolverTestVelocity(&pipeline, id[2]).y) <= 0.05f * down);
+    }
+
+    ds_DynamicsConfigPop(&pipeline);
+    ds_DynamicsDealloc(&pipeline);
+    c_ShapeDBDealloc(&cshape_db);
+    ds_SDBDealloc(prefab_db);
+    ArenaFree(&mem);
+    return output;
+}
+
+/* a box with restitution 1 resting on the floor stays there (file comment) */
+static struct test_Output DynamicsRestingBounceTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct arena mem = ArenaAlloc(NULL, 64*1024*1024);
+    struct c_ShapeDB cshape_db = { 0 };
+    c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
+    ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
+    ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
+    struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&external, NSEC_PER_SEC / 60);
+    ds_DynamicsConfigPush(&pipeline);
+    pipeline.config_pending.solver.sleep_enabled = 0;
+    ds_DynamicsConfigUpdatePending(&pipeline);
+
+    const struct dynamics_TestBox scene[2] =
+    {
+        { .position = V3(0.0f, -1.0f, 0.0f), .rotation = QIdentity(), .hw = V3(16.0f, 1.0f, 16.0f), .dynamic = 0, .friction = 0.5f, .restitution = 0.0f },
+        { .position = V3(0.0f, 0.5f, 0.0f), .rotation = QIdentity(), .hw = V3(0.5f, 0.5f, 0.5f), .dynamic = 1, .friction = 0.5f, .restitution = 1.0f },
+    };
+    ds_BodyId id[2];
+    for (u32 i = 0; i < 2; ++i)
+    {
+        id[i] = DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, scene + i, (v3f64) { 0 }, i);
+    }
+
+    f32 rise = 0.0f;
+    for (u32 t = 0; t < 120; ++t)
+    {
+        SnapshotTestTick(&pipeline);
+        rise = F32Max(rise, (f32) DynamicsTestPose(&pipeline, id[1]).position.y - 0.5f);
+    }
+    if (!(rise < 0.001f))
+    {
+        fprintf(stderr, "resting bounce: the box rose %f m\n", rise);
+        TEST_FAILURE;
     }
 
     ds_DynamicsConfigPop(&pipeline);
@@ -5767,6 +5815,7 @@ static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
     DynamicsJointBreakingTest,
     DynamicsSlideTest,
     DynamicsBounceTest,
+    DynamicsRestingBounceTest,
     DynamicsFirstTickTest,
     DynamicsFlushTest,
     DynamicsNumericsConfigTest,
@@ -6155,6 +6204,7 @@ static void *DynamicsPerfSolveInit(const enum dynamics_PerfScene scene, const en
     {
         ds_ContactConstraintInitRange(pipeline, ci, 0, pipeline->cgraph.color[ci].contact_pool.count);
     }
+    ds_BodyIntegrateExternalForcesRange(pipeline, 0, in->body_count);
     if (pipeline->config.solver.warmup_solver)
     {
         for (u32 ci = 0; ci < CG_COLOR_COUNT; ++ci)

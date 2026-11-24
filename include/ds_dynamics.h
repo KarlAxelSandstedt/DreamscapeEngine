@@ -546,6 +546,7 @@ void		    ds_BodyUpdateMassProperties(struct ds_Dynamics *pipeline, const ds_Bod
 u32             ds_BodyPairMayCollide(const struct ds_Dynamics *pipeline, const u32 body_index0, const u32 body_index1);
 /* Internal: Refresh and update rigid body simulation and compute/solver data in range [low, high) before solving */
 void            ds_BodyUpdateSolverDataRange(struct ds_Dynamics *pipeline, const u32 low, const u32 high);
+void            ds_BodyIntegrateExternalForcesRange(struct ds_Dynamics *pipeline, const u32 low, const u32 high);
 /* Internal: Integrate body velocites in range [low, high) */
 void            ds_BodyIntegrateVelocitiesRange(struct ds_Dynamics *pipeline, const u32 low, const u32 high);
 /* Internal: Update orientation of active bodies in range [low, high) */
@@ -1752,6 +1753,7 @@ struct ds_SolverJobPhase
     struct ds_ParallelForChain      pf_body_update;
     struct ds_ParallelForChain      pf_contact_init;
     struct ds_ParallelForChain      pf_joint_init;
+    struct ds_ParallelForChain      pf_external_forces;
     struct ds_ParallelForChain      pf_contact_warmup;
     struct ds_ParallelForChain      pf_joint_warmup;
     struct ds_ParallelForChain      pf_velocity_solve;      /* per iteration and colour: the colour's joints, then its contacts */

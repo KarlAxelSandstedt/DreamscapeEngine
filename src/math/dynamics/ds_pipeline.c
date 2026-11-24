@@ -799,6 +799,19 @@ u32 ds_SolverJobPhaseDispatch(const ds_JobId job)
     }
     ds_ParallelForChainWait(chain);
 
+    chain = &phase->pf_external_forces;
+    {
+        ProfZoneNamed("External Forces");
+        pf = chain->parallel_for + 0;
+        ds_ParallelFor(pf, range_index)
+        {
+            ds_ParallelForRange(&low, &high, pf, range_index);
+            ds_BodyIntegrateExternalForcesRange(pipeline, low, high);
+        }
+        ProfZoneEnd;
+    }
+    ds_ParallelForChainWait(chain);
+
     if (g_solver_config->warmup_solver)
     {
         chain = &phase->pf_contact_warmup;
@@ -1381,6 +1394,7 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
         solver_phase->pf_body_update = ds_ParallelForChainAlloc(pipeline->runtime.mem_tick, 1);
         solver_phase->pf_contact_init = ds_ParallelForChainAlloc(pipeline->runtime.mem_tick, CG_COLOR_COUNT);
         solver_phase->pf_joint_init = ds_ParallelForChainAlloc(pipeline->runtime.mem_tick, CG_COLOR_COUNT);
+        solver_phase->pf_external_forces = ds_ParallelForChainAlloc(pipeline->runtime.mem_tick, 1);
         solver_phase->pf_contact_warmup = ds_ParallelForChainAlloc(pipeline->runtime.mem_tick, CG_COLOR_COUNT);
         solver_phase->pf_joint_warmup = ds_ParallelForChainAlloc(pipeline->runtime.mem_tick, CG_COLOR_COUNT);
         solver_phase->pf_velocity_solve = ds_ParallelForChainAlloc(pipeline->runtime.mem_tick, 2*g_solver_config->pgs_iteration_count*CG_COLOR_COUNT);
@@ -1390,10 +1404,12 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
         solver_phase->pf_orientation = ds_ParallelForChainAlloc(pipeline->runtime.mem_tick, 1);
 
         struct ds_ParallelFor *pfb = solver_phase->pf_body_update.parallel_for;
+        struct ds_ParallelFor *pfef = solver_phase->pf_external_forces.parallel_for;
         struct ds_ParallelFor *pfin = solver_phase->pf_integrate.parallel_for;
         struct ds_ParallelFor *pfo = solver_phase->pf_orientation.parallel_for;
         //TODO: this range size is random hardcoded value, change
         ds_ParallelForInit(pfb + 0, pipeline->solver_set_pool.buf[SOLVER_SET_ACTIVE].body_compute_pool.count, 32);
+        ds_ParallelForInit(pfef + 0, pipeline->solver_set_pool.buf[SOLVER_SET_ACTIVE].body_compute_pool.count, 32);
         ds_ParallelForInit(pfin + 0, pipeline->solver_set_pool.buf[SOLVER_SET_ACTIVE].body_compute_pool.count, 32);
         ds_ParallelForInit(pfo + 0, pipeline->solver_set_pool.buf[SOLVER_SET_ACTIVE].body_compute_pool.count, 32);
         solver_phase->proxy_range = ArenaPush(pipeline->runtime.mem_tick, pfo->range_count*sizeof(struct ds_ProxyRange));

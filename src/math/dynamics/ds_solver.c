@@ -128,26 +128,6 @@ void ds_BodyUpdateSolverDataRange(struct ds_Dynamics *pipeline, const u32 low, c
     ProfZone;
 
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
-    
-    /* Apply dampening: 
-	 *		dv/dt = -d*v
-	 *	=>	d/dt[ve^(d*t)] = 0
-	 *	=>	v(t) = v(0)*e^(-d*t)
-	 *
-	 *	approx e^(-d*t) = 1 - d*t + d^2*t^2 / 2! - ....
-	 *	using Pade P^0_1 =>
-	 *		1 - d*t = a0 / (1 + b1*t)
-	 *		b0 = 1
-	 *		a0 = c0 = 1
-	 *		0 = a1 = c1 + c0*b1
-	 *	=>	0 = b1 - d
-	 *	=>	
-	 *		e^(-d*t) ~= P^0_1(t) 
-	 *			  =  a0 / (b0 + b1*t) 
-	 *			  =  1 / (1 + d*t)
-	 */
-	const f32 linear_damp = 1.0f / (1.0f + g_solver_config->linear_dampening * pipeline->timestep);
-	const f32 angular_damp = 1.0f / (1.0f + g_solver_config->angular_dampening * pipeline->timestep);
 
     for (u32 i = low; i < high; ++i)
     {
@@ -162,6 +142,40 @@ void ds_BodyUpdateSolverDataRange(struct ds_Dynamics *pipeline, const u32 low, c
         bcomp->rotation = sim->world.rotation;
         sim->world_center_of_mass = ds_BodySimWorldCenterOfMass(sim);
         bcomp->delta_position = V3Zero();
+    }
+
+    ProfZoneEnd;
+}
+
+void ds_BodyIntegrateExternalForcesRange(struct ds_Dynamics *pipeline, const u32 low, const u32 high)
+{
+    ProfZone;
+
+    struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
+
+    /* Apply dampening:
+	 *		dv/dt = -d*v
+	 *	=>	d/dt[ve^(d*t)] = 0
+	 *	=>	v(t) = v(0)*e^(-d*t)
+	 *
+	 *	approx e^(-d*t) = 1 - d*t + d^2*t^2 / 2! - ....
+	 *	using Pade P^0_1 =>
+	 *		1 - d*t = a0 / (1 + b1*t)
+	 *		b0 = 1
+	 *		a0 = c0 = 1
+	 *		0 = a1 = c1 + c0*b1
+	 *	=>	0 = b1 - d
+	 *	=>
+	 *		e^(-d*t) ~= P^0_1(t)
+	 *			  =  a0 / (b0 + b1*t)
+	 *			  =  1 / (1 + d*t)
+	 */
+	const f32 linear_damp = 1.0f / (1.0f + g_solver_config->linear_dampening * pipeline->timestep);
+	const f32 angular_damp = 1.0f / (1.0f + g_solver_config->angular_dampening * pipeline->timestep);
+
+    for (u32 i = low; i < high; ++i)
+    {
+        struct ds_BodyCompute *bcomp = active->body_compute_pool.buf + i;
 
         /* integrate new velocities using external forces */
         const v3 linear_velocity = V3AddScaled(bcomp->linear_velocity, g_solver_config->gravity, pipeline->timestep);
@@ -530,7 +544,6 @@ void ds_ContactConstraintInitRange(struct ds_Dynamics *pipeline, const u32 color
                 /* speculative contact */
                 if (m->depth[ccpi] < 0.0f)
                 {
-		    	    f32 delta_impulse = ccp->normal_mass * (ccp->velocity_bias - separating_velocity);
                     /*
                      *  Constraint: 
                      *       approach_velocity*timestep <= distance
