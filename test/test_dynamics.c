@@ -5176,6 +5176,117 @@ static struct test_Output DynamicsMeshThinPlateTest(struct test_Environment *env
     return output;
 }
 
+/********************************** continuous collision against statics **********************************/
+
+/*
+Fast bodies thrown down onto two floors with top face at y = 0, 3 s with gravity: the mesh floor
+(DynamicsTestFloorAdd) and a thin static box slab (12 x 0.1 x 12 m) beside it. A box (half width 0.25), a sphere
+(r 0.25) and a capsule (r 0.15, half height 0.3) lying along x start 2.4 m above their resting heights (0.25, 0.25,
+0.15) at 1, 3, 8 and 20 times their min extent per tick (box and sphere 15 to 300 m/s, capsule 9 to 180 m/s).
+With continuous collision every body is flagged fast, its center never reaches the floor's plane, and it ends at its
+resting height within [-2 slop, slop]. Except the box on the slab, which is only printed: CCD puts it slop above the
+slab, where no hull-hull manifold exists yet, the next step's TOI is 0 (left to the discrete contacts), and it may
+pass through until speculative contacts exist. Without continuous collision, the bodies at 20 times their min extent
+per tick end below both floors (the test's control).
+*/
+static struct test_Output DynamicsCCDFloorTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+    (void) env;
+
+    static const char *shape_id[3] = { "box", "sphere", "capsule" };
+    static const char *target_id[2] = { "mesh", "hull slab" };
+    const enum c_ShapeType type[3] = { C_SHAPE_CONVEX_HULL, C_SHAPE_SPHERE, C_SHAPE_CAPSULE };
+    const f32 radius[3] = { 0.0f, 0.25f, 0.15f };
+    const f32 rest[3] = { 0.25f, 0.25f, 0.15f };
+    const f32 speed_scale[4] = { 1.0f, 3.0f, 8.0f, 20.0f };
+    const q lying = QUnitAxisAngle(V3(0.0f, 0.0f, 1.0f), 0.5f*F32_PI);
+    const u32 tick_count = 180;
+
+    for (u32 continuous = 0; continuous < 2; ++continuous)
+    {
+        struct arena mem = ArenaAlloc(NULL, 64*1024*1024);
+        struct c_ShapeDB cshape_db = { 0 };
+        c_ShapeDBAlloc(NULL, &cshape_db, 64, GROWABLE);
+        const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
+        struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&external, NSEC_PER_SEC / 60);
+        ds_DynamicsConfigPush(&pipeline);
+        pipeline.config_pending.solver.enable_continuous = continuous;
+        ds_DynamicsConfigUpdatePending(&pipeline);
+        DynamicsTestFloorAdd(&mem, &pipeline, &cshape_db);
+        SlideWarmAdd(&mem, &pipeline, &cshape_db, C_SHAPE_CONVEX_HULL, V3(6.0f, 0.05f, 6.0f), 0.0f, 0.0f, V3(26.0f, -0.05f, 6.0f), QIdentity(), 0, 0.8f, 100);
+
+        const f32 slop = pipeline.config.solver.linear_slop;
+        const f32 h = pipeline.timestep;
+        ds_BodyId body[2][3][4];
+        f32 lowest[2][3][4];
+        u32 fast[2][3][4];
+        for (u32 target = 0; target < 2; ++target)
+        for (u32 k = 0; k < 3; ++k)
+        for (u32 i = 0; i < 4; ++i)
+        {
+            const v3 position = V3(1.5f + 20.0f*(f32) target + 3.0f*(f32) i, rest[k] + 2.4f, 2.0f + 4.0f*(f32) k);
+            const q rotation = (type[k] == C_SHAPE_CAPSULE) ? lying : QIdentity();
+            const u32 index = 1 + 12*target + 4*k + i;
+            body[target][k][i] = SlideWarmAdd(&mem, &pipeline, &cshape_db, type[k], V3(0.25f, 0.25f, 0.25f), radius[k], 0.3f, position, rotation, 1, 0.8f, index);
+            const struct ds_Body *b = ds_BodyLookup(&pipeline, body[target][k][i]).address;
+            pipeline.solver_set_pool.buf[b->set].body_compute_pool.buf[b->sim].linear_velocity = V3(0.0f, -speed_scale[i]*rest[k]/h, 0.0f);
+            lowest[target][k][i] = position.y;
+            fast[target][k][i] = 0;
+        }
+
+        for (u32 t = 0; t < tick_count; ++t)
+        {
+            ds_DynamicsTick(DynamicsTestTickArena(), &pipeline, NSEC_PER_SEC / 60);
+            for (u32 target = 0; target < 2; ++target)
+            for (u32 k = 0; k < 3; ++k)
+            for (u32 i = 0; i < 4; ++i)
+            {
+                const struct ds_Body *b = ds_BodyLookup(&pipeline, body[target][k][i]).address;
+                const struct ds_BodySim *sim = pipeline.solver_set_pool.buf[b->set].body_sim_pool.buf + b->sim;
+                lowest[target][k][i] = F32Min(lowest[target][k][i], (f32) sim->world.position.y);
+                fast[target][k][i] |= (sim->flags & BODY_FLAG_FAST) >> BODY_FLAG_FAST_BIT;
+            }
+        }
+
+        for (u32 target = 0; target < 2; ++target)
+        for (u32 k = 0; k < 3; ++k)
+        for (u32 i = 0; i < 4; ++i)
+        {
+            const f32 speed = speed_scale[i]*rest[k]/h;
+            const f32 y = (f32) DynamicsTestPose(&pipeline, body[target][k][i]).position.y;
+            if (!continuous)
+            {
+                if (i == 3 && !(y < -1.0f))
+                {
+                    fprintf(stderr, "CCD floor, no CCD: %s on %s at %g m/s ends at %g, not below the floor\n", shape_id[k], target_id[target], (f64) speed, (f64) y);
+                    TEST_FAILURE;
+                }
+                continue;
+            }
+
+            if (target == 1 && type[k] == C_SHAPE_CONVEX_HULL)
+            {
+                fprintf(stdout, "\tCCD floor, box on hull slab at %g m/s: lowest center %g, end %g (%s)\n", (f64) speed, (f64) lowest[target][k][i], (f64) y, (y > 0.0f) ? "held" : "passed through");
+                continue;
+            }
+
+            if (!fast[target][k][i] || !(lowest[target][k][i] > 0.0f) || !(rest[k] - 2.0f*slop <= y && y <= rest[k] + slop))
+            {
+                fprintf(stderr, "CCD floor: %s on %s at %g m/s: fast %u, lowest center %g, end %g, resting height %g\n", shape_id[k], target_id[target], (f64) speed, fast[target][k][i], (f64) lowest[target][k][i], (f64) y, (f64) rest[k]);
+                TEST_FAILURE;
+            }
+        }
+
+        ds_DynamicsConfigPop(&pipeline);
+        ds_DynamicsDealloc(&pipeline);
+        c_ShapeDBDealloc(&cshape_db);
+        ArenaFree(&mem);
+    }
+
+    return output;
+}
+
 static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
 {
     DynamicsAllocConfigTest,
@@ -5221,6 +5332,7 @@ static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
     DynamicsWarmStartMetricsTest,
     DynamicsMeshOneSidedTest,
     DynamicsMeshThinPlateTest,
+    DynamicsCCDFloorTest,
 };
 
 struct suite_Correctness m_dynamics_suite =
