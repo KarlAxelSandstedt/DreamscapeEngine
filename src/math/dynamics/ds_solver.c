@@ -262,6 +262,8 @@ void ds_BodyCCDStatic(struct ds_BodyCompute *bcomp, const struct ds_Dynamics *pi
         .rotation = bcomp->rotation, 
         .position = V3F64Sub(com1, V3Promote(QUnitRotate(bcomp->rotation, sim->local_center_of_mass))),
     };
+
+    /* See ds_BodyFastCheck for details. */ 
     const q deltaR = QMul(QConj(t0.rotation), t1.rotation);
     const f32 rotation_chord = 2.0f*V3Length(V3(deltaR.x, deltaR.y, deltaR.z));
 
@@ -274,11 +276,12 @@ void ds_BodyCCDStatic(struct ds_BodyCompute *bcomp, const struct ds_Dynamics *pi
         s = pipeline->shape_pool.buf + i;
 	    cs = c_ShapeDBShape(pipeline->external->cshape_db, s->cshape_handle);
 
-        //TODO
-        //shape; per-shape fast filter (shape min extent vs its centroid motion + rotation chord * radius)
-        const v3 r = V3Sub(V3Transform(cs->center_of_mass, &s->t_local), sim->local_center_of_mass);
-        const v3 centroid_delta = V3Add(bcomp->delta_position, V3Sub(QUnitRotate(t1.rotation, r), QUnitRotate(t0.rotation, r)));
-        const f32 max_motion = V3Length(centroid_delta) + rotation_chord*cs->com_bounding_sphere_radius;
+        /* motion upper-bound of any shape particle: */
+        const v3 com_s0 = V3Sub(V3Transform(cs->center_of_mass, &s->t_local), sim->local_center_of_mass);
+        const v3 wcom_s0 = QUnitRotate(t0.rotation, com_s0);
+        const v3 wcom_s1 = V3Add(bcomp->delta_position, QUnitRotate(t1.rotation, com_s0));
+        const v3 wcom_delta = V3Sub(wcom_s1, wcom_s0);
+        const f32 max_motion = V3Length(wcom_delta) + rotation_chord*cs->com_bounding_sphere_radius;
         if (max_motion <= g_solver_config->ccd_safe_advancement_factor*cs->com_inscribed_sphere_radius)
         {
             continue;
