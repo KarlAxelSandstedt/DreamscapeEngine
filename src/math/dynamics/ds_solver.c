@@ -77,7 +77,7 @@ struct ds_SolverConfig ds_SolverConfigDefault(void)
     config.linear_dampening = 0.1f;
     config.angular_dampening = 0.1f;
     config.linear_slop = 0.005f;
-    config.restitution_threshold = 0.001f;
+    config.restitution_threshold = 1.0f;
     config.sleep_enabled = 1;
     config.sleep_time_threshold = 0.5f;
     config.sleep_linear_velocity_sq_limit = 0.01f*0.01f;
