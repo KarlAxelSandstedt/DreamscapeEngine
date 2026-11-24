@@ -33,12 +33,14 @@
 
 /*
  * The test beyond ds_Init's arguments: record= hash= generates the reference (the scene as commands, one hash per
- * system tick), replay= hash= with another config checks it; origin=x,y,z (generate only) builds the scene there.
+ * system tick), replay= hash= with another config checks it; origin=x,y,z (generate only) builds the scene there;
+ * duration=seconds (generate only) ends the reference after that much simulated time.
  */
 struct ds_DeterminismTest
 {
     u32     generate;
     v3f64   origin;
+    u64     ns_duration;    /* 0: until every body sleeps */
 };
 
 /* 1 if str is a decimal number ([+-]d[.d][(e|E)[+-]d], d: digits) with a finite value, written to *val */
@@ -86,13 +88,13 @@ static u32 ds_DeterminismF64Parse(f64 *val, struct arena *tmp, const utf8 str)
 
 static void ds_DeterminismUsageAndExit(const char *problem)
 {
-    fprintf(stderr, "%s\nUsage: DreamscapeTest config=path record=file hash=file [origin=x,y,z] | config=path replay=file hash=file, exiting.\n", problem);
+    fprintf(stderr, "%s\nUsage: DreamscapeTest config=path record=file hash=file [origin=x,y,z] [duration=seconds] | config=path replay=file hash=file, exiting.\n", problem);
     exit(1);
 }
 
 static struct ds_DeterminismTest ds_DeterminismProcessArguments(struct arena *persistent)
 {
-    struct ds_DeterminismTest test = { .generate = g_argv[ARGV_RECORD].size != 0, .origin = V3F64(0.0, 0.0, 0.0) };
+    struct ds_DeterminismTest test = { .generate = g_argv[ARGV_RECORD].size != 0, .origin = V3F64(0.0, 0.0, 0.0), .ns_duration = 0 };
     if (!g_argv[ARGV_HASH].size || (g_argv[ARGV_RECORD].size == 0) == (g_argv[ARGV_REPLAY].size == 0))
     {
         ds_DeterminismUsageAndExit("The test needs record= or replay=, and hash=.");
@@ -125,6 +127,29 @@ static struct ds_DeterminismTest ds_DeterminismProcessArguments(struct arena *pe
         }
     }
 
+    if (g_argv[ARGV_DURATION].size)
+    {
+        if (!test.generate)
+        {
+            ds_DeterminismUsageAndExit("duration= is for record= only: a replay ends where its hash file ends.");
+        }
+
+        /* whole seconds, 1 to 10^9 */
+        const utf8 str = g_argv[ARGV_DURATION];
+        u64 seconds = 0;
+        u32 i = 0;
+        for (; i < str.size && '0' <= str.buf[i] && str.buf[i] <= '9' && seconds <= 1000000000; ++i)
+        {
+            seconds = 10*seconds + (u64) (str.buf[i] - '0');
+        }
+
+        if (i != str.size || seconds == 0 || seconds > 1000000000)
+        {
+            ds_DeterminismUsageAndExit("Bad duration: expected duration=seconds (a whole number from 1 to 1000000000).");
+        }
+        test.ns_duration = seconds*NSEC_PER_SEC;
+    }
+
     return test;
 }
 
@@ -138,7 +163,8 @@ static u32 ds_DeterminismRunning(const struct ds_DeterminismTest *test, const st
     const u32 all_asleep = editor->physics->solver_set_pool.buf[SOLVER_SET_ACTIVE].body_sim_pool.count == 0;
     if (test->generate)
     {
-        return !all_asleep;
+        const u32 ended = test->ns_duration && editor->physics->frames_completed*editor->physics->ns_tick >= test->ns_duration;
+        return !all_asleep && !ended;
     }
 
     const struct ds_SimHost *host = ds_SimHostLookup(&editor->srv, editor->sim).address;
@@ -157,9 +183,10 @@ static u32 ds_DeterminismRunning(const struct ds_DeterminismTest *test, const st
 }
 
 /*
- *  ./DreamscapeTest config=path record=file hash=file [origin=x,y,z]
+ *  ./DreamscapeTest config=path record=file hash=file [origin=x,y,z] [duration=seconds]
  *      run the scene (built around origin, default 0) on a recording host: file holds the scene as commands,
- *      the hash file one hash per system tick; the run ends when every body sleeps
+ *      the hash file one hash per system tick; the run ends when every body sleeps, or after duration seconds
+ *      of simulated time
  *  ./DreamscapeTest config=path replay=file hash=file
  *      replay the record with config (another thread_count) and compare every tick's hash; exit 0 on success
  */

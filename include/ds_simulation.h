@@ -124,6 +124,8 @@ struct ds_SimCmd
         {
             utf8                prefab;     /* id in the body prefab database */
             ds_TransformWorld   t_world;
+            v3                  linear_velocity;
+            v3                  angular_velocity;
             u32                 entity;
         } body_add;
 

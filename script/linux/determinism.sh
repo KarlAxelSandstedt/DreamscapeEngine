@@ -36,8 +36,8 @@ cmake --build . --parallel
 
 # reference: serial (config/determinism.cfg); records the scene as commands (determinism.rec) and one hash per
 # system tick (determinism.hash). Each replay runs the record with another thread_count (0: default).
-#gdb --args ./DreamscapeTest config=../config/determinism.cfg record=determinism.rec hash=determinism.hash
-./DreamscapeTest config=../config/determinism.cfg record=determinism.rec hash=determinism.hash
+#gdb --args ./DreamscapeTest config=../config/determinism.cfg record=determinism.rec hash=determinism.hash duration=60
+./DreamscapeTest config=../config/determinism.cfg record=determinism.rec hash=determinism.hash duration=60
 for THREAD_COUNT in 0 1 2; do # 3 4 5 6 7 8
     sed "s/^thread_count:.*/thread_count: $THREAD_COUNT/" ../config/determinism.cfg > "determinism_$THREAD_COUNT.cfg"
     ./DreamscapeTest "config=determinism_$THREAD_COUNT.cfg" replay=determinism.rec hash=determinism.hash
@@ -45,7 +45,7 @@ done
 
 # far from the origin: the scene built around (10 km, 10 km, 10 km) (f64 world positions); the record holds
 # the scene there, so the replays run there too.
-./DreamscapeTest config=../config/determinism.cfg record=determinism_far.rec hash=determinism_far.hash origin=10000,10000,10000
+./DreamscapeTest config=../config/determinism.cfg record=determinism_far.rec hash=determinism_far.hash origin=10000,10000,10000 duration=60
 for THREAD_COUNT in 0 1 2; do # 3 4 5 6 7 8
     ./DreamscapeTest "config=determinism_$THREAD_COUNT.cfg" replay=determinism_far.rec hash=determinism_far.hash
 done

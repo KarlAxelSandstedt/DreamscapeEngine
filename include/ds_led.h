@@ -59,6 +59,8 @@ typedef struct led_Node
 	utf8			id;             /* User-provided identifier */
 
     ds_TransformWorld transform;    /* Transform relative to parent (or world origin if no parent) */
+    v3              linear_velocity;
+    v3              angular_velocity;
 
 	u32			    body_prefab; 
     u32             shape_prefab;
@@ -93,6 +95,7 @@ void		        led_NodeSetColor(struct led *led, const ds_Id id, const v4 color, 
 void		        led_NodeSetColorId(struct led *led, const utf8 id, const v4 color, const f32 blend);
 /* Set node color and blend factor if it exist. */
 void		        led_NodeSetPosition(struct led *led, const ds_Id id, const v3f64 position);
+void		        led_NodeSetVelocity(struct led *led, const ds_Id id, const v3 linear_velocity, const v3 angular_velocity);
 /* Set node to contain a rigid body if the node and the prefab exist */
 void		        led_NodeAttachRigidBodyPrefabId(struct led *led, const utf8 id, const utf8 prefab);
 /* Set node to contain a rigid body if the node and the prefab exist */

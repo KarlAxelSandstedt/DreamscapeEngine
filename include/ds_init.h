@@ -41,7 +41,7 @@ Description:
     ds_Shutdown stops it in reverse order. The calls are the same on every platform. The config starts
     as the defaults below; the config file then sets the fields it has valid lines for (an unreadable,
     empty or missing file sets none). Programs take key=value arguments (ds_ArgvParse, g_argv):
-    ./Executable [config=path] [log=path] [record=path | replay=path] [hash=path] [headless].
+    ./Executable [config=path] [log=path] [record=path + OPTIONAL(duration)=seconds | replay=path] [hash=path] [headless].
     Defaults: system rng_seed, 256 MiB persistent arena, thread_count 0 (logical cores - 2),
     5 x 1 MiB scratch arenas per thread, headless 0.
     Rules for the program:
@@ -116,6 +116,7 @@ enum ds_ArgvType
     ARGV_HASH,          /* the hash file: written with record, compared with replay     */
     ARGV_HEADLESS,      /* a flag (no value): no graphics, as the config's headless      */
     ARGV_ORIGIN,        /* x,y,z: the determinism test's scene origin (parsed by its main) */
+    ARGV_DURATION,      /* seconds: the determinism test's record length (parsed by its main) */
     ARGV_HELP,          /* a flag: print the usage and exit */
     ARGV_COUNT
 };

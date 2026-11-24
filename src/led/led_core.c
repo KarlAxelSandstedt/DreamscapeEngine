@@ -68,6 +68,8 @@ static ds_Id led_NodeInitalize(struct led_Node *node, const u32 node_index, cons
     node->shape_prefab = SDB_STUB;
     node->proxy = PROXY3D_NULL;
     node->transform = ds_TransformWorldIdentity();
+    node->linear_velocity = V3Zero();
+    node->angular_velocity = V3Zero();
     node->color = V4(0.9f, 0.9f, 0.9f, 1.0f);
 
     return node->tagged_id;
@@ -198,6 +200,20 @@ void led_NodeSetPosition(struct led *led, const ds_Id id, const v3f64 position)
 	else
 	{
 		node->transform.position = position;
+	}
+}
+
+void led_NodeSetVelocity(struct led *led, const ds_Id id, const v3 linear_velocity, const v3 angular_velocity)
+{
+	struct led_Node *node = led_NodeLookup(led, id).address;
+	if (!node)
+	{
+		Log(T_LED, S_WARNING, "Failed to set velocity of led node %lu, node not found.", id);
+	}
+	else
+	{
+		node->linear_velocity = linear_velocity;
+		node->angular_velocity = angular_velocity;
 	}
 }
 
@@ -2326,6 +2342,38 @@ void led_WallSmashSimulationSetup(struct led *led)
 		}
 	}
 
+	/*
+	 * CCD stage: 20 boxes thrown at the Perlin mesh (x 30..60, z -40..-10) from 5 m above its highest vertex,
+	 * face first along the mesh's normal at 30 to 120 m/s (1 to 4 times the box's min extent per tick), spinning
+	 * about that normal at up to 10 rad/s: each is fast and swept by continuous collision.
+	 */
+	const u32 ccd_stage = 1;
+	if (ccd_stage)
+	{
+		const v4 ccd_color = V4(0.9f, 0.2f, 0.2f, alpha1);
+		const q mesh_rotation = led_mesh->transform.rotation;
+		const v3 mesh_normal = QUnitRotate(mesh_rotation, V3(0.0f, 1.0f, 0.0f));
+		f32 mesh_top = -F32_INFINITY;
+		for (u32 v = 0; v < mesh->v_count; ++v)
+		{
+			mesh_top = F32Max(mesh_top, QUnitRotate(mesh_rotation, mesh->v[v]).y);
+		}
+
+		for (u32 i = 0; i < 20; ++i)
+		{
+			const v3 translation = V3(30.0f + 10.0f*(f32) (i % 4), mesh_translation.y + mesh_top + 5.0f, -40.0f + 7.5f*(f32) (i / 4));
+			const f32 speed = 30.0f + 90.0f*(f32) i / 19.0f;
+			const f32 spin = 10.0f*(f32) (i % 5) / 4.0f;
+			id = Utf8Format(sys_win->ui->mem_frame, "ccd_box_%u", i);
+			tagged_id = led_NodeAdd(led, id, Utf8Empty());
+			led_NodeSetPosition(led, tagged_id, led_ScenePosition(led, translation));
+			led->node_hierarchy.pool.buf[ds_IdIndex(tagged_id)].transform.rotation = mesh_rotation;
+			led_NodeSetVelocity(led, tagged_id, V3Scale(mesh_normal, -speed), V3Scale(mesh_normal, spin));
+			led_NodeAttachRigidBodyPrefab(led, tagged_id, Utf8Inline("rb_box"));
+			led_NodeSetColor(led, tagged_id, ccd_color, 1.0f);
+		}
+	}
+
 	for (u32 k = 0; k < tower1_count; ++k)
 	{
 		for (u32 j = 0; j < tower1_count; ++j)
@@ -2876,7 +2924,7 @@ static void led_EngineInit(struct led *led)
         if (node->flags & LED_BODY_PREFAB)
         {
             const struct ds_BodyPrefab *body_prefab = led->body_prefab_db.pool.buf + node->body_prefab;
-            const struct ds_SimCmd body_add = { .type = SIM_CMD_BODY_ADD, .body_add = { .prefab = body_prefab->id, .t_world = node->transform, .entity = it.at } };
+            const struct ds_SimCmd body_add = { .type = SIM_CMD_BODY_ADD, .body_add = { .prefab = body_prefab->id, .t_world = node->transform, .linear_velocity = node->linear_velocity, .angular_velocity = node->angular_velocity, .entity = it.at } };
             ds_CPoolPushValue(cmds, body_add);
     
             //TODO mass properties should be calculated on AttachShape....

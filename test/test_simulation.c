@@ -549,7 +549,7 @@ static struct test_Output SimCmdSerializeTest(struct test_Environment *env)
         rotation.x = 0.1f; rotation.y = 0.2f; rotation.z = 0.3f; rotation.w = 0.9f;
         const ds_TransformWorld t_world = { .rotation = rotation, .position = V3F64(1.5, -2.5, 1000000.25) };
         const ds_Transform t_local = { .rotation = QIdentity(), .position = V3(0.25f, 0.5f, -0.75f) };
-        const struct ds_SimCmd body_add = { .type = SIM_CMD_BODY_ADD, .body_add = { .prefab = Utf8Inline("crate"), .t_world = t_world, .entity = 7 } };
+        const struct ds_SimCmd body_add = { .type = SIM_CMD_BODY_ADD, .body_add = { .prefab = Utf8Inline("crate"), .t_world = t_world, .linear_velocity = V3(1.5f, -2.5f, 3.0f), .angular_velocity = V3(0.0f, 0.5f, -1.0f), .entity = 7 } };
         const struct ds_SimCmd shape_add = { .type = SIM_CMD_SHAPE_ADD, .shape_add = { .prefab = Utf8Inline("crate_box"), .t_local = t_local, .entity = 7 } };
         const struct ds_SimCmd joint_add = { .type = SIM_CMD_JOINT_ADD, .joint_add = { .collide_connected = 1, .target = 2.0f, .range = Intv(1.0f, 3.0f), .enable_spring = 1, .hertz = 4.0f, .damping_ratio = 0.5f, .breakage = ds_BreakageOption(10.0f, 20.0f), .entity = { 7, 9 }, .local_frame = { t_local, ds_TransformIdentity() } } };
         ds_CPoolPushValue(scene, body_add);
@@ -569,6 +569,8 @@ static struct test_Output SimCmdSerializeTest(struct test_Environment *env)
         TEST_EQUAL(1, Utf8Equivalence(Utf8Inline("crate"), read.body_add.prefab));
         TEST_EQUAL(7, read.body_add.entity);
         TEST_TRUE(read.body_add.t_world.position.z == 1000000.25 && read.body_add.t_world.rotation.w == 0.9f && read.body_add.t_world.position.y == -2.5);
+        TEST_TRUE(read.body_add.linear_velocity.x == 1.5f && read.body_add.linear_velocity.y == -2.5f && read.body_add.linear_velocity.z == 3.0f);
+        TEST_TRUE(read.body_add.angular_velocity.x == 0.0f && read.body_add.angular_velocity.y == 0.5f && read.body_add.angular_velocity.z == -1.0f);
 
         TEST_EQUAL(1, ds_SimCmdTryDeserializeBitPacked(env->mem_1, &cmds, &read));
         TEST_EQUAL(SIM_CMD_SHAPE_ADD, read.type);
@@ -591,6 +593,14 @@ static struct test_Output SimCmdSerializeTest(struct test_Environment *env)
         TEST_EQUAL(0, ds_SimCmdFormVerify(&bad));
         bad = shape_add;
         bad.shape_add.t_local.position.x = (b32) { .u = 0x7fc00000u }.f;
+        TEST_EQUAL(0, ds_SimCmdFormVerify(&bad));
+
+        /* malformed: a NaN linear and an infinite angular velocity */
+        bad = body_add;
+        bad.body_add.linear_velocity.y = (b32) { .u = 0x7fc00000u }.f;
+        TEST_EQUAL(0, ds_SimCmdFormVerify(&bad));
+        bad = body_add;
+        bad.body_add.angular_velocity.z = (b32) { .u = 0x7f800000u }.f;
         TEST_EQUAL(0, ds_SimCmdFormVerify(&bad));
     }
 
@@ -1876,6 +1886,79 @@ static struct test_Output ServerReplayCorruptTest(struct test_Environment *env)
 	return output;
 }
 
+/*
+ * BodyAdd with velocities: executed, a dynamic box has them as its velocities before any physics tick; a static
+ * slab's are ignored.
+ */
+static struct test_Output ServerBodyVelocityTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct c_ShapeDB cshape_db = { 0 };
+    c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
+    const struct c_Shape slab_hull = { .type = C_SHAPE_CONVEX_HULL, .hull = DcelBox(env->mem_1, V3(10.0f, 0.5f, 10.0f)) };
+    const struct c_Shape box_hull = { .type = C_SHAPE_CONVEX_HULL, .hull = DcelBox(env->mem_1, V3(0.5f, 0.5f, 0.5f)) };
+    const struct slot slab_shape = c_ShapeDBAdd(&cshape_db, Utf8Inline("slab"), &slab_hull);
+    const struct slot box_shape = c_ShapeDBAdd(&cshape_db, Utf8Inline("box"), &box_hull);
+
+    ds_SDB(ds_ShapePrefab) shape_prefab_db = { 0 };
+    ds_SDBAlloc(NULL, shape_prefab_db, 32, GROWABLE);
+    struct ds_ShapePrefab *slab_prefab = ds_SDBAdd(env->mem_1, shape_prefab_db, Utf8Inline("slab_shape")).address;
+    struct ds_ShapePrefab *box_prefab = ds_SDBAdd(env->mem_1, shape_prefab_db, Utf8Inline("box_shape")).address;
+    slab_prefab->cshape = slab_shape.index; slab_prefab->density = 1.0f; slab_prefab->friction = 0.5f; slab_prefab->restitution = 0.0f;
+    box_prefab->cshape = box_shape.index; box_prefab->density = 1.0f; box_prefab->friction = 0.5f; box_prefab->restitution = 0.0f;
+
+    ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
+    ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db, .body_prefab_db = &prefab_db, .shape_prefab_db = &shape_prefab_db };
+    ((struct ds_BodyPrefab *) ds_SDBAdd(env->mem_1, prefab_db, Utf8Inline("static")).address)->dynamic = 0;
+    ((struct ds_BodyPrefab *) ds_SDBAdd(env->mem_1, prefab_db, Utf8Inline("dynamic")).address)->dynamic = 1;
+
+    struct ds_SimConfig config = ds_SimConfigDefault();
+    config.dynamics.initial_size = 32;
+
+    ds_CPool(ds_SimCmd) cmds;
+    ds_CPoolAlloc(env->mem_1, cmds, 4, NOT_GROWABLE);
+    const ds_Transform identity = ds_TransformIdentity();
+    const v3 linear_velocity = V3(1.0f, -2.0f, 3.0f);
+    const v3 angular_velocity = V3(0.5f, 0.0f, -0.25f);
+    const struct ds_SimCmd scene[] =
+    {
+        { .type = SIM_CMD_BODY_ADD, .body_add = { .prefab = Utf8Inline("static"), .t_world = { .rotation = QIdentity(), .position = V3F64(0.0, 0.0, 0.0) }, .linear_velocity = linear_velocity, .angular_velocity = angular_velocity, .entity = 1 } },
+        { .type = SIM_CMD_SHAPE_ADD, .shape_add = { .prefab = Utf8Inline("slab_shape"), .t_local = identity, .entity = 1 } },
+        { .type = SIM_CMD_BODY_ADD, .body_add = { .prefab = Utf8Inline("dynamic"), .t_world = { .rotation = QIdentity(), .position = V3F64(0.0, 3.0, 0.0) }, .linear_velocity = linear_velocity, .angular_velocity = angular_velocity, .entity = 2 } },
+        { .type = SIM_CMD_SHAPE_ADD, .shape_add = { .prefab = Utf8Inline("box_shape"), .t_local = identity, .entity = 2 } },
+    };
+    for (u32 i = 0; i < sizeof(scene) / sizeof(scene[0]); ++i)
+    {
+        ds_CPoolPushValue(cmds, scene[i]);
+    }
+
+    struct ds_Server srv;
+    ds_ServerAlloc(&srv, 16*1024*1024, 2);
+    const ds_SimId id = ds_SimHostAdd(&srv, &config, SIM_MODE_NONE, NULL, NULL, &external);
+    struct ds_SimHost *host = ds_SimHostLookup(&srv, id).address;
+    ds_CPoolPushValue(srv.payload_pool, ds_SimCmdPayloadPushAll(&srv.frame, id, &cmds));
+    ds_ServerTick(&srv, 0);
+    TEST_EQUAL(0, host->sim.dynamics.frames_completed);
+
+    const ds_BodyId slab = ds_GameBodyByEntity(&host->sim.game, &host->sim.dynamics, 1);
+    const ds_BodyId box = ds_GameBodyByEntity(&host->sim.game, &host->sim.dynamics, 2);
+    TEST_EQUAL(0, ds_BodyIdNullCheck(slab));
+    TEST_EQUAL(0, ds_BodyIdNullCheck(box));
+    const struct ds_Body *b = ds_BodyLookup(&host->sim.dynamics, box).address;
+    TEST_EQUAL(SOLVER_SET_ACTIVE, b->set);
+    const struct ds_BodyCompute *compute = host->sim.dynamics.solver_set_pool.buf[b->set].body_compute_pool.buf + b->sim;
+    TEST_TRUE(compute->linear_velocity.x == 1.0f && compute->linear_velocity.y == -2.0f && compute->linear_velocity.z == 3.0f);
+    TEST_TRUE(compute->angular_velocity.x == 0.5f && compute->angular_velocity.y == 0.0f && compute->angular_velocity.z == -0.25f);
+
+    ds_ServerDealloc(&srv);
+    ds_SDBDealloc(prefab_db);
+    ds_SDBDealloc(shape_prefab_db);
+    c_ShapeDBDealloc(&cshape_db);
+	return output;
+}
+
 static struct test_Output (*simulation_tests[])(struct test_Environment *) =
 {
     SimConfigSerializeTest,
@@ -1893,6 +1976,7 @@ static struct test_Output (*simulation_tests[])(struct test_Environment *) =
     SimCmdFuzzTest,
     ServerReplayCorruptTest,
     ServerSceneTest,
+    ServerBodyVelocityTest,
     ServerGrabTest,
 };
 

@@ -349,8 +349,8 @@ u32 ds_ConfigTryWrite(struct arena *tmp, const struct ds_RuntimeConfig *config, 
     return written;
 }
 
-static const char *g_argv_name[ARGV_COUNT] = { "log", "config", "simulation", "record", "replay", "hash", "headless", "origin", "help" };
-static const u32 g_argv_flag[ARGV_COUNT] = { 0, 0, 0, 0, 0, 0, 1, 0, 1 };
+static const char *g_argv_name[ARGV_COUNT] = { "log", "config", "simulation", "record", "replay", "hash", "headless", "origin", "duration", "help" };
+static const u32 g_argv_flag[ARGV_COUNT] = { 0, 0, 0, 0, 0, 0, 1, 0, 0, 1 };
 
 static const char *g_argv_usage =
     "usage: ./DreamscapeTest [key=value ...] [flags]\n"
@@ -363,6 +363,7 @@ static const char *g_argv_usage =
     "                    with replay: compare every tick's hash to path (a difference is fatal)\n"
     "  simulation=path   (reserved) an initial simulation state; not supported yet\n"
     "  origin=x,y,z      determinism test, with record: build the scene around (x, y, z)\n"
+    "  duration=seconds  determinism test, with record: end after seconds of simulated time\n"
     "  headless          no graphics\n"
     "  help              print this and exit\n"
     "\n"

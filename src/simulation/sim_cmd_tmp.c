@@ -46,7 +46,7 @@ static u32 ds_SimCmdTryReadId(struct arena *mem, struct SS *ss, utf8 *id)
 
 static u32 ds_BodyAddCmdFormVerify(const struct ds_BodyAddCmd *cmd)
 {
-    return ds_SimCmdPrefabIdCheck(cmd->prefab) && ds_TransformWorldFiniteCheck(&cmd->t_world);
+    return ds_SimCmdPrefabIdCheck(cmd->prefab) && ds_TransformWorldFiniteCheck(&cmd->t_world) && V3FiniteCheck(cmd->linear_velocity) && V3FiniteCheck(cmd->angular_velocity);
 }
 
 static u32 ds_BodyAddCmdDataVerify(const struct ds_Sim *sim, const struct ds_BodyAddCmd *cmd)
@@ -71,12 +71,21 @@ static u32 ds_BodyAddCmdTryExecute(struct ds_Sim *sim, const struct ds_BodyAddCm
         return 0;
     }
     ds_HashMapAdd(&sim->game.entity_map, cmd->entity, ds_BodyIdIndex(body));
+
+    /* a static body ignores the velocities */
+    if (prefab->dynamic)
+    {
+        const struct ds_Body *b = ds_BodyLookup(&sim->dynamics, body).address;
+        struct ds_BodyCompute *compute = sim->dynamics.solver_set_pool.buf[b->set].body_compute_pool.buf + b->sim;
+        compute->linear_velocity = cmd->linear_velocity;
+        compute->angular_velocity = cmd->angular_velocity;
+    }
     return 1;
 }
 
 static u64 ds_BodyAddCmdSerializeBitPackedSize(const struct ds_BodyAddCmd *cmd)
 {
-    return DS_SIM_CMD_ID_BITS(cmd->prefab) + ds_TransformWorldSerializeBitPackedSize(&cmd->t_world) + 32;
+    return DS_SIM_CMD_ID_BITS(cmd->prefab) + ds_TransformWorldSerializeBitPackedSize(&cmd->t_world) + V3SerializeBitPackedSize(cmd->linear_velocity) + V3SerializeBitPackedSize(cmd->angular_velocity) + 32;
 }
 
 static void ds_BodyAddCmdSerializeBitPacked(struct SS *ss, const struct ds_BodyAddCmd *cmd)
@@ -87,17 +96,21 @@ static void ds_BodyAddCmdSerializeBitPacked(struct SS *ss, const struct ds_BodyA
         SSWriteU64Partial(ss, cmd->prefab.buf[i], 8);
     }
     ds_TransformWorldSerializeBitPacked(ss, &cmd->t_world);
+    V3SerializeBitPacked(ss, cmd->linear_velocity);
+    V3SerializeBitPacked(ss, cmd->angular_velocity);
     SSWriteU64Partial(ss, cmd->entity, 32);
 }
 
 static u32 ds_BodyAddCmdTryDeserializeBitPacked(struct arena *mem, struct SS *ss, struct ds_BodyAddCmd *cmd)
 {
-    if (!ds_SimCmdTryReadId(mem, ss, &cmd->prefab) || SSBitsLeft(ss) < ds_TransformWorldSerializeBitPackedSize(&cmd->t_world) + 32)
+    if (!ds_SimCmdTryReadId(mem, ss, &cmd->prefab) || SSBitsLeft(ss) < ds_TransformWorldSerializeBitPackedSize(&cmd->t_world) + V3SerializeBitPackedSize(cmd->linear_velocity) + V3SerializeBitPackedSize(cmd->angular_velocity) + 32)
     {
         return 0;
     }
 
     ds_TransformWorldDeserializeBitPacked(ss, &cmd->t_world);
+    V3DeserializeBitPacked(ss, &cmd->linear_velocity);
+    V3DeserializeBitPacked(ss, &cmd->angular_velocity);
     cmd->entity = (u32) SSReadU64Partial(ss, 32);
     return 1;
 }

@@ -35,8 +35,8 @@ cmake --build . --parallel || exit /b 1
 
 REM reference: serial (config/determinism.cfg); records the scene as commands (determinism.rec) and one hash per
 REM system tick (determinism.hash). Each replay runs the record with another thread_count (0: default).
-REM raddbg .\DreamscapeTest.exe config=..\config\determinism.cfg record=determinism.rec hash=determinism.hash
-.\DreamscapeTest.exe config=..\config\determinism.cfg record=determinism.rec hash=determinism.hash
+REM raddbg .\DreamscapeTest.exe config=..\config\determinism.cfg record=determinism.rec hash=determinism.hash duration=60
+.\DreamscapeTest.exe config=..\config\determinism.cfg record=determinism.rec hash=determinism.hash duration=60
 REM 3 4 5 6 7 8
 for %%T in (0 1 2) do (
     findstr /v /b /c:"thread_count:" ..\config\determinism.cfg > determinism_%%T.cfg
@@ -46,7 +46,7 @@ for %%T in (0 1 2) do (
 
 REM far from the origin: the scene built around (10 km, 10 km, 10 km) (f64 world positions); the record holds
 REM the scene there, so the replays run there too.
-.\DreamscapeTest.exe config=..\config\determinism.cfg record=determinism_far.rec hash=determinism_far.hash origin=10000,10000,10000
+.\DreamscapeTest.exe config=..\config\determinism.cfg record=determinism_far.rec hash=determinism_far.hash origin=10000,10000,10000 duration=60
 REM 3 4 5 6 7 8
 for %%T in (0 1 2) do (
     .\DreamscapeTest.exe config=determinism_%%T.cfg replay=determinism_far.rec hash=determinism_far.hash
