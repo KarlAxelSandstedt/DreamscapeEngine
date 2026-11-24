@@ -206,26 +206,48 @@ void ds_BodyIntegrateVelocitiesRange(struct ds_Dynamics *pipeline, const u32 low
 static u32 ds_BodyFastCheck(const struct ds_Dynamics *pipeline, const struct ds_BodySim *sim, const struct ds_BodyCompute *bcomp)
 {
     /*
-     * Upper bounds on how far any body point p moves this step, r = p - center of mass in the body frame of the
-     * step's start (max_extent bounds |r| per axis there):
+     * Fast-check discussion:
      *
-     *      velocity:       (|v| + |w x r|) h
-     *      displacement:   |delta_position| + 2 |s x r|,   s = sin(theta/2) axis, the delta rotation's vector part
+     * We derive upper bound particle offset by upper bounding maximum extent vector
+     * deltas. THis is done comparing direct upper bound of extent offset and positional
+     * delta produced by upper-bounded velocities at extent.  
      *
-     * (2 |s x r| is the chord r moves along when turned by theta), with |(a x r).x| <= |a.y| |r.z| + |a.z| |r.y|
-     * and likewise for y and z.
+     * If the upper bound produces a motion greater than the safe advancement, we return
+     * fast moving.
      */
-    const q rotation0 = sim->world.rotation;
-    const q delta_rotation = QMul(bcomp->rotation, QConj(rotation0));
-    const v3 w = V3Abs(QUnitRotate(QConj(rotation0), bcomp->angular_velocity));
-    const v3 s = V3Abs(QUnitRotate(QConj(rotation0), V3(delta_rotation.x, delta_rotation.y, delta_rotation.z)));
+
+    const q R0 = sim->world.rotation;
+    const q deltaR = QMul(bcomp->rotation, QConj(R0));
+
+    /* 
+     * Velocity upper bound: |v| + |w x r| <= |v| + max { |w x e_ijk| : ijk corner of extent box} 
+     *                                     <= |v| + | (|wj|*|ek| + |wk|*|ej], ...) | 
+     */
     const v3 e = sim->max_extent;
-    const v3 velocity_arc = V3(w.y*e.z + w.z*e.y, w.z*e.x + w.x*e.z, w.x*e.y + w.y*e.x);
-    const v3 rotation_arc = V3(s.y*e.z + s.z*e.y, s.z*e.x + s.x*e.z, s.x*e.y + s.y*e.x);
-    const f32 max_velocity = V3Length(bcomp->linear_velocity) + V3Length(velocity_arc);
-    const f32 max_delta_position = V3Length(bcomp->delta_position) + 2.0f*V3Length(rotation_arc);
+    const v3 w_local = V3Abs(QUnitRotate(QConj(R0), bcomp->angular_velocity));
+    const v3 rotation_velocity = V3(w_local.y*e.z + w_local.z*e.y, w_local.z*e.x + w_local.x*e.z, w_local.x*e.y + w_local.y*e.x);
+    const f32 max_velocity = V3Length(bcomp->linear_velocity) + V3Length(rotation_velocity);
+
+    /* 
+     * Max position delta upper bround:
+     * For small angles theta, we have theta ~ sin(theta), so assuming a relative small
+     * delta rotation, we get
+     *
+     *      deltaR_local  = deltaR.axis * sin(theta/2) 
+     *                   ~= deltaR.axis * theta/2.
+     * so 2*deltaR_local ~= deltaR viewed as a angular velocity (angular units per 
+     *                      timestep, not per second!) that applies the whole 
+     *                      deltaR_local rotation in 1.0f.
+     *
+     * Now, similarly to the rotation velocity, we upper bound the maximum offset 
+     * produced by our rotation on any of the maximum extent corners.
+     */
+    const v3 deltaR_local = V3Abs(QUnitRotate(QConj(R0), V3(deltaR.x, deltaR.y, deltaR.z)));
+    const v3 rotation_offset = V3(deltaR_local.y*e.z + deltaR_local.z*e.y, deltaR_local.z*e.x + deltaR_local.x*e.z, deltaR_local.x*e.y + deltaR_local.y*e.x);
+    const f32 max_delta_position = V3Length(bcomp->delta_position) + 2.0f*V3Length(rotation_offset);
+
     const f32 max_motion = F32Max(max_delta_position, max_velocity*pipeline->timestep);
-    return g_solver_config->enable_continuous && max_motion > g_solver_config->ccd_safe_advancement_factor*sim->min_extent;
+    return max_motion > g_solver_config->ccd_safe_advancement_factor*sim->min_extent;
 }
 
 void ds_BodyCCDStatic(struct ds_BodyCompute *bcomp, const struct ds_Dynamics *pipeline, const struct ds_BodySim *sim)
@@ -235,37 +257,7 @@ void ds_BodyCCDStatic(struct ds_BodyCompute *bcomp, const struct ds_Dynamics *pi
 
 void ds_BodyUpdateOrientationRange(struct ds_Dynamics *pipeline, struct ds_ProxyRange *proxy_range, const u32 low, const u32 high)
 {
-    ProfZone;
-    /*
-     *
-     * Completed: 
-     * (O) Bodies marked as fast
-     * (O) Run CCD against static tree (skeleton call??)
-     * (O) draw fast moving bodies
-     *
-     * TODO:
-     * () fast-moving check
-     * () Run CCD against static tree (full)
-     * () Bullets?
-     *
-     * Fast-check discussion:
-     *
-     * Anything move above "safe-advancement" is tagged as fast and continuous collision
-     * detection applies. Safe is per-body dependent, I presume we use a heuristic based
-     * on the body's COM translation vs. the minimum shape.center_of_mass_surface_distance
-     * among its shapes. This makes sense since individually, shape vs. shape CCD uses 
-     * the local COM surface distance as a way to construct a safe advancement.
-     *
-     * body->min_shape_com_surface_distance = min { i : shape_i.com_surface_distance }
-     * body->max_com_surface_distance = max extent to any point on shape surface from body com
-     *
-     * safe-advacement: body->min_shape_com_surface_distance
-     *
-     * velocity upper bound:  linear_velocity + velocity_due_to_angular_velocity_at_point
-     *                      = linear_velocity + | w x p | 
-     *                     <= linear_velocity + | w | x | p | 
-     *                     <= linear_veolcity + | w |*max_extent
-     */
+    ProfZone; 
 
     struct arena *frame = pipeline->runtime.worker[ds_ThreadSelfIndex()].frame;
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
@@ -284,7 +276,7 @@ void ds_BodyUpdateOrientationRange(struct ds_Dynamics *pipeline, struct ds_Proxy
         const struct ds_Body *body = pipeline->body_pool.buf + sim->body;
 
         sim->flags &= ~BODY_FLAG_FAST;
-        if (ds_BodyFastCheck(pipeline, sim, bcomp))
+        if (g_solver_config->enable_continuous && ds_BodyFastCheck(pipeline, sim, bcomp))
         {
             sim->flags |= BODY_FLAG_FAST;
             ds_BodyCCDStatic(bcomp, pipeline, sim);
