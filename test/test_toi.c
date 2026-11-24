@@ -856,7 +856,7 @@ static u32 *ToiTestMeshCandidates(struct arena *mem, u32 *count, const struct ds
     const ds_Transform shape_to_anchor1 = { .rotation = convex->rotation_shape_world[1], .position = shape_origin_anchor_world_diff1 };
     const ds_Transform shape_to_mesh0 = ds_TransformRelative(&mesh_to_anchor, &shape_to_anchor0);
     const ds_Transform shape_to_mesh1 = ds_TransformRelative(&mesh_to_anchor, &shape_to_anchor1);
-    const f32 safe_advancement = F32Max(g_solver_config->ccd_safe_advancement_factor*convex->shape->center_of_mass_surface_distance, slop);
+    const f32 safe_advancement = F32Max(g_solver_config->ccd_safe_advancement_factor*convex->shape->com_inscribed_sphere_radius, slop);
     const v3 shape_com_mesh0 = V3Transform(convex->shape->center_of_mass, &shape_to_mesh0);
     const v3 shape_com_mesh1 = V3Transform(convex->shape->center_of_mass, &shape_to_mesh1);
 
@@ -944,7 +944,7 @@ static u32 ToiTestMeshHitCheck(const struct ds_TimeOfImpactArg *mesh, const stru
 static void ToiTestFallbackSphere(struct ds_TimeOfImpactArg *sphere, const struct ds_TimeOfImpactArg *convex)
 {
     const f32 slop = g_solver_config->linear_slop;
-    const f32 fallback_radius = F32Max(0.5f*convex->shape->center_of_mass_surface_distance, slop);
+    const f32 fallback_radius = F32Max(0.5f*convex->shape->com_inscribed_sphere_radius, slop);
     *sphere = *convex;
     GJKVertexSetPoint(&sphere->vset, convex->shape->center_of_mass);
     sphere->margin = fallback_radius + slop;

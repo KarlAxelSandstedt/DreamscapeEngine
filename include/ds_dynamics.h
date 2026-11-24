@@ -494,8 +494,12 @@ struct ds_BodySim
                                                    moves it by ds_BodyCompute.delta_position            */
 	m3 		        local_inv_inertia;          /* local inertia tensor                                 */
 	m3 		        world_inv_inertia;          /* world inertia tensor                                 */
-    f32             min_extent;
-    v3              max_extent;
+    f32             min_extent;                 /* min distance between shape center of mass
+                                                   to shape surface, taken as a minimum over
+                                                   all shapes of body */
+    v3              max_extent;                 /* absolute maximum extent per axis, taken 
+                                                   from local_center_of_mass to any off the
+                                                   body's shape surfaces */
 };
 DEFINE_CPOOL_STRUCT(ds_BodySim);
 

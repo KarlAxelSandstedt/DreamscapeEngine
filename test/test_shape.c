@@ -92,9 +92,9 @@ struct test_Output ShapeMassBoxTest(struct test_Environment *env)
 
     const f32 volume = 8.0f * hw.x * hw.y * hw.z;
     const m3 inertia = ShapeTestBoxInertia(hw);
-    if (!ShapeTestNear(box.volume, volume, volume) || !ShapeTestV3Near(box.center_of_mass, V3Zero(), hw.z) || !ShapeTestM3Near(box.inertia_tensor, inertia, 0.0f) || !ShapeTestNear(box.center_of_mass_surface_distance, hw.x, hw.z))
+    if (!ShapeTestNear(box.volume, volume, volume) || !ShapeTestV3Near(box.center_of_mass, V3Zero(), hw.z) || !ShapeTestM3Near(box.inertia_tensor, inertia, 0.0f) || !ShapeTestNear(box.com_inscribed_sphere_radius, hw.x, hw.z) || !ShapeTestNear(box.com_bounding_sphere_radius, V3Length(hw), hw.z))
     {
-        fprintf(stderr, "box: volume %.6g (expected %.6g), center (%.6g %.6g %.6g), surface distance %.6g (expected %.6g)\n", box.volume, volume, box.center_of_mass.x, box.center_of_mass.y, box.center_of_mass.z, box.center_of_mass_surface_distance, hw.x);
+        fprintf(stderr, "box: volume %.6g (expected %.6g), center (%.6g %.6g %.6g), surface distance %.6g (expected %.6g), bounding sphere radius %.6g (expected %.6g)\n", box.volume, volume, box.center_of_mass.x, box.center_of_mass.y, box.center_of_mass.z, box.com_inscribed_sphere_radius, hw.x, box.com_bounding_sphere_radius, V3Length(hw));
         ShapeTestPrintM3("inertia", box.inertia_tensor);
         ShapeTestPrintM3("expected", inertia);
         TEST_FAILURE;
@@ -104,9 +104,9 @@ struct test_Output ShapeMassBoxTest(struct test_Environment *env)
     struct c_Shape stub = { .type = C_SHAPE_CONVEX_HULL };
     stub.hull = DcelBoxStub();
     c_ShapeUpdateMassProperties(&stub);
-    if (!ShapeTestNear(stub.volume, 1.0f, 1.0f) || !ShapeTestNear(stub.center_of_mass_surface_distance, 0.5f, 0.5f))
+    if (!ShapeTestNear(stub.volume, 1.0f, 1.0f) || !ShapeTestNear(stub.com_inscribed_sphere_radius, 0.5f, 0.5f))
     {
-        fprintf(stderr, "stub: volume %.6g (expected 1), surface distance %.6g (expected 0.5)\n", stub.volume, stub.center_of_mass_surface_distance);
+        fprintf(stderr, "stub: volume %.6g (expected 1), surface distance %.6g (expected 0.5)\n", stub.volume, stub.com_inscribed_sphere_radius);
         TEST_FAILURE;
     }
 
@@ -145,10 +145,10 @@ struct test_Output ShapeMassHullPlacedTest(struct test_Environment *env)
         const f32 extent = V3Length(t) + V3Length(hw);
         /* the integrals are about the origin, so the tensor's error scales with V |t|^2, not with the tensor */
         const f32 surface_distance = F32Min(F32Min(hw.x, hw.y), hw.z);
-        if (!ShapeTestNear(box.volume, volume, volume) || !ShapeTestV3Near(box.center_of_mass, t, extent) || !ShapeTestM3Near(box.inertia_tensor, inertia, volume * extent * extent) || !ShapeTestNear(box.center_of_mass_surface_distance, surface_distance, extent))
+        if (!ShapeTestNear(box.volume, volume, volume) || !ShapeTestV3Near(box.center_of_mass, t, extent) || !ShapeTestM3Near(box.inertia_tensor, inertia, volume * extent * extent) || !ShapeTestNear(box.com_inscribed_sphere_radius, surface_distance, extent) || !ShapeTestNear(box.com_bounding_sphere_radius, V3Length(hw), extent))
         {
-            fprintf(stderr, "placed box %u: volume %.6g (expected %.6g), center (%.6g %.6g %.6g) (expected %.6g %.6g %.6g), surface distance %.6g (expected %.6g)\n", round,
-                box.volume, volume, box.center_of_mass.x, box.center_of_mass.y, box.center_of_mass.z, t.x, t.y, t.z, box.center_of_mass_surface_distance, surface_distance);
+            fprintf(stderr, "placed box %u: volume %.6g (expected %.6g), center (%.6g %.6g %.6g) (expected %.6g %.6g %.6g), surface distance %.6g (expected %.6g), bounding sphere radius %.6g (expected %.6g)\n", round,
+                box.volume, volume, box.center_of_mass.x, box.center_of_mass.y, box.center_of_mass.z, t.x, t.y, t.z, box.com_inscribed_sphere_radius, surface_distance, box.com_bounding_sphere_radius, V3Length(hw));
             ShapeTestPrintM3("inertia", box.inertia_tensor);
             ShapeTestPrintM3("expected", inertia);
             TEST_FAILURE;
@@ -170,9 +170,9 @@ struct test_Output ShapeMassSphereTest(struct test_Environment *env)
 
     const f32 volume = 4.0f * F32_PI * r*r*r / 3.0f;
     const m3 inertia = M3Scale(M3Identity(), 2.0f * volume * r*r / 5.0f);
-    if (!ShapeTestNear(sphere.volume, volume, volume) || !ShapeTestV3Near(sphere.center_of_mass, V3Zero(), r) || !ShapeTestM3Near(sphere.inertia_tensor, inertia, 0.0f) || sphere.center_of_mass_surface_distance != r)
+    if (!ShapeTestNear(sphere.volume, volume, volume) || !ShapeTestV3Near(sphere.center_of_mass, V3Zero(), r) || !ShapeTestM3Near(sphere.inertia_tensor, inertia, 0.0f) || sphere.com_inscribed_sphere_radius != r || sphere.com_bounding_sphere_radius != r)
     {
-        fprintf(stderr, "sphere: volume %.6g (expected %.6g), surface distance %.6g (expected %.6g)\n", sphere.volume, volume, sphere.center_of_mass_surface_distance, r);
+        fprintf(stderr, "sphere: volume %.6g (expected %.6g), surface distance %.6g (expected %.6g), bounding sphere radius %.6g (expected %.6g)\n", sphere.volume, volume, sphere.com_inscribed_sphere_radius, r, sphere.com_bounding_sphere_radius, r);
         ShapeTestPrintM3("inertia", sphere.inertia_tensor);
         ShapeTestPrintM3("expected", inertia);
         TEST_FAILURE;
@@ -245,9 +245,9 @@ struct test_Output ShapeMassCapsuleTest(struct test_Environment *env)
         inertia.a11 = (f32) i_xx;
         inertia.a22 = (f32) i_yy;
         inertia.a33 = (f32) i_xx;
-        if (!ShapeTestNear(capsule.volume, (f32) volume, (f32) volume) || !ShapeTestV3Near(capsule.center_of_mass, V3Zero(), r[i]) || !ShapeTestM3Near(capsule.inertia_tensor, inertia, 0.0f) || capsule.center_of_mass_surface_distance != r[i])
+        if (!ShapeTestNear(capsule.volume, (f32) volume, (f32) volume) || !ShapeTestV3Near(capsule.center_of_mass, V3Zero(), r[i]) || !ShapeTestM3Near(capsule.inertia_tensor, inertia, 0.0f) || capsule.com_inscribed_sphere_radius != r[i] || capsule.com_bounding_sphere_radius != h[i] + r[i])
         {
-            fprintf(stderr, "capsule r %g h %g: volume %.6g (expected %.6g), surface distance %.6g (expected %.6g)\n", r[i], h[i], capsule.volume, volume, capsule.center_of_mass_surface_distance, r[i]);
+            fprintf(stderr, "capsule r %g h %g: volume %.6g (expected %.6g), surface distance %.6g (expected %.6g), bounding sphere radius %.6g (expected %.6g)\n", r[i], h[i], capsule.volume, volume, capsule.com_inscribed_sphere_radius, r[i], capsule.com_bounding_sphere_radius, h[i] + r[i]);
             ShapeTestPrintM3("inertia", capsule.inertia_tensor);
             ShapeTestPrintM3("expected", inertia);
             TEST_FAILURE;
@@ -258,7 +258,7 @@ struct test_Output ShapeMassCapsuleTest(struct test_Environment *env)
 }
 
 /*
-center_of_mass_surface_distance of random hulls against an f64 reference: the smallest distance from the center of
+com_inscribed_sphere_radius of random hulls against an f64 reference: the smallest distance from the center of
 mass to the faces' planes, each plane from the face's vertices (Newell's normal through their centroid), not from
 the stored planes.
 */
@@ -308,9 +308,9 @@ struct test_Output ShapeSurfaceDistanceHullTest(struct test_Environment *env)
         }
 
         const f32 scale = V3Length(t) + V3Length(hw);
-        if (!(hull.center_of_mass_surface_distance > 0.0f) || !ShapeTestNear(hull.center_of_mass_surface_distance, (f32) reference, scale))
+        if (!(hull.com_inscribed_sphere_radius > 0.0f) || !ShapeTestNear(hull.com_inscribed_sphere_radius, (f32) reference, scale))
         {
-            fprintf(stderr, "hull %u (%u faces): surface distance %.9g (expected %.9g)\n", round, hull.hull.f_count, hull.center_of_mass_surface_distance, reference);
+            fprintf(stderr, "hull %u (%u faces): surface distance %.9g (expected %.9g)\n", round, hull.hull.f_count, hull.com_inscribed_sphere_radius, reference);
             TEST_FAILURE;
         }
 

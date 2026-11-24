@@ -332,7 +332,7 @@ f32 ds_TimeOfImpactConcave(struct arena *mem, const struct ds_TimeOfImpactArg *m
     /* Limitation: pointy, fast-rotating shapes may leave the path's bounding box temporarily. */
 
     const f32 slop = g_solver_config->linear_slop;
-    const f32 safe_advancement = F32Max(g_solver_config->ccd_safe_advancement_factor*convex->shape->center_of_mass_surface_distance, slop);
+    const f32 safe_advancement = F32Max(g_solver_config->ccd_safe_advancement_factor*convex->shape->com_inscribed_sphere_radius, slop);
     const v3 shape_com_mesh0 = V3Transform(convex->shape->center_of_mass, &shape_to_mesh0);
     const v3 shape_com_mesh1 = V3Transform(convex->shape->center_of_mass, &shape_to_mesh1);
 
@@ -399,7 +399,7 @@ f32 ds_TimeOfImpactConcave(struct arena *mem, const struct ds_TimeOfImpactArg *m
              * something it may not be able to do at toi=0.0f. Otherwise we may get stuck at
              * toi=0.0f, never creating a contact that reduces the velocity.
              */
-            const f32 fallback_radius = F32Max(0.5f*convex->shape->center_of_mass_surface_distance, slop);
+            const f32 fallback_radius = F32Max(0.5f*convex->shape->com_inscribed_sphere_radius, slop);
             struct ds_TimeOfImpactArg fallback_sphere = *convex;
             GJKVertexSetPoint(&fallback_sphere.vset, convex->shape->center_of_mass);
             fallback_sphere.margin = fallback_radius + slop;

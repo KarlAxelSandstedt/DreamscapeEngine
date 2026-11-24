@@ -273,7 +273,13 @@ void c_ShapeUpdateMassProperties(struct c_Shape *shape)
 			Log(T_SYSTEM, S_ERROR, "convex hull without volume (%u faces, volume %g): mass properties of a unit sphere", shape->hull.f_count, shape->volume);
 			shape->volume = 4.0f * F32_PI / 3.0f;
 			shape->center_of_mass = V3Zero();
-			shape->center_of_mass_surface_distance = 1.0f;
+			shape->com_inscribed_sphere_radius = 1.0f;
+			f32 bounding_sphere_radius = 0.0f;
+			for (u32 vi = 0; vi < shape->hull.v_count; ++vi)
+			{
+				bounding_sphere_radius = F32Max(bounding_sphere_radius, V3Length(shape->hull.v[vi]));
+			}
+			shape->com_bounding_sphere_radius = bounding_sphere_radius;
 			shape->inertia_tensor = M3Scale(M3Identity(), 2.0f * shape->volume / 5.0f);
 			return;
 		}
@@ -290,7 +296,14 @@ void c_ShapeUpdateMassProperties(struct c_Shape *shape)
 		{
 			surface_distance = F32Min(surface_distance, -PlanePointSignedDistance(shape->hull.plane + fi, shape->center_of_mass));
 		}
-		shape->center_of_mass_surface_distance = surface_distance;
+		shape->com_inscribed_sphere_radius = surface_distance;
+
+		f32 bounding_sphere_radius = 0.0f;
+		for (u32 vi = 0; vi < shape->hull.v_count; ++vi)
+		{
+			bounding_sphere_radius = F32Max(bounding_sphere_radius, V3Length(V3Sub(shape->hull.v[vi], shape->center_of_mass)));
+		}
+		shape->com_bounding_sphere_radius = bounding_sphere_radius;
 
 		I_xx = integrals[T_YY] + integrals[T_ZZ] - shape->volume*(com.y*com.y + com.z*com.z);
 		I_yy = integrals[T_XX] + integrals[T_ZZ] - shape->volume*(com.x*com.x + com.z*com.z);
@@ -305,7 +318,8 @@ void c_ShapeUpdateMassProperties(struct c_Shape *shape)
 	else if (shape->type == C_SHAPE_SPHERE)
 	{
 		shape->center_of_mass = V3Zero();
-		shape->center_of_mass_surface_distance = shape->sphere.radius;
+		shape->com_inscribed_sphere_radius = shape->sphere.radius;
+		shape->com_bounding_sphere_radius = shape->sphere.radius;
 		const f32 r = shape->sphere.radius;
 		const f32 rr = r*r;
 		const f32 rrr = rr*r;
@@ -324,7 +338,8 @@ void c_ShapeUpdateMassProperties(struct c_Shape *shape)
 	else if (shape->type == C_SHAPE_CAPSULE)
 	{
 		shape->center_of_mass = V3Zero();
-		shape->center_of_mass_surface_distance = shape->capsule.radius;
+		shape->com_inscribed_sphere_radius = shape->capsule.radius;
+		shape->com_bounding_sphere_radius = shape->capsule.half_height + shape->capsule.radius;
 		const f32 r = shape->capsule.radius;
 		const f32 h = shape->capsule.half_height;
 		shape->volume = 4.0f * F32_PI * r*r*r / 3.0f + 2.0f * h * F32_PI * r*r;
@@ -403,7 +418,7 @@ void c_ShapeDBAlloc(struct arena *mem, struct c_ShapeDB *db, const u32 length, c
     stub->render_bvh = NULL;
     stub->type = C_SHAPE_CONVEX_HULL;
     stub->hull = DcelBoxStub();
-    stub->extent = c_ShapeExtent(stub);
+    stub->max_bounding_box_side_length = c_ShapeExtent(stub);
     c_ShapeUpdateMassProperties(stub);
 }
 
@@ -592,7 +607,7 @@ struct slot c_ShapeDBAdd(struct c_ShapeDB *db, const utf8 id, const struct c_Sha
     shape->render_bvh = NULL;
     c_ShapeCopy(&block, shape, src);
     ds_Assert(block.mem_left == 0);
-    shape->extent = c_ShapeExtent(shape);
+    shape->max_bounding_box_side_length = c_ShapeExtent(shape);
     if (src->type != C_SHAPE_TRI_MESH)
     {
         c_ShapeUpdateMassProperties(shape);

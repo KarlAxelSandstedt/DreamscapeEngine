@@ -294,7 +294,7 @@ void ds_BodyUpdateMassProperties(struct ds_Dynamics *pipeline, const ds_BodyId i
     ds_Assert(det > 0.0f);
 
     /*
-     * min_extent: the smallest center_of_mass_surface_distance of the shapes; 
+     * min_extent: the smallest com_inscribed_sphere_radius of the shapes; 
      * max_extent: per axis, the largest |p - local_center_of_mass| over the
      *             shapes' points p (body frame)
      */
@@ -304,7 +304,7 @@ void ds_BodyUpdateMassProperties(struct ds_Dynamics *pipeline, const ds_BodyId i
         shape = pipeline->shape_pool.buf + s;
         s = shape->body_shape.next;
         const struct c_Shape *cshape = c_ShapeDBShape(pipeline->external->cshape_db, shape->cshape_handle);
-        sim->min_extent = F32Min(sim->min_extent, cshape->center_of_mass_surface_distance);
+        sim->min_extent = F32Min(sim->min_extent, cshape->com_inscribed_sphere_radius);
 
         if (cshape->type == C_SHAPE_SPHERE)
         {

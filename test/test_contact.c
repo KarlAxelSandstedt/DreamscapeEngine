@@ -4364,7 +4364,7 @@ struct test_Output MeshHullCasesTest(struct test_Environment *env)
  *         face parallel to the triangle: the configuration of the old triangle edge check's false separations)
  * A triangle with the hull's center of mass more than linear_slop behind its plane (beyond tol) gets no contact; near
  * that threshold (within tol and the move below) either result is accepted and the cache stages are skipped. A hull
- * below the engine's scale (center_of_mass_surface_distance < linear_slop) lying wholly behind the plane with its
+ * below the engine's scale (com_inscribed_sphere_radius < linear_slop) lying wholly behind the plane with its
  * center of mass within linear_slop gets a contact although separated (the triangle's back face is no axis, as in
  * box3d): counted, not failed. Every other result passes McHullTriVerify; again at the same pose with the result as
  * the cache (no eviction allowed, same checks), and moved by 1e-3 L with the cache (slack sat_cache_tolerance).
@@ -4448,7 +4448,7 @@ struct test_Output MeshHullRandomTest(struct test_Environment *env)
         const f64 com_offset = D3Dot(n_cross, D3Sub(D3V3(h.shape.center_of_mass), t[0])) / D3Length(n_cross);
         const u32 behind = (com_offset < -slop - tol);
         const u32 near_cull = (com_offset < -slop + tol + shift_length);
-        const u32 thin = ((f64) h.shape.center_of_mass_surface_distance < slop);
+        const u32 thin = ((f64) h.shape.com_inscribed_sphere_radius < slop);
 
         none.tri_count = 0;
         const ds_Array(c_Manifold) r = c_MeshContact(env->mem_2, &slab, &none, &mesh, &t_mesh, &h.shape, &h.t);

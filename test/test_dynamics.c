@@ -1566,7 +1566,7 @@ static struct test_Output DynamicsBodyTest(struct test_Environment *env)
 
 
 /*
-Body extents: min_extent is the smallest center_of_mass_surface_distance of the body's shapes, max_extent per axis
+Body extents: min_extent is the smallest com_inscribed_sphere_radius of the body's shapes, max_extent per axis
 the largest distance of a shape point from the body's center of mass. Checked after the first shape (a sphere: its
 radius on every axis) and after three (sphere, quarter-turned capsule and box) against the shapes' boxes, which are
 tight at quarter turns. A static body with a shape and a dynamic body without shapes keep the no-shape values.

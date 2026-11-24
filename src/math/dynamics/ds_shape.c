@@ -77,7 +77,7 @@ ds_ShapeId ds_ShapeAdd(struct ds_Dynamics *pipeline, const struct ds_ShapePrefab
 	shape->cshape_type = cshape->type;
 
 	shape->margin = (ds_BodyDynamicCheck(body))
-	              ? F32Max(pipeline->config.numerics.proxy_margin_min, pipeline->config.numerics.proxy_margin_scale * cshape->extent)
+	              ? F32Max(pipeline->config.numerics.proxy_margin_min, pipeline->config.numerics.proxy_margin_scale * cshape->max_bounding_box_side_length)
 	              : pipeline->config.numerics.proxy_margin_min;
 
 	struct aabb bbox_proxy = ds_ShapeWorldBbox(pipeline, shape);

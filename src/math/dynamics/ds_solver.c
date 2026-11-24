@@ -252,7 +252,80 @@ static u32 ds_BodyFastCheck(const struct ds_Dynamics *pipeline, const struct ds_
 
 void ds_BodyCCDStatic(struct ds_BodyCompute *bcomp, const struct ds_Dynamics *pipeline, const struct ds_BodySim *sim)
 {
-    //TODO
+    ProfZone;
+    struct arena *tmp = ArenaPushScratch();
+    const v3f64 anchor = sim->world_center_of_mass;                     
+    const v3f64 com1 = V3F64Add(anchor, V3Promote(bcomp->delta_position));
+    const ds_TransformWorld t0 = sim->world;
+    const ds_TransformWorld t1 = 
+    { 
+        .rotation = bcomp->rotation, 
+        .position = V3F64Sub(com1, V3Promote(QUnitRotate(bcomp->rotation, sim->local_center_of_mass))),
+    };
+    const q deltaR = QMul(QConj(t0.rotation), t1.rotation);
+    const f32 rotation_chord = 2.0f*V3Length(V3(deltaR.x, deltaR.y, deltaR.z));
+
+    f32 toi = 1.0f;
+    const struct ds_Body *b = pipeline->body_pool.buf + sim->body;
+    const struct ds_Shape *s = NULL;
+    const struct c_Shape *cs = NULL;
+    for (i32 i = b->shape_list.first; i != DLL_SENTINEL; i = s->body_shape.next)
+    {
+        s = pipeline->shape_pool.buf + i;
+	    cs = c_ShapeDBShape(pipeline->external->cshape_db, s->cshape_handle);
+
+        //TODO
+        //shape; per-shape fast filter (shape min extent vs its centroid motion + rotation chord * radius)
+        const v3 r = V3Sub(V3Transform(cs->center_of_mass, &s->t_local), sim->local_center_of_mass);
+        const v3 centroid_delta = V3Add(bcomp->delta_position, V3Sub(QUnitRotate(t1.rotation, r), QUnitRotate(t0.rotation, r)));
+        const f32 max_motion = V3Length(centroid_delta) + rotation_chord*cs->com_bounding_sphere_radius;
+        if (max_motion <= g_solver_config->ccd_safe_advancement_factor*cs->com_inscribed_sphere_radius)
+        {
+            continue;
+        }
+
+        struct ds_TimeOfImpactArg arg_dynamic;
+        ds_TimeOfImpactArgShape(&arg_dynamic, cs, &s->t_local, &t0, &t1, sim->local_center_of_mass, anchor);
+
+        const struct aabb box0 = ds_ShapeWorldBbox(pipeline, s);
+        struct aabb box1;
+        const ds_TransformWorld t_shape1 = ds_TransformWorldChild(&t1, &s->t_local);
+        const ds_Transform rotation_only1 = { .rotation = t_shape1.rotation, .position = V3Zero() };
+
+        const struct aabb local1 = c_ShapeBbox(cs, &rotation_only1);
+        AabbTranslateOutward(&box1, &local1, t_shape1.position);
+
+        const struct aabb swept = BboxUnion(box0, box1);
+        const ds_Array(u32) query = BVHQuery(tmp, &pipeline->static_bvh, &swept);
+        for (u32 j = 0; j < query.length; ++j)
+        {
+            const struct ds_Shape *s_static = pipeline->shape_pool.buf + query.buf[j];
+            const struct c_Shape *cs_static = c_ShapeDBShape(pipeline->external->cshape_db, s_static->cshape_handle);
+            const struct ds_Body *b_static = pipeline->body_pool.buf + s_static->body;
+            const struct ds_BodySim *sim_static = pipeline->solver_set_pool.buf[b_static->set].body_sim_pool.buf + b_static->sim;
+
+            struct ds_TimeOfImpactArg arg_static;
+            ds_TimeOfImpactArgShape(&arg_static, cs_static, &s_static->t_local, &sim_static->world, &sim_static->world, sim_static->local_center_of_mass, anchor);
+
+            const f32 new_toi = (s_static->cshape_type == C_SHAPE_TRI_MESH) 
+                              ? ds_TimeOfImpactConcave(tmp, &arg_static, &arg_dynamic, toi) 
+                              : ds_TimeOfImpactConvex(&arg_static, &arg_dynamic, toi);
+
+            if (0.0f < new_toi && new_toi < toi)
+            {
+                toi = new_toi;
+            }
+        }
+    }
+
+    if (toi < 1.0f)
+    {
+        bcomp->delta_position = V3Scale(bcomp->delta_position, toi);
+        bcomp->rotation = QNLerp(t0.rotation, t1.rotation, toi);
+        bcomp->linear_velocity = V3AddScaled(bcomp->linear_velocity, g_solver_config->gravity, -(1.0f - toi)*pipeline->timestep);
+    }
+    ArenaPopScratch();
+    ProfZoneEnd;
 }
 
 void ds_BodyUpdateOrientationRange(struct ds_Dynamics *pipeline, struct ds_ProxyRange *proxy_range, const u32 low, const u32 high)
