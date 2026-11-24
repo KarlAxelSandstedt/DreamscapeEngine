@@ -1532,9 +1532,10 @@ struct c_MeshTri
  * (internal edges, output). The shape loops in between test triangles against the convex shape as stored (sphere at
  * the origin, capsule along y, hull with its stored planes).
  */
-//TODO one-sided hull-triangle contacts: none while the hull's center of mass is behind the triangle's plane (by
-//     more than slop, with hysteresis), so a triangle only pushes to its front. The mesh TOI's early-outs
-//     (ds_TimeOfImpactConcave) are only safe then; spheres and capsules are one-sided, the mover culls back sides.
+//TODO one-sided hull-triangle contacts: the cull keeps no hysteresis yet (box3d caches the culled offset), and the
+//     SAT still takes the triangle's back face as an axis, so a hull whose center of mass is in front can be pushed
+//     out the back. The mesh TOI's early-outs (ds_TimeOfImpactConcave) are only safe once a triangle pushes to its
+//     front only; spheres and capsules do, the mover culls back sides.
 struct c_MeshContactHelper
 {
     const struct mesh *         mesh;
@@ -1968,11 +1969,13 @@ static void c_MeshHullTriDelayed(struct c_MeshTri *r, const struct dcel *stub, c
 }
 
 /*
- * Hull vs triangle (two-sided): sat_PairContact with the hull as s0 (as stored) and the triangle as s1
- * (SAT_PAIR_TRIANGLE: a DcelTriStub with planes +-n_t, in the hull's frame): n from the hull to the mesh, v on the hull
- * (the mesh convention). Every tested triangle keeps a record: its contact, or its separating axis for the cache.
+ * Hull vs triangle: none while the hull's center of mass (center, its frame) is more than linear_slop behind the
+ * triangle's plane; otherwise sat_PairContact with the hull as s0 (as stored) and the triangle as s1 (SAT_PAIR_TRIANGLE:
+ * a DcelTriStub with planes +-n_t, in the hull's frame): n from the hull to the mesh, v on the hull (the mesh
+ * convention). Every tested triangle that is not culled keeps a record: its contact, or its separating axis for the
+ * cache.
  */
-static void c_MeshHullTriangles(struct c_MeshContactHelper *helper, const struct ds_ConcaveCache *cache, const struct dcel *hull)
+static void c_MeshHullTriangles(struct c_MeshContactHelper *helper, const struct ds_ConcaveCache *cache, const struct dcel *hull, const v3 center)
 {
     struct ds_DynamicsMetrics *metrics = &g_dynamics_worker[ds_ThreadSelfIndex()].metrics;
     for (u32 candidate = 0; candidate < helper->tri.length; ++candidate)
@@ -1988,6 +1991,11 @@ static void c_MeshHullTriangles(struct c_MeshContactHelper *helper, const struct
         v3 n_t;
         const u32 has_area = TriCcwNormalTryCompute(&n_t, tri[0], tri[1], tri[2]);
         ds_AssertString(has_area, "mesh triangle without area (c_Shape precondition)");
+
+        if (V3Dot(n_t, V3Sub(center, tri[0])) < -g_solver_config->linear_slop)
+        {
+            continue;
+        }
 
         /* the triangle as s1: face 0 ccw about n_t, face 1 its back */
         struct plane pl_tri[2] = { Plane(n_t, tri[0]), Plane(V3Negate(n_t), tri[0]) };
@@ -2136,7 +2144,7 @@ ds_Array(c_Manifold) c_MeshContact(struct arena *tmp, ds_TSlab(ds_TriCache) *sla
     {
         case C_SHAPE_SPHERE:    { c_MeshSphereTriangles(&helper, &convex->sphere); } break;
         case C_SHAPE_CAPSULE:   { c_MeshCapsuleTriangles(&helper, &convex->capsule); } break;
-        default:                { c_MeshHullTriangles(&helper, cache, &convex->hull); } break;
+        default:                { c_MeshHullTriangles(&helper, cache, &convex->hull, convex->center_of_mass); } break;
     }
     c_MeshContactFinish(tmp, slab, &result, cache, &helper, convex->type == C_SHAPE_CONVEX_HULL);
     return result;

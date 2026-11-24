@@ -31,13 +31,16 @@ representable world offset gives identical bits.
 
 #define CONTACT_TEST_TOLERANCE  64.0
 
-/* the contacts read thresholds from the global numerics config */
+/* the contacts read thresholds from the global numerics config, the hull-triangle cull linear_slop from the solver's */
 static struct ds_NumericsConfig g_contact_test_config;
+static struct ds_SolverConfig g_contact_test_solver_config;
 
 static void ContactTestConfigPush(void)
 {
     g_contact_test_config = ds_NumericsConfigDefault();
     ds_NumericsConfigPush(&g_contact_test_config);
+    g_contact_test_solver_config = ds_SolverConfigDefault();
+    ds_SolverConfigPush(&g_contact_test_solver_config);
 }
 
 struct d3 { f64 x, y, z; };
@@ -3746,8 +3749,11 @@ struct test_Output MeshFlatGridTest(struct test_Environment *env)
                     check_depth = 0;
                 }
                 c_ShapeUpdateMassProperties(&convex);
-                /* the lowest vertex p below the grid; at most half the shape's height (a flat hull lying within p of the
-                 * grid would pass under it: a triangle is a surface, not a half-space) */
+                /*
+                 * the lowest vertex p below the grid; at most half the shape's height (a flat hull lying within p of the
+                 * grid would pass under it: a triangle is a surface, not a half-space), and never past its center of
+                 * mass (a hull whose center of mass is more than linear_slop behind a triangle gets no contact)
+                 */
                 struct d3 rl[3];
                 D3Rotation(rl, q_local);
                 f64 lowest = 1e300, highest = -1e300, extent = 0.0;
@@ -3758,7 +3764,8 @@ struct test_Output MeshFlatGridTest(struct test_Environment *env)
                     highest = F64MaxTest(highest, y);
                     extent = F64MaxTest(extent, D3Length(D3V3(convex.hull.v[k])));
                 }
-                const f64 p = F64MinTest((f64) cell*(f64) RngF32Range(0.005f, 0.02f), 0.5*(highest - lowest));
+                const f64 com_y = D3RotationMul(rl, D3V3(convex.center_of_mass)).y;
+                const f64 p = F64MinTest(F64MinTest((f64) cell*(f64) RngF32Range(0.005f, 0.02f), 0.5*(highest - lowest)), com_y - lowest);
                 center.y = -lowest - p;
                 expected_depth = p;
                 tol_depth = 1e-4*F64MaxTest((f64) cell, extent) + 3.0*(f64) tilt*extent;
@@ -4102,12 +4109,15 @@ static void McHullPrint(const ds_Array(c_Manifold) *r, const struct ch_Hull *h, 
  * Box (half width 0.05 S) vs one triangle ((0,0,0), (0,0,S), (S,0,0), ccw normal +y), p = 0.01 S, random poses
  * (mesh frame; n from the hull to the mesh):
  *      resting on the face, p deep                     4 points, n = -y, depths p
- *      the same under the triangle                     4 points, n = +y, depths p (two-sided)
+ *      the same under the triangle                     none: its center of mass is more than linear_slop behind
+ *                                                      (S = 1, 100); S = 0.01: 4 points, n = +y, depths p
  *      a corner down on the face, p deep               1 point, n = -y, depth p
  *      resting across edge z = 0                       4 points (2 corners, 2 on the edge), n = -y, depths p
  *      a stick (0.005 S thick) across edge z = 0 as in the capsule's deep edge case: n = (0, 1, 1) / sqrt 2,
  *      deepest delta + thickness (the stick's face or the edge pair: the same axis)
- * and every result passes McHullTriVerify.
+ *      its center of mass 2 linear_slop behind the face (S = 1, 100)    none
+ *      0.5 linear_slop behind                                           4 points, n = +y, depths 0.05 S - 0.5 slop
+ * and every contact passes McHullTriVerify.
  */
 struct test_Output MeshHullCasesTest(struct test_Environment *env)
 {
@@ -4122,23 +4132,31 @@ struct test_Output MeshHullCasesTest(struct test_Environment *env)
 
     static const f32 tri_size[] = { 1e-2f, 1.0f, 1e2f };
     const f64 sqrt2 = 1.4142135623730951, sqrt3 = 1.7320508075688772;
+    const f64 slop = (f64) g_solver_config->linear_slop;
     for (u32 si = 0; si < 3; ++si)
-    for (u32 k = 0; k < 5; ++k)
+    for (u32 k = 0; k < 7; ++k)
     for (u32 rep = 0; rep < 20; ++rep)
     {
         const f64 S = (f64) tri_size[si];
         const f64 p = 0.01*S;
         const struct d3 C = D3(S / 3.0, 0.0, S / 3.0);
         v3 hw = V3((f32) (0.05*S), (f32) (0.05*S), (f32) (0.05*S));
+        if (k >= 5 && (f64) hw.y <= 2.0*slop)
+        {
+            continue;
+        }
+
         q q_local = QIdentity();
         struct d3 center = D3Add(C, D3(0.0, (f64) hw.y - p, 0.0));
         struct d3 n_expected = D3(0.0, -1.0, 0.0);
         f64 deepest_expected = p;
         u32 v_count = 4;
+        u32 expect_none = 0;
         if (k == 1)
         {
             center = D3Sub(C, D3(0.0, (f64) hw.y - p, 0.0));
             n_expected = D3(0.0, 1.0, 0.0);
+            expect_none = ((f64) hw.y - p > slop);
         }
         else if (k == 2)
         {
@@ -4162,6 +4180,14 @@ struct test_Output MeshHullCasesTest(struct test_Environment *env)
             deepest_expected = delta + eps;
             v_count = 0;
         }
+        else if (k == 5 || k == 6)
+        {
+            const f64 behind = (k == 5) ? 2.0*slop : 0.5*slop;
+            center = D3Sub(C, D3(0.0, behind, 0.0));
+            n_expected = D3(0.0, 1.0, 0.0);
+            deepest_expected = (f64) hw.y - behind;
+            expect_none = (k == 5);
+        }
 
         struct arena record = *env->mem_2;
         const struct c_Shape mesh = McSingleTriangle(env->mem_2, (f32) S);
@@ -4180,19 +4206,23 @@ struct test_Output MeshHullCasesTest(struct test_Environment *env)
         const f64 tol = 1e-4*S;
         const struct d3 n_hull = D3RotationTMul(h.r, D3RotationMul(rm, n_expected));
         u64 touching_off = 0;
-        const char *fail = McHullTriVerify(&touching_off, &r, &h, t, McHullTriTol(&h, t), 0.0);
-        if (!fail && r.length != 1)
+        const char *fail = (expect_none) ? NULL : McHullTriVerify(&touching_off, &r, &h, t, McHullTriTol(&h, t), 0.0);
+        if (expect_none && r.length)
+        {
+            fail = "contact with the center of mass behind";
+        }
+        if (!fail && !expect_none && r.length != 1)
         {
             fail = "no contact";
         }
-        if (!fail)
+        if (!fail && r.length)
         {
             const struct c_Manifold *m = r.buf;
             f64 deepest = 0.0;
             for (u32 i = 0; i < m->v_count; ++i)
             {
                 deepest = F64MaxTest(deepest, (f64) m->depth[i]);
-                if (k != 2 && k != 4 && F64AbsTest((f64) m->depth[i] - p) > tol)
+                if (k != 2 && k != 4 && F64AbsTest((f64) m->depth[i] - deepest_expected) > tol)
                 {
                     fail = "depth";
                 }
@@ -4228,8 +4258,10 @@ struct test_Output MeshHullCasesTest(struct test_Environment *env)
  *      0: a random triangle near the hull
  *      1: in the plane of a hull face moved by 0, +-1e-6, +-1e-4, +-1e-2 extent along its normal (resting, the
  *         face parallel to the triangle: the configuration of the old triangle edge check's false separations)
- * Every result passes McHullTriVerify; again at the same pose with the result as the cache (no eviction allowed,
- * same checks), and moved by 1e-3 L with the cache (slack sat_cache_tolerance).
+ * A triangle with the hull's center of mass more than linear_slop behind its plane (beyond tol) gets no contact; near
+ * that threshold (within tol and the move below) either result is accepted and the cache stages are skipped. Every
+ * other result passes McHullTriVerify; again at the same pose with the result as the cache (no eviction allowed, same
+ * checks), and moved by 1e-3 L with the cache (slack sat_cache_tolerance).
  */
 struct test_Output MeshHullRandomTest(struct test_Environment *env)
 {
@@ -4243,8 +4275,9 @@ struct test_Output MeshHullRandomTest(struct test_Environment *env)
     TEST_EQUAL(1, ds_TSlabAlloc(NULL, slab, ((u64) 16 << 20) / sizeof(struct ds_TriCache), 1));
     struct ds_ConcaveCache none = { .tri = { .buf = NULL, .length = 0, .base = U32_MAX } };
     static const f64 offset[] = { 0.0, 1e-6, -1e-6, 1e-4, -1e-4, 1e-2, -1e-2 };
+    const f64 slop = (f64) g_solver_config->linear_slop;
 
-    u64 contacts = 0, separated = 0, probes = 0, evictions = 0, v_count[5] = { 0 }, touching_off = 0;
+    u64 contacts = 0, separated = 0, culled = 0, probes = 0, evictions = 0, v_count[5] = { 0 }, touching_off = 0;
     for (u32 i = 0; i < 20000; ++i)
     {
         struct arena record = *env->mem_2;
@@ -4303,15 +4336,31 @@ struct test_Output MeshHullRandomTest(struct test_Environment *env)
         McTriangleInHull(t, &h, rm, pos_m, tm);
         const f64 tol = McHullTriTol(&h, t);
 
+        /* the cull: the hull's center of mass against the triangle's plane, near the threshold within tol and the move */
+        const f64 shift_length = 1e-3*tol / (CONTACT_TEST_TOLERANCE * F32_EPSILON);
+        const struct d3 n_cross = D3Cross(D3Sub(t[1], t[0]), D3Sub(t[2], t[0]));
+        const f64 com_offset = D3Dot(n_cross, D3Sub(D3V3(h.shape.center_of_mass), t[0])) / D3Length(n_cross);
+        const u32 behind = (com_offset < -slop - tol);
+        const u32 near_cull = (com_offset < -slop + tol + shift_length);
+
         none.tri_count = 0;
         const ds_Array(c_Manifold) r = c_MeshContact(env->mem_2, &slab, &none, &mesh, &t_mesh, &h.shape, &h.t);
-        const char *fail = McHullTriVerify(&touching_off, &r, &h, t, tol, 0.0);
+        const char *fail = NULL;
+        if (behind)
+        {
+            fail = (r.length) ? "contact with the center of mass behind" : NULL;
+        }
+        else if (!near_cull || r.length)
+        {
+            fail = McHullTriVerify(&touching_off, &r, &h, t, tol, 0.0);
+        }
         const char *stage = "first";
         contacts += (r.length != 0);
-        separated += (r.length == 0);
+        separated += (r.length == 0 && !behind);
+        culled += behind;
         v_count[(r.length) ? r.buf->v_count : 0] += 1;
 
-        if (!fail)
+        if (!fail && !near_cull)
         {
             /* the same pose with the result as the cache: every cache reused */
             const u32 p0 = metrics->mesh_cache_probe_count, e0 = metrics->mesh_cache_eviction_count;
@@ -4323,10 +4372,10 @@ struct test_Output MeshHullRandomTest(struct test_Environment *env)
             const u32 decided = F64AbsTest(McHullTriSat(&h, t)) > tol;
             fail = (decided && metrics->mesh_cache_eviction_count != e0) ? "cache evicted at the same pose" : McHullTriVerify(&touching_off, &again, &h, t, tol, 0.0);
         }
-        if (!fail)
+        if (!fail && !near_cull)
         {
             /* moved by 1e-3 L with the cache */
-            const struct d3 shift = D3Scale(D3V3(CtUnit()), 1e-3*tol / (CONTACT_TEST_TOLERANCE * F32_EPSILON));
+            const struct d3 shift = D3Scale(D3V3(CtUnit()), shift_length);
             const struct d3 pos_moved = D3Add(pos_m, shift);
             const ds_TransformWorld t_moved = { .rotation = q_mesh, .position = V3F64(pos_moved.x, pos_moved.y, pos_moved.z) };
             const ds_Array(c_Manifold) moved = c_MeshContact(env->mem_2, &slab, &none, &mesh, &t_moved, &h.shape, &h.t);
@@ -4343,9 +4392,9 @@ struct test_Output MeshHullRandomTest(struct test_Environment *env)
             TEST_FAILURE;
         }
     }
-    fprintf(stdout, "\thull on a triangle: 20000 random (%llu contacts: %llu / %llu / %llu / %llu with 1 / 2 / 3 / 4 points; %llu apart); cache at the same pose: %llu probed, %llu evicted; touching results with a point off a surface (counted) %llu\n",
+    fprintf(stdout, "\thull on a triangle: 20000 random (%llu contacts: %llu / %llu / %llu / %llu with 1 / 2 / 3 / 4 points; %llu apart; %llu culled); cache at the same pose: %llu probed, %llu evicted; touching results with a point off a surface (counted) %llu\n",
         (unsigned long long) contacts, (unsigned long long) v_count[1], (unsigned long long) v_count[2], (unsigned long long) v_count[3],
-        (unsigned long long) v_count[4], (unsigned long long) separated, (unsigned long long) probes, (unsigned long long) evictions, (unsigned long long) touching_off);
+        (unsigned long long) v_count[4], (unsigned long long) separated, (unsigned long long) culled, (unsigned long long) probes, (unsigned long long) evictions, (unsigned long long) touching_off);
 
     ds_TSlabDealloc(slab);
     g_dynamics_worker = prev;
