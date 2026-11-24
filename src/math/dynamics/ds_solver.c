@@ -541,28 +541,17 @@ void ds_ContactConstraintInitRange(struct ds_Dynamics *pipeline, const u32 color
 		    	relative_velocity = V3Sub(relative_velocity, V3Cross(bcomp[0]->angular_velocity, ccp->r[0]));
 		    	const f32 separating_velocity = V3Dot(cc->normal, relative_velocity);
 
-                /* speculative contact */
-                if (m->depth[ccpi] < 0.0f)
-                {
-                    /*
-                     *  Constraint: 
-                     *       approach_velocity*timestep <= distance
-                     * <=>  -separating_velocity*timestep <= -m->depth[ccpi]
-                     * <=>   separating_velocity >= m->depth[ccpi] / timestep
-                     */   
-                    const f32 separating_velocity_lower_bound = m->depth[ccpi] / pipeline->timestep;
-                    const f32 restitution_lower_bound = separating_velocity_lower_bound - g_solver_config->restitution_threshold;
-                    ccp->velocity_bias = (cc->restitution > 0.0f && separating_velocity < restitution_lower_bound)
-                                       ? -separating_velocity*cc->restitution
-                                       : separating_velocity_lower_bound;
-                }
-                else
-                {
-		    	    /* if sufficiently fast collision happening, so apply the restitution effect */
-		    	    ccp->velocity_bias = (separating_velocity < -g_solver_config->restitution_threshold)
-                        ? -separating_velocity * cc->restitution
-                        : 0.0f;
-                }
+                /*
+                 *  Constraint (Speculative and Orindary): 
+                 *       approach_velocity*timestep <= distance
+                 * <=>  -separating_velocity*timestep <= F32Max(0.0, -m->depth[ccpi])
+                 * <=>   separating_velocity >= F32Max(0.0, m->depth[ccpi] / timestep)
+                 */
+                const f32 separating_velocity_lower_bound = F32Min(0.0f, m->depth[ccpi] / pipeline->timestep);
+                const f32 restitution_lower_bound = separating_velocity_lower_bound - g_solver_config->restitution_threshold;
+                ccp->velocity_bias = (cc->restitution > 0.0f && separating_velocity < restitution_lower_bound)
+                                   ? -separating_velocity*cc->restitution
+                                   : separating_velocity_lower_bound;
 		    }
         }
 
