@@ -5002,10 +5002,10 @@ static struct test_Output DynamicsAllocConfigTest(struct test_Environment *env)
 
 /********************************** one-sided mesh contacts **********************************/
 
-/* a flat 12 x 12 m floor at y = 0, faces up (McTerrain, relief 0), on a static body at the origin */
-static void DynamicsTestFloorAdd(struct arena *mem, struct ds_Dynamics *pipeline, struct c_ShapeDB *cshape_db)
+/* a flat floor of 12 x 12 cells of side cell at y = 0 ([0, 12 cell] in x and z), faces up (McTerrain, relief 0), on a static body at the origin */
+static void DynamicsTestFloorAdd(struct arena *mem, struct ds_Dynamics *pipeline, struct c_ShapeDB *cshape_db, const f32 cell)
 {
-    const struct c_Shape terrain = McTerrain(mem, 1.0f, 0.0f, NULL);
+    const struct c_Shape terrain = McTerrain(mem, cell, 0.0f, NULL);
     const struct slot slot = c_ShapeDBAdd(cshape_db, Utf8Inline("floor"), &terrain);
     const struct ds_BodyPrefab body_prefab = { .dynamic = 0 };
     const ds_TransformWorld t_world = { .rotation = QIdentity(), .position = V3F64(0.0, 0.0, 0.0) };
@@ -5038,7 +5038,7 @@ static struct test_Output DynamicsMeshOneSidedTest(struct test_Environment *env)
     const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
     struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&external, NSEC_PER_SEC / 60);
     ds_DynamicsConfigPush(&pipeline);
-    DynamicsTestFloorAdd(&mem, &pipeline, &cshape_db);
+    DynamicsTestFloorAdd(&mem, &pipeline, &cshape_db, 1.0f);
 
     const f64 slop = (f64) pipeline.config.solver.linear_slop;
     const f64 g = (f64) pipeline.config.solver.gravity.y;
@@ -5146,7 +5146,7 @@ static struct test_Output DynamicsMeshThinPlateTest(struct test_Environment *env
     const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
     struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&external, NSEC_PER_SEC / 60);
     ds_DynamicsConfigPush(&pipeline);
-    DynamicsTestFloorAdd(&mem, &pipeline, &cshape_db);
+    DynamicsTestFloorAdd(&mem, &pipeline, &cshape_db, 1.0f);
 
     const f64 slop = (f64) pipeline.config.solver.linear_slop;
     const f32 half_thickness = pipeline.config.solver.linear_slop;
@@ -5213,7 +5213,7 @@ static struct test_Output DynamicsCCDFloorTest(struct test_Environment *env)
         ds_DynamicsConfigPush(&pipeline);
         pipeline.config_pending.solver.enable_continuous = continuous;
         ds_DynamicsConfigUpdatePending(&pipeline);
-        DynamicsTestFloorAdd(&mem, &pipeline, &cshape_db);
+        DynamicsTestFloorAdd(&mem, &pipeline, &cshape_db, 1.0f);
         SlideWarmAdd(&mem, &pipeline, &cshape_db, C_SHAPE_CONVEX_HULL, V3(6.0f, 0.05f, 6.0f), 0.0f, 0.0f, V3(26.0f, -0.05f, 6.0f), QIdentity(), 0, 0.8f, 100);
 
         const f32 slop = pipeline.config.solver.linear_slop;
@@ -5287,6 +5287,249 @@ static struct test_Output DynamicsCCDFloorTest(struct test_Environment *env)
     return output;
 }
 
+/*
+Spinning thin bodies thrown down at 100 m/s onto a 120 x 120 m mesh floor (DynamicsTestFloorAdd, 10 m cells) and a
+static hull slab as thin as DynamicsCCDFloorTest's (120 x 0.1 x 120 m), 5 s with gravity: an edge-first impact turns
+the fall into spin and a sideways kick of up to about 30 m/s, so the floors leave room to land again. Spinning at
+30 rad/s (under the default 10 pi cap) about x, about z and about the diagonal (1, 1, 1): a stick (half widths 2 x 0.1 x 0.1, min extent 0.1) and a thin plate (0.5 x 0.02 x 0.5, min
+extent 0.02), most of whose motion per step is the rotation. Each is flagged fast; where it ends is printed only
+(the speculative-contact step asserts it): one step after CCD stops a body slop short its TOI is 0. On the slab
+nothing then stops it (no hull-hull manifold slop apart, like the box in DynamicsCCDFloorTest); on the mesh the
+fallback sphere about the center of mass (radius half the min extent + slop: 0.055 and 0.015) lets the tilted stick
+or plate sink up to its half length (the stick spinning about z: tip 1.9 m deep, center 0.05 m above), and the
+contact does not push it out.
+*/
+static struct test_Output DynamicsCCDSpinTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+    (void) env;
+
+    static const char *body_id[2] = { "stick", "plate" };
+    static const char *axis_id[3] = { "x", "z", "diagonal" };
+    static const char *target_id[2] = { "mesh", "hull slab" };
+    const v3 hw[2] = { V3(2.0f, 0.1f, 0.1f), V3(0.5f, 0.02f, 0.5f) };
+    const v3 axis[3] = { V3(1.0f, 0.0f, 0.0f), V3(0.0f, 0.0f, 1.0f), V3Normalize(V3(1.0f, 1.0f, 1.0f)) };
+    const f32 spin = 30.0f;
+    const f32 speed = 100.0f;
+    const u32 tick_count = 300;
+
+    for (u32 a = 0; a < 3; ++a)
+    {
+        struct arena mem = ArenaAlloc(NULL, 64*1024*1024);
+        struct c_ShapeDB cshape_db = { 0 };
+        c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
+        const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
+        struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&external, NSEC_PER_SEC / 60);
+        ds_DynamicsConfigPush(&pipeline);
+        DynamicsTestFloorAdd(&mem, &pipeline, &cshape_db, 10.0f);
+        SlideWarmAdd(&mem, &pipeline, &cshape_db, C_SHAPE_CONVEX_HULL, V3(60.0f, 0.05f, 60.0f), 0.0f, 0.0f, V3(200.0f, -0.05f, 60.0f), QIdentity(), 0, 0.8f, 100);
+
+        const f32 slop = pipeline.config.solver.linear_slop;
+        ds_BodyId body[2][2];
+        f32 lowest[2][2];
+        u32 fast[2][2];
+        for (u32 target = 0; target < 2; ++target)
+        for (u32 b = 0; b < 2; ++b)
+        {
+            const v3 position = V3(55.0f + 10.0f*(f32) b + 140.0f*(f32) target, 4.4f, 60.0f);
+            body[target][b] = SlideWarmAdd(&mem, &pipeline, &cshape_db, C_SHAPE_CONVEX_HULL, hw[b], 0.0f, 0.0f, position, QIdentity(), 1, 0.8f, 1 + 2*target + b);
+            const struct ds_Body *body_ptr = ds_BodyLookup(&pipeline, body[target][b]).address;
+            struct ds_BodyCompute *compute = pipeline.solver_set_pool.buf[body_ptr->set].body_compute_pool.buf + body_ptr->sim;
+            compute->linear_velocity = V3(0.0f, -speed, 0.0f);
+            compute->angular_velocity = V3Scale(axis[a], spin);
+            lowest[target][b] = position.y;
+            fast[target][b] = 0;
+        }
+
+        for (u32 t = 0; t < tick_count; ++t)
+        {
+            ds_DynamicsTick(DynamicsTestTickArena(), &pipeline, NSEC_PER_SEC / 60);
+            for (u32 target = 0; target < 2; ++target)
+            for (u32 b = 0; b < 2; ++b)
+            {
+                const struct ds_Body *body_ptr = ds_BodyLookup(&pipeline, body[target][b]).address;
+                const struct ds_BodySim *sim = pipeline.solver_set_pool.buf[body_ptr->set].body_sim_pool.buf + body_ptr->sim;
+                lowest[target][b] = F32Min(lowest[target][b], (f32) sim->world.position.y);
+                fast[target][b] |= (sim->flags & BODY_FLAG_FAST) >> BODY_FLAG_FAST_BIT;
+            }
+        }
+
+        for (u32 target = 0; target < 2; ++target)
+        for (u32 b = 0; b < 2; ++b)
+        {
+            const f32 y = (f32) DynamicsTestPose(&pipeline, body[target][b]).position.y;
+            const u32 rests = (hw[b].y - 2.0f*slop <= y && y <= hw[b].y + slop);
+            const char *outcome = "passed through";
+            if (rests && lowest[target][b] > 0.0f)
+            {
+                outcome = "held, resting";
+            }
+            else if (y > 0.0f)
+            {
+                outcome = "on top, not resting or sank past its center";
+            }
+            fprintf(stdout, "\tCCD spin, %s about %s on %s: lowest center %g, end %g (%s)\n", body_id[b], axis_id[a], target_id[target], (f64) lowest[target][b], (f64) y, outcome);
+            if (!fast[target][b])
+            {
+                fprintf(stderr, "CCD spin: %s about %s on %s not flagged fast\n", body_id[b], axis_id[a], target_id[target]);
+                TEST_FAILURE;
+            }
+        }
+
+        ds_DynamicsConfigPop(&pipeline);
+        ds_DynamicsDealloc(&pipeline);
+        c_ShapeDBDealloc(&cshape_db);
+        ArenaFree(&mem);
+    }
+
+    return output;
+}
+
+/*
+Fast bodies grazing the top edge of a thin static wall (hull, 0.1 m thick, top edge at y = 1, front face x = 9.95),
+no gravity, 3 s. The box, sphere and capsule of DynamicsCCDFloorTest fly along +x from x = 7.6 at 1, 3, 8 and 20 times
+their min extent per tick, at two heights:
+    clipping, their bottom 0.1 m below the edge: each is flagged fast and ends in front of the wall or above it
+    (center minus its bounding sphere radius above the edge: deflected over), never through it. The box is printed
+    only: hull against hull, like the box in DynamicsCCDFloorTest;
+    clearing, their bottom 3 slop above the edge (past TOI's target slop + tolerance 0.25 slop): no false hit, each
+    ends past the wall at its start height (1e-4) with the free flight's damped speed (relative 1e-5).
+Without continuous collision the clipping bodies at 20 times end past the wall below its edge (the test's control;
+the start x leaves even the capsule clear of the wall after its first step).
+*/
+static struct test_Output DynamicsCCDCornerTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+    (void) env;
+
+    static const char *shape_id[3] = { "box", "sphere", "capsule" };
+    const enum c_ShapeType type[3] = { C_SHAPE_CONVEX_HULL, C_SHAPE_SPHERE, C_SHAPE_CAPSULE };
+    const f32 radius[3] = { 0.0f, 0.25f, 0.15f };
+    const f32 rest[3] = { 0.25f, 0.25f, 0.15f };
+    const f32 bound[3] = { 0.25f*F32Sqrt(3.0f), 0.25f, 0.45f };
+    const f32 speed_scale[4] = { 1.0f, 3.0f, 8.0f, 20.0f };
+    const q lying = QUnitAxisAngle(V3(0.0f, 0.0f, 1.0f), 0.5f*F32_PI);
+    const f32 edge_y = 1.0f;
+    const f32 front = 9.95f;
+    const f32 back = 10.05f;
+    const f32 start_x = 7.6f;
+    const u32 tick_count = 180;
+
+    for (u32 continuous = 0; continuous < 2; ++continuous)
+    {
+        struct arena mem = ArenaAlloc(NULL, 64*1024*1024);
+        struct c_ShapeDB cshape_db = { 0 };
+        c_ShapeDBAlloc(NULL, &cshape_db, 64, GROWABLE);
+        const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
+        struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&external, NSEC_PER_SEC / 60);
+        ds_DynamicsConfigPush(&pipeline);
+        pipeline.config_pending.solver.gravity = V3Zero();
+        pipeline.config_pending.solver.enable_continuous = continuous;
+        ds_DynamicsConfigUpdatePending(&pipeline);
+        SlideWarmAdd(&mem, &pipeline, &cshape_db, C_SHAPE_CONVEX_HULL, V3(0.05f, 0.5f, 15.0f), 0.0f, 0.0f, V3(10.0f, 0.5f, 15.0f), QIdentity(), 0, 0.8f, 100);
+
+        const f32 slop = pipeline.config.solver.linear_slop;
+        const f32 h = pipeline.timestep;
+        const f32 damp = 1.0f / (1.0f + pipeline.config.solver.linear_dampening*h);
+        ds_BodyId body[2][3][4];
+        f32 start_y[2][3][4];
+        u32 fast[2][3][4];
+        for (u32 clip = 0; clip < 2; ++clip)
+        for (u32 k = 0; k < 3; ++k)
+        for (u32 i = 0; i < 4; ++i)
+        {
+            const f32 y = (clip == 0) ? edge_y - 0.1f + rest[k] : edge_y + 3.0f*slop + rest[k];
+            const u32 index = 1 + 12*clip + 4*k + i;
+            const v3 position = V3(start_x, y, 1.2f*(f32) index);
+            const q rotation = (type[k] == C_SHAPE_CAPSULE) ? lying : QIdentity();
+            body[clip][k][i] = SlideWarmAdd(&mem, &pipeline, &cshape_db, type[k], V3(0.25f, 0.25f, 0.25f), radius[k], 0.3f, position, rotation, 1, 0.8f, index);
+            const struct ds_Body *b = ds_BodyLookup(&pipeline, body[clip][k][i]).address;
+            pipeline.solver_set_pool.buf[b->set].body_compute_pool.buf[b->sim].linear_velocity = V3(speed_scale[i]*rest[k]/h, 0.0f, 0.0f);
+            start_y[clip][k][i] = y;
+            fast[clip][k][i] = 0;
+        }
+
+        f32 v_scale = 1.0f;
+        for (u32 t = 0; t < tick_count; ++t)
+        {
+            ds_DynamicsTick(DynamicsTestTickArena(), &pipeline, NSEC_PER_SEC / 60);
+            v_scale *= damp;
+            for (u32 clip = 0; clip < 2; ++clip)
+            for (u32 k = 0; k < 3; ++k)
+            for (u32 i = 0; i < 4; ++i)
+            {
+                const struct ds_Body *b = ds_BodyLookup(&pipeline, body[clip][k][i]).address;
+                const struct ds_BodySim *sim = pipeline.solver_set_pool.buf[b->set].body_sim_pool.buf + b->sim;
+                fast[clip][k][i] |= (sim->flags & BODY_FLAG_FAST) >> BODY_FLAG_FAST_BIT;
+            }
+        }
+
+        for (u32 clip = 0; clip < 2; ++clip)
+        for (u32 k = 0; k < 3; ++k)
+        for (u32 i = 0; i < 4; ++i)
+        {
+            const f32 speed = speed_scale[i]*rest[k]/h;
+            const ds_TransformWorld pose = DynamicsTestPose(&pipeline, body[clip][k][i]);
+            const f32 x = (f32) pose.position.x;
+            const f32 y = (f32) pose.position.y;
+            if (!continuous)
+            {
+                if (clip == 0 && i == 3 && !(back < x && y - bound[k] < edge_y))
+                {
+                    fprintf(stderr, "CCD corner, no CCD: clipping %s at %g m/s ends at (%g, %g), not through the wall\n", shape_id[k], (f64) speed, (f64) x, (f64) y);
+                    TEST_FAILURE;
+                }
+                continue;
+            }
+
+            if (clip == 1)
+            {
+                const struct ds_Body *b = ds_BodyLookup(&pipeline, body[clip][k][i]).address;
+                const v3 v = pipeline.solver_set_pool.buf[b->set].body_compute_pool.buf[b->sim].linear_velocity;
+                const f32 v_free = speed*v_scale;
+                const f32 dy = y - start_y[clip][k][i];
+                const f32 dv = v.x - v_free;
+                if (!fast[clip][k][i] || !(back + 1.0f < x) || !(-1e-4f <= dy && dy <= 1e-4f) || !(F32Abs(dv) <= 1e-5f*v_free))
+                {
+                    fprintf(stderr, "CCD corner, clearing %s at %g m/s: fast %u, end (%g, %g), start height %g, speed %g (free flight %g)\n", shape_id[k], (f64) speed, fast[clip][k][i], (f64) x, (f64) y, (f64) start_y[clip][k][i], (f64) v.x, (f64) v_free);
+                    TEST_FAILURE;
+                }
+                continue;
+            }
+
+            const u32 held = (x < front);
+            const u32 over = (y - bound[k] > edge_y);
+            if (type[k] == C_SHAPE_CONVEX_HULL)
+            {
+                const char *outcome = "passed through";
+                if (held)
+                {
+                    outcome = "held";
+                }
+                else if (over)
+                {
+                    outcome = "went over";
+                }
+                fprintf(stdout, "\tCCD corner, clipping box at %g m/s: end (%g, %g) (%s)\n", (f64) speed, (f64) x, (f64) y, outcome);
+                continue;
+            }
+
+            if (!fast[clip][k][i] || !(held || over))
+            {
+                fprintf(stderr, "CCD corner, clipping %s at %g m/s: fast %u, end (%g, %g), through the wall\n", shape_id[k], (f64) speed, fast[clip][k][i], (f64) x, (f64) y);
+                TEST_FAILURE;
+            }
+        }
+
+        ds_DynamicsConfigPop(&pipeline);
+        ds_DynamicsDealloc(&pipeline);
+        c_ShapeDBDealloc(&cshape_db);
+        ArenaFree(&mem);
+    }
+
+    return output;
+}
+
 static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
 {
     DynamicsAllocConfigTest,
@@ -5333,6 +5576,8 @@ static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
     DynamicsMeshOneSidedTest,
     DynamicsMeshThinPlateTest,
     DynamicsCCDFloorTest,
+    DynamicsCCDSpinTest,
+    DynamicsCCDCornerTest,
 };
 
 struct suite_Correctness m_dynamics_suite =
