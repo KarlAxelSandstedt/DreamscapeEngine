@@ -111,8 +111,9 @@ void 			    DBVHRemove(struct BVH *bvh, const u32 index);
 
 /*
  * triangle mesh: tri_count triangles, each three indices into the v_count vertices v; no adjacency. Precondition:
- * every triangle has nonzero area (asserted by the mesh contacts). Collision is two-sided; the CCW winding only
- * orients render normals.
+ * every triangle has nonzero area (asserted by the mesh contacts). Sphere and capsule contacts are one-sided: none
+ * while the shape's center is behind a triangle's plane (its front: CCW about the normal). Hull contacts and raycasts
+ * are two-sided.
  */
 struct mesh
 {

@@ -3080,9 +3080,10 @@ static struct c_Shape McSingleTriangle(struct arena *mem, const f32 size)
 
 /*
  * Sphere vs one triangle, center = a triangle point (face centroid, edge midpoint, vertex) + h n_t. Expected
- * (two-sided): n = -sign(h) n_t (h = 0: either side, the frame change decides), depth = r - |h|, v = r n.
- * h = +-1e-6 L lies inside GJK's touch band (the face fallback), h = +-r/2 is shallow. Then random points on
- * the triangle within the band: no NaN, n = +-n_t, depth ~ r.
+ * (one-sided): h = r/2: n = -n_t, depth = r - h, v = r n; h = -r/2: none. h = 0, +-1e-6 L lie inside GJK's touch
+ * band (the face fallback), where the frame change's rounding decides the side: none, or the front contact
+ * (n = -n_t, depth r - |h|). Then random points on the triangle within the band: no NaN; none or the front contact,
+ * depth ~ r; at least a quarter (about half lie in front) get one.
  */
 struct test_Output MeshSphereCasesTest(struct test_Environment *env)
 {
@@ -3124,15 +3125,15 @@ struct test_Output MeshSphereCasesTest(struct test_Environment *env)
         const ds_Array(c_Manifold) r = c_MeshContact(env->mem_2, &slab, &none, &mesh, &t_mesh, &sphere, &t_sphere);
         /* n_t in the sphere's frame */
         const v3 n_t = QUnitRotate(QConj(q_sphere), QUnitRotate(t_mesh.rotation, V3(0.0f, 1.0f, 0.0f)));
-        const v3 n_expected = V3Scale(n_t, (h < 0.0f) ? 1.0f : -1.0f);
+        const v3 n_expected = V3Scale(n_t, -1.0f);
         const f64 depth_expected = (f64) radius - F64AbsTest((f64) h);
-        u32 ok = (r.length == 1);
+        const u32 in_band = (hi < 3);
+        u32 ok = (in_band) ? (r.length <= 1) : (r.length == (u32) (0.0f < h));
         const struct c_Manifold *m = r.buf;
-        if (ok)
+        if (ok && r.length)
         {
             ok = c_ManifoldCheck(m) && m->v_count == 1
-              && (D3Length(D3Sub(D3V3(m->n), D3V3(n_expected))) <= 1e-3
-               || (h == 0.0f && D3Length(D3Add(D3V3(m->n), D3V3(n_expected))) <= 1e-3))
+              && D3Length(D3Sub(D3V3(m->n), D3V3(n_expected))) <= 1e-3
               && F64AbsTest((f64) m->depth[0] - depth_expected) <= 1e-4*L
               && D3Length(D3Sub(D3V3(m->v[0]), D3V3(V3Scale(m->n, radius)))) <= 1e-5*L;
         }
@@ -3148,6 +3149,7 @@ struct test_Output MeshSphereCasesTest(struct test_Environment *env)
         }
     }
 
+    u32 front_contacts = 0;
     for (u32 i = 0; i < 4000; ++i)
     {
         struct arena record = *env->mem_2;
@@ -3179,12 +3181,13 @@ struct test_Output MeshSphereCasesTest(struct test_Environment *env)
 
         const ds_Array(c_Manifold) r = c_MeshContact(env->mem_2, &slab, &none, &mesh, &t_mesh, &sphere, &t_sphere);
         const v3 n_t = QUnitRotate(QConj(q_sphere), QUnitRotate(t_mesh.rotation, V3(0.0f, 1.0f, 0.0f)));
-        u32 ok = (r.length == 1);
+        u32 ok = (r.length <= 1);
         const struct c_Manifold *m = r.buf;
-        if (ok)
+        if (ok && r.length)
         {
+            front_contacts += 1;
             ok = c_ManifoldCheck(m) && m->v_count == 1
-              && F64AbsTest(F64AbsTest((f64) V3Dot(m->n, n_t)) - 1.0) <= 1e-4
+              && F64AbsTest((f64) V3Dot(m->n, n_t) + 1.0) <= 1e-4
               && F64AbsTest((f64) m->depth[0] - (f64) radius) <= 1e-4*L;
         }
         *env->mem_2 = record;
@@ -3198,7 +3201,8 @@ struct test_Output MeshSphereCasesTest(struct test_Environment *env)
             TEST_FAILURE;
         }
     }
-    fprintf(stdout, "\tsphere on a triangle: 4000 random centers within the band\n");
+    fprintf(stdout, "\tsphere on a triangle: 4000 random centers within the band, %u front contacts\n", front_contacts);
+    TEST_TRUE(4*front_contacts >= 4000);
 
     ds_TSlabDealloc(slab);
 	return output;
@@ -3383,10 +3387,11 @@ static u32 McCapsuleSoundCheck(const struct c_Manifold *m, const struct d3 tri[3
 /*
  * Capsule vs one triangle ((0,0,0), (0,0,S), (S,0,0), ccw normal +y), r = 0.05 S, h = 0.1 S, random poses.
  * Hand cases (mesh frame; n from the capsule to the mesh):
- *      parallel above / below the face at 0.5 r     2 points, n = -y / +y, depths 0.5 r
+ *      parallel above / below the face at 0.5 r     2 points, n = -y, depths 0.5 r / none (one-sided)
  *      perpendicular, its end 0.5 r above           1 point, n = -y, depth 0.5 r
  *      piercing the face (ends at 1.25 h, -0.75 h)  1 point (the deeper end), n = -y, depth r + 0.75 h
- *      lying in the plane                           2 points, n = +-y, depths r
+ *      lying in the plane                           2 points, n = -y, depths r, or none (the center on the
+ *                                                  plane: the frame change's rounding decides its side)
  *      across edge z = 0 (parallel, 0.5 r above)    2 points (clipped to the triangle), depths 0.5 r
  *      its end 0.5 r above vertex 0, rising away    1 point (or 2 coincident: the core meets the triangle's
  *                                                  prism only at that end, as hull-capsule), n = -y, depth 0.5 r
@@ -3395,7 +3400,8 @@ static u32 McCapsuleSoundCheck(const struct c_Manifold *m, const struct d3 tri[3
  * Random capsules near the triangle, the capsule 1e-3 .. 1e2 times the triangle: points in the capsule (on its
  * surface for a shallow single point), n unit, the deepest depth against the double segment-triangle distance:
  * r - d_ref for a shallow single point (d_ref above GJK's band), at most that for two (see below), >= r when
- * touching. Every manifold, hand cases included, claims no more than the overlap along its normal.
+ * touching; none for a center behind the triangle's plane (beyond the band). Every manifold, hand cases included,
+ * claims no more than the overlap along its normal.
  */
 struct test_Output MeshCapsuleCasesTest(struct test_Environment *env)
 {
@@ -3417,12 +3423,12 @@ struct test_Output MeshCapsuleCasesTest(struct test_Environment *env)
             v3 axis;
             u32 v_count;
             struct d3 n;
-            u32 n_either_sign;
+            u32 on_plane;
             f64 depth;
         } c[] =
         {
             { D3Add(C, D3(0.0, 0.5*r, 0.0)), diag, 2, D3(0.0, -1.0, 0.0), 0, 0.5*r },
-            { D3Sub(C, D3(0.0, 0.5*r, 0.0)), diag, 2, D3(0.0, 1.0, 0.0), 0, 0.5*r },
+            { D3Sub(C, D3(0.0, 0.5*r, 0.0)), diag, 0, D3(0.0, 1.0, 0.0), 0, 0.5*r },
             { D3Add(C, D3(0.0, h + 0.5*r, 0.0)), V3(0.0f, 1.0f, 0.0f), 1, D3(0.0, -1.0, 0.0), 0, 0.5*r },
             { D3Add(C, D3(0.0, 0.25*h, 0.0)), V3(0.0f, 1.0f, 0.0f), 1, D3(0.0, -1.0, 0.0), 0, r + 0.75*h },
             { C, diag, 2, D3(0.0, -1.0, 0.0), 1, r },
@@ -3435,16 +3441,15 @@ struct test_Output MeshCapsuleCasesTest(struct test_Environment *env)
             const struct c_Shape mesh = McSingleTriangle(env->mem_2, S);
             const struct mc_CapsuleCase cc = McCapsuleCase(env->mem_2, &mesh, r, h, c[k].center, c[k].axis);
             const struct d3 n_expected = McCapsuleDirection(&cc, c[k].n);
-            u32 ok = (cc.result.length == 1);
+            u32 ok = (cc.result.length == (u32) (c[k].v_count != 0)) || (c[k].on_plane && cc.result.length == 0);
             const struct c_Manifold *m = cc.result.buf;
             f64 deepest = 0.0;
-            if (ok)
+            if (ok && cc.result.length)
             {
                 const f64 dn = D3Length(D3Sub(D3V3(m->n), n_expected));
-                const f64 dn_flip = D3Length(D3Add(D3V3(m->n), n_expected));
                 const u32 coincident = (k == 6 && m->v_count == 2 && D3Length(D3Sub(D3V3(m->v[0]), D3V3(m->v[1]))) <= tol);
                 ok = McCapsuleManifoldCheck(&deepest, m, r, h, tol, 0) && McCapsuleSoundCheck(m, cc.tri, r, h, tol)
-                  && (m->v_count == c[k].v_count || coincident) && (dn <= 1e-4 || (c[k].n_either_sign && dn_flip <= 1e-4));
+                  && (m->v_count == c[k].v_count || coincident) && dn <= 1e-4;
                 for (u32 i = 0; ok && i < m->v_count; ++i)
                 {
                     ok = F64AbsTest((f64) m->depth[i] - c[k].depth) <= tol;
@@ -3524,7 +3529,7 @@ struct test_Output MeshCapsuleCasesTest(struct test_Environment *env)
     /* random capsules near the triangle; capsule / triangle size: 0.01 .. 1, 5 .. 200, 1e-3 .. 0.02 */
     static const f32 ratio_lo[] = { 0.01f, 5.0f, 1e-3f };
     static const f32 ratio_hi[] = { 0.5f, 100.0f, 1e-2f };
-    u64 shallow = 0, touching = 0, none = 0;
+    u64 shallow = 0, touching = 0, none = 0, behind = 0;
     f64 worst = 0.0;
     for (u32 i = 0; i < 30000; ++i)
     {
@@ -3549,16 +3554,19 @@ struct test_Output MeshCapsuleCasesTest(struct test_Environment *env)
         const f64 L = F64MaxTest(F64MaxTest((f64) S, (f64) h), (f64) r);
         const f64 tol = 1e-4*L;
         const f64 band = GJK_TOUCH_TOLERANCE * F32_EPSILON * L;
+        /* the center's offset from the triangle's plane y = 0 (mesh frame); within the band rounding decides */
+        const f64 offset = center.y;
         u32 ok = 1;
         if (cc.result.length == 0)
         {
             none += 1;
-            ok = (d_ref >= (f64) r - tol);
+            behind += (d_ref < (f64) r - tol);
+            ok = (d_ref >= (f64) r - tol) || offset < band;
         }
         else
         {
             f64 deepest = 0.0;
-            ok = (cc.result.length == 1) && McCapsuleManifoldCheck(&deepest, cc.result.buf, r, h, tol, 0)
+            ok = (-band < offset) && (cc.result.length == 1) && McCapsuleManifoldCheck(&deepest, cc.result.buf, r, h, tol, 0)
               && McCapsuleSoundCheck(cc.result.buf, cc.tri, r, h, tol);
             /* a shallow single point is the closest core point moved by r along n (n perpendicular to the core) */
             if (ok && d_ref > 2.0*band && cc.result.buf->v_count == 1)
@@ -3608,8 +3616,8 @@ struct test_Output MeshCapsuleCasesTest(struct test_Environment *env)
             TEST_FAILURE;
         }
     }
-    fprintf(stdout, "\tcapsule on a triangle: 30000 random (%llu shallow, %llu touching, %llu apart); worst |deepest - (r - d_ref)| / L %.3g\n",
-        (unsigned long long) shallow, (unsigned long long) touching, (unsigned long long) none, worst);
+    fprintf(stdout, "\tcapsule on a triangle: 30000 random (%llu shallow, %llu touching, %llu none of which %llu behind); worst |deepest - (r - d_ref)| / L %.3g\n",
+        (unsigned long long) shallow, (unsigned long long) touching, (unsigned long long) none, (unsigned long long) behind, worst);
 
 	return output;
 }

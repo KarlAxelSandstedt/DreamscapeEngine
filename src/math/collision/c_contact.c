@@ -1532,9 +1532,9 @@ struct c_MeshTri
  * (internal edges, output). The shape loops in between test triangles against the convex shape as stored (sphere at
  * the origin, capsule along y, hull with its stored planes).
  */
-//TODO one-sided triangle contacts: none while the convex shape's center of mass is behind the triangle's plane (by
+//TODO one-sided hull-triangle contacts: none while the hull's center of mass is behind the triangle's plane (by
 //     more than slop, with hysteresis), so a triangle only pushes to its front. The mesh TOI's early-outs
-//     (ds_TimeOfImpactConcave) are only safe then; the mover already culls back sides.
+//     (ds_TimeOfImpactConcave) are only safe then; spheres and capsules are one-sided, the mover culls back sides.
 struct c_MeshContactHelper
 {
     const struct mesh *         mesh;
@@ -1663,8 +1663,14 @@ static void c_MeshSphereTriangles(struct c_MeshContactHelper *helper, const stru
             continue;
         }
 
+        /* one-sided: none while the center (the origin) is behind the triangle's plane, n_t . (0 - t_0) < 0 */
+        if (0.0f < V3Dot(V3Cross(V3Sub(tri[1], tri[0]), V3Sub(tri[2], tri[0])), tri[0]))
+        {
+            continue;
+        }
+
         /*
-         * as c_HullSphereContact, two-sided: the triangle is a flat hull with faces +-n_t; center = origin.
+         * as c_HullSphereContact, the triangle a flat hull, its front face n_t; center = origin.
          * Triangles have area (c_Shape precondition), so VORONOI_INVALID (zero |e|^2 or |n|^2, NaN) and n_t = 0
          * are only asserted.
          */
@@ -1690,14 +1696,14 @@ static void c_MeshSphereTriangles(struct c_MeshContactHelper *helper, const stru
             n = V3Scale(c, 1.0f / distance);
             depth = radius - distance;
         }
-        /* deep penetration: the face the center is in front of (on the plane: +n_t) */
+        /* deep penetration: the front face (the center is in front of it, or on it within rounding) */
         else
         {
             v3 n_t;
             const u32 has_area = TriCcwNormalTryCompute(&n_t, tri[0], tri[1], tri[2]);
             ds_AssertString(has_area, "mesh triangle without area (c_Shape precondition)");
             const f32 distance = -V3Dot(n_t, tri[0]);
-            n = (0.0f <= distance) ? V3Scale(n_t, -1.0f) : n_t;
+            n = V3Scale(n_t, -1.0f);
             depth = F32Max(0.0f, radius - F32Abs(distance));
         }
 
@@ -1736,8 +1742,8 @@ static u32 c_TriSegmentSideClip(struct segment *clip, const v3 t[3], const v3 n,
 }
 
 /*
- * Capsule vs triangle (two-sided), tailored from c_HullCapsuleContact: the triangle is a flat hull with faces
- * +-n_t and three knife edges, and TriSegmentVoronoi replaces GJK. In the capsule's frame; the manifold follows the
+ * Capsule vs triangle (one-sided), tailored from c_HullCapsuleContact: the triangle is a flat hull with the front
+ * face n_t and three knife edges, and TriSegmentVoronoi replaces GJK. In the capsule's frame; the manifold follows the
  * mesh convention (n from the capsule to the mesh, v on the capsule's surface).
  */
 static void c_MeshCapsuleTriangles(struct c_MeshContactHelper *helper, const struct capsule *capsule)
@@ -1751,6 +1757,12 @@ static void c_MeshCapsuleTriangles(struct c_MeshContactHelper *helper, const str
         const u32 tri_index = helper->tri.buf[candidate];
         v3 tri[3];
         if (!c_MeshContactTriangle(tri, helper, tri_index))
+        {
+            continue;
+        }
+
+        /* one-sided: none while the center (the origin, the core's midpoint) is behind the triangle's plane */
+        if (0.0f < V3Dot(V3Cross(V3Sub(tri[1], tri[0]), V3Sub(tri[2], tri[0])), tri[0]))
         {
             continue;
         }
@@ -1786,12 +1798,12 @@ static void c_MeshCapsuleTriangles(struct c_MeshContactHelper *helper, const str
             const v3 n = V3Scale(V3Sub(c_t, c_s), 1.0f / distance);
 
             /*
-             * Two points if n is within face_parallel_max_degrees of the face normal facing the capsule (f, from the
-             * triangle to the capsule: -n ~ f) and both ends of the clipped core touch (d_i <= r); otherwise one
-             * point. Each end has its own depth. As for hulls, the closest feature may be an edge (a core parallel
-             * to the face is as close to it as to the edge it crosses).
+             * Two points if n is within face_parallel_max_degrees of the front face normal (f, from the triangle to
+             * the capsule: -n ~ f) and both ends of the clipped core touch (d_i <= r); otherwise one point. Each end
+             * has its own depth. As for hulls, the closest feature may be an edge (a core parallel to the face is as
+             * close to it as to the edge it crosses).
              */
-            const v3 f = (V3Dot(n, n_t) < 0.0f) ? n_t : V3Scale(n_t, -1.0f);
+            const v3 f = n_t;
             struct segment clip;
             if (g_numerics_config->face_parallel_cos < -V3Dot(n, f)
                 && c_TriSegmentSideClip(&clip, tri, n_t, &core))
@@ -1823,11 +1835,8 @@ static void c_MeshCapsuleTriangles(struct c_MeshContactHelper *helper, const str
             continue;
         }
 
-        /* deep penetration (the core touches the triangle): faces +-n_t, the core's deeper end */
-        const f32 h0 = V3Dot(n_t, V3Sub(core.p[0], tri[0]));
-        const f32 h1 = V3Dot(n_t, V3Sub(core.p[1], tri[0]));
-        /* front: min(h0, h1); back: min(-h0, -h1); the larger separates more (tie: front) */
-        const v3 f = (-F32Max(h0, h1) <= F32Min(h0, h1)) ? n_t : V3Scale(n_t, -1.0f);
+        /* deep penetration (the core touches the triangle): the front face n_t, the core's deeper end */
+        const v3 f = n_t;
 
         /* face contact: the core clipped to the triangle; empty if nothing is left or no clipped end touches */
         struct segment clip = core;
