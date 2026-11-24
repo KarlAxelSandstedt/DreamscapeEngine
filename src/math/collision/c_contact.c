@@ -1534,8 +1534,6 @@ struct c_MeshTri
  * (internal edges, output). The shape loops in between test triangles against the convex shape as stored (sphere at
  * the origin, capsule along y, hull with its stored planes).
  */
-//TODO one-sided hull-triangle contacts: the cull keeps no hysteresis yet (box3d caches the culled offset, so a hull
-//     whose center of mass hovers about -linear_slop does not flicker).
 struct c_MeshContactHelper
 {
     const struct mesh *         mesh;
