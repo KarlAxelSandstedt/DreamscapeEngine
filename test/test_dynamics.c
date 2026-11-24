@@ -5000,6 +5000,182 @@ static struct test_Output DynamicsAllocConfigTest(struct test_Environment *env)
 	return output;
 }
 
+/********************************** one-sided mesh contacts **********************************/
+
+/* a flat 12 x 12 m floor at y = 0, faces up (McTerrain, relief 0), on a static body at the origin */
+static void DynamicsTestFloorAdd(struct arena *mem, struct ds_Dynamics *pipeline, struct c_ShapeDB *cshape_db)
+{
+    const struct c_Shape terrain = McTerrain(mem, 1.0f, 0.0f, NULL);
+    const struct slot slot = c_ShapeDBAdd(cshape_db, Utf8Inline("floor"), &terrain);
+    const struct ds_BodyPrefab body_prefab = { .dynamic = 0 };
+    const ds_TransformWorld t_world = { .rotation = QIdentity(), .position = V3F64(0.0, 0.0, 0.0) };
+    const ds_BodyId floor = ds_BodyAdd(pipeline, &body_prefab, &t_world, 0);
+    const struct ds_ShapePrefab shape_prefab = { .cshape = slot.index, .density = 1.0f, .restitution = 0.0f, .friction = 0.8f };
+    const ds_Transform t_local = ds_TransformIdentity();
+    ds_ShapeAdd(pipeline, &shape_prefab, &t_local, floor);
+}
+
+/*
+One-sided mesh contacts, 3 s on the floor (DynamicsTestFloorAdd) with gravity. A unit box, a sphere (r 0.4) and a
+capsule (r 0.25, half height 0.5) lying along x, each in three scenes:
+    dropped from 1 m above its resting height (0.5, 0.4, 0.25): rests on the floor, its center at the resting height
+    within [-2 slop, slop];
+    thrown up at 9 m/s from 2 m below the floor: rises through it (no contact while its center is behind, a hull's
+    center of mass beyond linear_slop), falls back onto it and rests as above. Sphere and capsule only for now: the
+    box, its center of mass reaching the floor's plane, gets its own top face as the contact axis and is pushed back
+    down (box3d's triangle-hull contact, which rejects such a face, waits for speculative contacts);
+    thrown up from 2 m below to an apex about 0.1 m below the floor, partly through it: the floor pushes nothing, its
+    apex is the free flight's (the solver's integration, in f64) within 1 mm, and it falls away (below -1.5 m at the
+    end). The free flight's apex is checked to leave each shape overlapping the floor with its center behind.
+*/
+static struct test_Output DynamicsMeshOneSidedTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct arena mem = ArenaAlloc(NULL, 64*1024*1024);
+    struct c_ShapeDB cshape_db = { 0 };
+    c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
+    struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&external, NSEC_PER_SEC / 60);
+    ds_DynamicsConfigPush(&pipeline);
+    DynamicsTestFloorAdd(&mem, &pipeline, &cshape_db);
+
+    const f64 slop = (f64) pipeline.config.solver.linear_slop;
+    const f64 g = (f64) pipeline.config.solver.gravity.y;
+    const f64 h = (f64) pipeline.timestep;
+    const f64 damp = 1.0 / (1.0 + (f64) pipeline.config.solver.linear_dampening*h);
+    const enum c_ShapeType type[3] = { C_SHAPE_CONVEX_HULL, C_SHAPE_SPHERE, C_SHAPE_CAPSULE };
+    const f32 radius[3] = { 0.0f, 0.4f, 0.25f };
+    const f64 rest[3] = { 0.5, 0.4, 0.25 };
+    const q lying = QUnitAxisAngle(V3(0.0f, 0.0f, 1.0f), 0.5f*F32_PI);
+    const f32 start_y[3] = { 0.0f, -2.0f, -2.0f };
+    const f32 v_throw[3] = { 0.0f, 9.0f, F32Sqrt(2.0f*(f32) -g*1.9f) };
+    const u32 tick_count = 180;
+
+    /* the partial throw in free flight: v <- (v + g h) damp, y <- y + v h, as the solver integrates */
+    f64 y_free = (f64) start_y[2];
+    f64 v_free = (f64) v_throw[2];
+    f64 apex_free = y_free;
+    for (u32 t = 0; t < tick_count; ++t)
+    {
+        v_free = (v_free + g*h)*damp;
+        y_free += v_free*h;
+        if (apex_free < y_free)
+        {
+            apex_free = y_free;
+        }
+    }
+    for (u32 k = 0; k < 3; ++k)
+    {
+        TEST_TRUE(apex_free < -slop && apex_free + rest[k] > 0.0);
+    }
+
+    ds_BodyId body[3][3];
+    for (u32 k = 0; k < 3; ++k)
+    for (u32 scene = 0; scene < 3; ++scene)
+    {
+        const f32 y = (scene == 0) ? (f32) rest[k] + 1.0f : start_y[scene];
+        const v3 position = V3(2.0f + 4.0f*(f32) k, y, 2.0f + 4.0f*(f32) scene);
+        const q rotation = (type[k] == C_SHAPE_CAPSULE) ? lying : QIdentity();
+        body[k][scene] = SlideWarmAdd(&mem, &pipeline, &cshape_db, type[k], V3(0.5f, 0.5f, 0.5f), radius[k], 0.5f, position, rotation, 1, 0.8f, 1 + 3*k + scene);
+        const struct ds_Body *b = ds_BodyLookup(&pipeline, body[k][scene]).address;
+        pipeline.solver_set_pool.buf[b->set].body_compute_pool.buf[b->sim].linear_velocity = V3(0.0f, v_throw[scene], 0.0f);
+    }
+
+    f64 apex[3] = { -1e300, -1e300, -1e300 };
+    for (u32 t = 0; t < tick_count; ++t)
+    {
+        ds_DynamicsTick(DynamicsTestTickArena(), &pipeline, NSEC_PER_SEC / 60);
+        for (u32 k = 0; k < 3; ++k)
+        {
+            const f64 y = DynamicsTestPose(&pipeline, body[k][2]).position.y;
+            if (apex[k] < y)
+            {
+                apex[k] = y;
+            }
+        }
+    }
+
+    static const char *shape_id[3] = { "box", "sphere", "capsule" };
+    for (u32 k = 0; k < 3; ++k)
+    {
+        for (u32 scene = 0; scene < 2; ++scene)
+        {
+            if (type[k] == C_SHAPE_CONVEX_HULL && scene == 1)
+            {
+                continue;
+            }
+
+            const f64 y = DynamicsTestPose(&pipeline, body[k][scene]).position.y;
+            if (!(rest[k] - 2.0*slop <= y && y <= rest[k] + slop))
+            {
+                fprintf(stderr, "Mesh one-sided %s, %s: center at %g, resting height %g\n", shape_id[k], (scene == 0) ? "dropped" : "thrown through", y, rest[k]);
+                TEST_FAILURE;
+            }
+        }
+
+        const f64 y_end = DynamicsTestPose(&pipeline, body[k][2]).position.y;
+        const f64 apex_error = apex[k] - apex_free;
+        if (!(-1e-3 <= apex_error && apex_error <= 1e-3) || !(y_end < -1.5))
+        {
+            fprintf(stderr, "Mesh one-sided %s, partly through: apex %g (free flight %g), end %g\n", shape_id[k], apex[k], apex_free, y_end);
+            TEST_FAILURE;
+        }
+    }
+
+    ds_DynamicsConfigPop(&pipeline);
+    ds_DynamicsDealloc(&pipeline);
+    c_ShapeDBDealloc(&cshape_db);
+    ArenaFree(&mem);
+    return output;
+}
+
+/*
+A plate (1 x 1 m, half thickness linear_slop: the thinnest at the engine's scale) resting on the floor
+(DynamicsTestFloorAdd) for 3 s stays on it. Resting, it sinks by up to the solver's slop, its center of mass about on
+the floor's plane: a hull is culled only beyond -linear_slop (with hysteresis). Its center stays within
+[-1.5 slop, slop] of its resting height (slop).
+*/
+static struct test_Output DynamicsMeshThinPlateTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct arena mem = ArenaAlloc(NULL, 64*1024*1024);
+    struct c_ShapeDB cshape_db = { 0 };
+    c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
+    struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&external, NSEC_PER_SEC / 60);
+    ds_DynamicsConfigPush(&pipeline);
+    DynamicsTestFloorAdd(&mem, &pipeline, &cshape_db);
+
+    const f64 slop = (f64) pipeline.config.solver.linear_slop;
+    const f32 half_thickness = pipeline.config.solver.linear_slop;
+    const ds_BodyId plate = SlideWarmAdd(&mem, &pipeline, &cshape_db, C_SHAPE_CONVEX_HULL, V3(0.5f, half_thickness, 0.5f), 0.0f, 0.0f, V3(6.0f, half_thickness, 6.0f), QIdentity(), 1, 0.8f, 1);
+    f64 lowest = 1e300;
+    for (u32 t = 0; t < 180; ++t)
+    {
+        ds_DynamicsTick(DynamicsTestTickArena(), &pipeline, NSEC_PER_SEC / 60);
+        const f64 y = DynamicsTestPose(&pipeline, plate).position.y;
+        if (y < lowest)
+        {
+            lowest = y;
+        }
+    }
+
+    const f64 y = DynamicsTestPose(&pipeline, plate).position.y;
+    if (!((f64) half_thickness - 1.5*slop <= lowest && y <= (f64) half_thickness + slop))
+    {
+        fprintf(stderr, "Mesh thin plate: center at %g (lowest %g), resting height %g\n", y, lowest, (f64) half_thickness);
+        TEST_FAILURE;
+    }
+
+    ds_DynamicsConfigPop(&pipeline);
+    ds_DynamicsDealloc(&pipeline);
+    c_ShapeDBDealloc(&cshape_db);
+    ArenaFree(&mem);
+    return output;
+}
+
 static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
 {
     DynamicsAllocConfigTest,
@@ -5043,6 +5219,8 @@ static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
     DynamicsNumericsConfigTest,
     DynamicsSlideWarmTest,
     DynamicsWarmStartMetricsTest,
+    DynamicsMeshOneSidedTest,
+    DynamicsMeshThinPlateTest,
 };
 
 struct suite_Correctness m_dynamics_suite =
