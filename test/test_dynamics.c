@@ -5530,6 +5530,204 @@ static struct test_Output DynamicsCCDCornerTest(struct test_Environment *env)
     return output;
 }
 
+/*
+CCD metrics, the baseline that speculative contacts are compared against (printed; asserted only: the run is
+deterministic, two runs end bit-identical, and finite). 100 bodies per floor, seeded (fixed seed, local generator),
+at 10 m spacing on the 120 x 120 m mesh floor (DynamicsTestFloorAdd, 10 m cells) and a static hull slab (120 x 0.1 x
+120 m), 5 s with gravity. Each draws its shape (box 0.5 m, sphere r 0.25, capsule r 0.15 half height 0.3, stick
+4 x 0.2 x 0.2, plate 1 x 0.04 x 1), its downward speed (half the bodies 0.3 to 1, half 1 to 20 times its min extent
+per tick), its spin (0 to 30 rad/s about a random axis) and a random orientation; it starts 1 to 3 m above the floor
+with its bounding sphere. Per floor and shape:
+    held / tunnelled / left: at the end its center is above the floor / below it / it is off the floor's footprint
+    (kicked away);
+    on floor (held bodies): at the end its lowest point is within [-2 slop, slop] of the floor (resting, rolling or
+    sliding on it);
+    sink (held bodies): the deepest its lowest point went below the floor, mean and max;
+    hover: ticks spent 0 to 1.25 slop above the floor while moving into it faster than 1 m/s (where CCD leaves a body
+    with no contact yet), and the bodies with any.
+*/
+static struct test_Output DynamicsCCDMetricsTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+    (void) env;
+
+    static const char *kind_id[5] = { "box", "sphere", "capsule", "stick", "plate" };
+    static const char *target_id[2] = { "mesh", "hull slab" };
+    const enum c_ShapeType type[5] = { C_SHAPE_CONVEX_HULL, C_SHAPE_SPHERE, C_SHAPE_CAPSULE, C_SHAPE_CONVEX_HULL, C_SHAPE_CONVEX_HULL };
+    const v3 hw[5] = { V3(0.25f, 0.25f, 0.25f), V3Zero(), V3Zero(), V3(2.0f, 0.1f, 0.1f), V3(0.5f, 0.02f, 0.5f) };
+    const f32 radius[5] = { 0.0f, 0.25f, 0.15f, 0.0f, 0.0f };
+    const f32 half_height = 0.3f;
+    const f32 min_extent[5] = { 0.25f, 0.25f, 0.15f, 0.1f, 0.02f };
+    const f32 bound[5] = { V3Length(hw[0]), 0.25f, 0.45f, V3Length(hw[3]), V3Length(hw[4]) };
+    const u64 seed = 2026112403;
+    const u32 tick_count = 300;
+
+    ds_TransformWorld end_pose[2][200];
+    for (u32 run = 0; run < 2; ++run)
+    {
+        struct arena mem = ArenaAlloc(NULL, 128*1024*1024);
+        struct c_ShapeDB cshape_db = { 0 };
+        c_ShapeDBAlloc(NULL, &cshape_db, 256, GROWABLE);
+        const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
+        struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&external, NSEC_PER_SEC / 60);
+        ds_DynamicsConfigPush(&pipeline);
+        DynamicsTestFloorAdd(&mem, &pipeline, &cshape_db, 10.0f);
+        SlideWarmAdd(&mem, &pipeline, &cshape_db, C_SHAPE_CONVEX_HULL, V3(60.0f, 0.05f, 60.0f), 0.0f, 0.0f, V3(200.0f, -0.05f, 60.0f), QIdentity(), 0, 0.8f, 1000);
+
+        const f32 slop = pipeline.config.solver.linear_slop;
+        const f32 h = pipeline.timestep;
+        struct rng rng;
+        RngLocalInit(&rng, seed);
+
+        ds_BodyId body[200];
+        u32 kind[200];
+        f32 sink[200];
+        f32 gap_end[200];
+        u32 hover[200];
+        u32 fast[200];
+        for (u32 n = 0; n < 200; ++n)
+        {
+            const u32 target = n / 100;
+            const u32 cell = n % 100;
+            f32 u[10];
+            for (u32 j = 0; j < 10; ++j)
+            {
+                u[j] = (f32) (RngLocalU64(&rng) >> 40) / 16777216.0f;
+            }
+            kind[n] = (u32) RngLocalU64Range(&rng, 0, 4);
+
+            const u32 k = kind[n];
+            const f32 scale = (u[0] < 0.5f) ? 0.3f + 1.4f*u[0] : 1.0f + 38.0f*(u[0] - 0.5f);
+            const v3 axis = V3Normalize(V3(2.0f*u[1] - 1.0f, 2.0f*u[2] - 1.0f, 2.0f*u[3] - 1.0f));
+            const q rotation = QNormalize(Q(2.0f*u[4] - 1.0f, 2.0f*u[5] - 1.0f, 2.0f*u[6] - 1.0f, 2.0f*u[7] - 1.0f));
+            const v3 position = V3(15.0f + 10.0f*(f32) (cell % 10) + 140.0f*(f32) target, bound[k] + 1.0f + 2.0f*u[9], 15.0f + 10.0f*(f32) (cell / 10));
+            body[n] = SlideWarmAdd(&mem, &pipeline, &cshape_db, type[k], hw[k], radius[k], half_height, position, rotation, 1, 0.8f, 1 + n);
+            const struct ds_Body *b = ds_BodyLookup(&pipeline, body[n]).address;
+            struct ds_BodyCompute *compute = pipeline.solver_set_pool.buf[b->set].body_compute_pool.buf + b->sim;
+            compute->linear_velocity = V3(0.0f, -scale*min_extent[k]/h, 0.0f);
+            compute->angular_velocity = V3Scale(axis, 30.0f*u[8]);
+            sink[n] = 0.0f;
+            gap_end[n] = 0.0f;
+            hover[n] = 0;
+            fast[n] = 0;
+        }
+
+        for (u32 t = 0; t < tick_count; ++t)
+        {
+            ds_DynamicsTick(DynamicsTestTickArena(), &pipeline, NSEC_PER_SEC / 60);
+            for (u32 n = 0; n < 200; ++n)
+            {
+                const u32 k = kind[n];
+                const struct ds_Body *b = ds_BodyLookup(&pipeline, body[n]).address;
+                const struct ds_BodySim *sim = pipeline.solver_set_pool.buf[b->set].body_sim_pool.buf + b->sim;
+                const q r = sim->world.rotation;
+                f32 support = radius[k];
+                if (type[k] == C_SHAPE_CAPSULE)
+                {
+                    support += half_height*F32Abs(QUnitRotate(r, V3(0.0f, 1.0f, 0.0f)).y);
+                }
+                else if (type[k] == C_SHAPE_CONVEX_HULL)
+                {
+                    support = hw[k].x*F32Abs(QUnitRotate(r, V3(1.0f, 0.0f, 0.0f)).y) + hw[k].y*F32Abs(QUnitRotate(r, V3(0.0f, 1.0f, 0.0f)).y) + hw[k].z*F32Abs(QUnitRotate(r, V3(0.0f, 0.0f, 1.0f)).y);
+                }
+
+                v3 v = V3Zero();
+                if (b->set == SOLVER_SET_ACTIVE)
+                {
+                    v = pipeline.solver_set_pool.buf[b->set].body_compute_pool.buf[b->sim].linear_velocity;
+                }
+
+                const f32 gap = (f32) sim->world.position.y - support;
+                sink[n] = F32Max(sink[n], -gap);
+                if (0.0f < gap && gap <= 1.25f*slop && v.y < -1.0f)
+                {
+                    hover[n] += 1;
+                }
+                fast[n] |= (sim->flags & BODY_FLAG_FAST) >> BODY_FLAG_FAST_BIT;
+                gap_end[n] = gap;
+            }
+        }
+
+        for (u32 n = 0; n < 200; ++n)
+        {
+            end_pose[run][n] = DynamicsTestPose(&pipeline, body[n]);
+        }
+
+        if (run == 0)
+        {
+            fprintf(stdout, "\tCCD metrics (seed %llu, 100 bodies per floor, %u ticks):\n", (long long unsigned int) seed, tick_count);
+            for (u32 target = 0; target < 2; ++target)
+            for (u32 k = 0; k < 5; ++k)
+            {
+                u32 count = 0;
+                u32 fast_count = 0;
+                u32 held = 0;
+                u32 tunnelled = 0;
+                u32 left = 0;
+                u32 on_floor = 0;
+                f32 sink_sum = 0.0f;
+                f32 sink_max = 0.0f;
+                u32 hover_ticks = 0;
+                u32 hover_bodies = 0;
+                for (u32 n = 100*target; n < 100*target + 100; ++n)
+                {
+                    if (kind[n] != k)
+                    {
+                        continue;
+                    }
+
+                    const f64 x = end_pose[run][n].position.x - 140.0*(f64) target;
+                    const f64 y = end_pose[run][n].position.y;
+                    const f64 z = end_pose[run][n].position.z;
+                    count += 1;
+                    fast_count += fast[n];
+                    hover_ticks += hover[n];
+                    hover_bodies += (hover[n] > 0);
+                    if (!(0.0 <= x && x <= 120.0 && 0.0 <= z && z <= 120.0))
+                    {
+                        left += 1;
+                        continue;
+                    }
+
+                    if (y < 0.0)
+                    {
+                        tunnelled += 1;
+                        continue;
+                    }
+
+                    held += 1;
+                    sink_sum += sink[n];
+                    sink_max = F32Max(sink_max, sink[n]);
+                    on_floor += (-2.0f*slop <= gap_end[n] && gap_end[n] <= slop);
+                }
+
+                const f32 sink_mean = (held) ? sink_sum / (f32) held : 0.0f;
+                fprintf(stdout, "\t  %-9s %-7s n %2u fast %2u | held %2u tunnelled %2u left %2u | on floor %2u | sink mean %.4f max %.4f | hover ticks %3u bodies %2u\n", target_id[target], kind_id[k], count, fast_count, held, tunnelled, left, on_floor, (f64) sink_mean, (f64) sink_max, hover_ticks, hover_bodies);
+            }
+        }
+
+        ds_DynamicsConfigPop(&pipeline);
+        ds_DynamicsDealloc(&pipeline);
+        c_ShapeDBDealloc(&cshape_db);
+        ArenaFree(&mem);
+    }
+
+    for (u32 n = 0; n < 200; ++n)
+    {
+        const ds_TransformWorld p0 = end_pose[0][n];
+        const ds_TransformWorld p1 = end_pose[1][n];
+        const u32 finite = (p0.position.x - p0.position.x == 0.0) && (p0.position.y - p0.position.y == 0.0) && (p0.position.z - p0.position.z == 0.0) && F32FiniteCheck(p0.rotation.x) && F32FiniteCheck(p0.rotation.y) && F32FiniteCheck(p0.rotation.z) && F32FiniteCheck(p0.rotation.w);
+        const u32 same = (p0.position.x == p1.position.x) && (p0.position.y == p1.position.y) && (p0.position.z == p1.position.z) && (p0.rotation.x == p1.rotation.x) && (p0.rotation.y == p1.rotation.y) && (p0.rotation.z == p1.rotation.z) && (p0.rotation.w == p1.rotation.w);
+        if (!finite || !same)
+        {
+            fprintf(stderr, "CCD metrics: body %u ends at (%g, %g, %g) and (%g, %g, %g) in two runs\n", n, p0.position.x, p0.position.y, p0.position.z, p1.position.x, p1.position.y, p1.position.z);
+            TEST_FAILURE;
+        }
+    }
+
+    return output;
+}
+
 static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
 {
     DynamicsAllocConfigTest,
@@ -5578,6 +5776,7 @@ static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
     DynamicsCCDFloorTest,
     DynamicsCCDSpinTest,
     DynamicsCCDCornerTest,
+    DynamicsCCDMetricsTest,
 };
 
 struct suite_Correctness m_dynamics_suite =
