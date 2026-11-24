@@ -566,9 +566,9 @@ position: points are offsets from a body's center of mass.
 
     normal          unit, from body 0 to body 1
     anchor0[i]      contact point i on body 0's surface, relative to body 0's center of mass
-    depth[i]        penetration depth of point i >= -speculative_distance, negative depth being
-                    a speculative contact point.  body 1's deepest (separated: closest) point
-                    is anchor0[i] - depth[i]*normal
+    depth[i]        penetration depth of point i, about >= -speculative_distance, negative
+                    depth being a speculative contact point.  body 1's deepest (separated:
+                    closest) point is anchor0[i] - depth[i]*normal
     id[i]           point i's c_PointId: the warm start matches points by it
 
 Body 1's anchors follow from ds_ContactNarrow.com_offset (com1 - com0, world axes):
@@ -578,7 +578,7 @@ Body 1's anchors follow from ds_ContactNarrow.com_offset (com1 - com0, world axe
 struct ds_SolverManifold
 {
     v3      anchor0[4];     /* contact points on body 0's surface, relative to body 0's center of mass */
-    f32     depth[4];       /* penetration depths (>= -speculative_distance; negative: separated)      */
+    f32     depth[4];       /* penetration depths (about >= -speculative_distance; < 0: separated)     */
     v3      normal;         /* unit, from body 0 to body 1                                            */
     u32     point_count;
     c_PointId id[4];        /* point ids                                                              */

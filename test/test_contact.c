@@ -15,7 +15,7 @@ shapes and rotations, the f64 positions). The reference is the distance between 
 Every manifold (world space, double) must satisfy, with L = max(h0, h1, r0, r1, |x1 - x0|) and
 tol = CONTACT_TEST_TOLERANCE * F32_EPSILON * L:
 
-    contact iff dist* <= r_sum                  (undecided within tol)
+    contact iff dist* <= r_sum + spec           (spec = speculative_distance; undecided within tol)
     c_ManifoldCheck, v_count in {1, 2}, |n| = 1
     v_i on capsule 0's surface                  |dist(v_i, core 0) - r0| <= tol
     1 point: depth_0 = r_sum - dist*            within tol
@@ -283,13 +283,14 @@ static u32 CtVerify(struct ct_Stats *stats, const struct ct_Manifold *m, const s
     const f64 tol = CONTACT_TEST_TOLERANCE * eps_l;
     const f64 r0 = a->shape.capsule.radius;
     const f64 r_sum = r0 + (f64) b->shape.capsule.radius;
+    const f64 max_dist = r_sum + (f64) g_contact_test_solver_config.speculative_distance;
     const char *fail = NULL;
 
-    if (F64AbsTest(dist - r_sum) <= tol)
+    if (F64AbsTest(dist - max_dist) <= tol)
     {
         stats->undecided += 1;
     }
-    else if (m->contact != (u32) (dist < r_sum))
+    else if (m->contact != (u32) (dist < max_dist))
     {
         fail = "contact";
     }
@@ -390,7 +391,7 @@ static u32 CtCheckPair(struct arena *tmp, struct ct_Stats *stats, const struct c
     L = F64MaxTest(L, F64MaxTest(a->shape.capsule.half_height, b->shape.capsule.half_height));
     L = F64MaxTest(L, F64MaxTest(a->shape.capsule.radius, b->shape.capsule.radius));
     const f64 tol = CONTACT_TEST_TOLERANCE * F32_EPSILON * L;
-    const f64 r_sum = (f64) a->shape.capsule.radius + (f64) b->shape.capsule.radius;
+    const f64 max_dist = (f64) a->shape.capsule.radius + (f64) b->shape.capsule.radius + (f64) g_contact_test_solver_config.speculative_distance;
 
     stats->tests += 1;
     struct ct_Manifold m_ab, m_ba;
@@ -404,7 +405,7 @@ static u32 CtCheckPair(struct arena *tmp, struct ct_Stats *stats, const struct c
         return 0;
     }
 
-    if (F64AbsTest(dist - r_sum) > tol)
+    if (F64AbsTest(dist - max_dist) > tol)
     {
         const f64 err = F64AbsTest(CtDeepest(&m_ab) - CtDeepest(&m_ba));
         if (m_ab.v_count == 1 && m_ba.v_count == 1)
@@ -634,6 +635,14 @@ struct test_Output CapsuleContactCasesTest(struct test_Environment *env)
     TEST_TRUE(CtContact(env->mem_2, &m, &a, &b));
     TEST_EQUAL(m.contact, 0);
 
+    /* speculative: core 1 at z = 1.01, 1 cm beyond r_sum (speculative_distance 0.02): one point of depth -0.01 */
+    CtCapsuleInit(&b, 1.0f, 0.5f, x_axis, D3(0.0, 0.0, 1.01));
+    TEST_TRUE(CtContact(env->mem_2, &m, &a, &b));
+    TEST_EQUAL(m.contact, 1);
+    TEST_EQUAL(m.v_count, 1);
+    TEST_TRUE(CtNearD3(m.n, D3(0.0, 0.0, 1.0)));
+    TEST_TRUE(CtNear(m.depth[0], -0.01));
+
     /* touching exactly: dist == r_sum is a contact of depth 0 */
     CtCapsuleInit(&b, 1.0f, 0.5f, x_axis, D3(0.0, 0.0, 1.0));
     TEST_TRUE(CtContact(env->mem_2, &m, &a, &b));
@@ -680,6 +689,13 @@ struct test_Output CapsuleContactCasesTest(struct test_Environment *env)
     TEST_TRUE(CtContact(env->mem_2, &m, &a, &b));
     TEST_EQUAL(m.v_count, 2);
     TEST_TRUE(CtNear(m.depth[0], 0.2) && CtNear(m.depth[1], 0.2));
+
+    /* side by side, parallel, 1 cm apart (c = (1.01, 0.3, 0)): two points only while both ends touch, so one point of depth -0.01 */
+    CtCapsuleInit(&b, 1.0f, 0.5f, QIdentity(), D3(1.01, 0.3, 0.0));
+    TEST_TRUE(CtContact(env->mem_2, &m, &a, &b));
+    TEST_EQUAL(m.v_count, 1);
+    TEST_TRUE(CtNearD3(m.n, D3(1.0, 0.0, 0.0)));
+    TEST_TRUE(CtNear(m.depth[0], -0.01));
 
     /* tilted 0.02 rad (< 2.86 deg) about z, both ends touch: two points, depths differ */
     CtCapsuleInit(&b, 1.0f, 0.5f, QUnitAxisAngle(V3(0.0f, 0.0f, 1.0f), 0.02f), D3(0.8, 0.0, 0.0));
@@ -2534,8 +2550,9 @@ c_HullSphereContact), checked in double precision in s[0]'s frame against the ex
 the sphere's center c to s[0]'s core (sphere: its center; capsule: its segment; box: exact; other hulls: the largest
 face plane distance, exact inside and a lower bound outside). With r_sum = r0 + r1 (r0 = 0 for hulls):
 
-    contact iff sd <= r_sum                     (boxes, spheres, capsules; undecided within tol); other hulls:
-                                                sat > r_sum + tol -> none, sat < -tol -> contact
+    contact iff sd <= max_dist                  (boxes, spheres, capsules; undecided within tol); other hulls:
+                                                sat > max_dist + tol -> none, sat < -tol -> contact. max_dist =
+                                                r_sum + speculative_distance for spheres and capsules, r_sum for hulls
     c_ManifoldCheck, v_count = 1, |n| = 1
     depth = r_sum - sd                          (hulls: shallow only for boxes; inside: r - sat)
     v on s[0]'s surface, v - depth n on the sphere's surface (|v - depth n - c| = r1); random hulls' faces are
@@ -2654,6 +2671,11 @@ static const char *SpVerify(struct sp_Stats *stats, const ds_Array(c_Manifold) *
     const f64 eps_l = F32_EPSILON * L;
     const f64 tol = CONTACT_TEST_TOLERANCE * eps_l;
     const f64 r_sum = ref->r0 + r1;
+    f64 max_dist = r_sum;
+    if (ref->kind != 2)
+    {
+        max_dist += (f64) g_contact_test_solver_config.speculative_distance;
+    }
     const u32 contact = (result->length == 1);
     stats->tests += 1;
 
@@ -2661,15 +2683,15 @@ static const char *SpVerify(struct sp_Stats *stats, const ds_Array(c_Manifold) *
     {
         return "invalid manifold";
     }
-    if (F64AbsTest(ref->sd - r_sum) <= tol)
+    if (F64AbsTest(ref->sd - max_dist) <= tol)
     {
         stats->undecided += 1;
     }
-    else if (ref->exact && contact != (u32) (ref->sd < r_sum))
+    else if (ref->exact && contact != (u32) (ref->sd < max_dist))
     {
         return "contact";
     }
-    else if (!ref->exact && contact && ref->sd > r_sum + tol)
+    else if (!ref->exact && contact && ref->sd > max_dist + tol)
     {
         return "contact, but the reference separates";
     }
@@ -2817,7 +2839,8 @@ static u32 SpCheckPair(struct arena *tmp, struct sp_Stats *stats, const sp_Conta
 /*
  * The sphere's center relative to s[0] (local), by mode:
  *  0: random near s[0]
- *  1: on the touching shell: core distance r_sum * (1 +- 1e-6 .. 1e-2)
+ *  1: on the touching shell: core distance r_sum * (1 +- 1e-6 .. 1e-2); spheres and capsules: half of the time
+ *     the speculative shell r_sum + speculative_distance instead
  *  2: deep: core distance 0 .. 0.5 r_sum (hulls: inside)
  *  3: degenerate: at s[0]'s core (sphere: its center; capsule: on its axis; hull: its center of mass)
  */
@@ -2857,7 +2880,12 @@ static struct d3 SpCenterNear(const u32 kind, const struct c_Shape *s0, const st
         {
             const f64 rel[] = { 1e-6, 1e-4, 1e-2 };
             const f64 sign = (RngU64Range(0, 1)) ? 1.0 : -1.0;
-            const f64 d = r_sum * (1.0 + sign * rel[RngU64Range(0, 2)]);
+            f64 shell = r_sum;
+            if (kind != 2 && RngU64Range(0, 1))
+            {
+                shell += (f64) g_contact_test_solver_config.speculative_distance;
+            }
+            const f64 d = shell * (1.0 + sign * rel[RngU64Range(0, 2)]);
             return D3Add(core, D3Scale(out, d));
         }
         case 2:
@@ -2968,6 +2996,13 @@ struct test_Output SphereContactCasesTest(struct test_Environment *env)
     t[1].position = V3F64(1.6, 0.0, 0.0);
     r = CtConvexContact(env->mem_2, c_SphereContact, &cache, s[0], &t[0], s[1], &t[1]);
     TEST_EQUAL(r.length, 0);
+    /* speculative (speculative_distance 0.02): 1 cm apart, one point of depth -0.01; 3 cm apart, none */
+    t[1].position = V3F64(1.51, 0.0, 0.0);
+    r = CtConvexContact(env->mem_2, c_SphereContact, &cache, s[0], &t[0], s[1], &t[1]);
+    TEST_TRUE(r.length == 1 && CtNear(r.buf->depth[0], -0.01) && CtNearD3(D3V3(r.buf->n), D3(1.0, 0.0, 0.0)) && CtNearD3(D3V3(r.buf->v[0]), D3(1.0, 0.0, 0.0)));
+    t[1].position = V3F64(1.53, 0.0, 0.0);
+    r = CtConvexContact(env->mem_2, c_SphereContact, &cache, s[0], &t[0], s[1], &t[1]);
+    TEST_EQUAL(r.length, 0);
     t[1].position = V3F64(1.5, 0.0, 0.0);
     r = CtConvexContact(env->mem_2, c_SphereContact, &cache, s[0], &t[0], s[1], &t[1]);
     TEST_TRUE(r.length == 1 && r.buf->depth[0] == 0.0f);
@@ -2986,6 +3021,10 @@ struct test_Output SphereContactCasesTest(struct test_Environment *env)
     t[1].position = V3F64(0.0, 0.5, 1.25);
     r = CtConvexContact(env->mem_2, c_CapsuleSphereContact, &cache, s[0], &t[0], s[1], &t[1]);
     TEST_TRUE(r.length == 1 && CtNear(r.buf->depth[0], 0.25) && CtNearD3(D3V3(r.buf->n), D3(0.0, 0.0, 1.0)) && CtNearD3(D3V3(r.buf->v[0]), D3(0.0, 0.5, 1.0)));
+    /* beside, 1 cm apart: speculative, depth -0.01 */
+    t[1].position = V3F64(0.0, 0.5, 1.51);
+    r = CtConvexContact(env->mem_2, c_CapsuleSphereContact, &cache, s[0], &t[0], s[1], &t[1]);
+    TEST_TRUE(r.length == 1 && CtNear(r.buf->depth[0], -0.01) && CtNearD3(D3V3(r.buf->n), D3(0.0, 0.0, 1.0)) && CtNearD3(D3V3(r.buf->v[0]), D3(0.0, 0.5, 1.0)));
     t[1].position = V3F64(0.0, 2.25, 0.0);
     r = CtConvexContact(env->mem_2, c_CapsuleSphereContact, &cache, s[0], &t[0], s[1], &t[1]);
     TEST_TRUE(r.length == 1 && CtNear(r.buf->depth[0], 0.25) && CtNearD3(D3V3(r.buf->n), D3(0.0, 1.0, 0.0)));

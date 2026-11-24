@@ -47,7 +47,7 @@ u32 c_ManifoldCheck(const struct c_Manifold *cm)
 	{
 		valid = V3FiniteCheck(cm->v[i])
 		     && F32FiniteCheck(cm->depth[i])
-		     && cm->depth[i] >= -g_solver_config->speculative_distance;
+		     && cm->depth[i] >= -2.0f*g_solver_config->speculative_distance;
 	}
 
 	return valid;
@@ -98,18 +98,21 @@ struct sat_EdgeQuery
 /********************************** SHAPE CONTACTS **********************************/
 
 /*
+ * max_dist = r_sum + speculative_distance: pairs are kept out to a separation of speculative_distance.
+ *
  * Preconditions:
- *      radii >= 0                              (otherwise r_sum - dist can be negative)
- *      r_sum == 0 or ~1.1e-19 <= r_sum <= ~1.8e19 m
- *                                              (r_sum^2 neither underflows nor overflows; below, a subnormal
- *                                              r_sum^2 can round up, so dist > r_sum; above, r_sum^2 = Inf accepts
- *                                              any distance: dist = Inf, depth = -Inf, n = 0)
+ *      radii >= 0                              (otherwise max_dist can be negative and max_dist^2 accepts
+ *                                              distances up to |max_dist|)
+ *      ~1.1e-19 <= max_dist <= ~1.8e19 m       (max_dist^2 neither underflows nor overflows; below, a subnormal
+ *                                              max_dist^2 can round up, so dist > max_dist; above, max_dist^2 = Inf
+ *                                              accepts any distance: dist = Inf, depth = -Inf, n = 0)
  *      finite positions, unit rotation
  *      IEEE subnormals (no flush-to-zero), correctly rounded sqrtf
  *
  * Guarantees (given the preconditions):
- *      depth >= 0 exactly: the branch requires dist_sq <= fl(r_sum^2); a correctly rounded sqrt is monotone and
- *      sqrt(fl(x^2)) = |x| in binary floating point (no under/overflow), so dist <= r_sum.
+ *      dist <= max_dist exactly: the branch requires dist_sq <= fl(max_dist^2); a correctly rounded sqrt is monotone
+ *      and sqrt(fl(x^2)) = |x| in binary floating point (no under/overflow). So depth >= r_sum - max_dist: down to
+ *      -speculative_distance, and half an ulp of max_dist further when r_sum + speculative_distance rounds up.
  *
  *      n finite: dist > 0 implies dist >= sqrt(1.4e-45) ~ 3.7e-23 (smallest positive subnormal dist_sq), so
  *      1/dist <= 2.7e22, and |n_i| = |p_i| / dist <= sqrt(1.5) ~ 1.22 (a subnormal p_i^2 rounds down by at
@@ -129,9 +132,10 @@ u32 c_SphereContact(struct c_Manifold *out, struct ds_ConvexCache *cache, const 
     u32 manifold_count = 0;
 
     const f32 r_sum = s0->sphere.radius + s1->sphere.radius;
+    const f32 max_dist = r_sum + g_solver_config->speculative_distance;
     const v3 p = V3F64InverseTransform(t1->position, t0);
     const f32 dist_sq = V3LengthSquared(p);
-    if (dist_sq <= r_sum*r_sum)
+    if (dist_sq <= max_dist*max_dist)
     {
         /* Note: When |p| is 0 or close to 0, the normal becomes arbitrary or noise, respectively. */
         const f32 dist = F32Sqrt(dist_sq);
@@ -174,11 +178,12 @@ u32 c_CapsuleSphereContact(struct c_Manifold *out, struct ds_ConvexCache *cache,
 
     const v3 p = V3F64InverseTransform(t1->position, t0);
     const f32 r_sum = s0->capsule.radius + s1->sphere.radius;
+    const f32 max_dist = r_sum + g_solver_config->speculative_distance;
 
     const f32 clamp_y = F32Clamp(p.y, -s0->capsule.half_height, s0->capsule.half_height);
     const f32 diff_y = p.y - clamp_y;
     const f32 dist_sq = p.x*p.x + p.z*p.z + diff_y*diff_y;
-    if (dist_sq <= r_sum*r_sum)
+    if (dist_sq <= max_dist*max_dist)
     {
         manifold_count = 1;
         struct c_Manifold *m = out;
@@ -192,7 +197,6 @@ u32 c_CapsuleSphereContact(struct c_Manifold *out, struct ds_ConvexCache *cache,
         m->v[0] = V3Add(V3(0.0f, clamp_y, 0.0f), V3Scale(m->n, s0->capsule.radius));
         m->id[0] = c_PointIdConstant(0);
         m->depth[0] = r_sum - dist;
-        ds_Assert(m->depth[0] >= 0.0f);
     }
 
     return manifold_count;
@@ -242,8 +246,9 @@ static u32 c_CapsuleParallelManifold(struct c_Manifold *manifold, const v3 c, co
 }
 
 /*
- * Capsule vs capsule: local manifold in s0's frame (n from s0 to s1); one point, or two when the
- * capsules are nearly parallel and lie side by side.
+ * Capsule vs capsule: local manifold in s0's frame (n from s0 to s1), kept out to a separation of
+ * speculative_distance; one point, or two when the capsules are nearly parallel and lie side by side,
+ * both ends touching.
  */
 u32 c_CapsuleContact(struct c_Manifold *out, struct ds_ConvexCache *cache, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
 {
@@ -253,6 +258,7 @@ u32 c_CapsuleContact(struct c_Manifold *out, struct ds_ConvexCache *cache, const
     u32 manifold_count = 0;
 
     const f32 r_sum = s0->capsule.radius + s1->capsule.radius;
+    const f32 max_dist = r_sum + g_solver_config->speculative_distance;
     const q inv = QConj(t0->rotation);
     const v3 c = V3F64InverseTransform(t1->position, t0);
     const v3 e = QUnitRotate(inv, QYUnitRotate(t1->rotation, s1->capsule.half_height));
@@ -289,7 +295,7 @@ u32 c_CapsuleContact(struct c_Manifold *out, struct ds_ConvexCache *cache, const
     }
 
     const f32 dist_sq = V3LengthSquared(Q1_shift);
-    if (dist_sq > r_sum*r_sum)
+    if (dist_sq > max_dist*max_dist)
     {
         return manifold_count;
     }
