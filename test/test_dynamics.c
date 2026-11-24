@@ -4979,6 +4979,7 @@ static struct test_Output DynamicsAllocConfigTest(struct test_Environment *env)
     TEST_TRUE(pipeline.config.solver.max_linear_velocity_magnitude_inv == 0.0f);
     TEST_TRUE(pipeline.config.solver.max_angular_velocity_magnitude_inv == 0.25f);
     TEST_TRUE(pipeline.config.solver.linear_slop == 0.002f);
+    TEST_TRUE(pipeline.config.solver.speculative_distance == 0.008f);
     TEST_EQUAL(9u, pipeline.config.numerics.gjk_max_iterations);
     TEST_TRUE(pipeline.config.numerics.capsule_parallel_max_degrees == 10.0f);
     TEST_EQUAL(1u, pipeline.runtime.draw_config.draw_shapes);     /* the draw config is the default, outside the simulation config */

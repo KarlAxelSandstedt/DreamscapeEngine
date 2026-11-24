@@ -58,6 +58,7 @@ struct ds_SolverConfig ds_SolverConfigDerive(const struct ds_SolverConfig *pendi
     config.max_angular_velocity_magnitude_inv = (0.0f == config.max_angular_velocity_magnitude)
                                               ? 0.0f
                                               : 1.0f / config.max_angular_velocity_magnitude;
+    config.speculative_distance = 4.0f*config.linear_slop;
 
     return config;
 }
@@ -369,6 +370,8 @@ void ds_BodyUpdateOrientationRange(struct ds_Dynamics *pipeline, struct ds_Proxy
         {
             shape = pipeline->shape_pool.buf + j;
             dirty->bbox = ds_ShapeWorldBbox(pipeline, shape);
+            dirty->bbox.min = V3AddConstant(dirty->bbox.min, -g_solver_config->speculative_distance);
+            dirty->bbox.max = V3AddConstant(dirty->bbox.max, g_solver_config->speculative_distance);
             struct BVHNode *node = pipeline->dynamic_bvh.pool.buf + shape->proxy;
             struct aabb *proxy = &node->bbox;
             

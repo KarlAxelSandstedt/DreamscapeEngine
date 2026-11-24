@@ -565,7 +565,9 @@ position: points are offsets from a body's center of mass.
 
     normal          unit, from body 0 to body 1
     anchor0[i]      contact point i on body 0's surface, relative to body 0's center of mass
-    depth[i]        penetration depth (>= 0) of point i: body 1's deepest point is anchor0[i] - depth[i]*normal
+    depth[i]        penetration depth of point i >= -speculative_distance, negative depth being
+                    a speculative contact point.  body 1's deepest (separated: closest) point
+                    is anchor0[i] - depth[i]*normal
     id[i]           point i's c_PointId: the warm start matches points by it
 
 Body 1's anchors follow from ds_ContactNarrow.com_offset (com1 - com0, world axes):
@@ -575,7 +577,7 @@ Body 1's anchors follow from ds_ContactNarrow.com_offset (com1 - com0, world axe
 struct ds_SolverManifold
 {
     v3      anchor0[4];     /* contact points on body 0's surface, relative to body 0's center of mass */
-    f32     depth[4];       /* penetration depths (>= 0)                                              */
+    f32     depth[4];       /* penetration depths (>= -speculative_distance; negative: separated)      */
     v3      normal;         /* unit, from body 0 to body 1                                            */
     u32     point_count;
     c_PointId id[4];        /* point ids                                                              */
@@ -1325,6 +1327,7 @@ struct ds_SolverConfig
 	f32 	linear_dampening;	/* >= 0 : coefficient in diff. eq. dv/dt = -coeff*v */
 	f32 	angular_dampening;	/* >= 0 : coefficient in diff. eq. dv/dt = -coeff*v */
 	f32 	linear_slop;		/* > 0 : allowed penetration (m) before the position solver corrects */
+	f32 	speculative_distance;	/* Derived: 4 * linear_slop: contact points are kept out to this separation (m) */
 	f32 	restitution_threshold; 	/* >= 0 : restitution applies if separating_velocity < -threshold */
 
 	u32 	sleep_enabled;		/* bool : enable sleeping of bodies  */

@@ -1107,8 +1107,8 @@ static u32 ds_RebuildJobSetup(const u32 job_index)
                 struct BVHNode *node = pipeline->dynamic_bvh.pool.buf + leaf->index;
                 const struct ds_Shape *shape = pipeline->shape_pool.buf + node->bt_child[0];
                 node->bbox = ds_ShapeWorldBbox(pipeline, shape);
-                node->bbox.min = V3AddConstant(node->bbox.min, -shape->margin);
-                node->bbox.max = V3AddConstant(node->bbox.max, shape->margin);
+                node->bbox.min = V3AddConstant(node->bbox.min, -(pipeline->config.solver.speculative_distance + shape->margin));
+                node->bbox.max = V3AddConstant(node->bbox.max, pipeline->config.solver.speculative_distance + shape->margin);
                 leaf->center = V3Scale(V3Add(node->bbox.min, node->bbox.max), 0.5f);
                 thread->min[0] = V3Min(thread->min[0], leaf->center);
                 thread->max[0] = V3Max(thread->max[0], leaf->center);

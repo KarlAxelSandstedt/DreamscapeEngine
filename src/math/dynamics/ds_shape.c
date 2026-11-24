@@ -81,6 +81,8 @@ ds_ShapeId ds_ShapeAdd(struct ds_Dynamics *pipeline, const struct ds_ShapePrefab
 	              : pipeline->config.numerics.proxy_margin_min;
 
 	struct aabb bbox_proxy = ds_ShapeWorldBbox(pipeline, shape);
+	bbox_proxy.min = V3AddConstant(bbox_proxy.min, -pipeline->config.solver.speculative_distance);
+	bbox_proxy.max = V3AddConstant(bbox_proxy.max, pipeline->config.solver.speculative_distance);
     if (ds_BodyDynamicCheck(body))
     {
         ds_SolverSetWakeUp(pipeline, body->set);

@@ -47,7 +47,7 @@ u32 c_ManifoldCheck(const struct c_Manifold *cm)
 	{
 		valid = V3FiniteCheck(cm->v[i])
 		     && F32FiniteCheck(cm->depth[i])
-		     && cm->depth[i] >= 0.0f;
+		     && cm->depth[i] >= -g_solver_config->speculative_distance;
 	}
 
 	return valid;
