@@ -1278,7 +1278,8 @@ static void sat_CacheSeparation(struct SATCache *cache, const v3 normal, const f
 enum sat_PairType
 {
 	SAT_PAIR_HULL,		/* a hull: Gauss map pruned edge pairs, axes oriented by center_0 */
-	SAT_PAIR_TRIANGLE,	/* a mesh triangle (DcelTriStub, pl[1] = +-n_t): knife edges (HullTriangleEdgeCheck) */
+	SAT_PAIR_TRIANGLE,	/* a mesh triangle (DcelTriStub, pl[1] = +-n_t): one-sided, its front face pl[1][0] the only face
+				   axis; knife edges (HullTriangleEdgeCheck) */
 };
 
 /* a pair for the SAT: dcels, vertices and face planes in a common frame (s0's) */
@@ -1402,7 +1403,8 @@ static u32 sat_PairContact(struct c_Manifold *m, sat_FeatureId features[4], stru
 		return 0;
 	}
 
-	if (HullFaceQuery(&f_query[1], pl[1], h[1]->f_count, v[0], h[0]->v_count))
+	const u32 f_count_1 = (pair->type == SAT_PAIR_TRIANGLE) ? 1 : h[1]->f_count;
+	if (HullFaceQuery(&f_query[1], pl[1], f_count_1, v[0], h[0]->v_count))
 	{
 		sat_CacheSeparation(cache, V3Negate(f_query[1].normal), f_query[1].depth);
 		return 0;
@@ -1532,10 +1534,8 @@ struct c_MeshTri
  * (internal edges, output). The shape loops in between test triangles against the convex shape as stored (sphere at
  * the origin, capsule along y, hull with its stored planes).
  */
-//TODO one-sided hull-triangle contacts: the cull keeps no hysteresis yet (box3d caches the culled offset), and the
-//     SAT still takes the triangle's back face as an axis, so a hull whose center of mass is in front can be pushed
-//     out the back. The mesh TOI's early-outs (ds_TimeOfImpactConcave) are only safe once a triangle pushes to its
-//     front only; spheres and capsules do, the mover culls back sides.
+//TODO one-sided hull-triangle contacts: the cull keeps no hysteresis yet (box3d caches the culled offset, so a hull
+//     whose center of mass hovers about -linear_slop does not flicker).
 struct c_MeshContactHelper
 {
     const struct mesh *         mesh;
@@ -1971,8 +1971,8 @@ static void c_MeshHullTriDelayed(struct c_MeshTri *r, const struct dcel *stub, c
 /*
  * Hull vs triangle: none while the hull's center of mass (center, its frame) is more than linear_slop behind the
  * triangle's plane; otherwise sat_PairContact with the hull as s0 (as stored) and the triangle as s1 (SAT_PAIR_TRIANGLE:
- * a DcelTriStub with planes +-n_t, in the hull's frame): n from the hull to the mesh, v on the hull (the mesh
- * convention). Every tested triangle that is not culled keeps a record: its contact, or its separating axis for the
+ * a DcelTriStub with planes +-n_t, in the hull's frame, the front one its only face axis): n from the hull to the mesh,
+ * v on the hull (the mesh convention). Every tested triangle that is not culled keeps a record: its contact, or its separating axis for the
  * cache.
  */
 static void c_MeshHullTriangles(struct c_MeshContactHelper *helper, const struct ds_ConcaveCache *cache, const struct dcel *hull, const v3 center)
