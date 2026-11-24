@@ -1970,10 +1970,10 @@ static void c_MeshHullTriDelayed(struct c_MeshTri *r, const struct dcel *stub, c
 
 /*
  * Hull vs triangle: none while the hull's center of mass (center, its frame) is more than linear_slop behind the
- * triangle's plane; otherwise sat_PairContact with the hull as s0 (as stored) and the triangle as s1 (SAT_PAIR_TRIANGLE:
+ * triangle's plane, or, once culled, while its offset stays within linear_slop of the cached one; otherwise sat_PairContact with the hull as s0 (as stored) and the triangle as s1 (SAT_PAIR_TRIANGLE:
  * a DcelTriStub with planes +-n_t, in the hull's frame, the front one its only face axis): n from the hull to the mesh,
- * v on the hull (the mesh convention). Every tested triangle that is not culled keeps a record: its contact, or its separating axis for the
- * cache.
+ * v on the hull (the mesh convention). Every tested triangle keeps a record: its contact, its separating axis, or
+ * (culled) its offset, for the cache.
  */
 static void c_MeshHullTriangles(struct c_MeshContactHelper *helper, const struct ds_ConcaveCache *cache, const struct dcel *hull, const v3 center)
 {
@@ -1992,19 +1992,6 @@ static void c_MeshHullTriangles(struct c_MeshContactHelper *helper, const struct
         const u32 has_area = TriCcwNormalTryCompute(&n_t, tri[0], tri[1], tri[2]);
         ds_AssertString(has_area, "mesh triangle without area (c_Shape precondition)");
 
-        if (V3Dot(n_t, V3Sub(center, tri[0])) < -g_solver_config->linear_slop)
-        {
-            continue;
-        }
-
-        /* the triangle as s1: face 0 ccw about n_t, face 1 its back */
-        struct plane pl_tri[2] = { Plane(n_t, tri[0]), Plane(V3Negate(n_t), tri[0]) };
-        struct dcel stub = DcelTriStub();
-        stub.v = tri;
-        stub.plane = pl_tri;
-        /* center_0 orients HullEdgeCheck's axes; the triangle's edge check needs none */
-        const struct sat_Pair pair = { .type = SAT_PAIR_TRIANGLE, .h = { hull, &stub }, .v = { hull->v, tri }, .pl = { hull->plane, pl_tri }, .center_0 = V3(0.0f, 0.0f, 0.0f) };
-
         /* the triangle's cache: a linear search over at most cache_count_max entries (small next to the SAT) */
         const struct SATCache *old_cache = NULL;
         for (u32 ci = 0; ci < cache->tri_count; ++ci)
@@ -2015,6 +2002,31 @@ static void c_MeshHullTriangles(struct c_MeshContactHelper *helper, const struct
                 break;
             }
         }
+
+        /* the cull, with hysteresis: a culled triangle stays culled while the offset moves less than linear_slop */
+        const f32 slop = g_solver_config->linear_slop;
+        const f32 offset = V3Dot(n_t, V3Sub(center, tri[0]));
+        const u32 backside = (old_cache && old_cache->type == SAT_CACHE_BACKSIDE);
+        const u32 culled = (backside && F32Abs(old_cache->depth - offset) < slop);
+        if (culled || offset < -slop)
+        {
+            struct c_MeshTri *r = c_MeshContactPush(helper, tri_index);
+            r->cache = (struct SATCache) { .type = SAT_CACHE_BACKSIDE, .depth = (culled) ? old_cache->depth : offset };
+            continue;
+        }
+
+        if (backside)
+        {
+            old_cache = NULL;
+        }
+
+        /* the triangle as s1: face 0 ccw about n_t, face 1 its back */
+        struct plane pl_tri[2] = { Plane(n_t, tri[0]), Plane(V3Negate(n_t), tri[0]) };
+        struct dcel stub = DcelTriStub();
+        stub.v = tri;
+        stub.plane = pl_tri;
+        /* center_0 orients HullEdgeCheck's axes; the triangle's edge check needs none */
+        const struct sat_Pair pair = { .type = SAT_PAIR_TRIANGLE, .h = { hull, &stub }, .v = { hull->v, tri }, .pl = { hull->plane, pl_tri }, .center_0 = V3(0.0f, 0.0f, 0.0f) };
 
         struct c_MeshTri *r = c_MeshContactPush(helper, tri_index);
         struct arena *mem_tmp = ArenaPushScratch();

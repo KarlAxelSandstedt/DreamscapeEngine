@@ -331,6 +331,7 @@ enum sat_CacheType
 	SAT_CACHE_CONTACT_FV,   /* Face-Vertex Contact      */
 	SAT_CACHE_CONTACT_EE,   /* Edge-Edge Contact        */
 	SAT_CACHE_NONE,         /* Nothing to cache (fallback contact); never stored in a ds_ConcaveCache */
+	SAT_CACHE_BACKSIDE,     /* A mesh triangle culled behind (ds_ConcaveCache only) */
 	SAT_CACHE_COUNT,
 };
 
@@ -373,6 +374,9 @@ struct SATCache
      * type == NONE:
      *  feature[i].type == FACE => i has the reference face
      *  feature[i].type == VERTEX => i has the deepest vertex
+     *
+     * type == BACKSIDE:
+     *  depth == the hull's center of mass offset from the triangle's plane when culled (< -linear_slop); the rest 0
      */
     sat_FeatureId   feature[2];
     f32             depth;      
@@ -517,7 +521,7 @@ u32                     c_HullContact(struct c_Manifold *out, struct ds_ConvexCa
  * the mesh), pushed onto tmp. The query records every candidate triangle on one of the thread's scratch arenas:
  * more than it holds (about 8,700 at the default 1 MiB) is fatal. cache is in-out and always valid (empty: tri_count 0, with or without an
  * array); on return its first tri_count entries hold the hull's SAT entries by triangle (at most cache_count_max,
- * never SAT_CACHE_NONE), else tri_count is 0. The array comes from slab and grows when the entries do not fit.
+ * never SAT_CACHE_NONE; SAT_CACHE_BACKSIDE for a culled triangle), else tri_count is 0. The array comes from slab and grows when the entries do not fit.
  */
 ds_Array(c_Manifold)    c_MeshContact(struct arena *tmp, ds_TSlab(ds_TriCache) *slab, struct ds_ConcaveCache *cache, const struct c_Shape *mesh, const ds_TransformWorld *t_mesh, const struct c_Shape *convex, const ds_TransformWorld *t_convex);
 

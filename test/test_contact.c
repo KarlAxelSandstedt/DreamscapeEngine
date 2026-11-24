@@ -4121,7 +4121,10 @@ static void McHullPrint(const ds_Array(c_Manifold) *r, const struct ch_Hull *h, 
  * through the face, tilted 10 degrees about x, its base center 0.3 H above: its center of mass is 0.05 H in front,
  * its highest corner about 0.32 H above and its apex about 0.68 H below, so the triangle's back face would separate
  * least (its tilted base face separates far less, the triangle being large). One-sided, the contact pushes the hull
- * to the front: n = -y, deepest = the apex's depth.
+ * to the front: n = -y, deepest = the apex's depth. Last the cull's hysteresis (S = 1, a box of half width 0.05 over
+ * the face, the cache carried): culled with its center of mass at -1.02 slop, the cache holding that offset
+ * (SAT_CACHE_BACKSIDE); with that cache still culled at -0.98 slop, keeping the offset, and a contact again at 0;
+ * without a cache, a contact at -0.98 slop.
  */
 struct test_Output MeshHullCasesTest(struct test_Environment *env)
 {
@@ -4311,6 +4314,41 @@ struct test_Output MeshHullCasesTest(struct test_Environment *env)
             g_dynamics_worker = prev;
             TEST_FAILURE;
         }
+    }
+
+    {
+        struct arena record = *env->mem_2;
+        const struct c_Shape mesh = McSingleTriangle(env->mem_2, 1.0f);
+        const v3 hw = V3(0.05f, 0.05f, 0.05f);
+        struct c_Shape box = { .type = C_SHAPE_CONVEX_HULL };
+        box.hull = DcelBox(env->mem_2, hw);
+        const ds_TransformWorld t_mesh = { .rotation = QIdentity(), .position = V3F64(0.0, 0.0, 0.0) };
+        struct ds_ConcaveCache carried = { .tri = { .buf = NULL, .length = 0, .base = U32_MAX } };
+        const f64 height[4] = { -1.02*slop, -0.98*slop, -0.98*slop, 0.0 };
+        const u32 use_carried[4] = { 1, 1, 0, 1 };
+        const u32 contact_expected[4] = { 0, 0, 1, 1 };
+        for (u32 k = 0; k < 4; ++k)
+        {
+            struct ch_Hull h;
+            ChHullInit(&h, &box, 1, hw, QIdentity(), D3(1.0 / 3.0, height[k], 1.0 / 3.0));
+            none.tri_count = 0;
+            struct ds_ConcaveCache *cache = (use_carried[k]) ? &carried : &none;
+            const ds_Array(c_Manifold) r = c_MeshContact(env->mem_2, &slab, cache, &mesh, &t_mesh, &h.shape, &h.t);
+            u32 ok = (r.length == contact_expected[k]);
+            if (k < 2)
+            {
+                ok = ok && carried.tri_count == 1 && carried.tri.buf[0].sat.type == SAT_CACHE_BACKSIDE
+                  && F64AbsTest((f64) carried.tri.buf[0].sat.depth + 1.02*slop) <= 1e-6;
+            }
+            if (!ok)
+            {
+                fprintf(stderr, "Mesh hull hysteresis step %u (center of mass at %g): manifolds %u, carried entries %u\n", k, height[k], r.length, carried.tri_count);
+                *env->mem_2 = record;
+                g_dynamics_worker = prev;
+                TEST_FAILURE;
+            }
+        }
+        *env->mem_2 = record;
     }
 
     ds_TSlabDealloc(slab);
