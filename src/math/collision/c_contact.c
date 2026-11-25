@@ -659,9 +659,9 @@ u32 c_HullCapsuleContact(struct c_Manifold *out, struct ds_ConvexCache *cache, c
 /*
  * Face query (Gregorius): every face of one hull (planes pl, in the common frame) against the other hull's vertices
  * v; a face's separation is the smallest signed distance of v. query keeps the largest; returns 1 at a separating
- * face (separation > 0).
+ * face (separation > max_separation).
  */
-static u32 HullFaceQuery(struct sat_FaceQuery *query, const struct plane *pl, const u32 f_count, const v3 *v, const u32 v_count)
+static u32 HullFaceQuery(struct sat_FaceQuery *query, const struct plane *pl, const u32 f_count, const v3 *v, const u32 v_count, const f32 max_separation)
 {
 	for (u32 fi = 0; fi < f_count; ++fi)
 	{
@@ -685,7 +685,7 @@ static u32 HullFaceQuery(struct sat_FaceQuery *query, const struct plane *pl, co
 			query->normal = pl[fi].normal;
 		}
 
-		if (min_dist > 0.0f)
+		if (min_dist > max_separation)
 		{
 			return 1;
 		}
@@ -770,8 +770,8 @@ static void HullEdgeCheck(struct sat_EdgeQuery *query, const struct dcel *const 
 	}
 }
 
-/* Edge query (Gregorius): every edge pair once. Returns 1 at a separating axis (separation > 0). */
-static u32 HullEdgeQuery(struct sat_EdgeQuery *query, const struct dcel *const h[2], const v3 *const v[2], const struct plane *const pl[2], const v3 center_1)
+/* Edge query (Gregorius): every edge pair once. Returns 1 at a separating axis (separation > max_separation). */
+static u32 HullEdgeQuery(struct sat_EdgeQuery *query, const struct dcel *const h[2], const v3 *const v[2], const struct plane *const pl[2], const v3 center_1, const f32 max_separation)
 {
 	for (u32 e1 = 0; e1 < h[0]->e_count; ++e1)
 	{
@@ -780,7 +780,7 @@ static u32 HullEdgeQuery(struct sat_EdgeQuery *query, const struct dcel *const h
 		{
 			if (h[1]->e[e2].twin < e2) { continue; }
 			HullEdgeCheck(query, h, v, pl, center_1, e1, e2);
-			if (query->depth > 0.0f)
+			if (query->depth > max_separation)
 			{
 				return 1;
 			}
@@ -806,7 +806,7 @@ static u32 HullEdgeContact(struct c_Manifold *m, struct SATCache *cache, const s
 	m->v_count = 1;
 	m->n = query->normal;
 	m->v[0] = SegmentBc(&query->s1, t1);
-	m->depth[0] = F32Max(0.0f, -query->depth);
+	m->depth[0] = -query->depth;
 	m->id[0] = c_PointIdInit(C_POINT_EDGE, query->e1, C_POINT_EDGE, query->e2);
 
 	cache->type = SAT_CACHE_CONTACT_EE;
@@ -876,8 +876,11 @@ static void HullTriangleEdgeCheck(struct sat_EdgeQuery *query, const struct dcel
 	}
 }
 
-/* Edge query vs a triangle: every hull edge once against the triangle's three edges. Returns 1 at a separating axis. */
-static u32 HullTriangleEdgeQuery(struct sat_EdgeQuery *query, const struct dcel *h, const v3 *v, const struct plane *pl, const v3 tri[3], const v3 n_t)
+/*
+ * Edge query vs a triangle: every hull edge once against the triangle's three edges. Returns 1 at a separating axis
+ * (separation > max_separation).
+ */
+static u32 HullTriangleEdgeQuery(struct sat_EdgeQuery *query, const struct dcel *h, const v3 *v, const struct plane *pl, const v3 tri[3], const v3 n_t, const f32 max_separation)
 {
 	for (u32 e1 = 0; e1 < h->e_count; ++e1)
 	{
@@ -885,7 +888,7 @@ static u32 HullTriangleEdgeQuery(struct sat_EdgeQuery *query, const struct dcel 
 		for (u32 a = 0; a < 3; ++a)
 		{
 			HullTriangleEdgeCheck(query, h, v, pl, tri, n_t, e1, a);
-			if (query->depth > 0.0f)
+			if (query->depth > max_separation)
 			{
 				return 1;
 			}
@@ -923,12 +926,12 @@ static c_PointId c_PointIdPair(const u32 b, const u32 type_b, const u32 index_b,
  * Sutherland-Hodgman 3D polygon clipping + negative face voronoi region projection: 
  *
  *  Clip polygon against orthogonal side-planes of the input face. Any clip points 
- *  infront of the face is discarded, after which the remaining points are projected
- *  onto the face and stored in cp, with their corresponding positive depth in cp_depth.
+ *  infront of the face by more than max_separation is discarded, after which the remaining points are projected
+ *  onto the face and stored in cp, with their corresponding depth (>= -max_separation) in cp_depth.
  *  
  *            fv: Expected to be filled with face vertices in counter-clockwise order.
  */
-static void PolygonCcwClipNegativeFaceAndProject(struct arena *mem, sat_FeatureId **features, c_PointId **ids, v3 **cp, f32 **cp_depth, u32 *cp_deepest, u32 *cp_count, f32 *max_depth, u32 *deepest_feature, const struct dcel *const h[2], const v3 *const v[2], const u32 f[2], const u32 b_f, const v3 face_normal)
+static void PolygonCcwClipNegativeFaceAndProject(struct arena *mem, sat_FeatureId **features, c_PointId **ids, v3 **cp, f32 **cp_depth, u32 *cp_deepest, u32 *cp_count, f32 *max_depth, u32 *deepest_feature, const struct dcel *const h[2], const v3 *const v[2], const u32 f[2], const u32 b_f, const v3 face_normal, const f32 max_separation)
 {
     const u32 b_v = 1 - b_f;
 	const struct dcelFace *ref_face = h[b_f]->f + f[b_f];
@@ -1042,7 +1045,7 @@ static void PolygonCcwClipNegativeFaceAndProject(struct arena *mem, sat_FeatureI
 		(*cp)[*cp_count] = pcp->v;
         (*cp_depth)[ *cp_count ] = -PlanePointSignedDistance(&ref_plane, (*cp)[ *cp_count ]);
 
-		if ((*cp_depth)[*cp_count] >= 0.0f)
+		if ((*cp_depth)[*cp_count] >= -max_separation)
 		{
             (*features)[*cp_count] = pcp->feature[ pcp->index ];
             (*ids)[*cp_count] = c_PointIdInit(C_POINT_EDGE_OF_0 + pcp->owner[0], pcp->edge[0], C_POINT_EDGE_OF_0 + pcp->owner[1], pcp->edge[1]);
@@ -1232,7 +1235,7 @@ static u32 PolygonCcwContact(struct c_Manifold *cm, sat_FeatureId cm_features[4]
  * pl: both hulls' face planes in v's frame; the incident face is the face of b_v most anti-parallel to the reference
  * normal (stored planes, as DcelSupportFace).
  */
-static u32 HullFaceContact(struct arena *mem_tmp, struct c_Manifold *cm, sat_FeatureId cm_features[4], f32 *max_depth, sat_FeatureId *max_feature, const struct sat_FaceQuery *query, const struct dcel *const h[2], const v3 *const v[2], const struct plane *const pl[2], const u32 b_f, const u32 ref)
+static u32 HullFaceContact(struct arena *mem_tmp, struct c_Manifold *cm, sat_FeatureId cm_features[4], f32 *max_depth, sat_FeatureId *max_feature, const struct sat_FaceQuery *query, const struct dcel *const h[2], const v3 *const v[2], const struct plane *const pl[2], const u32 b_f, const u32 ref, const f32 max_separation)
 {
 	/* (1) determine incident_face */
     const u32 b_v = 1 - b_f;
@@ -1256,7 +1259,7 @@ static u32 HullFaceContact(struct arena *mem_tmp, struct c_Manifold *cm, sat_Fea
     f32 *depth = NULL;
     sat_FeatureId *features;
     c_PointId *ids;
-    PolygonCcwClipNegativeFaceAndProject(mem_tmp, &features, &ids, &cp, &depth, &deepest_point, &cp_count, max_depth, max_feature, h, v, f, b_f, query->normal);
+    PolygonCcwClipNegativeFaceAndProject(mem_tmp, &features, &ids, &cp, &depth, &deepest_point, &cp_count, max_depth, max_feature, h, v, f, b_f, query->normal, max_separation);
 
     u32 collision;
     if (b_f == ref)
@@ -1276,7 +1279,7 @@ static u32 HullFaceContact(struct arena *mem_tmp, struct c_Manifold *cm, sat_Fea
     return collision;
 }
 
-/* a separating axis for the SAT cache: normal from s0 to s1, separation > 0 */
+/* a separating axis for the SAT cache: normal from s0 to s1, separation > the pair's max_separation */
 static void sat_CacheSeparation(struct SATCache *cache, const v3 normal, const f32 separation)
 {
 	cache->type = SAT_CACHE_SEPARATION;
@@ -1300,13 +1303,14 @@ struct sat_Pair
 	const v3 *			v[2];
 	const struct plane *pl[2];
 	v3					center_0;	/* s0's center of mass: edge axis orientation (SAT_PAIR_HULL) */
+	f32					max_separation;	/* separated beyond it; c_HullContact: speculative_distance, mesh triangles: 0 */
 };
 
 /*
- * SAT cache: re-check old_cache for the pair. A separating axis is reused while it separates; a contact is
- * rebuilt from its features (face: clipped on the cached face; edge pair: re-checked and its closest points) and reused
- * while its depth moved by less than sat_cache_tolerance. Returns 1 if reused: new_cache written, *colliding set, for a
- * contact also m and (face contacts) its features.
+ * SAT cache: re-check old_cache for the pair. A separating axis is reused while it separates by more than the pair's
+ * max_separation; a contact is rebuilt from its features (face: clipped on the cached face; edge pair: re-checked and
+ * its closest points) and reused while its depth moved by less than sat_cache_tolerance. Returns 1 if reused:
+ * new_cache written, *colliding set, for a contact also m and (face contacts) its features.
  */
 static u32 sat_CacheTryReuse(struct c_Manifold *m, u32 *colliding, sat_FeatureId features[4], struct SATCache *new_cache, struct arena *mem_tmp, const struct sat_Pair *pair, const struct SATCache *old_cache)
 {
@@ -1328,7 +1332,7 @@ static u32 sat_CacheTryReuse(struct c_Manifold *m, u32 *colliding, sat_FeatureId
 			const v3 support_0 = v[0][V3Support(v[0], h[0]->v_count, old_cache->normal)];
 			const v3 support_1 = v[1][V3Support(v[1], h[1]->v_count, V3Negate(old_cache->normal))];
 			const f32 separation = V3Dot(support_1, old_cache->normal) - V3Dot(support_0, old_cache->normal);
-			if (separation > 0.0f)
+			if (separation > pair->max_separation)
 			{
 				sat_CacheSeparation(new_cache, old_cache->normal, separation);
 				return 1;
@@ -1346,7 +1350,7 @@ static u32 sat_CacheTryReuse(struct c_Manifold *m, u32 *colliding, sat_FeatureId
 			{
 				HullEdgeCheck(&e_query, h, v, pl, pair->center_0, sat_FeatureIdIndex(old_cache->feature[0]), sat_FeatureIdIndex(old_cache->feature[1]));
 			}
-			if (e_query.e1 != U32_MAX && e_query.depth < 0.0f && HullEdgeContact(m, new_cache, &e_query)
+			if (e_query.e1 != U32_MAX && e_query.depth < pair->max_separation && HullEdgeContact(m, new_cache, &e_query)
 					&& F32Abs(new_cache->depth - old_cache->depth) < tolerance)
 			{
 				*colliding = 1;
@@ -1362,7 +1366,7 @@ static u32 sat_CacheTryReuse(struct c_Manifold *m, u32 *colliding, sat_FeatureId
 			const u32 face = sat_FeatureIdIndex(old_cache->feature[b_f]);
 			struct sat_FaceQuery face_query = { .fi = face, .normal = pl[b_f][face].normal };
 			f32 depth;
-			if (HullFaceContact(mem_tmp, m, features, &depth, new_cache->feature + b_v, &face_query, h, v, pl, b_f, 0)
+			if (HullFaceContact(mem_tmp, m, features, &depth, new_cache->feature + b_v, &face_query, h, v, pl, b_f, 0, pair->max_separation)
 					&& F32Abs(depth - old_cache->depth) < tolerance)
 			{
 				new_cache->type = SAT_CACHE_CONTACT_FV;
@@ -1388,10 +1392,11 @@ static u32 sat_CacheTryReuse(struct c_Manifold *m, u32 *colliding, sat_FeatureId
 /*
  * SAT of a pair (Gregorius), the SAT cache tried first (old_cache NULL: none). Face queries of both shapes and the edge
  * query (SAT_PAIR_HULL: Gauss map pruned, axes oriented by center_0; SAT_PAIR_TRIANGLE: knife edges); separated if any
- * axis separates. Otherwise the face contact (incident face clipped to the reference face, the face with the larger
- * separation), replaced by the edge contact if the clip is empty or the edge separates more than the clipped face by
- * sat_face_bias. Returns 1 if colliding: m written, and for a face contact its points' features. cache: the
- * separating axis or the contact's features; SAT_CACHE_NONE for the fallback contact.
+ * axis separates by more than max_separation. Otherwise the face contact (incident face clipped to the reference face,
+ * the face with the larger separation), replaced by the edge contact if the clip is empty or the edge separates more
+ * than the clipped face by sat_face_bias; neither for a pair separated within max_separation: no contact. Returns 1 if
+ * colliding: m written, and for a face contact its points' features. cache: the separating axis or the contact's
+ * features; SAT_CACHE_NONE for the fallback contact and that pair.
  */
 static u32 sat_PairContact(struct c_Manifold *m, sat_FeatureId features[4], struct SATCache *cache, struct arena *mem_tmp, const struct sat_Pair *pair, const struct SATCache *old_cache)
 {
@@ -1407,22 +1412,22 @@ static u32 sat_PairContact(struct c_Manifold *m, sat_FeatureId features[4], stru
 	struct sat_FaceQuery f_query[2] = { { .depth = -F32_INFINITY }, { .depth = -F32_INFINITY } };
 	struct sat_EdgeQuery e_query = { .depth = -F32_INFINITY, .e1 = U32_MAX };
 
-	if (HullFaceQuery(&f_query[0], pl[0], h[0]->f_count, v[1], h[1]->v_count))
+	if (HullFaceQuery(&f_query[0], pl[0], h[0]->f_count, v[1], h[1]->v_count, pair->max_separation))
 	{
 		sat_CacheSeparation(cache, f_query[0].normal, f_query[0].depth);
 		return 0;
 	}
 
 	const u32 f_count_1 = (pair->type == SAT_PAIR_TRIANGLE) ? 1 : h[1]->f_count;
-	if (HullFaceQuery(&f_query[1], pl[1], f_count_1, v[0], h[0]->v_count))
+	if (HullFaceQuery(&f_query[1], pl[1], f_count_1, v[0], h[0]->v_count, pair->max_separation))
 	{
 		sat_CacheSeparation(cache, V3Negate(f_query[1].normal), f_query[1].depth);
 		return 0;
 	}
 
 	const u32 edge_separates = (pair->type == SAT_PAIR_TRIANGLE)
-		? HullTriangleEdgeQuery(&e_query, h[0], v[0], pl[0], v[1], pl[1][0].normal)
-		: HullEdgeQuery(&e_query, h, v, pl, pair->center_0);
+		? HullTriangleEdgeQuery(&e_query, h[0], v[0], pl[0], v[1], pl[1][0].normal, pair->max_separation)
+		: HullEdgeQuery(&e_query, h, v, pl, pair->center_0, pair->max_separation);
 	if (edge_separates)
 	{
 		sat_CacheSeparation(cache, e_query.normal, e_query.depth);
@@ -1433,7 +1438,7 @@ static u32 sat_PairContact(struct c_Manifold *m, sat_FeatureId features[4], stru
 	const u32 b_f = (f_query[0].depth < f_query[1].depth);
 	const u32 b_v = 1 - b_f;
 	f32 max_depth;
-	const u32 face_contact = HullFaceContact(mem_tmp, m, features, &max_depth, cache->feature + b_v, f_query + b_f, h, v, pl, b_f, 0);
+	const u32 face_contact = HullFaceContact(mem_tmp, m, features, &max_depth, cache->feature + b_v, f_query + b_f, h, v, pl, b_f, 0, pair->max_separation);
 
 	/* Edge contact if the face contact is empty or the edge separates more than the clipped face by sat_face_bias */
 	if (e_query.e1 != U32_MAX && (!face_contact || -max_depth + g_numerics_config->sat_face_bias < e_query.depth)
@@ -1451,12 +1456,19 @@ static u32 sat_PairContact(struct c_Manifold *m, sat_FeatureId features[4], stru
 		return 1;
 	}
 
+	/* separated within max_separation and no face or edge contact: no contact, nothing to cache */
+	const struct sat_FaceQuery *fq = f_query + b_f;
+	if (fq->depth > 0.0f || e_query.depth > 0.0f)
+	{
+		cache->type = SAT_CACHE_NONE;
+		return 0;
+	}
+
 	/*
 	 * No face or edge contact (the clip came out empty, the edge's closest points outside the segments): the face
 	 * query's deepest vertex of the incident shape and its projection onto the reference plane. Nothing to cache; the
 	 * features are written as a face contact's (a mesh triangle's vertex waits: c_MeshHullTriDelayed).
 	 */
-	const struct sat_FaceQuery *fq = f_query + b_f;
 	const v3 p = v[b_v][fq->vi];
 	m->v_count = 1;
 	m->depth[0] = F32Max(0.0f, -fq->depth);
@@ -1513,7 +1525,7 @@ u32 c_HullContact(struct c_Manifold *out, struct ds_ConvexCache *cache, const st
     const struct plane *pl[2] = { h[0]->plane, pl_1 };
     const v3 center_0 = s0->center_of_mass;
 
-    const struct sat_Pair pair = { .type = SAT_PAIR_HULL, .h = { h[0], h[1] }, .v = { v[0], v[1] }, .pl = { pl[0], pl[1] }, .center_0 = center_0 };
+    const struct sat_Pair pair = { .type = SAT_PAIR_HULL, .h = { h[0], h[1] }, .v = { v[0], v[1] }, .pl = { pl[0], pl[1] }, .center_0 = center_0, .max_separation = g_solver_config->speculative_distance };
     const struct SATCache old = cache->sat;
     sat_FeatureId features[4];
     const u32 colliding = sat_PairContact(out, features, &cache->sat, mem_tmp, &pair, (old.type != SAT_CACHE_NONE) ? &old : NULL);
@@ -2034,7 +2046,7 @@ static void c_MeshHullTriangles(struct c_MeshContactHelper *helper, const struct
         stub.v = tri;
         stub.plane = pl_tri;
         /* center_0 orients HullEdgeCheck's axes; the triangle's edge check needs none */
-        const struct sat_Pair pair = { .type = SAT_PAIR_TRIANGLE, .h = { hull, &stub }, .v = { hull->v, tri }, .pl = { hull->plane, pl_tri }, .center_0 = V3(0.0f, 0.0f, 0.0f) };
+        const struct sat_Pair pair = { .type = SAT_PAIR_TRIANGLE, .h = { hull, &stub }, .v = { hull->v, tri }, .pl = { hull->plane, pl_tri }, .center_0 = V3(0.0f, 0.0f, 0.0f), .max_separation = 0.0f };
 
         struct c_MeshTri *r = c_MeshContactPush(helper, tri_index);
         struct arena *mem_tmp = ArenaPushScratch();

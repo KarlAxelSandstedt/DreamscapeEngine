@@ -1941,11 +1941,19 @@ face normals and edge directions are moved into A's frame in double. With sep(n)
 
 Every manifold must satisfy, with L = max(extent A, extent B, |x_B - x_A|), tol = CONTACT_TEST_TOLERANCE eps L:
 
-    contact iff sat < 0                         (undecided within tol)
+    sat_m = sat over the SAT's own axes: the edge pairs only where they form a face of the Minkowski difference
+          (Gauss map test, double); <= sat for separated hulls (the facet planes bound the distance from below)
+
+    contact iff sat < spec                      (spec = speculative_distance; undecided within tol; a contact is
+                                                false only if sat_m > spec too); a miss for
+                                                sat >= -tol is counted (box3d: separated within spec and no
+                                                face or edge point gives no contact)
     c_ManifoldCheck, v_count in 1..4, |n| = 1
     depth_i <= -sep(n) + tol                    (n separates as deep as it claims)
+    depth_i >= -spec - tol                      (speculative points only within the band)
     v_i on A's surface                          |sdf_A(v_i)| <= tol
     v_i - depth_i n on B's surface              |sdf_B(v_i - depth_i n)| <= tol (point and depth agree)
+    point ids distinct
     translating both by an exactly representable offset gives identical bits
     the same checks with the previous result as the cache: same pose, and B moved by ~1e-3 L; a cached result
     may claim up to sat_cache_tolerance more depth (also for separated shapes): the cache's
@@ -1955,9 +1963,9 @@ Failures are counted by kind (first example printed); any failure fails the test
 
 Known issue K7 (contact_audit.txt), to be fixed: the SAT skips edge pairs within edge_parallel_max_degrees of
 parallel, so separated hulls whose only separating axis is such a pair get a contact (from the deepest-vertex
-fallback). While HH_KNOWN_K7 is 1, a false contact is counted as "known K7" instead of failed if the axes the SAT
-checks (sat with those pairs skipped) don't separate, and HullContactCasesTest prints its K7 cases instead of
-failing them. Set it to 0 once K7 is fixed.
+fallback). While HH_KNOWN_K7 is 1, a contact is counted as "known K7" instead of checked if the SAT's own axes with
+those pairs skipped (sat_m skipped) overlap while the hulls are separated, or stay within spec while sat_m exceeds
+it, and HullContactCasesTest prints its K7 cases instead of failing them. Set it to 0 once K7 is fixed.
 */
 
 #define HH_KNOWN_K7 1
@@ -1968,12 +1976,14 @@ enum hh_Fail
 {
     HH_FAIL_NONE,
     HH_FAIL_INVALID,        /* manifold count, c_ManifoldCheck, v_count */
-    HH_FAIL_MISSED,         /* sat < -tol, no contact */
-    HH_FAIL_FALSE,          /* sat > tol, contact */
+    HH_FAIL_MISSED,         /* sat < spec - tol, no contact */
+    HH_FAIL_FALSE,          /* sat > spec + tol, contact */
     HH_FAIL_NORMAL,         /* |n| != 1 */
     HH_FAIL_DEPTH,          /* depth > -sep(n) + tol */
+    HH_FAIL_BAND,           /* depth < -spec - tol */
     HH_FAIL_SURFACE_A,      /* v not on A's surface */
     HH_FAIL_SURFACE_B,      /* v - depth n not on B's surface */
+    HH_FAIL_ID,             /* two points share a c_PointId */
     HH_FAIL_TRANSLATION,    /* translated result differs */
     HH_FAIL_COUNT
 };
@@ -1981,7 +1991,7 @@ enum hh_Fail
 static const char *hh_fail_id[HH_FAIL_COUNT] =
 {
     "none", "invalid", "missed contact", "false contact", "|n| != 1", "depth deeper than sep(n)",
-    "v off A", "v - depth n off B", "translation",
+    "depth below -speculative_distance", "v off A", "v - depth n off B", "duplicate point id", "translation",
 };
 
 struct hh_Stats
@@ -1995,6 +2005,7 @@ struct hh_Stats
     f64 worst_surface_b;    /* / (eps L) */
     f64 worst_gap;          /* deep: (sat - sep(n)) / L */
     u64 known_k7;           /* false contacts only a skipped edge pair would have prevented (HH_KNOWN_K7) */
+    u64 band_missed;        /* no contact, separated within spec: no face or edge point */
 };
 
 /* B moved into A's frame (double): vertices, face normals and offsets, edge directions */
@@ -2067,6 +2078,67 @@ static f64 HhSat(const struct ch_Hull *a, const struct ch_Hull *b, const f64 ski
     return sat;
 }
 
+/*
+ * As HhSat, the edge pairs only where they form a face of the Minkowski difference (the Gauss map test of
+ * EEIsMinkowskiFace, in double): the SAT's own axis set. For separated hulls it can lie below HhSat.
+ */
+static f64 HhSatFacets(const struct ch_Hull *a, const struct ch_Hull *b, const f64 skip_sin_sq)
+{
+    f64 sat = -1e300;
+    for (u32 fi = 0; fi < a->f_count; ++fi)
+    {
+        sat = F64MaxTest(sat, HhSeparation(a, b, a->fn[fi]));
+    }
+    for (u32 fi = 0; fi < b->f_count; ++fi)
+    {
+        sat = F64MaxTest(sat, HhSeparation(a, b, D3Scale(b->fn[fi], -1.0)));
+    }
+
+    const struct dcel *da = &a->shape.hull;
+    const struct dcel *db = &b->shape.hull;
+    u32 ia = 0;
+    for (u32 e1 = 0; e1 < da->e_count; ++e1)
+    {
+        const u32 t1 = da->e[e1].twin;
+        if (t1 < e1)
+        {
+            continue;
+        }
+        const struct d3 n1_1 = a->fn[da->e[e1].face_ccw];
+        const struct d3 n1_2 = a->fn[da->e[t1].face_ccw];
+        const struct d3 d1 = a->ed[ia++];
+        u32 ib = 0;
+        for (u32 e2 = 0; e2 < db->e_count; ++e2)
+        {
+            const u32 t2 = db->e[e2].twin;
+            if (t2 < e2)
+            {
+                continue;
+            }
+            const struct d3 n2_1 = D3Scale(b->fn[db->e[e2].face_ccw], -1.0);
+            const struct d3 n2_2 = D3Scale(b->fn[db->e[t2].face_ccw], -1.0);
+            const struct d3 d2 = b->ed[ib++];
+            const f64 n1_1d = D3Dot(n1_1, d2);
+            const f64 n1_2d = D3Dot(n1_2, d2);
+            const f64 n2_1d = D3Dot(n2_1, d1);
+            const f64 n2_2d = D3Dot(n2_2, d1);
+            if (!(n1_1d*n1_2d < 0.0 && n2_1d*n2_2d < 0.0 && n1_2d*n2_1d > 0.0))
+            {
+                continue;
+            }
+            const struct d3 c = D3Cross(d1, d2);
+            const f64 c_sq = D3Dot(c, c);
+            if (c_sq > skip_sin_sq*D3Dot(d1, d1)*D3Dot(d2, d2) && c_sq > 0.0)
+            {
+                const struct d3 n = D3Scale(c, 1.0 / F64SqrtTest(c_sq));
+                sat = F64MaxTest(sat, HhSeparation(a, b, n));
+                sat = F64MaxTest(sat, HhSeparation(a, b, D3Scale(n, -1.0)));
+            }
+        }
+    }
+    return sat;
+}
+
 static void HhPrint(const struct ch_Hull *a, const struct ch_Hull *b)
 {
     const struct ch_Hull *h[2] = { a, b };
@@ -2078,7 +2150,12 @@ static void HhPrint(const struct ch_Hull *a, const struct ch_Hull *b)
         }
         else
         {
-            fprintf(stderr, "\t%c: hull %u vertices, extent %.9g", 'A' + k, h[k]->v_count, h[k]->extent);
+            fprintf(stderr, "\t%c: hull %u vertices, extent %.9g, v {", 'A' + k, h[k]->v_count, h[k]->extent);
+            for (u32 i = 0; i < h[k]->v_count; ++i)
+            {
+                fprintf(stderr, " { %.9g, %.9g, %.9g }", h[k]->shape.hull.v[i].x, h[k]->shape.hull.v[i].y, h[k]->shape.hull.v[i].z);
+            }
+            fprintf(stderr, " }");
         }
         fprintf(stderr, " rot { %.9g, %.9g, %.9g, %.9g } pos { %.17g, %.17g, %.17g }\n", h[k]->t.rotation.x,
             h[k]->t.rotation.y, h[k]->t.rotation.z, h[k]->t.rotation.w, h[k]->pos.x, h[k]->pos.y, h[k]->pos.z);
@@ -2105,24 +2182,35 @@ static enum hh_Fail HhVerifySlack(struct hh_Stats *stats, const ds_Array(c_Manif
     const f64 eps_l = F32_EPSILON * L;
     const f64 tol = CONTACT_TEST_TOLERANCE * eps_l;
     const f64 sat = HhSat(a, &bt, 1e-24);
+    const f64 spec = (f64) g_contact_test_solver_config.speculative_distance;
     const u32 contact = (result->length == 1);
 
+    /* the SAT's own axes, with and without the nearly parallel pairs it skips */
+    const f64 sat_m = HhSatFacets(a, &bt, 1e-24);
+    const f64 sat_ms = HhSatFacets(a, &bt, g_numerics_config->edge_parallel_sin_sq);
+
     stats->tests += 1;
-    if (F64AbsTest(sat) <= tol)
+    if (HH_KNOWN_K7 && contact && ((sat > F64MaxTest(tol, slack) && sat_ms <= F64MaxTest(tol, slack)) || (sat_m > spec + slack && sat_ms <= spec + slack)))
+    {
+        /* only a skipped parallel pair separates (beyond spec) */
+        stats->known_k7 += 1;
+        return HH_FAIL_NONE;
+    }
+    else if (F64AbsTest(sat - spec) <= tol)
     {
         stats->undecided += 1;
     }
-    else if (sat < 0.0 && !contact)
+    else if (sat < spec && !contact)
     {
-        return HH_FAIL_MISSED;
-    }
-    else if (sat > slack && contact)
-    {
-        if (HH_KNOWN_K7 && HhSat(a, &bt, g_numerics_config->edge_parallel_sin_sq) <= F64MaxTest(tol, slack))
+        if (sat >= -tol)
         {
-            stats->known_k7 += 1;
+            stats->band_missed += 1;
             return HH_FAIL_NONE;
         }
+        return HH_FAIL_MISSED;
+    }
+    else if (sat_m > spec + slack && contact)
+    {
         return HH_FAIL_FALSE;
     }
 
@@ -2139,6 +2227,17 @@ static enum hh_Fail HhVerifySlack(struct hh_Stats *stats, const ds_Array(c_Manif
         return HH_FAIL_NORMAL;
     }
 
+    for (u32 i = 0; i < m->v_count; ++i)
+    {
+        for (u32 k = i + 1; k < m->v_count; ++k)
+        {
+            if (c_PointIdEqual(m->id[i], m->id[k]))
+            {
+                return HH_FAIL_ID;
+            }
+        }
+    }
+
     const f64 sep = HhSeparation(a, &bt, D3Scale(n, 1.0 / n_len));
     for (u32 i = 0; i < m->v_count; ++i)
     {
@@ -2150,6 +2249,10 @@ static enum hh_Fail HhVerifySlack(struct hh_Stats *stats, const ds_Array(c_Manif
         if (m->depth[i] > -sep + tol + slack)
         {
             return HH_FAIL_DEPTH;
+        }
+        if (m->depth[i] < -spec - tol)
+        {
+            return HH_FAIL_BAND;
         }
         if (surface_a > tol + slack)
         {
@@ -2195,7 +2298,7 @@ static void HhCount(struct hh_Stats *stats, const enum hh_Fail fail, const ds_Ar
     {
         struct ch_Hull bt;
         HhHullInFrame(&bt, b, a);
-        fprintf(stderr, "\tHull contact (%s) failed: %s, sat %.9g\n", what, hh_fail_id[fail], HhSat(a, &bt, 1e-24));
+        fprintf(stderr, "\tHull contact (%s) failed: %s, sat %.9g (Minkowski faces %.9g; parallel pairs skipped: %.9g, %.9g)\n", what, hh_fail_id[fail], HhSat(a, &bt, 1e-24), HhSatFacets(a, &bt, 1e-24), HhSat(a, &bt, g_numerics_config->edge_parallel_sin_sq), HhSatFacets(a, &bt, g_numerics_config->edge_parallel_sin_sq));
         HhPrint(a, b);
         if (result->length)
         {
@@ -2295,6 +2398,10 @@ static void HhStatsPrint(const char *id, const struct hh_Stats *s)
     {
         fprintf(stdout, "; known K7 (not failed) %llu", (unsigned long long) s->known_k7);
     }
+    if (s->band_missed)
+    {
+        fprintf(stdout, "; missed in the band (not failed) %llu", (unsigned long long) s->band_missed);
+    }
     fprintf(stdout, "\n");
 }
 
@@ -2361,6 +2468,8 @@ static f32 HhMinRotated(const struct dcel *d, const q rot, const v3 n)
  *  3: vertex on face (a vertex of B pointing into A's face), gap -0.05 .. 0.02 extent B
  *  4: center inside A
  *  5: apart (no contact): 1 .. 2 times the extents
+ * Modes 1, 2, 3: half of the time the gap lies in the speculative band -spec/2 .. 1.5 spec instead
+ * (spec = speculative_distance).
  */
 static void HhHullNear(struct arena *mem, struct ch_Hull *b, const struct ch_Hull *a, const u32 kind, const u32 mode)
 {
@@ -2391,7 +2500,11 @@ static void HhHullNear(struct arena *mem, struct ch_Hull *b, const struct ch_Hul
             const v3 corner = da->v[da->e[da->f[fa].first].origin];
             const v3 centroid = HhFaceCentroid(da, fa);
             const v3 on_face = V3Add(centroid, V3Scale(V3Sub(corner, centroid), RngF32Range(0.0f, 1.0f)));
-            const f32 gap = ext_b * RngF32Range(-0.05f, 0.02f);
+            f32 gap = ext_b * RngF32Range(-0.05f, 0.02f);
+            if (RngU64Range(0, 1))
+            {
+                gap = g_contact_test_solver_config.speculative_distance * RngF32Range(-0.5f, 1.5f);
+            }
             center = V3Add(on_face, V3Scale(n, gap - HhMinRotated(db, rot, n)));
         } break;
 
@@ -2407,7 +2520,11 @@ static void HhHullNear(struct arena *mem, struct ch_Hull *b, const struct ch_Hul
             const v3 a1 = da->v[da->e[da->e[ea].twin].origin];
             const v3 on_edge = V3Add(a0, V3Scale(V3Sub(a1, a0), RngF32Range(0.0f, 1.0f)));
             const v3 b_mid = V3Scale(V3Add(db->v[db->e[eb].origin], db->v[db->e[db->e[eb].twin].origin]), 0.5f);
-            const f32 gap = (ext_a + ext_b) * RngF32Range(-0.03f, 0.02f);
+            f32 gap = (ext_a + ext_b) * RngF32Range(-0.03f, 0.02f);
+            if (RngU64Range(0, 1))
+            {
+                gap = g_contact_test_solver_config.speculative_distance * RngF32Range(-0.5f, 1.5f);
+            }
             center = V3Sub(V3Add(on_edge, V3Scale(ua, gap)), QUnitRotate(rot, b_mid));
         } break;
 
@@ -2421,7 +2538,11 @@ static void HhHullNear(struct arena *mem, struct ch_Hull *b, const struct ch_Hul
             const v3 corner = da->v[da->e[da->f[fa].first].origin];
             const v3 centroid = HhFaceCentroid(da, fa);
             const v3 on_face = V3Add(centroid, V3Scale(V3Sub(corner, centroid), RngF32Range(0.0f, 1.0f)));
-            const f32 gap = ext_b * RngF32Range(-0.05f, 0.02f);
+            f32 gap = ext_b * RngF32Range(-0.05f, 0.02f);
+            if (RngU64Range(0, 1))
+            {
+                gap = g_contact_test_solver_config.speculative_distance * RngF32Range(-0.5f, 1.5f);
+            }
             center = V3Add(on_face, V3Scale(n, gap - HhMinRotated(db, rot, n)));
         } break;
 
@@ -2473,6 +2594,32 @@ struct test_Output HullContactCasesTest(struct test_Environment *env)
     ChHullInit(&b, &box, 1, hw, QIdentity(), D3(0.0, 2.1, 0.0));
     TEST_TRUE(HhContact(env->mem_2, &r, NULL, &a, &b) && HhVerify(&stats, &r, &a, &b) == HH_FAIL_NONE);
     TEST_EQUAL(r.length, 0);
+
+    /* speculative (speculative_distance 0.02): B 1 cm above: four points at the corners, n = +y, depth -0.01 */
+    ChHullInit(&b, &box, 1, hw, QIdentity(), D3(0.0, 2.01, 0.0));
+    TEST_TRUE(HhContact(env->mem_2, &r, NULL, &a, &b) && HhVerify(&stats, &r, &a, &b) == HH_FAIL_NONE);
+    TEST_TRUE(r.length == 1 && r.buf->v_count == 4);
+    TEST_TRUE(CtNearD3(D3V3(r.buf->n), D3(0.0, 1.0, 0.0)));
+    for (u32 i = 0; i < 4; ++i)
+    {
+        TEST_TRUE(CtNear(r.buf->depth[i], -0.01) && CtNear(r.buf->v[i].y, 1.0));
+    }
+
+    /* 3 cm above: none */
+    ChHullInit(&b, &box, 1, hw, QIdentity(), D3(0.0, 2.03, 0.0));
+    TEST_TRUE(HhContact(env->mem_2, &r, NULL, &a, &b) && HhVerify(&stats, &r, &a, &b) == HH_FAIL_NONE);
+    TEST_EQUAL(r.length, 0);
+
+    /*
+     * B tilted 0.02 rad about x, its lower edge (along x, z ~ 0.98) 1 cm above, its upper bottom edge ~5 cm above
+     * (clipped at z = -1): two points (+-1, 1, ~0.98), n = +y, depth -0.01
+     */
+    ChHullInit(&b, &box, 1, hw, QUnitAxisAngle(V3(1.0f, 0.0f, 0.0f), 0.02f), D3(0.0, 1.01 + 0.99980001 + 0.019998667, 0.0));
+    TEST_TRUE(HhContact(env->mem_2, &r, NULL, &a, &b) && HhVerify(&stats, &r, &a, &b) == HH_FAIL_NONE);
+    TEST_TRUE(r.length == 1 && r.buf->v_count == 2);
+    TEST_TRUE(CtNearD3(D3V3(r.buf->n), D3(0.0, 1.0, 0.0)));
+    TEST_TRUE(CtNear(r.buf->depth[0], -0.01) && CtNear(r.buf->depth[1], -0.01));
+    TEST_TRUE(CtNear(F64AbsTest(r.buf->v[0].x), 1.0) && CtNear(r.buf->v[0].x, -r.buf->v[1].x) && CtNear(r.buf->v[0].y, 1.0));
 
     /* face on face, 0.1 deep: four points at the corners (+-1, 1, +-1) (on A's side planes), n = +y, depth 0.1 */
     ChHullInit(&b, &box, 1, hw, QIdentity(), D3(0.0, 1.9, 0.0));

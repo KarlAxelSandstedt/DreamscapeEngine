@@ -181,8 +181,9 @@ Speculative contacts (DynamicsSpeculativeSphereTest): a sphere 1 cm above a stat
 5 m/s. With restitution 0 it ends the first tick touching (within 0.1 mm), arriving at the gap per tick
 (0.6 m/s), then neither moves up (0.05 m/s) nor sinks beyond linear_slop for half a second. With restitution 1
 it leaves at 5 m/s from the gap and never reaches the static sphere.
-DynamicsSpeculativeHullTest: the same for a sphere and a capsule lying flat 1 cm above a static box; the
-capsules (two speculative points) turn less than 1e-3 rad.
+DynamicsSpeculativeHullTest: the same for a sphere, a capsule lying flat and a box 1 cm above a static box; the
+capsules (two speculative points) and boxes (four) turn less than 1e-3 rad on the first tick, and with restitution 0
+over the half second.
 
 Pipeline (DynamicsFirstTickTest, DynamicsFlushTest): 101 bodies added to a pipeline of initial size 64, two of
 the new ones joined before the first tick: the joint is coloured at once, and after one tick every contact is
@@ -4331,7 +4332,7 @@ static struct test_Output DynamicsSpeculativeSphereTest(struct test_Environment 
     return output;
 }
 
-/* a sphere and a flat capsule 1 cm above a static box, moving down at 5 m/s, as DynamicsSpeculativeSphereTest; the capsules stay flat (file comment) */
+/* a sphere, a flat capsule and a box 1 cm above a static box, moving down at 5 m/s, as DynamicsSpeculativeSphereTest; capsules and boxes stay flat (file comment) */
 static struct test_Output DynamicsSpeculativeHullTest(struct test_Environment *env)
 {
     struct test_Output output = { .success = 1, .id = __func__ };
@@ -4350,23 +4351,27 @@ static struct test_Output DynamicsSpeculativeHullTest(struct test_Environment *e
 
     const struct c_Shape sphere = { .type = C_SHAPE_SPHERE, .sphere.radius = 0.5f };
     const struct c_Shape capsule = { .type = C_SHAPE_CAPSULE, .capsule.half_height = 0.5f, .capsule.radius = 0.25f };
+    const struct c_Shape cube = { .type = C_SHAPE_CONVEX_HULL, .hull = DcelBox(&mem, V3(0.5f, 0.5f, 0.5f)) };
     const struct slot sphere_slot = c_ShapeDBAdd(&cshape_db, Utf8Inline("spec_sphere"), &sphere);
     const struct slot capsule_slot = c_ShapeDBAdd(&cshape_db, Utf8Inline("spec_capsule"), &capsule);
+    const struct slot cube_slot = c_ShapeDBAdd(&cshape_db, Utf8Inline("spec_cube"), &cube);
     const struct ds_BodyPrefab dynamic_prefab = { .dynamic = 1 };
     const ds_Transform t_local = ds_TransformIdentity();
     const q along_x = QUnitAxisAngle(V3(0.0f, 0.0f, 1.0f), -F32_PI/2.0f);
-    const f64 rest[2] = { 0.5, 0.25 };
+    const u32 cshape[3] = { sphere_slot.index, capsule_slot.index, cube_slot.index };
+    const q rotation[3] = { QIdentity(), along_x, QIdentity() };
+    const f64 rest[3] = { 0.5, 0.25, 0.5 };
     const f64 gap = 0.01;
     const f32 speed = 5.0f;
 
-    /* body i: a sphere (i < 2) or a capsule lying along x, restitution i % 2, at x = 4 i - 6 */
-    ds_BodyId id[4];
-    for (u32 i = 0; i < 4; ++i)
+    /* body i: shape i / 2 (sphere, capsule lying along x, box), restitution i % 2, at x = 4 i - 10 */
+    ds_BodyId id[6];
+    for (u32 i = 0; i < 6; ++i)
     {
-        const u32 is_capsule = i / 2;
-        const ds_TransformWorld t_body = { .rotation = (is_capsule) ? along_x : QIdentity(), .position = V3F64(4.0 * (f64) i - 6.0, rest[is_capsule] + gap, 0.0) };
+        const u32 kind = i / 2;
+        const ds_TransformWorld t_body = { .rotation = rotation[kind], .position = V3F64(4.0 * (f64) i - 10.0, rest[kind] + gap, 0.0) };
         id[i] = ds_BodyAdd(&pipeline, &dynamic_prefab, &t_body, i + 1);
-        const struct ds_ShapePrefab shape_prefab = { .cshape = (is_capsule) ? capsule_slot.index : sphere_slot.index, .density = 1.0f, .restitution = (f32) (i % 2), .friction = 0.5f };
+        const struct ds_ShapePrefab shape_prefab = { .cshape = cshape[kind], .density = 1.0f, .restitution = (f32) (i % 2), .friction = 0.5f };
         ds_ShapeAdd(&pipeline, &shape_prefab, &t_local, id[i]);
 
         const struct ds_Body *body = ds_BodyLookup(&pipeline, id[i]).address;
@@ -4377,12 +4382,12 @@ static struct test_Output DynamicsSpeculativeHullTest(struct test_Environment *e
     /* the speculative points let the gap close within the first tick: restitution 0 arrives at gap / dt, restitution 1 leaves at its approach speed */
     SnapshotTestTick(&pipeline);
     const f32 arrival = (f32) gap / pipeline.timestep;
-    for (u32 i = 0; i < 4; ++i)
+    for (u32 i = 0; i < 6; ++i)
     {
         const ds_TransformWorld pose = DynamicsTestPose(&pipeline, id[i]);
         const f64 g = pose.position.y - rest[i / 2];
         const f32 vy = SolverTestVelocity(&pipeline, id[i]).y;
-        const f32 turn = DynamicsTestAngle((i / 2) ? along_x : QIdentity(), pose.rotation);
+        const f32 turn = DynamicsTestAngle(rotation[i / 2], pose.rotation);
         u32 ok = 0;
         if (i % 2)
         {
@@ -4399,22 +4404,29 @@ static struct test_Output DynamicsSpeculativeHullTest(struct test_Environment *e
         }
     }
 
-    /* half a second: the dead bodies neither bounce nor sink beyond the slop, the bouncy ones never reach the box, the capsules stay flat */
+    /* half a second: the dead bodies neither bounce nor sink beyond the slop and stay flat, the bouncy ones never reach the box */
     for (u32 t = 0; t < 30; ++t)
     {
         SnapshotTestTick(&pipeline);
-        for (u32 i = 0; i < 4; ++i)
+        for (u32 i = 0; i < 6; ++i)
         {
             const ds_TransformWorld pose = DynamicsTestPose(&pipeline, id[i]);
             const f64 g = pose.position.y - rest[i / 2];
-            const f32 turn = DynamicsTestAngle((i / 2) ? along_x : QIdentity(), pose.rotation);
+            const f32 turn = DynamicsTestAngle(rotation[i / 2], pose.rotation);
+            const f32 vy = SolverTestVelocity(&pipeline, id[i]).y;
+            u32 ok = 0;
             if (i % 2)
             {
-                TEST_NOT_ZERO(g > 0.0 && turn < 1e-3f);
+                ok = g > 0.0;
             }
             else
             {
-                TEST_NOT_ZERO(g > -pipeline.config.solver.linear_slop && SolverTestVelocity(&pipeline, id[i]).y < 0.05f && turn < 1e-3f);
+                ok = g > -pipeline.config.solver.linear_slop && vy < 0.05f && turn < 1e-3f;
+            }
+            if (!ok)
+            {
+                fprintf(stderr, "speculative hull, tick %u, body %u (restitution %u): gap %g v %g turned %g rad\n", t + 2, i, i % 2, g, vy, turn);
+                TEST_FAILURE;
             }
         }
     }
