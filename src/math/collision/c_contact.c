@@ -81,7 +81,7 @@ struct sat_FaceQuery
 {
 	v3 normal;
 	u32 fi;
-	u32 vi;     /* the other shape's deepest vertex (sat_PairContact's fallback) */
+	u32 vi;     /* the other shape's deepest vertex (HullFaceContact's incident face is taken at it; sat_PairContact's fallback) */
 	f32 depth;
 };
 
@@ -1261,27 +1261,39 @@ static u32 PolygonCcwContact(struct c_Manifold *cm, sat_FeatureId cm_features[4]
 }
 
 /*
- * pl: both hulls' face planes in v's frame; the incident face is the face of b_v most anti-parallel to the reference
- * normal (stored planes, as DcelSupportFace).
+ * pl: both hulls' face planes in v's frame. The incident face is taken at b_v's deepest vertex query->vi: of the
+ * edges out of it the one most perpendicular to the reference normal, then the more anti-parallel of that edge's two
+ * faces (stored planes), so the clip keeps that vertex.
  */
 static u32 HullFaceContact(struct arena *mem_tmp, struct c_Manifold *cm, sat_FeatureId cm_features[4], f32 *max_depth, sat_FeatureId *max_feature, const struct sat_FaceQuery *query, const struct dcel *const h[2], const v3 *const v[2], const struct plane *const pl[2], const u32 b_f, const u32 ref, const f32 max_separation)
 {
 	/* (1) determine incident_face */
     const u32 b_v = 1 - b_f;
-    u32 f[2];
-    f[b_f] = query->fi;
-    f[b_v] = 0;
-    f32 min_dot = V3Dot(pl[b_v][0].normal, query->normal);
-    for (u32 fi = 1; fi < h[b_v]->f_count; ++fi)
+    const struct dcel *hv = h[b_v];
+    f32 min_projection = F32_INFINITY;
+    u32 min_edge = 0;
+    for (u32 ei = 0; ei < hv->e_count; ++ei)
     {
-        const f32 dot = V3Dot(pl[b_v][fi].normal, query->normal);
-        if (dot < min_dot)
+        if (hv->e[ei].origin != query->vi)
         {
-            min_dot = dot;
-            f[b_v] = fi;
+            continue;
+        }
+
+        const v3 axis = V3Normalize(V3Sub(v[b_v][hv->e[hv->e[ei].twin].origin], v[b_v][query->vi]));
+        const f32 projection = F32Abs(V3Dot(axis, query->normal));
+        if (projection < min_projection)
+        {
+            min_projection = projection;
+            min_edge = ei;
         }
     }
-	
+
+    const u32 f1 = hv->e[min_edge].face_ccw;
+    const u32 f2 = hv->e[hv->e[min_edge].twin].face_ccw;
+    u32 f[2];
+    f[b_f] = query->fi;
+    f[b_v] = (V3Dot(pl[b_v][f1].normal, query->normal) < V3Dot(pl[b_v][f2].normal, query->normal)) ? f1 : f2;
+
 	u32 deepest_point = 0;
 	u32 cp_count = 0;
     v3 *cp = NULL;
@@ -1393,7 +1405,10 @@ static u32 sat_CacheTryReuse(struct c_Manifold *m, u32 *colliding, sat_FeatureId
 			const u32 b_f = sat_FeatureIdFaceCheck(old_cache->feature[1]);
 			const u32 b_v = 1 - b_f;
 			const u32 face = sat_FeatureIdIndex(old_cache->feature[b_f]);
-			struct sat_FaceQuery face_query = { .fi = face, .normal = pl[b_f][face].normal };
+			/* the incident face is taken at b_v's deepest vertex below the cached face, as the face query finds it */
+			struct sat_FaceQuery face_query = { .depth = -F32_INFINITY };
+			HullFaceQuery(&face_query, pl[b_f] + face, 1, v[b_v], h[b_v]->v_count, F32_INFINITY);
+			face_query.fi = face;
 			f32 depth;
 			if (HullFaceContact(mem_tmp, m, features, &depth, new_cache->feature + b_v, &face_query, h, v, pl, b_f, 0, pair->max_separation)
 					&& F32Abs(depth - old_cache->depth) < tolerance)
