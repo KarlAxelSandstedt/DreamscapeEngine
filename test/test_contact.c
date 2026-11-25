@@ -1961,14 +1961,14 @@ Every manifold must satisfy, with L = max(extent A, extent B, |x_B - x_A|), tol 
 
 Failures are counted by kind (first example printed); any failure fails the test.
 
-Known issue K7 (contact_audit.txt), to be fixed: the SAT skips edge pairs within edge_parallel_max_degrees of
-parallel, so separated hulls whose only separating axis is such a pair get a contact (from the deepest-vertex
-fallback). While HH_KNOWN_K7 is 1, a contact is counted as "known K7" instead of checked if the SAT's own axes with
-those pairs skipped (sat_m skipped) overlap while the hulls are separated, or stay within spec while sat_m exceeds
-it, and HullContactCasesTest prints its K7 cases instead of failing them. Set it to 0 once K7 is fixed.
+K7 (contact_audit.txt): the SAT skips edge pairs within edge_parallel_max_degrees of parallel, so it can miss the
+only separating axis of separated hulls. Without a face or edge contact GJK decides (sat_PairContact);
+HullContactCasesTest asserts its two K7 cases. Such contacts are checked like any other; with HH_KNOWN_K7 set to 1, a
+contact is counted as "known K7" instead if the SAT's own axes with those pairs skipped (sat_m skipped) stay within
+spec while sat_m exceeds it (a contact for hulls apart beyond the band).
 */
 
-#define HH_KNOWN_K7 1
+#define HH_KNOWN_K7 0
 
 static struct ds_DynamicsWorker hh_worker[DS_THREAD_COUNT_MAX];
 
@@ -2190,7 +2190,7 @@ static enum hh_Fail HhVerifySlack(struct hh_Stats *stats, const ds_Array(c_Manif
     const f64 sat_ms = HhSatFacets(a, &bt, g_numerics_config->edge_parallel_sin_sq);
 
     stats->tests += 1;
-    if (HH_KNOWN_K7 && contact && ((sat > F64MaxTest(tol, slack) && sat_ms <= F64MaxTest(tol, slack)) || (sat_m > spec + slack && sat_ms <= spec + slack)))
+    if (HH_KNOWN_K7 && contact && sat_m > spec + slack && sat_ms <= spec + slack)
     {
         /* only a skipped parallel pair separates (beyond spec) */
         stats->known_k7 += 1;
@@ -2649,9 +2649,10 @@ struct test_Output HullContactCasesTest(struct test_Environment *env)
     TEST_TRUE(CtNear(F64AbsTest(r.buf->v[0].x), 1.0) && CtNear(r.buf->v[0].x, -r.buf->v[1].x));
 
     /*
-     * Known issue K7 (contact_audit.txt): separated boxes whose only separating axis is a nearly parallel edge pair
-     * (0.23 deg apart, skipped by the SAT) get a false contact. A 0.4 m slab and box 500 m from the origin (gap
-     * 1.9e-4) and two ~400 m boxes (gap 0.54); found by HullContactRandomTest.
+     * K7 (contact_audit.txt): separated boxes whose only separating axis is a nearly parallel edge pair (0.23 deg
+     * apart, skipped by the SAT), found by HullContactRandomTest. A 0.4 m slab and box 500 m from the origin, gap
+     * 1.9e-4 (within the band): a speculative contact, every depth < 0, checked as any contact; two ~400 m boxes,
+     * gap 0.54: none (GJK decides).
      */
     const v3 k7_hw[4] =
     {
@@ -2675,14 +2676,18 @@ struct test_Output HullContactCasesTest(struct test_Environment *env)
         ChHullInit(&a, &box_0, 1, k7_hw[2*k], k7_rot[2*k], k7_pos[2*k]);
         ChHullInit(&b, &box_1, 1, k7_hw[2*k + 1], k7_rot[2*k + 1], k7_pos[2*k + 1]);
         TEST_TRUE(HhContact(env->mem_2, &r, NULL, &a, &b));
-#if HH_KNOWN_K7
-        if (r.length)
+        if (k == 0)
         {
-            fprintf(stdout, "\tHullContactCasesTest: known issue K7, case %u: false contact (not failed)\n", k);
+            TEST_TRUE(r.length == 1 && HhVerify(&stats, &r, &a, &b) == HH_FAIL_NONE);
+            for (u32 i = 0; i < r.buf->v_count; ++i)
+            {
+                TEST_TRUE(r.buf->depth[i] < 0.0f);
+            }
         }
-#else
-        TEST_EQUAL(r.length, 0);
-#endif
+        else
+        {
+            TEST_EQUAL(r.length, 0);
+        }
     }
 
     g_dynamics_worker = prev;

@@ -1438,9 +1438,11 @@ static u32 sat_CacheTryReuse(struct c_Manifold *m, u32 *colliding, sat_FeatureId
  * query (SAT_PAIR_HULL: Gauss map pruned, axes oriented by center_0; SAT_PAIR_TRIANGLE: knife edges); separated if any
  * axis separates by more than max_separation. Otherwise the face contact (incident face clipped to the reference face,
  * the face with the larger separation), replaced by the edge contact if the clip is empty or the edge separates more
- * than the clipped face by sat_face_bias; neither for a pair separated within max_separation: no contact. Returns 1 if
- * colliding: m written, and for a face contact its points' features. cache: the separating axis or the contact's
- * features; SAT_CACHE_NONE for the fallback contact and that pair.
+ * than the clipped face by sat_face_bias; neither for a pair separated within max_separation: no contact; neither for
+ * a SAT_PAIR_HULL pair the SAT finds overlapping: GJK's speculative point if the hulls are apart within max_separation,
+ * none beyond, else the fallback contact. Returns 1 if colliding: m written, and for a face contact its points'
+ * features. cache: the separating axis or the contact's features; SAT_CACHE_NONE for the GJK point, the fallback
+ * contact and those pairs.
  */
 static u32 sat_PairContact(struct c_Manifold *m, sat_FeatureId features[4], struct SATCache *cache, struct arena *mem_tmp, const struct sat_Pair *pair, const struct SATCache *old_cache)
 {
@@ -1506,6 +1508,36 @@ static u32 sat_PairContact(struct c_Manifold *m, sat_FeatureId features[4], stru
 	{
 		cache->type = SAT_CACHE_NONE;
 		return 0;
+	}
+
+	/*
+	 * Hulls: the SAT skips nearly parallel edge pairs and can miss the only separating axis, so GJK decides. Apart
+	 * within max_separation: one point at GJK's closest points (depth -distance); beyond it: none; overlapping or
+	 * touching (distance 0): the fallback below. Nothing to cache.
+	 */
+	if (pair->type == SAT_PAIR_HULL)
+	{
+		const struct GJKVertexSet vset0 = { .v = v[0], .v_count = h[0]->v_count, .margin = 0.0f };
+		const struct GJKVertexSet vset1 = { .v = v[1], .v_count = h[1]->v_count, .margin = 0.0f };
+		const ds_Transform identity = ds_TransformIdentity();
+		struct GJKCache gjk;
+		v3 c[2], n;
+		const f32 distance = GJK(c+0, c+1, &n, &gjk, NULL, &vset0, &vset1, &identity, pair->max_separation);
+		if (0.0f < distance)
+		{
+			cache->type = SAT_CACHE_NONE;
+			if (pair->max_separation < distance)
+			{
+				return 0;
+			}
+
+			m->v_count = 1;
+			m->n = n;
+			m->v[0] = c[0];
+			m->depth[0] = -distance;
+			m->id[0] = c_PointIdConstant(0);
+			return 1;
+		}
 	}
 
 	/*
