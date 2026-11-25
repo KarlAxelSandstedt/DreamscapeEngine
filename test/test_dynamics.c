@@ -175,7 +175,9 @@ slope slides for a second; its downhill speed matches the per-tick recurrence v 
 of the solver's gravity and damping within 1 % (the contacts cancel only the normal part), nothing across the
 slope, no spin. A box dropped flat with restitution 1 leaves the ground with its impact speed (within the
 tick's gravity), one with restitution 0 keeps less than 5 % of it. A box with restitution 1 resting on the
-floor rises less than 1 mm in two seconds.
+floor rises less than 1 mm in two seconds. DynamicsVelocityCapTest: a free box thrown at twice
+max_linear_velocity_magnitude and spun at three times max_angular_velocity_magnitude ends the first tick with both
+stored velocities at their caps, directions kept, having moved at most max_linear_velocity_magnitude per step.
 
 Speculative contacts (DynamicsSpeculativeSphereTest): a sphere 1 cm above a static sphere, moving down at
 5 m/s. With restitution 0 it ends the first tick touching (within 0.1 mm), arriving at the gap per tick
@@ -4259,6 +4261,65 @@ static struct test_Output DynamicsRestingBounceTest(struct test_Environment *env
     return output;
 }
 
+/* a free box faster than both velocity caps: one tick clamps both stored velocities, directions kept (file comment) */
+static struct test_Output DynamicsVelocityCapTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct arena mem = ArenaAlloc(NULL, 64*1024*1024);
+    struct c_ShapeDB cshape_db = { 0 };
+    c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
+    struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&external, NSEC_PER_SEC / 60);
+    ds_DynamicsConfigPush(&pipeline);
+    pipeline.config_pending.solver.gravity = V3(0.0f, 0.0f, 0.0f);
+    pipeline.config_pending.solver.sleep_enabled = 0;
+    ds_DynamicsConfigUpdatePending(&pipeline);
+
+    const struct c_Shape cube = { .type = C_SHAPE_CONVEX_HULL, .hull = DcelBox(&mem, V3(0.5f, 0.5f, 0.5f)) };
+    const struct slot cube_slot = c_ShapeDBAdd(&cshape_db, Utf8Inline("cap_cube"), &cube);
+    const struct ds_BodyPrefab dynamic_prefab = { .dynamic = 1 };
+    const ds_Transform t_local = ds_TransformIdentity();
+    const ds_TransformWorld t_body = { .rotation = QIdentity(), .position = V3F64(0.0, 10.0, 0.0) };
+    const ds_BodyId id = ds_BodyAdd(&pipeline, &dynamic_prefab, &t_body, 1);
+    const struct ds_ShapePrefab shape_prefab = { .cshape = cube_slot.index, .density = 1.0f, .restitution = 0.0f, .friction = 0.5f };
+    ds_ShapeAdd(&pipeline, &shape_prefab, &t_local, id);
+
+    const f32 v_max = pipeline.config.solver.max_linear_velocity_magnitude;
+    const f32 w_max = pipeline.config.solver.max_angular_velocity_magnitude;
+    TEST_TRUE(v_max > 0.0f && w_max > 0.0f);
+    const v3 v_dir = V3Normalize(V3(1.0f, 2.0f, -3.0f));
+    const v3 w_dir = V3Normalize(V3(-2.0f, 1.0f, 1.0f));
+    {
+        const struct ds_Body *body = ds_BodyLookup(&pipeline, id).address;
+        struct ds_BodyCompute *bcomp = pipeline.solver_set_pool.buf[body->set].body_compute_pool.buf + body->sim;
+        bcomp->linear_velocity = V3Scale(v_dir, 2.0f*v_max);
+        bcomp->angular_velocity = V3Scale(w_dir, 3.0f*w_max);
+    }
+
+    SnapshotTestTick(&pipeline);
+    const struct ds_Body *body = ds_BodyLookup(&pipeline, id).address;
+    const struct ds_BodyCompute *bcomp = pipeline.solver_set_pool.buf[body->set].body_compute_pool.buf + body->sim;
+    const v3 v = bcomp->linear_velocity;
+    const v3 w = bcomp->angular_velocity;
+    const ds_TransformWorld pose = DynamicsTestPose(&pipeline, id);
+    const f64 dx = pose.position.x - t_body.position.x, dy = pose.position.y - t_body.position.y, dz = pose.position.z - t_body.position.z;
+    const f64 moved_sq = dx*dx + dy*dy + dz*dz;
+    const f64 step_max = (f64) v_max*(f64) pipeline.timestep*(1.0 + 1e-4);
+    const u32 ok = F32Abs(V3Length(v) - v_max) <= 1e-4f*v_max && F32Abs(V3Length(w) - w_max) <= 1e-4f*w_max && V3Dot(V3Normalize(v), v_dir) > 0.99999f && V3Dot(V3Normalize(w), w_dir) > 0.99999f && moved_sq <= step_max*step_max;
+    if (!ok)
+    {
+        fprintf(stderr, "velocity cap: |v| %g (max %g), |w| %g (max %g), moved^2 %g (max %g)\n", (f64) V3Length(v), (f64) v_max, (f64) V3Length(w), (f64) w_max, moved_sq, step_max*step_max);
+        TEST_FAILURE;
+    }
+
+    ds_DynamicsConfigPop(&pipeline);
+    ds_DynamicsDealloc(&pipeline);
+    c_ShapeDBDealloc(&cshape_db);
+    ArenaFree(&mem);
+    return output;
+}
+
 /* a sphere 1 cm above a static sphere, moving down at 5 m/s: restitution 0 stops it on contact, 1 bounces it from the gap (file comment) */
 static struct test_Output DynamicsSpeculativeSphereTest(struct test_Environment *env)
 {
@@ -6101,6 +6162,7 @@ static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
     DynamicsSlideTest,
     DynamicsBounceTest,
     DynamicsRestingBounceTest,
+    DynamicsVelocityCapTest,
     DynamicsSpeculativeSphereTest,
     DynamicsSpeculativeHullTest,
     DynamicsFirstTickTest,

@@ -1321,9 +1321,9 @@ struct ds_SolverConfig
 	v3 	    gravity;		/* m/s^2, world frame */
 	f32 	baumgarte_constant;  	/* [0, 1] : fraction of the penetration past linear_slop removed per position iteration */
     f32     max_linear_correction;           /* >= 0 : max linear correction (m) of a constraint per position iteration */
-    f32     max_linear_velocity_magnitude;       /* >= 0 : the speed (m/s) a body may move at per step; 0: no limit */
+    f32     max_linear_velocity_magnitude;       /* >= 0 : the speed (m/s) a body's velocity is clamped to each step; 0: no limit */
     f32     max_linear_velocity_magnitude_inv;   /* Derived: 1 / max_linear_velocity_magnitude; 0: no limit */
-    f32     max_angular_velocity_magnitude;      /* >= 0 : the rate (rad/s) a body may turn at per step; 0: no limit */
+    f32     max_angular_velocity_magnitude;      /* >= 0 : the rate (rad/s) a body's angular velocity is clamped to each step; 0: no limit */
     f32     max_angular_velocity_magnitude_inv;  /* Derived: 1 / max_angular_velocity_magnitude; 0: no limit */
 	f32 	linear_dampening;	/* >= 0 : coefficient in diff. eq. dv/dt = -coeff*v */
 	f32 	angular_dampening;	/* >= 0 : coefficient in diff. eq. dv/dt = -coeff*v */

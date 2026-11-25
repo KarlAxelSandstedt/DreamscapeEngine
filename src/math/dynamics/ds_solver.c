@@ -196,21 +196,18 @@ void ds_BodyIntegrateVelocitiesRange(struct ds_Dynamics *pipeline, const u32 low
     {
         struct ds_BodyCompute *bcomp = active->body_compute_pool.buf + i;
 
-        /* update velocity and world center of mass */
-        const v3 linear_velocity = bcomp->linear_velocity;
-        const v3 angular_velocity = bcomp->angular_velocity;
-        const f32 div_linear = V3Length(linear_velocity) * g_solver_config->max_linear_velocity_magnitude_inv;
-        const f32 div_angular = V3Length(angular_velocity) * g_solver_config->max_angular_velocity_magnitude_inv;
-        const f32 t_linear = 1.0f / F32Clamp(div_linear, 1.0f, F32_INFINITY);
-        const f32 t_angular = 1.0f / F32Clamp(div_angular, 1.0f, F32_INFINITY);
+        /* velocities clamped to the configured maxima, stored, then integrated */
+        const f32 div_linear = V3Length(bcomp->linear_velocity) * g_solver_config->max_linear_velocity_magnitude_inv;
+        const f32 div_angular = V3Length(bcomp->angular_velocity) * g_solver_config->max_angular_velocity_magnitude_inv;
+        const v3 linear_velocity = V3Scale(bcomp->linear_velocity, 1.0f / F32Clamp(div_linear, 1.0f, F32_INFINITY));
+        const v3 angular_velocity = V3Scale(bcomp->angular_velocity, 1.0f / F32Clamp(div_angular, 1.0f, F32_INFINITY));
+        bcomp->linear_velocity = linear_velocity;
+        bcomp->angular_velocity = angular_velocity;
 
-	    bcomp->delta_position = V3AddScaled(bcomp->delta_position, linear_velocity, pipeline->timestep * t_linear);
+	    bcomp->delta_position = V3AddScaled(bcomp->delta_position, linear_velocity, pipeline->timestep);
 
         const q rotation = bcomp->rotation;
-        const q a_vel_quat = Q(angular_velocity.x * t_angular,
-                               angular_velocity.y * t_angular,
-                               angular_velocity.z * t_angular,
-                               0.0f);
+        const q a_vel_quat = Q(angular_velocity.x, angular_velocity.y, angular_velocity.z, 0.0f);
 	    const q rot_delta = QScale(QMul(a_vel_quat, rotation), pipeline->timestep / 2.0f);
 	    bcomp->rotation = QNormalize(QAdd(rotation, rot_delta));
     }
