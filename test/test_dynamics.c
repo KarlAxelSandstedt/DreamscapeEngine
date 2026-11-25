@@ -183,8 +183,8 @@ Speculative contacts (DynamicsSpeculativeSphereTest): a sphere 1 cm above a stat
 it leaves at 5 m/s from the gap and never reaches the static sphere.
 DynamicsSpeculativeHullTest: the same for a sphere, a capsule lying flat and a box 1 cm above a static box; the
 capsules (two speculative points) and boxes (four) turn less than 1e-3 rad on the first tick, and with restitution 0
-over the half second. DynamicsSpeculativeMeshTest: the same for a sphere and a flat capsule (across a cell boundary)
-1 cm above the mesh floor (DynamicsTestFloorAdd).
+over the half second. DynamicsSpeculativeMeshTest: the same for a sphere, a flat capsule and a box (both across cell
+boundaries) 1 cm above the mesh floor (DynamicsTestFloorAdd).
 
 Pipeline (DynamicsFirstTickTest, DynamicsFlushTest): 101 bodies added to a pipeline of initial size 64, two of
 the new ones joined before the first tick: the joint is coloured at once, and after one tick every contact is
@@ -5414,7 +5414,7 @@ static struct test_Output DynamicsMeshThinPlateTest(struct test_Environment *env
     return output;
 }
 
-/* a sphere and a flat capsule 1 cm above the mesh floor, moving down at 5 m/s, as DynamicsSpeculativeHullTest (file comment) */
+/* a sphere, a flat capsule and a box 1 cm above the mesh floor, moving down at 5 m/s, as DynamicsSpeculativeHullTest (file comment) */
 static struct test_Output DynamicsSpeculativeMeshTest(struct test_Environment *env)
 {
     struct test_Output output = { .success = 1, .id = __func__ };
@@ -5431,23 +5431,25 @@ static struct test_Output DynamicsSpeculativeMeshTest(struct test_Environment *e
 
     const struct c_Shape sphere = { .type = C_SHAPE_SPHERE, .sphere.radius = 0.5f };
     const struct c_Shape capsule = { .type = C_SHAPE_CAPSULE, .capsule.half_height = 0.5f, .capsule.radius = 0.25f };
+    const struct c_Shape cube = { .type = C_SHAPE_CONVEX_HULL, .hull = DcelBox(&mem, V3(0.5f, 0.5f, 0.5f)) };
     const struct slot sphere_slot = c_ShapeDBAdd(&cshape_db, Utf8Inline("spec_sphere"), &sphere);
     const struct slot capsule_slot = c_ShapeDBAdd(&cshape_db, Utf8Inline("spec_capsule"), &capsule);
+    const struct slot cube_slot = c_ShapeDBAdd(&cshape_db, Utf8Inline("spec_cube"), &cube);
     const struct ds_BodyPrefab dynamic_prefab = { .dynamic = 1 };
     const ds_Transform t_local = ds_TransformIdentity();
     const q along_x = QUnitAxisAngle(V3(0.0f, 0.0f, 1.0f), -F32_PI/2.0f);
-    const u32 cshape[2] = { sphere_slot.index, capsule_slot.index };
-    const q rotation[2] = { QIdentity(), along_x };
-    const f64 rest[2] = { 0.5, 0.25 };
+    const u32 cshape[3] = { sphere_slot.index, capsule_slot.index, cube_slot.index };
+    const q rotation[3] = { QIdentity(), along_x, QIdentity() };
+    const f64 rest[3] = { 0.5, 0.25, 0.5 };
     const f64 gap = 0.01;
     const f32 speed = 5.0f;
 
-    /* body i: shape i / 2 (sphere, capsule lying along x across a cell boundary), restitution i % 2, at x = 2.3 + 2.5 i, z = 6.4 */
-    ds_BodyId id[4];
-    for (u32 i = 0; i < 4; ++i)
+    /* body i: shape i / 2 (sphere; capsule lying along x and box, both across cell boundaries), restitution i % 2, at x = 1.3 + 1.9 i, z = 6.4 */
+    ds_BodyId id[6];
+    for (u32 i = 0; i < 6; ++i)
     {
         const u32 kind = i / 2;
-        const ds_TransformWorld t_body = { .rotation = rotation[kind], .position = V3F64(2.3 + 2.5 * (f64) i, rest[kind] + gap, 6.4) };
+        const ds_TransformWorld t_body = { .rotation = rotation[kind], .position = V3F64(1.3 + 1.9 * (f64) i, rest[kind] + gap, 6.4) };
         id[i] = ds_BodyAdd(&pipeline, &dynamic_prefab, &t_body, i + 1);
         const struct ds_ShapePrefab shape_prefab = { .cshape = cshape[kind], .density = 1.0f, .restitution = (f32) (i % 2), .friction = 0.5f };
         ds_ShapeAdd(&pipeline, &shape_prefab, &t_local, id[i]);
@@ -5459,7 +5461,7 @@ static struct test_Output DynamicsSpeculativeMeshTest(struct test_Environment *e
 
     SnapshotTestTick(&pipeline);
     const f32 arrival = (f32) gap / pipeline.timestep;
-    for (u32 i = 0; i < 4; ++i)
+    for (u32 i = 0; i < 6; ++i)
     {
         const ds_TransformWorld pose = DynamicsTestPose(&pipeline, id[i]);
         const f64 g = pose.position.y - rest[i / 2];
@@ -5484,7 +5486,7 @@ static struct test_Output DynamicsSpeculativeMeshTest(struct test_Environment *e
     for (u32 t = 0; t < 30; ++t)
     {
         SnapshotTestTick(&pipeline);
-        for (u32 i = 0; i < 4; ++i)
+        for (u32 i = 0; i < 6; ++i)
         {
             const ds_TransformWorld pose = DynamicsTestPose(&pipeline, id[i]);
             const f64 g = pose.position.y - rest[i / 2];

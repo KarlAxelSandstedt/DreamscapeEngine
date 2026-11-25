@@ -4290,7 +4290,9 @@ Hull vs one triangle (c_MeshContact), checked in double in the hull's frame agai
 
     sat = max sep(n) over the hull's face normals, +-n_t and +-cross(hull edge, triangle edge)
 
-Every result: contact iff sat < 0 (undecided within tol); c_ManifoldCheck, v_count 1..4, |n| = 1;
+Every result: a contact for sat < 0, none for sat > spec (spec = speculative_distance; undecided within tol); in
+between none is counted (band_missed), not failed: sat is the largest separation over the axes, below the distance
+when the closest features are two vertices, where the clip does not reach. c_ManifoldCheck, v_count 1..4, |n| = 1;
 depth_i <= -sep(n) + tol (n separates as deep as it claims); v_i on the hull (|sdf| <= tol); v_i - depth_i n on the
 triangle. For touching pairs (|sat| <= tol) the two surface checks are counted, not failed: the fallback (no clipped
 point penetrates, no edge contact; as c_HullContact) takes the deepest vertex of one side over the other's
@@ -4346,15 +4348,22 @@ static f64 McHullTriSat(const struct ch_Hull *h, const struct d3 t[3])
     return sat;
 }
 
-/* the checks above; NULL if passed, else what failed; touching_off counts the touching pairs' surface misses */
-static const char *McHullTriVerify(u64 *touching_off, const ds_Array(c_Manifold) *r, const struct ch_Hull *h, const struct d3 t[3], const f64 tol, const f64 slack)
+/* the checks above; NULL if passed, else what failed; touching_off counts the touching pairs' surface misses, band_missed the pairs separated within spec without a contact */
+static const char *McHullTriVerify(u64 *touching_off, u64 *band_missed, const ds_Array(c_Manifold) *r, const struct ch_Hull *h, const struct d3 t[3], const f64 tol, const f64 slack)
 {
     const f64 sat = McHullTriSat(h, t);
+    const f64 spec = (f64) g_contact_test_solver_config.speculative_distance;
     if (r->length == 0)
     {
-        return (sat < -tol) ? "missed contact" : NULL;
+        if (sat < -tol)
+        {
+            return "missed contact";
+        }
+
+        *band_missed += (sat < spec - tol);
+        return NULL;
     }
-    if (sat > tol + slack)
+    if (sat > spec + tol + slack)
     {
         return "false contact";
     }
@@ -4430,12 +4439,15 @@ static void McHullPrint(const ds_Array(c_Manifold) *r, const struct ch_Hull *h, 
  *      resting on the face, p deep                     4 points, n = -y, depths p
  *      the same under the triangle                     none: its center of mass is more than linear_slop behind
  *                                                      (S = 1, 100); S = 0.01: 4 points, n = +y, depths p
- *      a corner down on the face, p deep               1 point, n = -y, depth p
+ *      a corner down on the face, p deep               1 point, n = -y, depth p; its incident face's other corners
+ *                                                      count while within the band (S = 0.01: 4 points)
  *      resting across edge z = 0                       4 points (2 corners, 2 on the edge), n = -y, depths p
  *      a stick (0.005 S thick) across edge z = 0 as in the capsule's deep edge case: n = (0, 1, 1) / sqrt 2,
  *      deepest delta + thickness (the stick's face or the edge pair: the same axis)
  *      its center of mass 2 linear_slop behind the face (S = 1, 100)    none
- *      0.5 linear_slop behind                                           4 points, n = +y, depths 0.05 S - 0.5 slop
+ *      0.5 linear_slop behind (S = 1, 100)                              4 points, n = +y, depths 0.05 S - 0.5 slop
+ *      resting spec/2 above the face (spec = speculative_distance)      4 points, n = -y, depths -spec/2
+ *      3/2 spec above                                                   none
  * and every contact passes McHullTriVerify. Then a pyramid (apex down, base half width 0.01 S, height H = 0.02 S)
  * through the face, tilted 10 degrees about x, its base center 0.3 H above: its center of mass is 0.05 H in front,
  * its highest corner about 0.32 H above and its apex about 0.68 H below, so the triangle's back face would separate
@@ -4459,15 +4471,16 @@ struct test_Output MeshHullCasesTest(struct test_Environment *env)
     static const f32 tri_size[] = { 1e-2f, 1.0f, 1e2f };
     const f64 sqrt2 = 1.4142135623730951, sqrt3 = 1.7320508075688772;
     const f64 slop = (f64) g_solver_config->linear_slop;
+    const f64 spec = (f64) g_contact_test_solver_config.speculative_distance;
     for (u32 si = 0; si < 3; ++si)
-    for (u32 k = 0; k < 7; ++k)
+    for (u32 k = 0; k < 9; ++k)
     for (u32 rep = 0; rep < 20; ++rep)
     {
         const f64 S = (f64) tri_size[si];
         const f64 p = 0.01*S;
         const struct d3 C = D3(S / 3.0, 0.0, S / 3.0);
         v3 hw = V3((f32) (0.05*S), (f32) (0.05*S), (f32) (0.05*S));
-        if (k >= 5 && (f64) hw.y <= 2.0*slop)
+        if ((k == 5 || k == 6) && (f64) hw.y <= 2.0*slop)
         {
             continue;
         }
@@ -4489,7 +4502,9 @@ struct test_Output MeshHullCasesTest(struct test_Environment *env)
             const q corner_to_y = QConj(McAxisRotation(V3(0.57735027f, 0.57735027f, 0.57735027f)));
             q_local = QNormalize(QMul(QUnitAxisAngle(V3(1.0f, 0.0f, 0.0f), F32_PI), corner_to_y));
             center = D3Add(C, D3(0.0, (f64) hw.x*sqrt3 - p, 0.0));
-            v_count = 1;
+            /* the incident face's other corners rise 2 hw / sqrt 3 (two) and 4 hw / sqrt 3 above the lowest */
+            const f64 rise = 2.0*(f64) hw.x / sqrt3;
+            v_count = 1 + 2*(rise <= p + spec) + (2.0*rise <= p + spec);
         }
         else if (k == 3)
         {
@@ -4514,6 +4529,13 @@ struct test_Output MeshHullCasesTest(struct test_Environment *env)
             deepest_expected = (f64) hw.y - behind;
             expect_none = (k == 5);
         }
+        else if (k == 7 || k == 8)
+        {
+            const f64 gap = (k == 7) ? 0.5*spec : 1.5*spec;
+            center = D3Add(C, D3(0.0, (f64) hw.y + gap, 0.0));
+            deepest_expected = -gap;
+            expect_none = (k == 8);
+        }
 
         struct arena record = *env->mem_2;
         const struct c_Shape mesh = McSingleTriangle(env->mem_2, (f32) S);
@@ -4531,11 +4553,11 @@ struct test_Output MeshHullCasesTest(struct test_Environment *env)
         McTriangleInHull(t, &h, rm, pos_m, mesh.mesh.v);
         const f64 tol = 1e-4*S;
         const struct d3 n_hull = D3RotationTMul(h.r, D3RotationMul(rm, n_expected));
-        u64 touching_off = 0;
-        const char *fail = (expect_none) ? NULL : McHullTriVerify(&touching_off, &r, &h, t, McHullTriTol(&h, t), 0.0);
+        u64 touching_off = 0, band_missed = 0;
+        const char *fail = (expect_none) ? NULL : McHullTriVerify(&touching_off, &band_missed, &r, &h, t, McHullTriTol(&h, t), 0.0);
         if (expect_none && r.length)
         {
-            fail = "contact with the center of mass behind";
+            fail = (k == 8) ? "contact beyond speculative_distance" : "contact with the center of mass behind";
         }
         if (!fail && !expect_none && r.length != 1)
         {
@@ -4544,7 +4566,7 @@ struct test_Output MeshHullCasesTest(struct test_Environment *env)
         if (!fail && r.length)
         {
             const struct c_Manifold *m = r.buf;
-            f64 deepest = 0.0;
+            f64 deepest = (f64) m->depth[0];
             for (u32 i = 0; i < m->v_count; ++i)
             {
                 deepest = F64MaxTest(deepest, (f64) m->depth[i]);
@@ -4606,8 +4628,8 @@ struct test_Output MeshHullCasesTest(struct test_Environment *env)
             deepest_expected = F64MaxTest(deepest_expected, -D3Dot(up, D3Sub(h.v[k], t[0])));
         }
 
-        u64 touching_off = 0;
-        const char *fail = McHullTriVerify(&touching_off, &r, &h, t, McHullTriTol(&h, t), 0.0);
+        u64 touching_off = 0, band_missed = 0;
+        const char *fail = McHullTriVerify(&touching_off, &band_missed, &r, &h, t, McHullTriTol(&h, t), 0.0);
         if (!fail && r.length != 1)
         {
             fail = "no contact";
@@ -4684,9 +4706,10 @@ struct test_Output MeshHullCasesTest(struct test_Environment *env)
  * A triangle with the hull's center of mass more than linear_slop behind its plane (beyond tol) gets no contact; near
  * that threshold (within tol and the move below) either result is accepted and the cache stages are skipped. A hull
  * below the engine's scale (com_inscribed_sphere_radius < linear_slop) lying wholly behind the plane with its
- * center of mass within linear_slop gets a contact although separated (the triangle's back face is no axis, as in
- * box3d): counted, not failed. Every other result passes McHullTriVerify; again at the same pose with the result as
- * the cache (no eviction allowed, same checks), and moved by 1e-3 L with the cache (slack sat_cache_tolerance).
+ * center of mass within linear_slop gets a contact although separated beyond speculative_distance (the triangle's
+ * back face is no axis, as in box3d): counted, not failed. Every other result passes McHullTriVerify; again at the
+ * same pose with the result as the cache (no eviction allowed, except touching or at the band's edge; same checks),
+ * and moved by 1e-3 L with the cache (slack sat_cache_tolerance).
  */
 struct test_Output MeshHullRandomTest(struct test_Environment *env)
 {
@@ -4701,8 +4724,9 @@ struct test_Output MeshHullRandomTest(struct test_Environment *env)
     struct ds_ConcaveCache none = { .tri = { .buf = NULL, .length = 0, .base = U32_MAX } };
     static const f64 offset[] = { 0.0, 1e-6, -1e-6, 1e-4, -1e-4, 1e-2, -1e-2 };
     const f64 slop = (f64) g_solver_config->linear_slop;
+    const f64 spec = (f64) g_contact_test_solver_config.speculative_distance;
 
-    u64 contacts = 0, separated = 0, culled = 0, thin_contacts = 0, probes = 0, evictions = 0, v_count[5] = { 0 }, touching_off = 0;
+    u64 contacts = 0, separated = 0, culled = 0, thin_contacts = 0, probes = 0, evictions = 0, v_count[5] = { 0 }, touching_off = 0, band_missed = 0;
     for (u32 i = 0; i < 20000; ++i)
     {
         struct arena record = *env->mem_2;
@@ -4777,13 +4801,13 @@ struct test_Output MeshHullRandomTest(struct test_Environment *env)
         {
             fail = (r.length) ? "contact with the center of mass behind" : NULL;
         }
-        else if (thin && r.length && McHullTriSat(&h, t) > tol)
+        else if (thin && r.length && McHullTriSat(&h, t) > spec + tol)
         {
             thin_contact = 1;
         }
         else if (!near_cull || r.length)
         {
-            fail = McHullTriVerify(&touching_off, &r, &h, t, tol, 0.0);
+            fail = McHullTriVerify(&touching_off, &band_missed, &r, &h, t, tol, 0.0);
         }
         const char *stage = "first";
         contacts += (r.length != 0);
@@ -4800,9 +4824,10 @@ struct test_Output MeshHullRandomTest(struct test_Environment *env)
             probes += metrics->mesh_cache_probe_count - p0;
             evictions += metrics->mesh_cache_eviction_count - e0;
             stage = "cached, same pose";
-            /* touching (|sat| <= tol): the query's and the cache's separations may round to opposite sides of 0 */
-            const u32 decided = F64AbsTest(McHullTriSat(&h, t)) > tol;
-            fail = (decided && metrics->mesh_cache_eviction_count != e0) ? "cache evicted at the same pose" : McHullTriVerify(&touching_off, &again, &h, t, tol, 0.0);
+            /* touching (|sat| <= tol) or at the band's edge (|sat - spec| <= tol): the query's and the cache's separations may round to opposite sides */
+            const f64 sat = McHullTriSat(&h, t);
+            const u32 decided = F64AbsTest(sat) > tol && F64AbsTest(sat - spec) > tol;
+            fail = (decided && metrics->mesh_cache_eviction_count != e0) ? "cache evicted at the same pose" : McHullTriVerify(&touching_off, &band_missed, &again, &h, t, tol, 0.0);
         }
         if (!fail && !near_cull && !thin_contact)
         {
@@ -4814,8 +4839,8 @@ struct test_Output MeshHullRandomTest(struct test_Environment *env)
             McTriangleInHull(t, &h, rm, pos_moved, tm);
             stage = "cached, moved";
             const f64 slack = (f64) g_numerics_config->sat_cache_tolerance;
-            const u32 thin_moved = (thin && moved.length && McHullTriSat(&h, t) > tol + slack);
-            fail = (thin_moved) ? NULL : McHullTriVerify(&touching_off, &moved, &h, t, tol, slack);
+            const u32 thin_moved = (thin && moved.length && McHullTriSat(&h, t) > spec + tol + slack);
+            fail = (thin_moved) ? NULL : McHullTriVerify(&touching_off, &band_missed, &moved, &h, t, tol, slack);
             thin_contacts += thin_moved;
         }
         *env->mem_2 = record;
@@ -4827,9 +4852,9 @@ struct test_Output MeshHullRandomTest(struct test_Environment *env)
             TEST_FAILURE;
         }
     }
-    fprintf(stdout, "\thull on a triangle: 20000 random (%llu contacts: %llu / %llu / %llu / %llu with 1 / 2 / 3 / 4 points; %llu apart; %llu culled; %llu separated thin hulls with a contact, counted); cache at the same pose: %llu probed, %llu evicted; touching results with a point off a surface (counted) %llu\n",
+    fprintf(stdout, "\thull on a triangle: 20000 random (%llu contacts: %llu / %llu / %llu / %llu with 1 / 2 / 3 / 4 points; %llu apart; %llu culled; %llu separated thin hulls with a contact, counted); cache at the same pose: %llu probed, %llu evicted; touching results with a point off a surface (counted) %llu; missed in the band (counted) %llu\n",
         (unsigned long long) contacts, (unsigned long long) v_count[1], (unsigned long long) v_count[2], (unsigned long long) v_count[3],
-        (unsigned long long) v_count[4], (unsigned long long) separated, (unsigned long long) culled, (unsigned long long) thin_contacts, (unsigned long long) probes, (unsigned long long) evictions, (unsigned long long) touching_off);
+        (unsigned long long) v_count[4], (unsigned long long) separated, (unsigned long long) culled, (unsigned long long) thin_contacts, (unsigned long long) probes, (unsigned long long) evictions, (unsigned long long) touching_off, (unsigned long long) band_missed);
 
     ds_TSlabDealloc(slab);
     g_dynamics_worker = prev;

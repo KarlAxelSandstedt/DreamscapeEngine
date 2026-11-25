@@ -1332,7 +1332,7 @@ struct sat_Pair
 	const v3 *			v[2];
 	const struct plane *pl[2];
 	v3					center_0;	/* s0's center of mass: edge axis orientation (SAT_PAIR_HULL) */
-	f32					max_separation;	/* separated beyond it; c_HullContact: speculative_distance, mesh triangles: 0 */
+	f32					max_separation;	/* separated beyond it; c_HullContact and mesh triangles: speculative_distance */
 };
 
 /*
@@ -2080,7 +2080,7 @@ static void c_MeshHullTriangles(struct c_MeshContactHelper *helper, const struct
         stub.v = tri;
         stub.plane = pl_tri;
         /* center_0 orients HullEdgeCheck's axes; the triangle's edge check needs none */
-        const struct sat_Pair pair = { .type = SAT_PAIR_TRIANGLE, .h = { hull, &stub }, .v = { hull->v, tri }, .pl = { hull->plane, pl_tri }, .center_0 = V3(0.0f, 0.0f, 0.0f), .max_separation = 0.0f };
+        const struct sat_Pair pair = { .type = SAT_PAIR_TRIANGLE, .h = { hull, &stub }, .v = { hull->v, tri }, .pl = { hull->plane, pl_tri }, .center_0 = V3(0.0f, 0.0f, 0.0f), .max_separation = g_solver_config->speculative_distance };
 
         struct c_MeshTri *r = c_MeshContactPush(helper, tri_index);
         struct arena *mem_tmp = ArenaPushScratch();

@@ -322,9 +322,9 @@ the contact results may be re-used the next frame if a set of conditions are ful
 
 ::: Internals :::
 
-sat_CacheTryReuse (c_contact.c): a separating axis is reused while it still separates by more than the pair's band
-(hulls: speculative_distance, mesh triangles: 0); a contact is rebuilt from its cached features and reused while its
-depth changed by less than sat_cache_tolerance (ds_NumericsConfig).
+sat_CacheTryReuse (c_contact.c): a separating axis is reused while it still separates by more than
+speculative_distance; a contact is rebuilt from its cached features and reused while its depth changed by less than
+sat_cache_tolerance (ds_NumericsConfig).
 */
 
 enum sat_CacheType
