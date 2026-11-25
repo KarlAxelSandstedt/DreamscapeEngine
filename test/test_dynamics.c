@@ -183,7 +183,8 @@ Speculative contacts (DynamicsSpeculativeSphereTest): a sphere 1 cm above a stat
 it leaves at 5 m/s from the gap and never reaches the static sphere.
 DynamicsSpeculativeHullTest: the same for a sphere, a capsule lying flat and a box 1 cm above a static box; the
 capsules (two speculative points) and boxes (four) turn less than 1e-3 rad on the first tick, and with restitution 0
-over the half second.
+over the half second. DynamicsSpeculativeMeshTest: the same for a sphere and a flat capsule (across a cell boundary)
+1 cm above the mesh floor (DynamicsTestFloorAdd).
 
 Pipeline (DynamicsFirstTickTest, DynamicsFlushTest): 101 bodies added to a pipeline of initial size 64, two of
 the new ones joined before the first tick: the joint is coloured at once, and after one tick every contact is
@@ -5413,6 +5414,106 @@ static struct test_Output DynamicsMeshThinPlateTest(struct test_Environment *env
     return output;
 }
 
+/* a sphere and a flat capsule 1 cm above the mesh floor, moving down at 5 m/s, as DynamicsSpeculativeHullTest (file comment) */
+static struct test_Output DynamicsSpeculativeMeshTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct arena mem = ArenaAlloc(NULL, 64*1024*1024);
+    struct c_ShapeDB cshape_db = { 0 };
+    c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
+    struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&external, NSEC_PER_SEC / 60);
+    ds_DynamicsConfigPush(&pipeline);
+    pipeline.config_pending.solver.sleep_enabled = 0;
+    ds_DynamicsConfigUpdatePending(&pipeline);
+    DynamicsTestFloorAdd(&mem, &pipeline, &cshape_db, 1.0f);
+
+    const struct c_Shape sphere = { .type = C_SHAPE_SPHERE, .sphere.radius = 0.5f };
+    const struct c_Shape capsule = { .type = C_SHAPE_CAPSULE, .capsule.half_height = 0.5f, .capsule.radius = 0.25f };
+    const struct slot sphere_slot = c_ShapeDBAdd(&cshape_db, Utf8Inline("spec_sphere"), &sphere);
+    const struct slot capsule_slot = c_ShapeDBAdd(&cshape_db, Utf8Inline("spec_capsule"), &capsule);
+    const struct ds_BodyPrefab dynamic_prefab = { .dynamic = 1 };
+    const ds_Transform t_local = ds_TransformIdentity();
+    const q along_x = QUnitAxisAngle(V3(0.0f, 0.0f, 1.0f), -F32_PI/2.0f);
+    const u32 cshape[2] = { sphere_slot.index, capsule_slot.index };
+    const q rotation[2] = { QIdentity(), along_x };
+    const f64 rest[2] = { 0.5, 0.25 };
+    const f64 gap = 0.01;
+    const f32 speed = 5.0f;
+
+    /* body i: shape i / 2 (sphere, capsule lying along x across a cell boundary), restitution i % 2, at x = 2.3 + 2.5 i, z = 6.4 */
+    ds_BodyId id[4];
+    for (u32 i = 0; i < 4; ++i)
+    {
+        const u32 kind = i / 2;
+        const ds_TransformWorld t_body = { .rotation = rotation[kind], .position = V3F64(2.3 + 2.5 * (f64) i, rest[kind] + gap, 6.4) };
+        id[i] = ds_BodyAdd(&pipeline, &dynamic_prefab, &t_body, i + 1);
+        const struct ds_ShapePrefab shape_prefab = { .cshape = cshape[kind], .density = 1.0f, .restitution = (f32) (i % 2), .friction = 0.5f };
+        ds_ShapeAdd(&pipeline, &shape_prefab, &t_local, id[i]);
+
+        const struct ds_Body *body = ds_BodyLookup(&pipeline, id[i]).address;
+        TEST_NOT_ZERO(body->set == SOLVER_SET_ACTIVE);
+        pipeline.solver_set_pool.buf[body->set].body_compute_pool.buf[body->sim].linear_velocity = V3(0.0f, -speed, 0.0f);
+    }
+
+    SnapshotTestTick(&pipeline);
+    const f32 arrival = (f32) gap / pipeline.timestep;
+    for (u32 i = 0; i < 4; ++i)
+    {
+        const ds_TransformWorld pose = DynamicsTestPose(&pipeline, id[i]);
+        const f64 g = pose.position.y - rest[i / 2];
+        const f32 vy = SolverTestVelocity(&pipeline, id[i]).y;
+        const f32 turn = DynamicsTestAngle(rotation[i / 2], pose.rotation);
+        u32 ok = 0;
+        if (i % 2)
+        {
+            ok = g > gap && F32Abs(vy - speed) < 1e-2f;
+        }
+        else
+        {
+            ok = -1e-4 < g && g < 1e-4 && F32Abs(vy + arrival) < 1e-2f;
+        }
+        if (!(ok && turn < 1e-3f))
+        {
+            fprintf(stderr, "speculative mesh, first tick, body %u (restitution %u): gap %g v %g turned %g rad\n", i, i % 2, g, vy, turn);
+            TEST_FAILURE;
+        }
+    }
+
+    for (u32 t = 0; t < 30; ++t)
+    {
+        SnapshotTestTick(&pipeline);
+        for (u32 i = 0; i < 4; ++i)
+        {
+            const ds_TransformWorld pose = DynamicsTestPose(&pipeline, id[i]);
+            const f64 g = pose.position.y - rest[i / 2];
+            const f32 turn = DynamicsTestAngle(rotation[i / 2], pose.rotation);
+            const f32 vy = SolverTestVelocity(&pipeline, id[i]).y;
+            u32 ok = 0;
+            if (i % 2)
+            {
+                ok = g > 0.0;
+            }
+            else
+            {
+                ok = g > -pipeline.config.solver.linear_slop && vy < 0.05f && turn < 1e-3f;
+            }
+            if (!ok)
+            {
+                fprintf(stderr, "speculative mesh, tick %u, body %u (restitution %u): gap %g v %g turned %g rad\n", t + 2, i, i % 2, g, vy, turn);
+                TEST_FAILURE;
+            }
+        }
+    }
+
+    ds_DynamicsConfigPop(&pipeline);
+    ds_DynamicsDealloc(&pipeline);
+    c_ShapeDBDealloc(&cshape_db);
+    ArenaFree(&mem);
+    return output;
+}
+
 /********************************** continuous collision against statics **********************************/
 
 /*
@@ -6013,6 +6114,7 @@ static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
     DynamicsWarmStartMetricsTest,
     DynamicsMeshOneSidedTest,
     DynamicsMeshThinPlateTest,
+    DynamicsSpeculativeMeshTest,
     DynamicsCCDFloorTest,
     DynamicsCCDSpinTest,
     DynamicsCCDCornerTest,

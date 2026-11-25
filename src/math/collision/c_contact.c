@@ -1590,8 +1590,8 @@ struct c_MeshContactHelper
     const struct mesh *         mesh;
     m3                          rot_inv;    /* convex_to_mesh's inverse: x_convex = rot_inv (x_mesh - pos) */
     v3                          pos;
-    struct aabb                 bbox;       /* the convex shape's box in mesh space */
-    struct aabb                 local;      /* the convex shape's box in its own frame */
+    struct aabb                 bbox;       /* the convex shape's box in mesh space, grown by speculative_distance */
+    struct aabb                 local;      /* the convex shape's box in its own frame, grown by speculative_distance */
 
     ds_Array(u32)               tri;        /* MeshQuery of bbox */
 
@@ -1638,10 +1638,12 @@ static void c_MeshContactInit(struct c_MeshContactHelper *helper, const struct c
             local = convex->hull.bbox;
         } break;
     }
-    helper->local = local;
+    const f32 spec = g_solver_config->speculative_distance;
+    const v3 grow = V3(spec, spec, spec);
+    helper->local = (struct aabb) { .min = V3Sub(local.min, grow), .max = V3Add(local.max, grow) };
     const v3 center = V3Add(M3V3Mul(rot, V3Scale(V3Add(local.min, local.max), 0.5f)), helper->pos);
     const m3 rot_abs = M3Abs(rot);
-    const v3 half = M3V3Mul(rot_abs, V3Scale(V3Sub(local.max, local.min), 0.5f));
+    const v3 half = V3Add(M3V3Mul(rot_abs, V3Scale(V3Sub(local.max, local.min), 0.5f)), grow);
     helper->bbox = (struct aabb) { .min = V3Sub(center, half), .max = V3Add(center, half) };
 
     /* TODO(perf, audit E2): 1 scratch arena here, c_MeshHullTriangles a second */
@@ -1658,8 +1660,8 @@ static void c_MeshContactInit(struct c_MeshContactHelper *helper, const struct c
 
 /*
  * The candidate triangle tri_index (its leaf's box overlaps the shape's, mesh space) in the convex shape's frame;
- * returns 1 if its own box there overlaps the shape's local box (exact: the shape lies inside its box; touching
- * kept), else 0.
+ * returns 1 if its own box there overlaps helper->local (the shape grown by speculative_distance lies inside it;
+ * touching kept), else 0.
  */
 static u32 c_MeshContactTriangle(v3 tri[3], const struct c_MeshContactHelper *helper, const u32 tri_index)
 {
@@ -1703,6 +1705,7 @@ static void c_MeshTriRegionMaskDelayed(struct c_MeshTri *r, const u32 mask)
 static void c_MeshSphereTriangles(struct c_MeshContactHelper *helper, const struct sphere *sphere)
 {
     const f32 radius = sphere->radius;
+    const f32 max_dist = radius + g_solver_config->speculative_distance;
     const f32 touch_tolerance = GJK_TOUCH_TOLERANCE * F32_EPSILON;
     for (u32 candidate = 0; candidate < helper->tri.length; ++candidate)
     {
@@ -1730,7 +1733,7 @@ static void c_MeshSphereTriangles(struct c_MeshContactHelper *helper, const stru
 
         const v3 c = V3Add(V3Add(V3Scale(tri[0], w[0]), V3Scale(tri[1], w[1])), V3Scale(tri[2], w[2]));
         const f32 distance_sq = V3LengthSquared(c);
-        if (radius*radius < distance_sq)
+        if (max_dist*max_dist < distance_sq)
         {
             continue;
         }
@@ -1794,11 +1797,13 @@ static u32 c_TriSegmentSideClip(struct segment *clip, const v3 t[3], const v3 n,
 /*
  * Capsule vs triangle (one-sided), tailored from c_HullCapsuleContact: the triangle is a flat hull with the front
  * face n_t and three knife edges, and TriSegmentVoronoi replaces GJK. In the capsule's frame; the manifold follows the
- * mesh convention (n from the capsule to the mesh, v on the capsule's surface).
+ * mesh convention (n from the capsule to the mesh, v on the capsule's surface). Kept out to a separation of
+ * speculative_distance.
  */
 static void c_MeshCapsuleTriangles(struct c_MeshContactHelper *helper, const struct capsule *capsule)
 {
     const f32 radius = capsule->radius;
+    const f32 max_dist = radius + g_solver_config->speculative_distance;
     /* the core in the capsule's frame (SegmentCapsuleTransform's order) */
     const struct segment core = Segment(V3(0.0f, capsule->half_height, 0.0f), V3(0.0f, -capsule->half_height, 0.0f));
     const f32 touch_tolerance = GJK_TOUCH_TOLERANCE * F32_EPSILON;
@@ -1824,7 +1829,7 @@ static void c_MeshCapsuleTriangles(struct c_MeshContactHelper *helper, const str
         const v3 c_t = V3Add(V3Add(V3Scale(tri[0], w[0]), V3Scale(tri[1], w[1])), V3Scale(tri[2], w[2]));
         const v3 c_s = SegmentBc(&core, s);
         const f32 distance_sq = V3DistanceSquared(c_t, c_s);
-        if (radius*radius < distance_sq)
+        if (max_dist*max_dist < distance_sq)
         {
             continue;
         }
@@ -1849,9 +1854,9 @@ static void c_MeshCapsuleTriangles(struct c_MeshContactHelper *helper, const str
 
             /*
              * Two points if n is within face_parallel_max_degrees of the front face normal (f, from the triangle to
-             * the capsule: -n ~ f) and both ends of the clipped core touch (d_i <= r); otherwise one point. Each end
-             * has its own depth. As for hulls, the closest feature may be an edge (a core parallel to the face is as
-             * close to it as to the edge it crosses).
+             * the capsule: -n ~ f) and both ends of the clipped core lie within max_dist (d_i <= max_dist); otherwise
+             * one point. Each end has its own depth. As for hulls, the closest feature may be an edge (a core parallel
+             * to the face is as close to it as to the edge it crosses).
              */
             const v3 f = n_t;
             struct segment clip;
@@ -1860,7 +1865,7 @@ static void c_MeshCapsuleTriangles(struct c_MeshContactHelper *helper, const str
             {
                 const f32 d0 = V3Dot(f, V3Sub(clip.p[0], tri[0]));
                 const f32 d1 = V3Dot(f, V3Sub(clip.p[1], tri[0]));
-                if (d0 <= radius && d1 <= radius)
+                if (d0 <= max_dist && d1 <= max_dist)
                 {
                     m->v_count = 2;
                     m->n = V3Scale(f, -1.0f);
@@ -1952,10 +1957,10 @@ static void c_MeshCapsuleTriangles(struct c_MeshContactHelper *helper, const str
 
         m->n = V3Scale(f, -1.0f);
 
-        /* as in the shallow path: two points if both clipped ends touch (d_i <= r), else the deeper end */
+        /* as in the shallow path: two points if both clipped ends lie within max_dist (d_i <= max_dist), else the deeper end */
         if (face_contact)
         {
-            if (depth[1 - deeper] <= radius)
+            if (depth[1 - deeper] <= max_dist)
             {
                 m->v_count = 2;
                 m->v[0] = V3Add(clip.p[0], V3Scale(m->n, radius));

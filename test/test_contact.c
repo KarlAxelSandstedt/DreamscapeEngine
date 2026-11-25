@@ -3333,8 +3333,10 @@ static struct c_Shape McSingleTriangle(struct arena *mem, const f32 size)
  * Sphere vs one triangle, center = a triangle point (face centroid, edge midpoint, vertex) + h n_t. Expected
  * (one-sided): h = r/2: n = -n_t, depth = r - h, v = r n; h = -r/2: none. h = 0, +-1e-6 L lie inside GJK's touch
  * band (the face fallback), where the frame change's rounding decides the side: none, or the front contact
- * (n = -n_t, depth r - |h|). Then random points on the triangle within the band: no NaN; none or the front contact,
- * depth ~ r; at least a quarter (about half lie in front) get one.
+ * (n = -n_t, depth r - |h|). Speculative (spec = speculative_distance): h = r + spec/2: the front contact, depth
+ * -spec/2; h = r + 3/2 spec: none (both only for L <= 1e3: at 1e5 the pose's rounding is about spec). Then random
+ * points on the triangle within the band: no NaN; none or the front contact, depth ~ r; at least a quarter (about
+ * half lie in front) get one.
  */
 struct test_Output MeshSphereCasesTest(struct test_Environment *env)
 {
@@ -3350,18 +3352,24 @@ struct test_Output MeshSphereCasesTest(struct test_Environment *env)
     for (u32 si = 0; si < 3; ++si)
     for (u32 ri = 0; ri < 3; ++ri)
     for (u32 pi = 0; pi < 3; ++pi)
-    for (u32 hi = 0; hi < 5; ++hi)
+    for (u32 hi = 0; hi < 7; ++hi)
     {
         struct arena record = *env->mem_2;
         const f32 size = tri_size[si];
         const f32 radius = size*radius_ratio[ri];
+        const f64 L = F64MaxTest((f64) size, (f64) radius);
+        const f32 spec = g_contact_test_solver_config.speculative_distance;
+        const f32 h_set[] = { 0.0f, (f32) (1e-6*L), (f32) (-1e-6*L), 0.5f*radius, -0.5f*radius, radius + 0.5f*spec, radius + 1.5f*spec };
+        const f32 h = h_set[hi];
+        if (hi >= 5 && L > 1e3)
+        {
+            continue;
+        }
+
         const struct c_Shape mesh = McSingleTriangle(env->mem_2, size);
         const v3 point = (pi == 0) ? V3(size / 3.0f, 0.0f, size / 3.0f)
                        : (pi == 1) ? V3(0.0f, 0.0f, size / 2.0f)
                        : V3(0.0f, 0.0f, 0.0f);
-        const f64 L = F64MaxTest((f64) size, (f64) radius);
-        const f32 h_set[] = { 0.0f, (f32) (1e-6*L), (f32) (-1e-6*L), 0.5f*radius, -0.5f*radius };
-        const f32 h = h_set[hi];
 
         const struct d3 mesh_pos = CtWorldPosition();
         const ds_TransformWorld t_mesh = { .rotation = CtRotation(), .position = V3F64(mesh_pos.x, mesh_pos.y, mesh_pos.z) };
@@ -3379,7 +3387,8 @@ struct test_Output MeshSphereCasesTest(struct test_Environment *env)
         const v3 n_expected = V3Scale(n_t, -1.0f);
         const f64 depth_expected = (f64) radius - F64AbsTest((f64) h);
         const u32 in_band = (hi < 3);
-        u32 ok = (in_band) ? (r.length <= 1) : (r.length == (u32) (0.0f < h));
+        const u32 expected = (hi == 3 || hi == 5);
+        u32 ok = (in_band) ? (r.length <= 1) : (r.length == expected);
         const struct c_Manifold *m = r.buf;
         if (ok && r.length)
         {
@@ -3593,8 +3602,8 @@ static struct d3 McCapsuleDirection(const struct mc_CapsuleCase *cc, const struc
 
 /*
  * every point in the capsule (dist(v, core) <= r + tol; on its surface if on_surface: a face contact's points are the
- * clipped core points moved by r along n, inside the capsule for a tilted core), n unit, depths >= 0; returns the
- * deepest
+ * clipped core points moved by r along n, inside the capsule for a tilted core), n unit, depths >= -spec - tol;
+ * returns the deepest
  */
 static u32 McCapsuleManifoldCheck(f64 *deepest, const struct c_Manifold *m, const f32 radius, const f32 half_height, const f64 tol, const u32 on_surface)
 {
@@ -3602,12 +3611,13 @@ static u32 McCapsuleManifoldCheck(f64 *deepest, const struct c_Manifold *m, cons
     {
         return 0;
     }
-    *deepest = 0.0;
+    const f64 spec = (f64) g_contact_test_solver_config.speculative_distance;
+    *deepest = (f64) m->depth[0];
     for (u32 i = 0; i < m->v_count; ++i)
     {
         const f64 y = F64ClampTest((f64) m->v[i].y, -(f64) half_height, (f64) half_height);
         const f64 dist = D3Length(D3Sub(D3V3(m->v[i]), D3(0.0, y, 0.0)));
-        if (dist > (f64) radius + tol || (on_surface && dist < (f64) radius - tol) || m->depth[i] < 0.0f)
+        if (dist > (f64) radius + tol || (on_surface && dist < (f64) radius - tol) || (f64) m->depth[i] < -spec - tol)
         {
             return 0;
         }
@@ -3641,18 +3651,24 @@ static u32 McCapsuleSoundCheck(const struct c_Manifold *m, const struct d3 tri[3
  *      parallel above / below the face at 0.5 r     2 points, n = -y, depths 0.5 r / none (one-sided)
  *      perpendicular, its end 0.5 r above           1 point, n = -y, depth 0.5 r
  *      piercing the face (ends at 1.25 h, -0.75 h)  1 point (the deeper end), n = -y, depth r + 0.75 h
+ *      (both upright: S = 0.01 puts the top end within r + spec, a second point there, its depth 2 h less)
  *      lying in the plane                           2 points, n = -y, depths r, or none (the center on the
  *                                                  plane: the frame change's rounding decides its side)
  *      across edge z = 0 (parallel, 0.5 r above)    2 points (clipped to the triangle), depths 0.5 r
  *      its end 0.5 r above vertex 0, rising away    1 point (or 2 coincident: the core meets the triangle's
  *                                                  prism only at that end, as hull-capsule), n = -y, depth 0.5 r
+ *      parallel 1/2 spec / 3/2 spec beyond r        2 points, n = -y, depths -spec/2 / none
+ *      (spec = speculative_distance)
+ * Speculative, tilted 30 degrees, its low end spec/2 beyond r over the centroid (S = 1, 1e2: the high end lies beyond
+ * the band): 1 point, n = -y, depth -spec/2.
  * Deep near an edge (see below): the edge contact, or the face contact when the clipped face separation is within
  * sat_face_bias of the edge's.
- * Random capsules near the triangle, the capsule 1e-3 .. 1e2 times the triangle: points in the capsule (on its
- * surface for a shallow single point), n unit, the deepest depth against the double segment-triangle distance:
- * r - d_ref for a shallow single point (d_ref above GJK's band), at most that for two (see below), >= r when
- * touching; none for a center behind the triangle's plane (beyond the band). Every manifold, hand cases included,
- * claims no more than the overlap along its normal.
+ * Random capsules near the triangle, the capsule 1e-3 .. 1e2 times the triangle, a quarter of them with the low end
+ * of a rising core in the speculative band over the face: points in the capsule (on its surface for a shallow single
+ * point), n unit, a contact iff d_ref <= r + spec (the double segment-triangle distance; undecided within tol), the
+ * deepest depth: r - d_ref for a shallow single point (d_ref above GJK's band), at most that for two (see below),
+ * >= r when touching; none for a center behind the triangle's plane (beyond the band). Every manifold, hand cases
+ * included, claims no more than the overlap along its normal.
  */
 struct test_Output MeshCapsuleCasesTest(struct test_Environment *env)
 {
@@ -3666,6 +3682,7 @@ struct test_Output MeshCapsuleCasesTest(struct test_Environment *env)
         const f32 S = tri_size[si];
         const f32 r = 0.05f*S, h = 0.1f*S;
         const f64 tol = 1e-4*(f64) S;
+        const f64 spec = (f64) g_contact_test_solver_config.speculative_distance;
         const struct d3 C = D3(S / 3.0, 0.0, S / 3.0);
         const v3 diag = V3(0.70710678f, 0.0f, -0.70710678f);
         struct
@@ -3685,6 +3702,8 @@ struct test_Output MeshCapsuleCasesTest(struct test_Environment *env)
             { C, diag, 2, D3(0.0, -1.0, 0.0), 1, r },
             { D3(S / 3.0, 0.5*r, 0.0), V3(0.0f, 0.0f, 1.0f), 2, D3(0.0, -1.0, 0.0), 0, 0.5*r },
             { D3Add(D3(0.0, 0.5*r, 0.0), D3Scale(D3(-0.57735027, 0.57735027, -0.57735027), h)), V3(-0.57735027f, 0.57735027f, -0.57735027f), 1, D3(0.0, -1.0, 0.0), 0, 0.5*r },
+            { D3Add(C, D3(0.0, r + 0.5*spec, 0.0)), diag, 2, D3(0.0, -1.0, 0.0), 0, -0.5*spec },
+            { D3Add(C, D3(0.0, r + 1.5*spec, 0.0)), diag, 0, D3(0.0, -1.0, 0.0), 0, 0.0 },
         };
         for (u32 k = 0; k < sizeof(c) / sizeof(c[0]); ++k)
         {
@@ -3692,6 +3711,7 @@ struct test_Output MeshCapsuleCasesTest(struct test_Environment *env)
             const struct c_Shape mesh = McSingleTriangle(env->mem_2, S);
             const struct mc_CapsuleCase cc = McCapsuleCase(env->mem_2, &mesh, r, h, c[k].center, c[k].axis);
             const struct d3 n_expected = McCapsuleDirection(&cc, c[k].n);
+            const u32 top = ((k == 2 || k == 3) && c[k].center.y + (f64) h <= (f64) r + spec);
             u32 ok = (cc.result.length == (u32) (c[k].v_count != 0)) || (c[k].on_plane && cc.result.length == 0);
             const struct c_Manifold *m = cc.result.buf;
             f64 deepest = 0.0;
@@ -3700,10 +3720,11 @@ struct test_Output MeshCapsuleCasesTest(struct test_Environment *env)
                 const f64 dn = D3Length(D3Sub(D3V3(m->n), n_expected));
                 const u32 coincident = (k == 6 && m->v_count == 2 && D3Length(D3Sub(D3V3(m->v[0]), D3V3(m->v[1]))) <= tol);
                 ok = McCapsuleManifoldCheck(&deepest, m, r, h, tol, 0) && McCapsuleSoundCheck(m, cc.tri, r, h, tol)
-                  && (m->v_count == c[k].v_count || coincident) && dn <= 1e-4;
+                  && (m->v_count == c[k].v_count + top || coincident) && dn <= 1e-4;
                 for (u32 i = 0; ok && i < m->v_count; ++i)
                 {
-                    ok = F64AbsTest((f64) m->depth[i] - c[k].depth) <= tol;
+                    const f64 depth = (top && m->v[i].y > 0.0f) ? c[k].depth - 2.0*(f64) h : c[k].depth;
+                    ok = F64AbsTest((f64) m->depth[i] - depth) <= tol;
                 }
             }
             *env->mem_2 = record;
@@ -3711,6 +3732,43 @@ struct test_Output MeshCapsuleCasesTest(struct test_Environment *env)
             {
                 fprintf(stderr, "Mesh capsule case %u (size %g): manifolds %u, expected %u points, depth %g, n (%g, %g, %g)\n",
                     k, (f64) S, cc.result.length, c[k].v_count, c[k].depth, n_expected.x, n_expected.y, n_expected.z);
+                if (cc.result.length)
+                {
+                    c_ManifoldDebugPrint(m);
+                }
+                TEST_FAILURE;
+            }
+        }
+    }
+
+    /* speculative, tilted 30 degrees (doc above): axis = cos 30 diag + sin 30 y, the low end center - h axis */
+    {
+        const f64 spec = (f64) g_contact_test_solver_config.speculative_distance;
+        static const f32 tilt_size[] = { 1.0f, 1e2f };
+        const struct d3 axis = D3(0.61237244, 0.5, -0.61237244);
+        for (u32 si = 0; si < 2; ++si)
+        for (u32 rep = 0; rep < 20; ++rep)
+        {
+            const f64 S = (f64) tilt_size[si];
+            const f32 r = (f32) (0.05*S), h = (f32) (0.1*S);
+            const f64 tol = 1e-4*S;
+            const struct d3 center = D3Add(D3(S / 3.0, (f64) r + 0.5*spec, S / 3.0), D3Scale(axis, (f64) h));
+
+            struct arena record = *env->mem_2;
+            const struct c_Shape mesh = McSingleTriangle(env->mem_2, (f32) S);
+            const struct mc_CapsuleCase cc = McCapsuleCase(env->mem_2, &mesh, r, h, center, V3(0.61237244f, 0.5f, -0.61237244f));
+            const struct d3 n_expected = McCapsuleDirection(&cc, D3(0.0, -1.0, 0.0));
+            u32 ok = (cc.result.length == 1);
+            const struct c_Manifold *m = cc.result.buf;
+            if (ok)
+            {
+                f64 deepest = 0.0;
+                ok = McCapsuleManifoldCheck(&deepest, m, r, h, tol, 1) && McCapsuleSoundCheck(m, cc.tri, r, h, tol) && m->v_count == 1 && D3Length(D3Sub(D3V3(m->n), n_expected)) <= 1e-4 && F64AbsTest(deepest + 0.5*spec) <= tol;
+            }
+            *env->mem_2 = record;
+            if (!ok)
+            {
+                fprintf(stderr, "Mesh capsule tilted speculative case (size %g): manifolds %u, expected 1 point, depth %g, n (%g, %g, %g)\n", S, cc.result.length, -0.5*spec, n_expected.x, n_expected.y, n_expected.z);
                 if (cc.result.length)
                 {
                     c_ManifoldDebugPrint(m);
@@ -3780,7 +3838,8 @@ struct test_Output MeshCapsuleCasesTest(struct test_Environment *env)
     /* random capsules near the triangle; capsule / triangle size: 0.01 .. 1, 5 .. 200, 1e-3 .. 0.02 */
     static const f32 ratio_lo[] = { 0.01f, 5.0f, 1e-3f };
     static const f32 ratio_hi[] = { 0.5f, 100.0f, 1e-2f };
-    u64 shallow = 0, touching = 0, none = 0, behind = 0;
+    const f64 spec = (f64) g_contact_test_solver_config.speculative_distance;
+    u64 shallow = 0, touching = 0, none = 0, behind = 0, speculative = 0;
     f64 worst = 0.0;
     for (u32 i = 0; i < 30000; ++i)
     {
@@ -3797,8 +3856,20 @@ struct test_Output MeshCapsuleCasesTest(struct test_Environment *env)
         }
         const struct d3 on = D3((f64) S*b, 0.0, (f64) S*a);
         const struct d3 u = D3V3(CtUnit());
-        const struct d3 center = D3Add(on, D3Scale(u, ((f64) r + (f64) h)*(f64) RngF32Range(0.0f, 1.2f)));
-        const v3 axis = CtUnit();
+        struct d3 center = D3Add(on, D3Scale(u, ((f64) r + (f64) h)*(f64) RngF32Range(0.0f, 1.2f)));
+        v3 axis = CtUnit();
+        /* speculative band: the low end of a rising core gap = spec (-1/2 .. 3/2) beyond r above on (r + gap > 0) */
+        if (i % 4 == 0)
+        {
+            if (axis.y < 0.0f)
+            {
+                axis = V3Scale(axis, -1.0f);
+            }
+
+            const f64 gap = F64MaxTest(spec*(f64) RngF32Range(-0.5f, 1.5f), -0.5*(f64) r);
+            center = D3Add(D3Add(on, D3(0.0, (f64) r + gap, 0.0)), D3Scale(D3V3(axis), (f64) h));
+        }
+
         const struct c_Shape mesh = McSingleTriangle(env->mem_2, S);
         const struct mc_CapsuleCase cc = McCapsuleCase(env->mem_2, &mesh, r, h, center, axis);
         const f64 d_ref = McSegmentTriangleDistance(cc.tri, D3(0.0, h, 0.0), D3(0.0, -h, 0.0));
@@ -3811,14 +3882,14 @@ struct test_Output MeshCapsuleCasesTest(struct test_Environment *env)
         if (cc.result.length == 0)
         {
             none += 1;
-            behind += (d_ref < (f64) r - tol);
-            ok = (d_ref >= (f64) r - tol) || offset < band;
+            behind += (d_ref < (f64) r + spec - tol);
+            ok = (d_ref >= (f64) r + spec - tol) || offset < band;
         }
         else
         {
             f64 deepest = 0.0;
-            ok = (-band < offset) && (cc.result.length == 1) && McCapsuleManifoldCheck(&deepest, cc.result.buf, r, h, tol, 0)
-              && McCapsuleSoundCheck(cc.result.buf, cc.tri, r, h, tol);
+            ok = (-band < offset) && d_ref <= (f64) r + spec + tol && (cc.result.length == 1) && McCapsuleManifoldCheck(&deepest, cc.result.buf, r, h, tol, 0) && McCapsuleSoundCheck(cc.result.buf, cc.tri, r, h, tol);
+            speculative += (ok && deepest < 0.0);
             /* a shallow single point is the closest core point moved by r along n (n perpendicular to the core) */
             if (ok && d_ref > 2.0*band && cc.result.buf->v_count == 1)
             {
@@ -3867,8 +3938,8 @@ struct test_Output MeshCapsuleCasesTest(struct test_Environment *env)
             TEST_FAILURE;
         }
     }
-    fprintf(stdout, "\tcapsule on a triangle: 30000 random (%llu shallow, %llu touching, %llu none of which %llu behind); worst |deepest - (r - d_ref)| / L %.3g\n",
-        (unsigned long long) shallow, (unsigned long long) touching, (unsigned long long) none, (unsigned long long) behind, worst);
+    fprintf(stdout, "\tcapsule on a triangle: 30000 random (%llu shallow of which %llu speculative, %llu touching, %llu none of which %llu behind); worst |deepest - (r - d_ref)| / L %.3g\n",
+        (unsigned long long) shallow, (unsigned long long) speculative, (unsigned long long) touching, (unsigned long long) none, (unsigned long long) behind, worst);
 
 	return output;
 }
