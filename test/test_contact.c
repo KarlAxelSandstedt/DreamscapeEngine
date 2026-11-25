@@ -4443,14 +4443,19 @@ static void McHullPrint(const ds_Array(c_Manifold) *r, const struct ch_Hull *h, 
  * (mesh frame; n from the hull to the mesh):
  *      resting on the face, p deep                     4 points, n = -y, depths p
  *      the same under the triangle                     none: its center of mass is more than linear_slop behind
- *                                                      (S = 1, 100); S = 0.01: 4 points, n = +y, depths p
+ *                                                      (S = 1, 100); S = 0.01: 4 points, n = -y (its top face would
+ *                                                      push it behind: the triangle's face), depths 0.1 S - p
  *      a corner down on the face, p deep               1 point, n = -y, depth p; its incident face's other corners
  *                                                      count while within the band (S = 0.01: 4 points)
  *      resting across edge z = 0                       4 points (2 corners, 2 on the edge), n = -y, depths p
  *      a stick (0.005 S thick) across edge z = 0 as in the capsule's deep edge case: n = (0, 1, 1) / sqrt 2,
- *      deepest delta + thickness (the stick's face or the edge pair: the same axis)
+ *      deepest delta + thickness (the stick's face or the edge pair: the same axis); or n = -y: the stick's face
+ *      leans towards n_t (refused, it would push the stick behind the triangle) and the edge pair lies at its Gauss
+ *      arc's end, found or not by rounding, so the triangle's face may stay (always at S = 0.01, where the stick is
+ *      far below sat_face_bias)
  *      its center of mass 2 linear_slop behind the face (S = 1, 100)    none
- *      0.5 linear_slop behind (S = 1, 100)                              4 points, n = +y, depths 0.05 S - 0.5 slop
+ *      0.5 linear_slop behind (S = 1, 100)                              4 points, n = -y (as above), depths
+ *                                                                       0.05 S + 0.5 slop
  *      resting spec/2 above the face (spec = speculative_distance)      4 points, n = -y, depths -spec/2
  *      3/2 spec above                                                   none
  * and every contact passes McHullTriVerify. Then a pyramid (apex down, base half width 0.01 S, height H = 0.02 S)
@@ -4499,7 +4504,7 @@ struct test_Output MeshHullCasesTest(struct test_Environment *env)
         if (k == 1)
         {
             center = D3Sub(C, D3(0.0, (f64) hw.y - p, 0.0));
-            n_expected = D3(0.0, 1.0, 0.0);
+            deepest_expected = 2.0*(f64) hw.y - p;
             expect_none = ((f64) hw.y - p > slop);
         }
         else if (k == 2)
@@ -4530,8 +4535,7 @@ struct test_Output MeshHullCasesTest(struct test_Environment *env)
         {
             const f64 behind = (k == 5) ? 2.0*slop : 0.5*slop;
             center = D3Sub(C, D3(0.0, behind, 0.0));
-            n_expected = D3(0.0, 1.0, 0.0);
-            deepest_expected = (f64) hw.y - behind;
+            deepest_expected = (f64) hw.y + behind;
             expect_none = (k == 5);
         }
         else if (k == 7 || k == 8)
@@ -4568,7 +4572,9 @@ struct test_Output MeshHullCasesTest(struct test_Environment *env)
         {
             fail = "no contact";
         }
-        if (!fail && r.length)
+        const struct d3 n_face = D3RotationTMul(h.r, D3RotationMul(rm, D3(0.0, -1.0, 0.0)));
+        const u32 face_instead = (k == 4 && r.length == 1 && D3Length(D3Sub(D3V3(r.buf->n), n_face)) <= 1e-4);
+        if (!fail && r.length && !face_instead)
         {
             const struct c_Manifold *m = r.buf;
             f64 deepest = (f64) m->depth[0];

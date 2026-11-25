@@ -1437,7 +1437,9 @@ static u32 sat_CacheTryReuse(struct c_Manifold *m, u32 *colliding, sat_FeatureId
  * SAT of a pair (Gregorius), the SAT cache tried first (old_cache NULL: none). Face queries of both shapes and the edge
  * query (SAT_PAIR_HULL: Gauss map pruned, axes oriented by center_0; SAT_PAIR_TRIANGLE: knife edges); separated if any
  * axis separates by more than max_separation. Otherwise the face contact (incident face clipped to the reference face,
- * the face with the larger separation), replaced by the edge contact if the clip is empty or the edge separates more
+ * the face with the larger separation; SAT_PAIR_TRIANGLE: a hull face whose normal has dot > 0.25 with n_t would push
+ * the hull behind the triangle, so the triangle's face is the reference, and the hull face again if that gives
+ * neither a face nor an edge contact), replaced by the edge contact if the clip is empty or the edge separates more
  * than the clipped face by sat_face_bias; neither for a pair separated within max_separation: no contact; neither for
  * a SAT_PAIR_HULL pair the SAT finds overlapping: GJK's speculative point if the hulls are apart within max_separation,
  * none beyond, else the fallback contact. Returns 1 if colliding: m written, and for a face contact its points'
@@ -1480,29 +1482,43 @@ static u32 sat_PairContact(struct c_Manifold *m, sat_FeatureId features[4], stru
 		return 0;
 	}
 
-	/* face contact on the face with the larger separation; its clipped separation is -(deepest clipped depth) */
-	const u32 b_f = (f_query[0].depth < f_query[1].depth);
-	const u32 b_v = 1 - b_f;
-	f32 max_depth;
-	const u32 face_contact = HullFaceContact(mem_tmp, m, features, &max_depth, cache->feature + b_v, f_query + b_f, h, v, pl, b_f, 0, pair->max_separation);
-
-	/* Edge contact if the face contact is empty or the edge separates more than the clipped face by sat_face_bias */
-	if (e_query.e1 != U32_MAX && (!face_contact || -max_depth + g_numerics_config->sat_face_bias < e_query.depth)
-			&& HullEdgeContact(m, cache, &e_query))
+	/*
+	 * face contact on the face with the larger separation; its clipped separation is -(deepest clipped depth). A
+	 * triangle never takes a hull face pushing the hull behind it: the triangle's face first (attempt 0), the hull
+	 * face again only if that gives neither a face nor an edge contact (attempt 1).
+	 */
+	const u32 push_down = (pair->type == SAT_PAIR_TRIANGLE && f_query[1].depth <= f_query[0].depth && 0.25f < V3Dot(f_query[0].normal, pl[1][0].normal));
+	u32 b_f = (f_query[0].depth < f_query[1].depth) || push_down;
+	for (u32 attempt = 0; attempt < 1 + push_down; ++attempt)
 	{
-		return 1;
-	}
+		if (attempt == 1)
+		{
+			b_f = 0;
+		}
 
-	if (face_contact)
-	{
-		cache->type = SAT_CACHE_CONTACT_FV;
-		cache->feature[b_f] = sat_FeatureIdConstruct(f_query[b_f].fi, SAT_FEATURE_TYPE_FACE);
-		cache->depth = max_depth;
-		cache->normal = f_query[b_f].normal;
-		return 1;
+		const u32 b_v = 1 - b_f;
+		f32 max_depth;
+		const u32 face_contact = HullFaceContact(mem_tmp, m, features, &max_depth, cache->feature + b_v, f_query + b_f, h, v, pl, b_f, 0, pair->max_separation);
+
+		/* Edge contact if the face contact is empty or the edge separates more than the clipped face by sat_face_bias */
+		if (e_query.e1 != U32_MAX && (!face_contact || -max_depth + g_numerics_config->sat_face_bias < e_query.depth)
+				&& HullEdgeContact(m, cache, &e_query))
+		{
+			return 1;
+		}
+
+		if (face_contact)
+		{
+			cache->type = SAT_CACHE_CONTACT_FV;
+			cache->feature[b_f] = sat_FeatureIdConstruct(f_query[b_f].fi, SAT_FEATURE_TYPE_FACE);
+			cache->depth = max_depth;
+			cache->normal = f_query[b_f].normal;
+			return 1;
+		}
 	}
 
 	/* separated within max_separation and no face or edge contact: no contact, nothing to cache */
+	const u32 b_v = 1 - b_f;
 	const struct sat_FaceQuery *fq = f_query + b_f;
 	if (fq->depth > 0.0f || e_query.depth > 0.0f)
 	{

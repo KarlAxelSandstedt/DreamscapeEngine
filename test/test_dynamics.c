@@ -5259,9 +5259,8 @@ capsule (r 0.25, half height 0.5) lying along x, each in three scenes:
     dropped from 1 m above its resting height (0.5, 0.4, 0.25): rests on the floor, its center at the resting height
     within [-2 slop, slop];
     thrown up at 9 m/s from 2 m below the floor: rises through it (no contact while its center is behind, a hull's
-    center of mass beyond linear_slop), falls back onto it and rests as above. Sphere and capsule only for now: the
-    box, its center of mass reaching the floor's plane, gets its own top face as the contact axis and is pushed back
-    down (box3d's triangle-hull contact, which rejects such a face, waits for speculative contacts);
+    center of mass beyond linear_slop), falls back onto it and rests as above. The box, its center of mass reaching
+    the floor's plane, never takes its own top face as the contact face (it would push the box back down);
     thrown up from 2 m below to an apex about 0.1 m below the floor, partly through it: the floor pushes nothing, its
     apex is the free flight's (the solver's integration, in f64) within 1 mm, and it falls away (below -1.5 m at the
     end). The free flight's apex is checked to leave each shape overlapping the floor with its center behind.
@@ -5339,11 +5338,6 @@ static struct test_Output DynamicsMeshOneSidedTest(struct test_Environment *env)
     {
         for (u32 scene = 0; scene < 2; ++scene)
         {
-            if (type[k] == C_SHAPE_CONVEX_HULL && scene == 1)
-            {
-                continue;
-            }
-
             const f64 y = DynamicsTestPose(&pipeline, body[k][scene]).position.y;
             if (!(rest[k] - 2.0*slop <= y && y <= rest[k] + slop))
             {
