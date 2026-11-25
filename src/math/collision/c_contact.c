@@ -357,6 +357,7 @@ u32 c_HullSphereContact(struct c_Manifold *out, struct ds_ConvexCache *cache, co
     const struct GJKCache old = cache->gjk;
 
     const f32 radius = s1->sphere.radius;
+    const f32 max_dist = radius + g_solver_config->speculative_distance;
     const v3 p = V3F64InverseTransform(t1->position, t0);
     const ds_Transform t_1_to_0 = { .rotation = QIdentity(), .position = p };
 
@@ -365,8 +366,8 @@ u32 c_HullSphereContact(struct c_Manifold *out, struct ds_ConvexCache *cache, co
     GJKVertexSetPoint(&vset1, V3Zero());
 
     v3 c[2], n;
-    const f32 distance = GJK(c+0, c+1, &n, &cache->gjk, (old.count) ? &old : NULL, &vset0, &vset1, &t_1_to_0, radius);
-    if (radius < distance)
+    const f32 distance = GJK(c+0, c+1, &n, &cache->gjk, (old.count) ? &old : NULL, &vset0, &vset1, &t_1_to_0, max_dist);
+    if (max_dist < distance)
     {
         return manifold_count;
     }
@@ -491,10 +492,11 @@ static void HullCapsuleEESeparation(struct sat_EdgeQuery *query, const struct dc
 }
 
 /*
- * Hull vs capsule: local manifold in the hull's frame (n from hull to capsule). GJK against the capsule's core;
- * shallow: the core clipped to the reference face (two points) if it lies along it, else one point from the
- * closest points; deep (core touches the hull): SAT face and edge queries; the core clipped to the reference
- * face, or the closest points of the best edge and the core if that edge separates more by sat_face_bias.
+ * Hull vs capsule: local manifold in the hull's frame (n from hull to capsule), kept out to a separation of
+ * speculative_distance. GJK against the capsule's core; shallow: the core clipped to the reference face (two
+ * points) if it lies along it, else one point from the closest points; deep (core touches the hull): SAT face and
+ * edge queries; the core clipped to the reference face, or the closest points of the best edge and the core if
+ * that edge separates more by sat_face_bias.
  */
 u32 c_HullCapsuleContact(struct c_Manifold *out, struct ds_ConvexCache *cache, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
 {
@@ -505,6 +507,7 @@ u32 c_HullCapsuleContact(struct c_Manifold *out, struct ds_ConvexCache *cache, c
     const struct GJKCache old = cache->gjk;
 
     const f32 radius = s1->capsule.radius;
+    const f32 max_dist = radius + g_solver_config->speculative_distance;
     const ds_Transform t_1_to_0 = ds_TransformWorldRelative(t0, t1);
 
     struct GJKVertexSet vset0, vset1;
@@ -512,8 +515,8 @@ u32 c_HullCapsuleContact(struct c_Manifold *out, struct ds_ConvexCache *cache, c
     GJKVertexSetSegment(&vset1, V3(0.0f, s1->capsule.half_height, 0.0f), V3(0.0f, -s1->capsule.half_height, 0.0f));
 
     v3 c[2], n;
-    const f32 distance = GJK(c+0, c+1, &n, &cache->gjk, (old.count) ? &old : NULL, &vset0, &vset1, &t_1_to_0, radius);
-    if (radius < distance)
+    const f32 distance = GJK(c+0, c+1, &n, &cache->gjk, (old.count) ? &old : NULL, &vset0, &vset1, &t_1_to_0, max_dist);
+    if (max_dist < distance)
     {
         return manifold_count;
     }
@@ -529,7 +532,8 @@ u32 c_HullCapsuleContact(struct c_Manifold *out, struct ds_ConvexCache *cache, c
     {
         /*
          * Two points if the GJK normal is within face_parallel_max_degrees of the reference face's normal and
-         * both ends of the clipped core touch (d_i <= r); otherwise one point. Each end has its own depth.
+         * both ends of the clipped core lie within max_dist (d_i <= max_dist); otherwise one point. Each end has
+         * its own depth.
          */
         const u32 ref = DcelSupportFace(h, n);
         const struct plane *ref_pl = h->plane + ref;
@@ -539,7 +543,7 @@ u32 c_HullCapsuleContact(struct c_Manifold *out, struct ds_ConvexCache *cache, c
         {
             const f32 d0 = PlanePointSignedDistance(ref_pl, ref_clip.p[0]);
             const f32 d1 = PlanePointSignedDistance(ref_pl, ref_clip.p[1]);
-            if (d0 <= radius && d1 <= radius)
+            if (d0 <= max_dist && d1 <= max_dist)
             {
                 m->v_count = 2;
                 m->n = ref_pl->normal;
@@ -616,10 +620,10 @@ u32 c_HullCapsuleContact(struct c_Manifold *out, struct ds_ConvexCache *cache, c
 
     m->n = pl->normal;
 
-    /* as in the shallow path: two points if both clipped ends touch (d_i <= r), else the deeper end */
+    /* as in the shallow path: two points if both clipped ends lie within max_dist (d_i <= max_dist), else the deeper end */
     if (face_contact)
     {
-        if (depth[1 - deeper] <= radius)
+        if (depth[1 - deeper] <= max_dist)
         {
             m->v_count = 2;
             m->v[0] = V3Sub(clip.p[0], V3Scale(pl->normal, depth[0]));

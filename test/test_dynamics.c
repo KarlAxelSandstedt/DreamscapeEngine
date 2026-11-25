@@ -181,6 +181,8 @@ Speculative contacts (DynamicsSpeculativeSphereTest): a sphere 1 cm above a stat
 5 m/s. With restitution 0 it ends the first tick touching (within 0.1 mm), arriving at the gap per tick
 (0.6 m/s), then neither moves up (0.05 m/s) nor sinks beyond linear_slop for half a second. With restitution 1
 it leaves at 5 m/s from the gap and never reaches the static sphere.
+DynamicsSpeculativeHullTest: the same for a sphere and a capsule lying flat 1 cm above a static box; the
+capsules (two speculative points) turn less than 1e-3 rad.
 
 Pipeline (DynamicsFirstTickTest, DynamicsFlushTest): 101 bodies added to a pipeline of initial size 64, two of
 the new ones joined before the first tick: the joint is coloured at once, and after one tick every contact is
@@ -4329,6 +4331,101 @@ static struct test_Output DynamicsSpeculativeSphereTest(struct test_Environment 
     return output;
 }
 
+/* a sphere and a flat capsule 1 cm above a static box, moving down at 5 m/s, as DynamicsSpeculativeSphereTest; the capsules stay flat (file comment) */
+static struct test_Output DynamicsSpeculativeHullTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct arena mem = ArenaAlloc(NULL, 64*1024*1024);
+    struct c_ShapeDB cshape_db = { 0 };
+    c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
+    struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&external, NSEC_PER_SEC / 60);
+    ds_DynamicsConfigPush(&pipeline);
+    pipeline.config_pending.solver.sleep_enabled = 0;
+    ds_DynamicsConfigUpdatePending(&pipeline);
+
+    const struct dynamics_TestBox ground = { .position = V3(0.0f, -1.0f, 0.0f), .rotation = QIdentity(), .hw = V3(16.0f, 1.0f, 16.0f), .dynamic = 0, .friction = 0.5f, .restitution = 0.0f };
+    DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, &ground, (v3f64) { 0 }, 0);
+
+    const struct c_Shape sphere = { .type = C_SHAPE_SPHERE, .sphere.radius = 0.5f };
+    const struct c_Shape capsule = { .type = C_SHAPE_CAPSULE, .capsule.half_height = 0.5f, .capsule.radius = 0.25f };
+    const struct slot sphere_slot = c_ShapeDBAdd(&cshape_db, Utf8Inline("spec_sphere"), &sphere);
+    const struct slot capsule_slot = c_ShapeDBAdd(&cshape_db, Utf8Inline("spec_capsule"), &capsule);
+    const struct ds_BodyPrefab dynamic_prefab = { .dynamic = 1 };
+    const ds_Transform t_local = ds_TransformIdentity();
+    const q along_x = QUnitAxisAngle(V3(0.0f, 0.0f, 1.0f), -F32_PI/2.0f);
+    const f64 rest[2] = { 0.5, 0.25 };
+    const f64 gap = 0.01;
+    const f32 speed = 5.0f;
+
+    /* body i: a sphere (i < 2) or a capsule lying along x, restitution i % 2, at x = 4 i - 6 */
+    ds_BodyId id[4];
+    for (u32 i = 0; i < 4; ++i)
+    {
+        const u32 is_capsule = i / 2;
+        const ds_TransformWorld t_body = { .rotation = (is_capsule) ? along_x : QIdentity(), .position = V3F64(4.0 * (f64) i - 6.0, rest[is_capsule] + gap, 0.0) };
+        id[i] = ds_BodyAdd(&pipeline, &dynamic_prefab, &t_body, i + 1);
+        const struct ds_ShapePrefab shape_prefab = { .cshape = (is_capsule) ? capsule_slot.index : sphere_slot.index, .density = 1.0f, .restitution = (f32) (i % 2), .friction = 0.5f };
+        ds_ShapeAdd(&pipeline, &shape_prefab, &t_local, id[i]);
+
+        const struct ds_Body *body = ds_BodyLookup(&pipeline, id[i]).address;
+        TEST_NOT_ZERO(body->set == SOLVER_SET_ACTIVE);
+        pipeline.solver_set_pool.buf[body->set].body_compute_pool.buf[body->sim].linear_velocity = V3(0.0f, -speed, 0.0f);
+    }
+
+    /* the speculative points let the gap close within the first tick: restitution 0 arrives at gap / dt, restitution 1 leaves at its approach speed */
+    SnapshotTestTick(&pipeline);
+    const f32 arrival = (f32) gap / pipeline.timestep;
+    for (u32 i = 0; i < 4; ++i)
+    {
+        const ds_TransformWorld pose = DynamicsTestPose(&pipeline, id[i]);
+        const f64 g = pose.position.y - rest[i / 2];
+        const f32 vy = SolverTestVelocity(&pipeline, id[i]).y;
+        const f32 turn = DynamicsTestAngle((i / 2) ? along_x : QIdentity(), pose.rotation);
+        u32 ok = 0;
+        if (i % 2)
+        {
+            ok = g > gap && F32Abs(vy - speed) < 1e-2f;
+        }
+        else
+        {
+            ok = -1e-4 < g && g < 1e-4 && F32Abs(vy + arrival) < 1e-2f;
+        }
+        if (!(ok && turn < 1e-3f))
+        {
+            fprintf(stderr, "speculative hull, first tick, body %u (restitution %u): gap %g v %g turned %g rad\n", i, i % 2, g, vy, turn);
+            TEST_FAILURE;
+        }
+    }
+
+    /* half a second: the dead bodies neither bounce nor sink beyond the slop, the bouncy ones never reach the box, the capsules stay flat */
+    for (u32 t = 0; t < 30; ++t)
+    {
+        SnapshotTestTick(&pipeline);
+        for (u32 i = 0; i < 4; ++i)
+        {
+            const ds_TransformWorld pose = DynamicsTestPose(&pipeline, id[i]);
+            const f64 g = pose.position.y - rest[i / 2];
+            const f32 turn = DynamicsTestAngle((i / 2) ? along_x : QIdentity(), pose.rotation);
+            if (i % 2)
+            {
+                TEST_NOT_ZERO(g > 0.0 && turn < 1e-3f);
+            }
+            else
+            {
+                TEST_NOT_ZERO(g > -pipeline.config.solver.linear_slop && SolverTestVelocity(&pipeline, id[i]).y < 0.05f && turn < 1e-3f);
+            }
+        }
+    }
+
+    ds_DynamicsConfigPop(&pipeline);
+    ds_DynamicsDealloc(&pipeline);
+    c_ShapeDBDealloc(&cshape_db);
+    ArenaFree(&mem);
+    return output;
+}
+
 /* the first tick with more bodies than the pipeline's initial size (file comment) */
 static struct test_Output DynamicsFirstTickTest(struct test_Environment *env)
 {
@@ -5896,6 +5993,7 @@ static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
     DynamicsBounceTest,
     DynamicsRestingBounceTest,
     DynamicsSpeculativeSphereTest,
+    DynamicsSpeculativeHullTest,
     DynamicsFirstTickTest,
     DynamicsFlushTest,
     DynamicsNumericsConfigTest,

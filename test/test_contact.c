@@ -877,13 +877,17 @@ in the hull's frame and sep(n) = min(n.a, n.b) - max_hull n.x the core's separat
 
 Every manifold must satisfy, with L = max(hull extent, h, r, |x1 - x0|), tol = CONTACT_TEST_TOLERANCE eps L:
 
-    contact iff sd <= r (boxes; undecided within tol); other hulls: sat > r + tol -> none, sat < -tol -> contact
+    contact iff sd <= max_dist = r + spec       (spec = speculative_distance; boxes; undecided within tol); other
+                                                hulls: sat > max_dist + tol -> none, sat < -tol -> contact
     c_ManifoldCheck, v_count in {1, 2}, |n| = 1
     depth_i <= r - sep(n) + tol                 (n separates as deep as it claims)
     v_i on the hull's surface                   |max_f (n_f.v - d_f)| <= tol
     v_i + (r - depth_i) n on the core           (point and depth agree; edge contacts within tol / sin of the
                                                 edge parallel angle: nearly parallel lines' closest points)
     shallow one point (boxes): depth = r - dist*, n optimal: -sep(n) <= r - ... as in the capsule tests
+    GJK distance outliers (boxes, shallow): GJK's distance (an upper bound when it stops early) above dist* by
+                                                tol .. 1e-3 L is counted: a miss within max_dist is accepted, a
+                                                one point depth must be r - GJK's distance
     deep (sat < -tol): measured only (sat - sep(n)): a face contact competes with the edges through its
                                                 clipped separation, not the core's separation along n
     translating both shapes by an exactly representable offset gives identical bits
@@ -1102,7 +1106,7 @@ struct ch_Stats
     u64 edge;               /* deep path (GJK touching), n not a face normal */
     u64 edge_clamped;       /* of those: v + (r - depth) n off the core (fails; kept for the printout) */
     u64 undecided;
-    u64 unchecked;          /* other hulls: 0 <= sat <= r, contact not decided by the reference */
+    u64 unchecked;          /* other hulls: 0 <= sat <= max_dist, contact not decided by the reference */
     u64 face_biased;        /* deep: n worse than the best axis by more than tol (face kept by the bias) */
     f64 worst_depth;        /* box shallow one point: |depth - (r - dist*)| / (eps L) */
     f64 worst_surface;      /* |sdf(v)| / (eps L) */
@@ -1115,15 +1119,17 @@ struct ch_Stats
     u64 gjk_point_outliers; /* shallow one point: v + (r - depth) n off the core by more than tol (GJK) */
     f64 worst_clamped;      /* edge contacts with clamped closest points: dist(v + (r - depth) n, core) / L */
     f64 worst_edge_core;    /* edge contacts: dist(v + (r - depth) n, core) / (eps L) */
+    u64 gjk_distance_outliers;/* boxes, shallow: GJK's distance above dist* by tol .. 1e-3 L (stopped early) */
+    f64 worst_gjk_distance; /* of those: (GJK's distance - dist*) / L */
 };
 
 static void ChStatsPrint(const char *id, const struct ch_Stats *s)
 {
-    fprintf(stdout, "\t%s: %llu tests, %llu contacts (%llu two point, %llu edge, %llu clamped), %llu undecided, %llu unchecked, %llu face biased; worst / (eps L): depth %.1f, surface %.1f, core %.1f, normal %.1f; worst / L: deep gap %.3g, shallow two point gap %.3g; GJK normal outliers %llu (worst / L %.3g), point outliers %llu; clamped edge points off the core / L %.3g; edge core / (eps L) %.1f\n",
+    fprintf(stdout, "\t%s: %llu tests, %llu contacts (%llu two point, %llu edge, %llu clamped), %llu undecided, %llu unchecked, %llu face biased; worst / (eps L): depth %.1f, surface %.1f, core %.1f, normal %.1f; worst / L: deep gap %.3g, shallow two point gap %.3g; GJK normal outliers %llu (worst / L %.3g), point outliers %llu; clamped edge points off the core / L %.3g; edge core / (eps L) %.1f; GJK distance outliers %llu (worst / L %.3g)\n",
         id, (unsigned long long) s->tests, (unsigned long long) s->contacts, (unsigned long long) s->two_point,
         (unsigned long long) s->edge, (unsigned long long) s->edge_clamped, (unsigned long long) s->undecided,
         (unsigned long long) s->unchecked, (unsigned long long) s->face_biased, s->worst_depth, s->worst_surface,
-        s->worst_core, s->worst_normal, s->worst_gap, s->worst_gap_two, (unsigned long long) s->gjk_normal_outliers, s->worst_gjk_outlier, (unsigned long long) s->gjk_point_outliers, s->worst_clamped, s->worst_edge_core);
+        s->worst_core, s->worst_normal, s->worst_gap, s->worst_gap_two, (unsigned long long) s->gjk_normal_outliers, s->worst_gjk_outlier, (unsigned long long) s->gjk_point_outliers, s->worst_clamped, s->worst_edge_core, (unsigned long long) s->gjk_distance_outliers, s->worst_gjk_distance);
 }
 
 static void ChPrint(const struct ch_Hull *h, const struct ct_Capsule *c)
@@ -1146,6 +1152,7 @@ static u32 ChVerify(struct ch_Stats *stats, const u32 contact, const struct c_Ma
     struct d3 a, b;
     ChCore(&a, &b, h, c);
     const f64 r = c->shape.capsule.radius;
+    const f64 max_dist = r + (f64) g_contact_test_solver_config.speculative_distance;
     const f64 L = F64MaxTest(F64MaxTest(h->extent, D3Length(D3Sub(c->pos, h->pos))), F64MaxTest(c->shape.capsule.half_height, r));
     const f64 eps_l = F32_EPSILON * L;
     const f64 tol = CONTACT_TEST_TOLERANCE * eps_l;
@@ -1153,20 +1160,49 @@ static u32 ChVerify(struct ch_Stats *stats, const u32 contact, const struct c_Ma
     const f64 dist = (h->is_box) ? ChBoxDistance(h, a, b) : -1.0;
     const char *fail = NULL;
 
+    /* the contact's path: its own GJK query (touching up to the touch band -> the deep path) */
+    const ds_Transform b_to_a = ds_TransformWorldRelative(&h->t, &c->t);
+    struct GJKVertexSet gjk_vset[2];
+    GJKVertexSetHull(gjk_vset + 0, &h->shape.hull);
+    GJKVertexSetSegment(gjk_vset + 1, V3(0.0f, c->shape.capsule.half_height, 0.0f), V3(0.0f, -c->shape.capsule.half_height, 0.0f));
+    struct GJKCache gjk_cache;
+    v3 gjk_c[2], gjk_n;
+    const f32 gjk_cutoff = c->shape.capsule.radius + g_contact_test_solver_config.speculative_distance;
+    const f32 gjk_distance = GJK(gjk_c + 0, gjk_c + 1, &gjk_n, &gjk_cache, NULL, gjk_vset + 0, gjk_vset + 1, &b_to_a, gjk_cutoff);
+    const u32 shallow = (gjk_distance > 0.0f);
+    /* boxes, shallow: GJK's distance beyond dist* by more than tol (an upper bound when GJK stops early, ds_collision.h) */
+    const f64 gjk_over = (f64) gjk_distance - dist;
+    const u32 gjk_outlier = h->is_box && shallow && gjk_over > tol && gjk_over <= 1e-3*L;
+
     stats->tests += 1;
+    if (gjk_outlier)
+    {
+        stats->gjk_distance_outliers += 1;
+        if (gjk_over / L > stats->worst_gjk_distance)
+        {
+            stats->worst_gjk_distance = gjk_over / L;
+            fprintf(stdout, "\tGJK distance outlier: GJK %.9g, dist* %.9g, max_dist %.9g, contact %u\n", gjk_distance, dist, max_dist, contact);
+            ChPrint(h, c);
+        }
+    }
+
     if (h->is_box)
     {
         const f64 sd = (dist > 0.0) ? dist : sat;
-        if (F64AbsTest(sd - r) <= tol)
+        if (F64AbsTest(sd - max_dist) <= tol)
         {
             stats->undecided += 1;
         }
-        else if (contact != (u32) (sd < r))
+        else if (gjk_outlier && !contact && sd < max_dist)
+        {
+            /* missed on GJK's distance (beyond max_dist): counted above */
+        }
+        else if (contact != (u32) (sd < max_dist))
         {
             fail = "contact";
         }
     }
-    else if (sat > r + tol)
+    else if (sat > max_dist + tol)
     {
         fail = (contact) ? "contact, but the reference separates" : NULL;
     }
@@ -1185,14 +1221,6 @@ static u32 ChVerify(struct ch_Stats *stats, const u32 contact, const struct c_Ma
         const f64 n_len = D3Length(n);
         const f64 sep = ChSeparation(h, a, b, D3Scale(n, 1.0 / n_len));
         const u32 deep = (sat < -tol);
-        /* the contact's path: its own GJK query (touching up to the touch band -> the deep path) */
-        const ds_Transform b_to_a = ds_TransformWorldRelative(&h->t, &c->t);
-        struct GJKVertexSet gjk_vset[2];
-        GJKVertexSetHull(gjk_vset + 0, &h->shape.hull);
-        GJKVertexSetSegment(gjk_vset + 1, V3(0.0f, c->shape.capsule.half_height, 0.0f), V3(0.0f, -c->shape.capsule.half_height, 0.0f));
-        struct GJKCache gjk_cache;
-        v3 gjk_c[2], gjk_n;
-        const u32 shallow = (GJK(gjk_c + 0, gjk_c + 1, &gjk_n, &gjk_cache, NULL, gjk_vset + 0, gjk_vset + 1, &b_to_a, (f32) r) > 0.0f);
         /* a face contact's n is the stored plane normal, bit for bit */
         u32 face_normal = 0;
         for (u32 fi = 0; fi < h->shape.hull.f_count; ++fi)
@@ -1280,7 +1308,14 @@ static u32 ChVerify(struct ch_Stats *stats, const u32 contact, const struct c_Ma
 
         if (!fail && h->is_box && dist > 1e-3*L)
         {
-            if (m->v_count == 1)
+            if (m->v_count == 1 && gjk_outlier)
+            {
+                if (F64AbsTest(m->depth[0] - (r - (f64) gjk_distance)) > tol)
+                {
+                    fail = "shallow, GJK distance outlier: depth != r - GJK's distance";
+                }
+            }
+            else if (m->v_count == 1)
             {
                 const f64 err = F64AbsTest(m->depth[0] - (r - dist));
                 stats->worst_depth = F64MaxTest(stats->worst_depth, err / eps_l);
@@ -1458,6 +1493,8 @@ static struct d3 ChLocalToWorld(const struct ch_Hull *h, const v3 p)
  *  4: center inside the hull, random direction
  *  5: half height 0, near the hull
  *  6: upright on a face (along its normal, tilted 0 .. 0.1 rad)
+ * Modes 1, 2, 3, 6: half of the time the offset lies in the speculative band r - spec/2 .. r + 1.5 spec instead
+ * (spec = speculative_distance).
  */
 static void ChCapsuleNear(struct ct_Capsule *c, const struct ch_Hull *h, const u32 mode)
 {
@@ -1472,7 +1509,11 @@ static void ChCapsuleNear(struct ct_Capsule *c, const struct ch_Hull *h, const u
         const f32 h_scale = extent * scale[RngU64Range(0, 4)];
         half_height = h_scale * RngF32Range(0.5f, 1.0f);
     }
-    const f32 offset = r * RngF32Range(-1.0f, 1.3f);
+    f32 offset = r * RngF32Range(-1.0f, 1.3f);
+    if (RngU64Range(0, 1))
+    {
+        offset = r + g_contact_test_solver_config.speculative_distance * RngF32Range(-0.5f, 1.5f);
+    }
 
     /* a random face and a random half-edge */
     const u32 fi = (u32) RngU64Range(0, dcel->f_count - 1);
@@ -1570,6 +1611,23 @@ struct test_Output HullCapsuleContactCasesTest(struct test_Environment *env)
     CtCapsuleInit(&c, 0.5f, 0.2f, along_x, D3(0.0, 1.3, 0.0));
     TEST_TRUE(ChContact(env->mem_2, &m, &contact, &h, &c) && ChVerify(&stats, contact, &m, &h, &c));
     TEST_EQUAL(contact, 0);
+
+    /* speculative (speculative_distance 0.02): lying along x 1 cm beyond r (y = 1.21): two points, n = +y, depth -0.01 */
+    CtCapsuleInit(&c, 0.5f, 0.2f, along_x, D3(0.0, 1.21, 0.0));
+    TEST_TRUE(ChContact(env->mem_2, &m, &contact, &h, &c) && ChVerify(&stats, contact, &m, &h, &c));
+    TEST_TRUE(contact && m.v_count == 2);
+    TEST_TRUE(CtNearD3(D3V3(m.n), D3(0.0, 1.0, 0.0)) && CtNear(m.depth[0], -0.01) && CtNear(m.depth[1], -0.01));
+
+    /* 3 cm beyond r: none */
+    CtCapsuleInit(&c, 0.5f, 0.2f, along_x, D3(0.0, 1.23, 0.0));
+    TEST_TRUE(ChContact(env->mem_2, &m, &contact, &h, &c) && ChVerify(&stats, contact, &m, &h, &c));
+    TEST_EQUAL(contact, 0);
+
+    /* tilted 0.02 rad, low end 1 cm beyond r, high end ~3 cm beyond: one point at the low end, depth -0.01 */
+    CtCapsuleInit(&c, 0.5f, 0.2f, QUnitAxisAngle(V3(0.0f, 0.0f, 1.0f), -F32_PI/2.0f + 0.02f), D3(0.0, 1.21 + 0.5*0.019998667, 0.0));
+    TEST_TRUE(ChContact(env->mem_2, &m, &contact, &h, &c) && ChVerify(&stats, contact, &m, &h, &c));
+    TEST_TRUE(contact && m.v_count == 1);
+    TEST_TRUE(CtNearD3(D3V3(m.n), D3(0.0, 1.0, 0.0)) && CtNear(m.depth[0], -0.01) && CtNear(m.v[0].y, 1.0));
 
     /* resting flat (shallow, gap 0.1): two points (+-0.5, 1, 0), n = +y, depth 0.1 */
     CtCapsuleInit(&c, 0.5f, 0.2f, along_x, D3(0.0, 1.1, 0.0));
@@ -2552,7 +2610,7 @@ face plane distance, exact inside and a lower bound outside). With r_sum = r0 + 
 
     contact iff sd <= max_dist                  (boxes, spheres, capsules; undecided within tol); other hulls:
                                                 sat > max_dist + tol -> none, sat < -tol -> contact. max_dist =
-                                                r_sum + speculative_distance for spheres and capsules, r_sum for hulls
+                                                r_sum + speculative_distance
     c_ManifoldCheck, v_count = 1, |n| = 1
     depth = r_sum - sd                          (hulls: shallow only for boxes; inside: r - sat)
     v on s[0]'s surface, v - depth n on the sphere's surface (|v - depth n - c| = r1); random hulls' faces are
@@ -2671,11 +2729,7 @@ static const char *SpVerify(struct sp_Stats *stats, const ds_Array(c_Manifold) *
     const f64 eps_l = F32_EPSILON * L;
     const f64 tol = CONTACT_TEST_TOLERANCE * eps_l;
     const f64 r_sum = ref->r0 + r1;
-    f64 max_dist = r_sum;
-    if (ref->kind != 2)
-    {
-        max_dist += (f64) g_contact_test_solver_config.speculative_distance;
-    }
+    const f64 max_dist = r_sum + (f64) g_contact_test_solver_config.speculative_distance;
     const u32 contact = (result->length == 1);
     stats->tests += 1;
 
@@ -2788,7 +2842,8 @@ static u32 SpCheckPair(struct arena *tmp, struct sp_Stats *stats, const sp_Conta
         GJKVertexSetPoint(gjk_vset + 1, V3Zero());
         struct GJKCache gjk_cache;
         v3 gjk_c[2], gjk_n;
-        gjk_path = (GJK(gjk_c + 0, gjk_c + 1, &gjk_n, &gjk_cache, NULL, gjk_vset + 0, gjk_vset + 1, &t_1_to_0, (f32) r1) > 0.0f);
+        const f32 gjk_cutoff = s1->shape.sphere.radius + g_contact_test_solver_config.speculative_distance;
+        gjk_path = (GJK(gjk_c + 0, gjk_c + 1, &gjk_n, &gjk_cache, NULL, gjk_vset + 0, gjk_vset + 1, &t_1_to_0, gjk_cutoff) > 0.0f);
     }
     const char *fail = SpVerify(stats, &result, &ref, r1, L, gjk_path);
 
@@ -2839,8 +2894,8 @@ static u32 SpCheckPair(struct arena *tmp, struct sp_Stats *stats, const sp_Conta
 /*
  * The sphere's center relative to s[0] (local), by mode:
  *  0: random near s[0]
- *  1: on the touching shell: core distance r_sum * (1 +- 1e-6 .. 1e-2); spheres and capsules: half of the time
- *     the speculative shell r_sum + speculative_distance instead
+ *  1: on the touching shell: core distance r_sum * (1 +- 1e-6 .. 1e-2); half of the time the speculative shell
+ *     r_sum + speculative_distance instead
  *  2: deep: core distance 0 .. 0.5 r_sum (hulls: inside)
  *  3: degenerate: at s[0]'s core (sphere: its center; capsule: on its axis; hull: its center of mass)
  */
@@ -2881,7 +2936,7 @@ static struct d3 SpCenterNear(const u32 kind, const struct c_Shape *s0, const st
             const f64 rel[] = { 1e-6, 1e-4, 1e-2 };
             const f64 sign = (RngU64Range(0, 1)) ? 1.0 : -1.0;
             f64 shell = r_sum;
-            if (kind != 2 && RngU64Range(0, 1))
+            if (RngU64Range(0, 1))
             {
                 shell += (f64) g_contact_test_solver_config.speculative_distance;
             }
@@ -3040,6 +3095,13 @@ struct test_Output SphereContactCasesTest(struct test_Environment *env)
     t[1].position = V3F64(0.3, 1.25, 0.0);
     r = CtConvexContact(env->mem_2, c_HullSphereContact, &cache, s[0], &t[0], s[1], &t[1]);
     TEST_TRUE(r.length == 1 && CtNear(r.buf->depth[0], 0.25) && CtNearD3(D3V3(r.buf->n), D3(0.0, 1.0, 0.0)) && CtNearD3(D3V3(r.buf->v[0]), D3(0.3, 1.0, 0.0)));
+    /* above the top face, 1 cm apart: speculative, depth -0.01; 3 cm apart: none */
+    t[1].position = V3F64(0.3, 1.51, 0.0);
+    r = CtConvexContact(env->mem_2, c_HullSphereContact, &cache, s[0], &t[0], s[1], &t[1]);
+    TEST_TRUE(r.length == 1 && CtNear(r.buf->depth[0], -0.01) && CtNearD3(D3V3(r.buf->n), D3(0.0, 1.0, 0.0)) && CtNearD3(D3V3(r.buf->v[0]), D3(0.3, 1.0, 0.0)));
+    t[1].position = V3F64(0.3, 1.53, 0.0);
+    r = CtConvexContact(env->mem_2, c_HullSphereContact, &cache, s[0], &t[0], s[1], &t[1]);
+    TEST_EQUAL(r.length, 0);
     t[1].position = V3F64(1.2, 1.2, 1.2);
     r = CtConvexContact(env->mem_2, c_HullSphereContact, &cache, s[0], &t[0], s[1], &t[1]);
     TEST_TRUE(r.length == 1 && CtNear(r.buf->depth[0], 0.5 - 0.34641016) && CtNearD3(D3V3(r.buf->n), D3(0.57735027, 0.57735027, 0.57735027)) && CtNearD3(D3V3(r.buf->v[0]), D3(1.0, 1.0, 1.0)));
