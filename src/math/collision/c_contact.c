@@ -901,9 +901,10 @@ static u32 HullTriangleEdgeQuery(struct sat_EdgeQuery *query, const struct dcel 
 typedef struct PolygonClipPoint PolygonClipPoint;
 /*
  * A vertex of the polygon being clipped: the point where the polygon edge entering it and the one leaving it
- * meet. edge[0] / owner[0] is the entering edge (a half-edge of hull owner), edge[1] / owner[1] the leaving one;
- * they make the point's id. feature[index] is the sat feature: the incident vertex (index 0) or the incident
- * edge a crossing was made on (index 1).
+ * meet. edge[0] / owner[0] is the entering edge (a half-edge of hull owner), edge[1] / owner[1] the leaving one.
+ * id_edge / id_owner make the point's id: its own edges, or those of the point a clip dropped within linear_slop of
+ * it. feature[index] is the sat feature: the incident vertex (index 0) or the incident edge a crossing was made on
+ * (index 1).
  */
 struct PolygonClipPoint
 {
@@ -911,6 +912,8 @@ struct PolygonClipPoint
     u32             feature[2];
     u32             edge[2];
     u32             owner[2];
+    u32             id_edge[2];
+    u32             id_owner[2];
     v3              v;
 };
 
@@ -971,10 +974,15 @@ static void PolygonCcwClipNegativeFaceAndProject(struct arena *mem, sat_FeatureI
             .feature[1] = sat_FeatureIdConstruct(inc_face->first + i, SAT_FEATURE_TYPE_EDGE),
             .edge = { inc_face->first + (i + inc_face->count - 1) % inc_face->count, inc_face->first + i },
             .owner = { b_v, b_v },
+            .id_edge = { inc_face->first + (i + inc_face->count - 1) % inc_face->count, inc_face->first + i },
+            .id_owner = { b_v, b_v },
         };
         pcp.v = v[b_v][vi];
 		poly[cur][poly_count[cur]++] = pcp;
 	}
+
+    u32 *id_claimed = ArenaPush(mem, count*sizeof(u32));
+    const f32 merge_band_sq = g_solver_config->linear_slop*g_solver_config->linear_slop;
 
     /* Clip polygon against voronoi face region */
 	for (u32 j = 0; j < ref_face->count; ++j)
@@ -988,8 +996,10 @@ static void PolygonCcwClipNegativeFaceAndProject(struct arena *mem, sat_FeatureI
         u32 out_count = 0;
         if (in_count)
         {
+            memset(id_claimed, 0, in_count*sizeof(u32));
             /* edges (in_count - 1 -> 0), (0 -> 1), ...; keep the part with d <= 0 */
             struct PolygonClipPoint v1 = in[in_count - 1];
+            u32 i1 = in_count - 1;
             f32 d1 = PlanePointSignedDistance(&side_plane, v1.v);
             for (u32 i = 0; i < in_count; ++i)
             {
@@ -1020,6 +1030,24 @@ static void PolygonCcwClipNegativeFaceAndProject(struct arena *mem, sat_FeatureI
                         crossing.owner[1] = v1.owner[1];
                     }
                     crossing.v = V3Add(v1.v, V3Scale(V3Sub(v2.v, v1.v), d1 / (d1 - d2)));
+                    crossing.id_edge[0] = crossing.edge[0];
+                    crossing.id_edge[1] = crossing.edge[1];
+                    crossing.id_owner[0] = crossing.owner[0];
+                    crossing.id_owner[1] = crossing.owner[1];
+
+                    /*
+                     * WARNING: ad-hoc solution to box-stacking issue of corner points dropped within linear slop of edges.
+                     * Within linear_slop of the dropped point: its id (each dropped point gives it once).
+                     */
+                    const u32 dropped = (d1 < 0.0f) ? i : i1;
+                    if (!id_claimed[dropped] && V3DistanceSquared(crossing.v, in[dropped].v) <= merge_band_sq)
+                    {
+                        id_claimed[dropped] = 1;
+                        crossing.id_edge[0] = in[dropped].id_edge[0];
+                        crossing.id_edge[1] = in[dropped].id_edge[1];
+                        crossing.id_owner[0] = in[dropped].id_owner[0];
+                        crossing.id_owner[1] = in[dropped].id_owner[1];
+                    }
                     out[out_count++] = crossing;
                 }
                 if (d2 <= 0.0f)
@@ -1027,6 +1055,7 @@ static void PolygonCcwClipNegativeFaceAndProject(struct arena *mem, sat_FeatureI
                     out[out_count++] = v2;
                 }
                 v1 = v2;
+                i1 = i;
                 d1 = d2;
             }
         }
@@ -1048,7 +1077,7 @@ static void PolygonCcwClipNegativeFaceAndProject(struct arena *mem, sat_FeatureI
 		if ((*cp_depth)[*cp_count] >= -max_separation)
 		{
             (*features)[*cp_count] = pcp->feature[ pcp->index ];
-            (*ids)[*cp_count] = c_PointIdInit(C_POINT_EDGE_OF_0 + pcp->owner[0], pcp->edge[0], C_POINT_EDGE_OF_0 + pcp->owner[1], pcp->edge[1]);
+            (*ids)[*cp_count] = c_PointIdInit(C_POINT_EDGE_OF_0 + pcp->id_owner[0], pcp->id_edge[0], C_POINT_EDGE_OF_0 + pcp->id_owner[1], pcp->id_edge[1]);
 			(*cp)[*cp_count] = V3AddScaled((*cp)[*cp_count], ref_plane.normal, (*cp_depth)[*cp_count]);
 			if (*max_depth < (*cp_depth)[ *cp_count ])
 			{
