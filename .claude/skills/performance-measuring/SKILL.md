@@ -17,6 +17,15 @@ agent_notes/perf_machines.txt.
   -DDS_PERFORMANCE_MEASUREMENT_API=ON. Never touch the determinism flags.
 - Same compiler, flags and seed for every variant; build hygiene as usual.
 
+## Quiet machine
+- NEVER run two things at once: one executable at a time; no build, test,
+  other measurement or second variant beside it. Variants go interleaved in
+  one binary (rule 4), never in parallel processes.
+- Before starting: no process of yours still running (pgrep, kill leftovers).
+- While it runs, stay idle: start it in the foreground with its timeout and
+  make no other tool call until it returns. No polling, no status checks, no
+  reading or editing files meanwhile.
+
 ## Hardware
 - Before measuring, find the machine's entry in agent_notes/perf_machines.txt
   (cpu, clocks, caches, counter availability, empty-pair costs). No entry, or
