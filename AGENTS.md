@@ -42,6 +42,25 @@ All scripts share build/. For your own builds, use a separate directory
 optimized (-DDS_OPTIMIZE=ON). DS_DEBUG=ON validates the whole physics pipeline
 every tick (slow).
 
+Heavy work (a build, a test or determinism run, a sanitizer run) can exhaust
+the machine. Before starting it, check what the machine has (nproc, free -m)
+and judge what it can take at once:
+- Scarce memory or few cores (the Linux laptop: 4 cores, 5.8 GB RAM): one
+  heavy thing at a time. Never a run beside a build, never two runs, nothing
+  in the background; loops over runs are sequential; sanitizer runs (several
+  times a plain run's memory) with a low thread count.
+- Plenty of both: heavy things may run side by side, as far as free memory
+  and cores allow.
+- A build running alone may use every core (cmake --build . --parallel).
+- /tmp may be RAM (it is on the laptop): large trees and builds go on disk.
+Reason: the owner works on the same machine; a TSan run with 4 worker threads
+froze the laptop and it had to be powered off.
+
+A performance measurement MUST be fully isolated from you and from every
+process you spawn: start it alone, with nothing else of yours running, and do
+nothing until it has finished (no tool calls, no polling, no file reads).
+Anything else ruins the timings.
+
 ds_Assert and Breakpoint(condition) are diligently used when debugging. Note
 that -DDS_DEBUG=OFF compiles them out, so they must not contain side effects or
 error handling. The same holds for Log (compiled out with -DDS_LOG=OFF).
