@@ -196,7 +196,7 @@ void ds_DynamicsRuntimeDealloc(struct ds_DynamicsRuntime *runtime)
 static void ds_DynamicsMouseAnchorAdd(struct ds_Dynamics *pipeline)
 {
     ds_Assert(pipeline->body_pool.count == 0);
-    const struct ds_BodyPrefab prefab = { .dynamic = 0 };
+    const struct ds_BodyPrefab prefab = { .flags = 0 };
     const ds_TransformWorld t_world = ds_TransformWorldIdentity();
     const ds_BodyId id = ds_BodyAdd(pipeline, &prefab, &t_world, U32_MAX);
     ds_Assert(ds_BodyIdEqual(id, DS_BODY_MOUSE_ANCHOR_ID));

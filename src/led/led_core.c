@@ -639,7 +639,7 @@ struct slot led_RigidBodyPrefabAdd(struct led *led, const utf8 id, const u32 dyn
 		{
 			struct ds_BodyPrefab *prefab = ds_SDBAdd(&led->mem_persistent, led->body_prefab_db, copy).address;
             DLLFlush(prefab->shape_list);
-			prefab->dynamic = dynamic;
+			prefab->flags = (dynamic) ? BODY_FLAG_DYNAMIC : 0;
         }
 	}
 

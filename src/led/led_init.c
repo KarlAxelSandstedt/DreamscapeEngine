@@ -186,7 +186,7 @@ struct led *led_Alloc(const utf8 simulation_path, const utf8 record_path, const 
     instance->t_local = ds_TransformIdentity();
 
 	struct ds_BodyPrefab *prefab_stub = g_editor->body_prefab_db.pool.buf + SDB_STUB;
-	prefab_stub->dynamic = 1;
+	prefab_stub->flags = BODY_FLAG_DYNAMIC;
     DLLFlush(prefab_stub->shape_list);
     DLLAppend(prefab_stub->shape_list, g_editor->shape_prefab_instance_pool.buf, instance_index, body_shape);
 

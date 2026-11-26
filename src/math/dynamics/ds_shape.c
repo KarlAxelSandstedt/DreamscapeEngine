@@ -76,7 +76,7 @@ ds_ShapeId ds_ShapeAdd(struct ds_Dynamics *pipeline, const struct ds_ShapePrefab
 	shape->cshape_handle = cshape_slot.index;
 	shape->cshape_type = cshape->type;
 
-	shape->margin = (ds_BodyDynamicCheck(body))
+	shape->margin = (!ds_BodyStaticCheck(body))
 	              ? F32Max(pipeline->config.numerics.proxy_margin_min, pipeline->config.numerics.proxy_margin_scale * cshape->max_bounding_box_side_length)
 	              : pipeline->config.numerics.proxy_margin_min;
 

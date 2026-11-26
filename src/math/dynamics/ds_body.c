@@ -53,13 +53,13 @@ ds_BodyId ds_BodyAdd(struct ds_Dynamics *pipeline, const struct ds_BodyPrefab *p
 
 	body->entity = entity;
 
-	const u32 dynamic_flag = (prefab->dynamic) ? BODY_FLAG_DYNAMIC : 0;
-	body->flags = dynamic_flag;
+	ds_Assert(prefab->flags == 0 || prefab->flags == BODY_FLAG_DYNAMIC);
+	body->flags = prefab->flags;
 
 	body->low_velocity_time = 0.0f;
 
     struct ds_BodySim *sim;
-	if (ds_BodyDynamicCheck(body))
+	if (!ds_BodyStaticCheck(body))
 	{
         struct ds_SolverSet *active_set = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE; 
         const struct slot sim_slot = ds_CPoolPush(active_set->body_sim_pool);

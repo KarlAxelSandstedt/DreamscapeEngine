@@ -449,10 +449,10 @@ void ds_ContactConstraintInitRange(struct ds_Dynamics *pipeline, const u32 color
         const struct ds_Body *b[2] = { pipeline->body_pool.buf + c->body[0], pipeline->body_pool.buf + c->body[1] };
         const struct ds_Shape *s[2] = { pipeline->shape_pool.buf + c->key.shape[0], pipeline->shape_pool.buf + c->key.shape[1] };
 
-        ccomp->body_sim[0] = ds_BodyDynamicCheck(b[0])
+        ccomp->body_sim[0] = !ds_BodyStaticCheck(b[0])
                 ? b[0]->sim
                 : ACTIVE_BODY_DUMMY_INDEX;
-        ccomp->body_sim[1] = ds_BodyDynamicCheck(b[1])
+        ccomp->body_sim[1] = !ds_BodyStaticCheck(b[1])
                 ? b[1]->sim
                 : ACTIVE_BODY_DUMMY_INDEX;
 

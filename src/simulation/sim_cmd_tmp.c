@@ -73,7 +73,7 @@ static u32 ds_BodyAddCmdTryExecute(struct ds_Sim *sim, const struct ds_BodyAddCm
     ds_HashMapAdd(&sim->game.entity_map, cmd->entity, ds_BodyIdIndex(body));
 
     /* a static body ignores the velocities */
-    if (prefab->dynamic)
+    if (prefab->flags & BODY_FLAG_DYNAMIC)
     {
         const struct ds_Body *b = ds_BodyLookup(&sim->dynamics, body).address;
         struct ds_BodyCompute *compute = sim->dynamics.solver_set_pool.buf[b->set].body_compute_pool.buf + b->sim;

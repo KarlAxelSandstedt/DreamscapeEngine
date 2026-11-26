@@ -207,7 +207,7 @@ void ds_IslandValidateAll(const struct ds_Dynamics *pipeline)
 	for (u32 i = 0; i < pipeline->body_pool.count_max; ++i)
 	{
 		struct ds_Body *body = pipeline->body_pool.buf + i;
-		if (ds_PoolSlotAllocated(body) && ds_BodyDynamicCheck(body))
+		if (ds_PoolSlotAllocated(body) && !ds_BodyStaticCheck(body))
 		{
 			struct ds_Island *is = pipeline->island_pool.buf + body->island;
 			ds_Assert(ds_PoolSlotAllocated(is));

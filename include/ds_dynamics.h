@@ -249,9 +249,9 @@ transform, ds_Body must also store its center of mass:
 	}
 */
 
-#define SHAPE_FLAG_ALL          (BODY_FLAG_DYNAMIC)
+#define SHAPE_FLAG_ALL          (BODY_FLAG_DYNAMIC | BODY_FLAG_KINEMATIC)
 
-#define ds_ShapeStaticCheck(b)	(!((b)->flags & BODY_FLAG_DYNAMIC))
+#define ds_ShapeStaticCheck(b)	(!((b)->flags & (BODY_FLAG_DYNAMIC | BODY_FLAG_KINEMATIC)))
 #define ds_ShapeDynamicCheck(b)	((b)->flags & BODY_FLAG_DYNAMIC)
 
 #define ds_ShapeDynamicBit(b)    (((b)->flags & BODY_FLAG_DYNAMIC) >> BODY_FLAG_DYNAMIC_BIT)
@@ -262,7 +262,7 @@ struct ds_Shape
     struct DLLNode body_shape;
 
     ds_ShapeId      id;                 /* Generational identifier                          */
-    u32             flags;              /* Shape flags (BODY_FLAG_DYNAMIC)                       */
+    u32             flags;              /* Shape flags (BODY_FLAG_DYNAMIC, BODY_FLAG_KINEMATIC)  */
 	u32 			body;		        /* ds_Body owner of node 			                */
 	u32			    proxy;		        /* BVH index 					                    */
     struct DLL   contact_list;       /* list of the shape's contacts                     */
@@ -411,7 +411,7 @@ struct ds_BodyPrefab
     SDB_NODE;
 
     struct DLL   shape_list;         /* shape prefab instance list */
-	u32	            dynamic;	        /* dynamic body is true, static if false */
+	u32	            flags;	            /* BODY_FLAG_DYNAMIC, BODY_FLAG_KINEMATIC or 0 (static) */
 
     //TODO pre-compute...?
 	//f32 	        mass;			    /* total body mass */
@@ -440,9 +440,9 @@ ds_BodyCompute.
 #define BODY_FLAG_DYNAMIC		((u32) 1 << BODY_FLAG_DYNAMIC_BIT)
 #define BODY_FLAG_KINEMATIC		((u32) 1 << BODY_FLAG_KINEMATIC_BIT)   /* not simulated yet: drawn only */
 #define BODY_FLAG_FAST			((u32) 1 << BODY_FLAG_FAST_BIT)        /* sim only, set per step: the body needs CCD */
-#define BODY_FLAG_ALL           (BODY_FLAG_DYNAMIC)
+#define BODY_FLAG_ALL           (BODY_FLAG_DYNAMIC | BODY_FLAG_KINEMATIC)
 
-#define ds_BodyStaticCheck(b)	(!((b)->flags & BODY_FLAG_DYNAMIC))
+#define ds_BodyStaticCheck(b)	(!((b)->flags & (BODY_FLAG_DYNAMIC | BODY_FLAG_KINEMATIC)))
 #define ds_BodyDynamicCheck(b)	((b)->flags & BODY_FLAG_DYNAMIC)
 #define ds_BodyKinematicCheck(b)	((b)->flags & BODY_FLAG_KINEMATIC)
 
