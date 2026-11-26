@@ -43,14 +43,15 @@ u32 c_ManifoldCheck(const struct c_Manifold *cm)
 	u32 valid = cm->v_count <= 4
 	         && V3FiniteCheck(cm->n)
 	         && V3Dot(cm->n, cm->n) > 0.0f;
+	f32 deepest = -F32_INFINITY;
 	for (u32 i = 0; valid && i < cm->v_count; ++i)
 	{
 		valid = V3FiniteCheck(cm->v[i])
-		     && F32FiniteCheck(cm->depth[i])
-		     && cm->depth[i] >= -2.0f*g_solver_config->speculative_distance;
+		     && F32FiniteCheck(cm->depth[i]);
+		deepest = F32Max(deepest, cm->depth[i]);
 	}
 
-	return valid;
+	return valid && (cm->v_count == 0 || deepest >= -2.0f*g_solver_config->speculative_distance);
 }
 
 void c_ManifoldTransform(struct c_Manifold *dst, const struct c_Manifold *src, const m3 rot, const v3 translation)

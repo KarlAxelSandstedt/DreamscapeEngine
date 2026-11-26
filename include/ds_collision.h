@@ -496,7 +496,7 @@ static ds_ForceInline u32       c_PointIdEqual(const c_PointId a, const c_PointI
 struct c_Manifold
 {
 	v3 	        v[4];       /* contact point on the reference shape surface     */
-	f32 	    depth[4];   /* penetration depth, about >= -speculative_distance; < 0: separated */
+	f32 	    depth[4];   /* penetration depth, < 0: separated; the deepest about >= -speculative_distance */
 	v3 	        n;		    /* Contact normal: Points away from reference       */
 	u32 	    v_count;    /* Contact point count                              */
 	c_PointId   id[4];      /* contact point geometric identifier               */
@@ -506,7 +506,7 @@ DEFINE_ARRAY_STRUCT(c_Manifold);
 
 /* Print manifold to file stderr */
 void 	c_ManifoldDebugPrint(const struct c_Manifold *cm);
-/* Debug check (DS_DEBUG callers): v_count <= 4; n, v, depth finite; n != 0; depth >= -2 speculative_distance. Return 1 if valid. */
+/* Debug check (DS_DEBUG callers): v_count <= 4; n, v, depth finite; n != 0; the deepest depth >= -2 speculative_distance. Return 1 if valid. */
 u32     c_ManifoldCheck(const struct c_Manifold *cm);
 /* Transform the manifold */
 void	c_ManifoldTransform(struct c_Manifold *dst, const struct c_Manifold *src, const m3 rot, const v3 translation);

@@ -1950,7 +1950,7 @@ Every manifold must satisfy, with L = max(extent A, extent B, |x_B - x_A|), tol 
                                                 face or edge point gives no contact)
     c_ManifoldCheck, v_count in 1..4, |n| = 1
     depth_i <= -sep(n) + tol                    (n separates as deep as it claims)
-    depth_i >= -spec - tol                      (speculative points only within the band)
+    max_i depth_i >= -spec - tol                (the deepest point within the band; the others any)
     v_i on A's surface                          |sdf_A(v_i)| <= tol
     v_i - depth_i n on B's surface              |sdf_B(v_i - depth_i n)| <= tol (point and depth agree)
     point ids distinct
@@ -1980,7 +1980,7 @@ enum hh_Fail
     HH_FAIL_FALSE,          /* sat > spec + tol, contact */
     HH_FAIL_NORMAL,         /* |n| != 1 */
     HH_FAIL_DEPTH,          /* depth > -sep(n) + tol */
-    HH_FAIL_BAND,           /* depth < -spec - tol */
+    HH_FAIL_BAND,           /* max depth < -spec - tol */
     HH_FAIL_SURFACE_A,      /* v not on A's surface */
     HH_FAIL_SURFACE_B,      /* v - depth n not on B's surface */
     HH_FAIL_ID,             /* two points share a c_PointId */
@@ -1991,7 +1991,7 @@ enum hh_Fail
 static const char *hh_fail_id[HH_FAIL_COUNT] =
 {
     "none", "invalid", "missed contact", "false contact", "|n| != 1", "depth deeper than sep(n)",
-    "depth below -speculative_distance", "v off A", "v - depth n off B", "duplicate point id", "translation",
+    "deepest below -speculative_distance", "v off A", "v - depth n off B", "duplicate point id", "translation",
 };
 
 struct hh_Stats
@@ -2239,6 +2239,7 @@ static enum hh_Fail HhVerifySlack(struct hh_Stats *stats, const ds_Array(c_Manif
     }
 
     const f64 sep = HhSeparation(a, &bt, D3Scale(n, 1.0 / n_len));
+    f64 deepest = (f64) m->depth[0];
     for (u32 i = 0; i < m->v_count; ++i)
     {
         const struct d3 v = D3V3(m->v[i]);
@@ -2246,13 +2247,10 @@ static enum hh_Fail HhVerifySlack(struct hh_Stats *stats, const ds_Array(c_Manif
         const f64 surface_b = F64AbsTest(ChHullSdf(&bt, D3Sub(v, D3Scale(n, m->depth[i]))));
         stats->worst_surface_a = F64MaxTest(stats->worst_surface_a, surface_a / eps_l);
         stats->worst_surface_b = F64MaxTest(stats->worst_surface_b, surface_b / eps_l);
+        deepest = F64MaxTest(deepest, (f64) m->depth[i]);
         if (m->depth[i] > -sep + tol + slack)
         {
             return HH_FAIL_DEPTH;
-        }
-        if (m->depth[i] < -spec - tol)
-        {
-            return HH_FAIL_BAND;
         }
         if (surface_a > tol + slack)
         {
@@ -2262,6 +2260,11 @@ static enum hh_Fail HhVerifySlack(struct hh_Stats *stats, const ds_Array(c_Manif
         {
             return HH_FAIL_SURFACE_B;
         }
+    }
+
+    if (deepest < -spec - tol)
+    {
+        return HH_FAIL_BAND;
     }
 
     if (sat < -tol)
@@ -3607,8 +3610,8 @@ static struct d3 McCapsuleDirection(const struct mc_CapsuleCase *cc, const struc
 
 /*
  * every point in the capsule (dist(v, core) <= r + tol; on its surface if on_surface: a face contact's points are the
- * clipped core points moved by r along n, inside the capsule for a tilted core), n unit, depths >= -spec - tol;
- * returns the deepest
+ * clipped core points moved by r along n, inside the capsule for a tilted core), n unit, the deepest depth at least
+ * -spec - tol; returns the deepest
  */
 static u32 McCapsuleManifoldCheck(f64 *deepest, const struct c_Manifold *m, const f32 radius, const f32 half_height, const f64 tol, const u32 on_surface)
 {
@@ -3622,13 +3625,13 @@ static u32 McCapsuleManifoldCheck(f64 *deepest, const struct c_Manifold *m, cons
     {
         const f64 y = F64ClampTest((f64) m->v[i].y, -(f64) half_height, (f64) half_height);
         const f64 dist = D3Length(D3Sub(D3V3(m->v[i]), D3(0.0, y, 0.0)));
-        if (dist > (f64) radius + tol || (on_surface && dist < (f64) radius - tol) || (f64) m->depth[i] < -spec - tol)
+        if (dist > (f64) radius + tol || (on_surface && dist < (f64) radius - tol))
         {
             return 0;
         }
         *deepest = F64MaxTest(*deepest, (f64) m->depth[i]);
     }
-    return 1;
+    return *deepest >= -spec - tol;
 }
 
 /*
