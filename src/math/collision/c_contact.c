@@ -2191,6 +2191,10 @@ static void c_MeshContactFinish(struct arena *tmp, ds_TSlab(ds_TriCache) *slab, 
      * internal edges (TODO(decision): keep this void/delayed scheme or Box3D's): face contacts are emitted and void
      * their 3 vertices; edge/vertex contacts wait, deepest first, and are dropped if their vertices are voided.
      * TODO(perf, audit C5): insertion sort (here).
+     * TODO(mesh rework): check Erin Catto's mesh design (box3d 3362633 and the 38f2ae1 rewrite) before changing any
+     * mesh-hull contact rule; agent_notes/AGENT_TODO.txt 2026-11-26 "Mesh rework".
+     * TODO(perf, future): merge coplanar manifolds into one (box3d 3362633 clustering); agent_notes/AGENT_TODO.txt
+     * 2026-11-26 "Manifold clustering".
      */
     u32 delayed_n = 0;
     for (u32 i = 0; i < helper->record_count; ++i)
