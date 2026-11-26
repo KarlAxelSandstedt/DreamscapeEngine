@@ -5579,10 +5579,8 @@ Fast bodies thrown down onto two floors with top face at y = 0, 3 s with gravity
 (r 0.25) and a capsule (r 0.15, half height 0.3) lying along x start 2.4 m above their resting heights (0.25, 0.25,
 0.15) at 1, 3, 8 and 20 times their min extent per tick (box and sphere 15 to 300 m/s, capsule 9 to 180 m/s).
 With continuous collision every body is flagged fast, its center never reaches the floor's plane, and it ends at its
-resting height within [-2 slop, slop]. Except the box on the slab, which is only printed: CCD puts it slop above the
-slab, where no hull-hull manifold exists yet, the next step's TOI is 0 (left to the discrete contacts), and it may
-pass through until speculative contacts exist. Without continuous collision, the bodies at 20 times their min extent
-per tick end below both floors (the test's control).
+resting height within [-2 slop, slop]. Without continuous collision, the bodies at 20 times their min extent per tick
+end below both floors (the test's control).
 */
 static struct test_Output DynamicsCCDFloorTest(struct test_Environment *env)
 {
@@ -5660,12 +5658,6 @@ static struct test_Output DynamicsCCDFloorTest(struct test_Environment *env)
                 continue;
             }
 
-            if (target == 1 && type[k] == C_SHAPE_CONVEX_HULL)
-            {
-                fprintf(stdout, "\tCCD floor, box on hull slab at %g m/s: lowest center %g, end %g (%s)\n", (f64) speed, (f64) lowest[target][k][i], (f64) y, (y > 0.0f) ? "held" : "passed through");
-                continue;
-            }
-
             if (!fast[target][k][i] || !(lowest[target][k][i] > 0.0f) || !(rest[k] - 2.0f*slop <= y && y <= rest[k] + slop))
             {
                 fprintf(stderr, "CCD floor: %s on %s at %g m/s: fast %u, lowest center %g, end %g, resting height %g\n", shape_id[k], target_id[target], (f64) speed, fast[target][k][i], (f64) lowest[target][k][i], (f64) y, (f64) rest[k]);
@@ -5687,12 +5679,9 @@ Spinning thin bodies thrown down at 100 m/s onto a 120 x 120 m mesh floor (Dynam
 static hull slab as thin as DynamicsCCDFloorTest's (120 x 0.1 x 120 m), 5 s with gravity: an edge-first impact turns
 the fall into spin and a sideways kick of up to about 30 m/s, so the floors leave room to land again. Spinning at
 30 rad/s (under the default 10 pi cap) about x, about z and about the diagonal (1, 1, 1): a stick (half widths 2 x 0.1 x 0.1, min extent 0.1) and a thin plate (0.5 x 0.02 x 0.5, min
-extent 0.02), most of whose motion per step is the rotation. Each is flagged fast; where it ends is printed only
-(the speculative-contact step asserts it): one step after CCD stops a body slop short its TOI is 0. On the slab
-nothing then stops it (no hull-hull manifold slop apart, like the box in DynamicsCCDFloorTest); on the mesh the
-fallback sphere about the center of mass (radius half the min extent + slop: 0.055 and 0.015) lets the tilted stick
-or plate sink up to its half length (the stick spinning about z: tip 1.9 m deep, center 0.05 m above), and the
-contact does not push it out.
+extent 0.02), most of whose motion per step is the rotation. Each is flagged fast, ends resting on its floor (its
+center within [-2 slop, slop] of its half thickness) and never passes under: its center never sinks more than its
+half thickness below the floor's top. Printed: the lowest and the end center.
 */
 static struct test_Output DynamicsCCDSpinTest(struct test_Environment *env)
 {
@@ -5764,9 +5753,9 @@ static struct test_Output DynamicsCCDSpinTest(struct test_Environment *env)
                 outcome = "on top, not resting or sank past its center";
             }
             fprintf(stdout, "\tCCD spin, %s about %s on %s: lowest center %g, end %g (%s)\n", body_id[b], axis_id[a], target_id[target], (f64) lowest[target][b], (f64) y, outcome);
-            if (!fast[target][b])
+            if (!fast[target][b] || !rests || !(lowest[target][b] > -hw[b].y))
             {
-                fprintf(stderr, "CCD spin: %s about %s on %s not flagged fast\n", body_id[b], axis_id[a], target_id[target]);
+                fprintf(stderr, "CCD spin: %s about %s on %s: fast %u, lowest center %g, end %g, resting height %g\n", body_id[b], axis_id[a], target_id[target], fast[target][b], (f64) lowest[target][b], (f64) y, (f64) hw[b].y);
                 TEST_FAILURE;
             }
         }
@@ -5785,8 +5774,7 @@ Fast bodies grazing the top edge of a thin static wall (hull, 0.1 m thick, top e
 no gravity, 3 s. The box, sphere and capsule of DynamicsCCDFloorTest fly along +x from x = 7.6 at 1, 3, 8 and 20 times
 their min extent per tick, at two heights:
     clipping, their bottom 0.1 m below the edge: each is flagged fast and ends in front of the wall or above it
-    (center minus its bounding sphere radius above the edge: deflected over), never through it. The box is printed
-    only: hull against hull, like the box in DynamicsCCDFloorTest;
+    (center minus its bounding sphere radius above the edge: deflected over), never through it;
     clearing, their bottom 3 slop above the edge (past TOI's target slop + tolerance 0.25 slop): no false hit, each
     ends past the wall at its start height (1e-4) with the free flight's damped speed (relative 1e-5).
 Without continuous collision the clipping bodies at 20 times end past the wall below its edge (the test's control;
@@ -5894,21 +5882,6 @@ static struct test_Output DynamicsCCDCornerTest(struct test_Environment *env)
 
             const u32 held = (x < front);
             const u32 over = (y - bound[k] > edge_y);
-            if (type[k] == C_SHAPE_CONVEX_HULL)
-            {
-                const char *outcome = "passed through";
-                if (held)
-                {
-                    outcome = "held";
-                }
-                else if (over)
-                {
-                    outcome = "went over";
-                }
-                fprintf(stdout, "\tCCD corner, clipping box at %g m/s: end (%g, %g) (%s)\n", (f64) speed, (f64) x, (f64) y, outcome);
-                continue;
-            }
-
             if (!fast[clip][k][i] || !(held || over))
             {
                 fprintf(stderr, "CCD corner, clipping %s at %g m/s: fast %u, end (%g, %g), through the wall\n", shape_id[k], (f64) speed, fast[clip][k][i], (f64) x, (f64) y);
@@ -5926,13 +5899,13 @@ static struct test_Output DynamicsCCDCornerTest(struct test_Environment *env)
 }
 
 /*
-CCD metrics, the baseline that speculative contacts are compared against (printed; asserted only: the run is
-deterministic, two runs end bit-identical, and finite). 100 bodies per floor, seeded (fixed seed, local generator),
-at 10 m spacing on the 120 x 120 m mesh floor (DynamicsTestFloorAdd, 10 m cells) and a static hull slab (120 x 0.1 x
-120 m), 5 s with gravity. Each draws its shape (box 0.5 m, sphere r 0.25, capsule r 0.15 half height 0.3, stick
-4 x 0.2 x 0.2, plate 1 x 0.04 x 1), its downward speed (half the bodies 0.3 to 1, half 1 to 20 times its min extent
-per tick), its spin (0 to 30 rad/s about a random axis) and a random orientation; it starts 1 to 3 m above the floor
-with its bounding sphere. Per floor and shape:
+CCD metrics, the baseline that speculative contacts are compared against (printed; asserted: no body tunnels, the run
+is deterministic (two runs end bit-identical) and finite; left is a body kicked off a floor too small for the
+impact). 100 bodies per floor, seeded (fixed seed, local generator), at 10 m spacing on the 120 x 120 m mesh floor
+(DynamicsTestFloorAdd, 10 m cells) and a static hull slab (120 x 0.1 x 120 m), 5 s with gravity. Each draws its shape
+(box 0.5 m, sphere r 0.25, capsule r 0.15 half height 0.3, stick 4 x 0.2 x 0.2, plate 1 x 0.04 x 1), its downward
+speed (half the bodies 0.3 to 1, half 1 to 20 times its min extent per tick), its spin (0 to 30 rad/s about a random
+axis) and a random orientation; it starts 1 to 3 m above the floor with its bounding sphere. Per floor and shape:
     held / tunnelled / left: at the end its center is above the floor / below it / it is off the floor's footprint
     (kicked away);
     on floor (held bodies): at the end its lowest point is within [-2 slop, slop] of the floor (resting, rolling or
@@ -6098,6 +6071,11 @@ static struct test_Output DynamicsCCDMetricsTest(struct test_Environment *env)
 
                 const f32 sink_mean = (held) ? sink_sum / (f32) held : 0.0f;
                 fprintf(stdout, "\t  %-9s %-7s n %2u fast %2u | held %2u tunnelled %2u left %2u | on floor %2u | sink mean %.4f max %.4f | hover ticks %3u bodies %2u\n", target_id[target], kind_id[k], count, fast_count, held, tunnelled, left, on_floor, (f64) sink_mean, (f64) sink_max, hover_ticks, hover_bodies);
+                if (tunnelled)
+                {
+                    fprintf(stderr, "CCD metrics: %u of the %s bodies on the %s tunnelled\n", tunnelled, kind_id[k], target_id[target]);
+                    TEST_FAILURE;
+                }
             }
         }
 
