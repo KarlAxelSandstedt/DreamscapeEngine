@@ -6123,6 +6123,254 @@ static struct test_Output DynamicsCCDMetricsTest(struct test_Environment *env)
     return output;
 }
 
+#define EDGE_HANG_TEST_RUNS 36
+
+/*
+Edge hang (printed only, no bounds): a box (1 x 0.5 x 1 m) lands tilted about z near the +x edge of a static hull
+slab (6 x 0.1 x 120 m, top at y = 0, edge at x = 3), its low corners first, and tips over them. 36 runs 3 m apart
+along z, 2 s, sleeping off: tilt 0.2 and 0.5 rad; impact speed 2, 6 and 11 m/s; sideways speed towards the edge 0
+and 3 m/s; the low corners land 0.2, 0.5 and 0.8 m inside the edge. Per run:
+    hang ticks: ticks in which the slab's top face (|n.y| > 0.9) pushed (normal impulse > 0) a point of the box that
+    ends the tick more than linear_slop past the edge, over nothing;
+    off: the box ends below the slab (center below -1 m).
+Printed: the runs with hang ticks, the totals, and every run's outcome (o off, . on the slab).
+*/
+static struct test_Output DynamicsEdgeHangTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+    (void) env;
+
+    const f32 tilt[2] = { 0.2f, 0.5f };
+    const f32 impact_speed[3] = { 2.0f, 6.0f, 11.0f };
+    const f32 side_speed[2] = { 0.0f, 3.0f };
+    const f32 inside[3] = { 0.2f, 0.5f, 0.8f };
+    const v3 hw = V3(0.5f, 0.25f, 0.5f);
+    const f32 edge = 3.0f;
+    const f32 gap = 0.1f;
+    const u32 tick_count = 120;
+
+    struct arena mem = ArenaAlloc(NULL, 64*1024*1024);
+    struct c_ShapeDB cshape_db = { 0 };
+    c_ShapeDBAlloc(NULL, &cshape_db, 64, GROWABLE);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
+    struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&external, NSEC_PER_SEC / 60);
+    ds_DynamicsConfigPush(&pipeline);
+    pipeline.config_pending.solver.sleep_enabled = 0;
+    ds_DynamicsConfigUpdatePending(&pipeline);
+    SlideWarmAdd(&mem, &pipeline, &cshape_db, C_SHAPE_CONVEX_HULL, V3(edge, 0.05f, 60.0f), 0.0f, 0.0f, V3(0.0f, -0.05f, 0.0f), QIdentity(), 0, 0.8f, 0);
+
+    const f32 slop = pipeline.config.solver.linear_slop;
+    const f32 g = -pipeline.config.solver.gravity.y;
+    ds_BodyId body[EDGE_HANG_TEST_RUNS];
+    u32 body_index[EDGE_HANG_TEST_RUNS];
+    u32 hang[EDGE_HANG_TEST_RUNS];
+    ds_TransformWorld start[EDGE_HANG_TEST_RUNS];
+    for (u32 n = 0; n < EDGE_HANG_TEST_RUNS; ++n)
+    {
+        const u32 ti = n / 18;
+        const u32 si = (n / 6) % 3;
+        const u32 vi = (n / 3) % 2;
+        const u32 ii = n % 3;
+        const q rotation = QUnitAxisAngle(V3(0.0f, 0.0f, 1.0f), tilt[ti]);
+        /* the low corners (-hw.x, -hw.y, +-hw.z) start gap above the slab and land inside[ii] inside the edge */
+        const v3 low = QUnitRotate(rotation, V3(-hw.x, -hw.y, 0.0f));
+        const f32 v0 = F32Sqrt(impact_speed[si]*impact_speed[si] - 2.0f*g*gap);
+        const f32 fall = (impact_speed[si] - v0) / g;
+        const v3 position = V3(edge - inside[ii] - side_speed[vi]*fall - low.x, gap - low.y, -52.5f + 3.0f*(f32) n);
+        body[n] = SlideWarmAdd(&mem, &pipeline, &cshape_db, C_SHAPE_CONVEX_HULL, hw, 0.0f, 0.0f, position, rotation, 1, 0.8f, 1 + n);
+        const struct slot slot = ds_BodyLookup(&pipeline, body[n]);
+        const struct ds_Body *b = slot.address;
+        pipeline.solver_set_pool.buf[b->set].body_compute_pool.buf[b->sim].linear_velocity = V3(side_speed[vi], -v0, 0.0f);
+        body_index[n] = slot.index;
+        hang[n] = 0;
+    }
+
+    for (u32 t = 0; t < tick_count; ++t)
+    {
+        for (u32 n = 0; n < EDGE_HANG_TEST_RUNS; ++n)
+        {
+            start[n] = DynamicsTestPose(&pipeline, body[n]);
+        }
+
+        ds_DynamicsTick(DynamicsTestTickArena(), &pipeline, NSEC_PER_SEC / 60);
+
+        u32 hung[EDGE_HANG_TEST_RUNS] = { 0 };
+        for (u32 i = 0; i < pipeline.contact_pool.count_max; ++i)
+        {
+            const struct ds_Contact *c = pipeline.contact_pool.buf + i;
+            if (!ds_PoolSlotAllocated(c))
+            {
+                continue;
+            }
+
+            /* every contact is a box's with the slab: the boxes never meet */
+            u32 n = EDGE_HANG_TEST_RUNS;
+            u32 box_slot = 0;
+            for (u32 k = 0; k < EDGE_HANG_TEST_RUNS; ++k)
+            {
+                if (c->body[0] == body_index[k] || c->body[1] == body_index[k])
+                {
+                    n = k;
+                    box_slot = (c->body[1] == body_index[k]);
+                }
+            }
+
+            if (n == EDGE_HANG_TEST_RUNS)
+            {
+                continue;
+            }
+
+            const ds_TransformWorld end = DynamicsTestPose(&pipeline, body[n]);
+            const q turn = QMul(end.rotation, QConj(start[n].rotation));
+            const v3 com_offset = pipeline.contact_narrow_pool.buf[i].com_offset;
+            const ds_Array(ds_SolverManifold) array = ds_SolverManifoldArray(&pipeline, i);
+            for (u32 j = 0; j < array.length; ++j)
+            {
+                const struct ds_SolverManifold *m = array.buf + j;
+                for (u32 p = 0; p < m->point_count; ++p)
+                {
+                    /* the box's point relative to its center of mass at the tick's start (ds_SolverManifold) */
+                    v3 r = m->anchor0[p];
+                    if (box_slot == 1)
+                    {
+                        r = V3Sub(V3Sub(m->anchor0[p], com_offset), V3Scale(m->normal, m->depth[p]));
+                    }
+
+                    const f64 x = end.position.x + (f64) QUnitRotate(turn, r).x;
+                    if (F32Abs(m->normal.y) > 0.9f && m->normal_impulse[p] > 0.0f && x > (f64) (edge + slop))
+                    {
+                        hung[n] = 1;
+                    }
+                }
+            }
+        }
+
+        for (u32 n = 0; n < EDGE_HANG_TEST_RUNS; ++n)
+        {
+            hang[n] += hung[n];
+        }
+    }
+
+    u32 hang_runs = 0;
+    u32 hang_ticks = 0;
+    u32 off = 0;
+    char outcome[EDGE_HANG_TEST_RUNS + 1];
+    for (u32 n = 0; n < EDGE_HANG_TEST_RUNS; ++n)
+    {
+        const ds_TransformWorld end = DynamicsTestPose(&pipeline, body[n]);
+        const u32 fell = (end.position.y < -1.0);
+        off += fell;
+        hang_runs += (hang[n] > 0);
+        hang_ticks += hang[n];
+        outcome[n] = (fell) ? 'o' : '.';
+        if (hang[n])
+        {
+            fprintf(stdout, "\tedge hang: tilt %.1f rad, impact %2.0f m/s, sideways %.0f m/s, low corners %.1f m inside: %u hang ticks, end (%.3f, %.3f)\n", (f64) tilt[n / 18], (f64) impact_speed[(n / 6) % 3], (f64) side_speed[(n / 3) % 2], (f64) inside[n % 3], hang[n], end.position.x, end.position.y);
+        }
+    }
+    outcome[EDGE_HANG_TEST_RUNS] = '\0';
+    fprintf(stdout, "\tedge hang: %u runs, %u with hang ticks (%u ticks), %u off; outcomes %s\n", EDGE_HANG_TEST_RUNS, hang_runs, hang_ticks, off, outcome);
+
+    ds_DynamicsConfigPop(&pipeline);
+    ds_DynamicsDealloc(&pipeline);
+    c_ShapeDBDealloc(&cshape_db);
+    ArenaFree(&mem);
+    return output;
+}
+
+#define LEANING_BOX_TEST_RUNS 8
+
+/*
+Leaning box (printed only, no bounds): a box (0.5 x 1 x 0.5 m) leans against a static wall on the mesh floor
+(DynamicsTestFloorAdd, 1 m cells), tilted 35 and 50 degrees about z towards the wall, its low bottom edge on the floor
+across a cell (x = 2.5, crossing the cell's diagonal) and along the cells' shared edge (x = 3), either placed there or
+dropped from 5 cm above. 8 runs 1.3 m apart along z, 10 s, sleeping off. Per run: the tick from which it rests (linear
+speed below 1 mm/s and angular speed below 0.01 rad/s until the end), its end center and tilt, and its largest
+angular speed over the last second.
+*/
+static struct test_Output DynamicsLeaningBoxTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+    (void) env;
+
+    const f32 tilt[2] = { 35.0f*F32_PI/180.0f, 50.0f*F32_PI/180.0f };
+    const f32 edge_x[2] = { 2.5f, 3.0f };
+    const v3 hw = V3(0.25f, 0.5f, 0.25f);
+    const u32 tick_count = 600;
+
+    struct arena mem = ArenaAlloc(NULL, 64*1024*1024);
+    struct c_ShapeDB cshape_db = { 0 };
+    c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
+    struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&external, NSEC_PER_SEC / 60);
+    ds_DynamicsConfigPush(&pipeline);
+    pipeline.config_pending.solver.sleep_enabled = 0;
+    ds_DynamicsConfigUpdatePending(&pipeline);
+    DynamicsTestFloorAdd(&mem, &pipeline, &cshape_db, 1.0f);
+
+    ds_BodyId body[LEANING_BOX_TEST_RUNS];
+    u32 rest_tick[LEANING_BOX_TEST_RUNS];
+    f32 w_last[LEANING_BOX_TEST_RUNS];
+    for (u32 n = 0; n < LEANING_BOX_TEST_RUNS; ++n)
+    {
+        const q rotation = QUnitAxisAngle(V3(0.0f, 0.0f, 1.0f), -tilt[(n / 2) % 2]);
+        /* the low bottom edge (+hw.x, -hw.y) on the floor at edge_x (or drop above), the top edge (+hw.x, +hw.y) against the wall */
+        const v3 low = QUnitRotate(rotation, V3(hw.x, -hw.y, 0.0f));
+        const v3 top = QUnitRotate(rotation, V3(hw.x, hw.y, 0.0f));
+        const f32 drop = (n < 4) ? 0.0f : 0.05f;
+        const f32 z = 1.5f + 1.3f*(f32) n;
+        const v3 position = V3(edge_x[n % 2] - low.x, drop - low.y, z);
+        SlideWarmAdd(&mem, &pipeline, &cshape_db, C_SHAPE_CONVEX_HULL, V3(0.25f, 1.5f, 0.5f), 0.0f, 0.0f, V3(position.x + top.x + 0.25f, 1.5f, z), QIdentity(), 0, 0.8f, 1 + 2*n);
+        body[n] = SlideWarmAdd(&mem, &pipeline, &cshape_db, C_SHAPE_CONVEX_HULL, hw, 0.0f, 0.0f, position, rotation, 1, 0.8f, 2 + 2*n);
+        rest_tick[n] = 0;
+        w_last[n] = 0.0f;
+    }
+
+    for (u32 t = 0; t < tick_count; ++t)
+    {
+        ds_DynamicsTick(DynamicsTestTickArena(), &pipeline, NSEC_PER_SEC / 60);
+        for (u32 n = 0; n < LEANING_BOX_TEST_RUNS; ++n)
+        {
+            const struct ds_Body *b = ds_BodyLookup(&pipeline, body[n]).address;
+            const struct ds_BodyCompute *compute = pipeline.solver_set_pool.buf[b->set].body_compute_pool.buf + b->sim;
+            const f32 v = V3Length(compute->linear_velocity);
+            const f32 w = V3Length(compute->angular_velocity);
+            if (v >= 1e-3f || w >= 1e-2f)
+            {
+                rest_tick[n] = t + 1;
+            }
+
+            if (t + 60 >= tick_count)
+            {
+                w_last[n] = F32Max(w_last[n], w);
+            }
+        }
+    }
+
+    for (u32 n = 0; n < LEANING_BOX_TEST_RUNS; ++n)
+    {
+        const ds_TransformWorld end = DynamicsTestPose(&pipeline, body[n]);
+        const v3 axis_y = QUnitRotate(end.rotation, V3(0.0f, 1.0f, 0.0f));
+        const f32 end_tilt = F32Acos(F32Clamp(axis_y.y, -1.0f, 1.0f)) * 180.0f / F32_PI;
+        const char *start = (n < 4) ? "placed" : "dropped";
+        const f64 tilt_deg = (f64) (tilt[(n / 2) % 2] * 180.0f / F32_PI);
+        if (rest_tick[n] < tick_count)
+        {
+            fprintf(stdout, "\tleaning box: %-7s tilt %2.0f deg, edge x %.1f: rests from tick %3u, end center (%.4f, %.4f), tilt %.2f deg, |w| max last second %.2e\n", start, tilt_deg, (f64) edge_x[n % 2], rest_tick[n], end.position.x, end.position.y, (f64) end_tilt, (f64) w_last[n]);
+        }
+        else
+        {
+            fprintf(stdout, "\tleaning box: %-7s tilt %2.0f deg, edge x %.1f: still moving, end center (%.4f, %.4f), tilt %.2f deg, |w| max last second %.2e\n", start, tilt_deg, (f64) edge_x[n % 2], end.position.x, end.position.y, (f64) end_tilt, (f64) w_last[n]);
+        }
+    }
+
+    ds_DynamicsConfigPop(&pipeline);
+    ds_DynamicsDealloc(&pipeline);
+    c_ShapeDBDealloc(&cshape_db);
+    ArenaFree(&mem);
+    return output;
+}
+
 static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
 {
     DynamicsAllocConfigTest,
@@ -6177,6 +6425,8 @@ static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
     DynamicsCCDSpinTest,
     DynamicsCCDCornerTest,
     DynamicsCCDMetricsTest,
+    DynamicsEdgeHangTest,
+    DynamicsLeaningBoxTest,
 };
 
 struct suite_Correctness m_dynamics_suite =
