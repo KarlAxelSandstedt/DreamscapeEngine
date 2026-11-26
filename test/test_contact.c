@@ -4503,7 +4503,10 @@ static void McHullPrint(const ds_Array(c_Manifold) *r, const struct ch_Hull *h, 
  * the face, the cache carried): culled with its center of mass at -1.02 slop, the cache holding that offset
  * (SAT_CACHE_BACKSIDE); with that cache still culled at -0.98 slop, keeping the offset, and a contact again at 0;
  * without a cache, a contact at -0.98 slop. Then a box resting 1 mm deep with an edge-pair entry
- * (SAT_CACHE_CONTACT_EE) put in its cache: probed once when not fast, not at all when fast.
+ * (SAT_CACHE_CONTACT_EE) put in its cache: probed once when not fast, not at all when fast. Last GJK's decision when
+ * the SAT gives no points: a 5 mm hull (MeshHullRandomTest, config seed s8 1) wholly behind a triangle, 0.16 mm off,
+ * its center 3.7 mm behind (within linear_slop: not culled); the back face is no axis, so no axis separates: one
+ * point, depth -distance, GJK's normal.
  */
 struct test_Output MeshHullCasesTest(struct test_Environment *env)
 {
@@ -4772,6 +4775,47 @@ struct test_Output MeshHullCasesTest(struct test_Environment *env)
             }
         }
         *env->mem_2 = record;
+    }
+
+    static const v3 gjk_tri[3] =
+    {
+        V3(-0.00697370153f, -0.00772731286f, -0.00740841217f), V3(-0.00948018022f, -0.00161242555f, 0.00291917287f),
+        V3(0.00241974648f, -0.000513460953f, -0.0095762033f),
+    };
+    static const v3 gjk_hull[14] =
+    {
+        V3(-0.00114990026f, 0.00194681063f, 0.000113983719f), V3(-0.000257421605f, 0.00102980377f, -0.00284300395f),
+        V3(0.0025518781f, 0.000178198199f, 0.00478946744f), V3(-0.00455892272f, -0.000844772614f, 0.000490169157f),
+        V3(0.00360723468f, 0.00131815777f, 0.00103982026f), V3(0.00170046324f, -0.00110411015f, -0.00384952291f),
+        V3(0.000421608245f, -0.00140291965f, 0.00364481867f), V3(-0.00262333662f, 0.00144100946f, 0.00114684226f),
+        V3(-0.000742884469f, -0.000554708065f, 0.00385383284f), V3(0.00421544584f, 0.000765477482f, -0.000610180781f),
+        V3(-0.00256280554f, -0.00104629132f, -0.00413122308f), V3(-0.00053765031f, 0.00126404024f, 0.00438525667f),
+        V3(0.00268773315f, -0.00130270212f, -0.000174643152f), V3(0.00207290775f, -0.000488843943f, 0.00387892709f),
+    };
+    {
+        struct arena record = *env->mem_2;
+        const struct c_Shape mesh = McOneTriangle(env->mem_2, gjk_tri[0], gjk_tri[1], gjk_tri[2]);
+        struct c_Shape hull = { .type = C_SHAPE_CONVEX_HULL };
+        hull.hull = DcelConvexHull(env->mem_2, gjk_hull, 14);
+        struct ch_Hull h;
+        ChHullInit(&h, &hull, 0, V3Zero(), QIdentity(), D3(0.0, 0.0, 0.0));
+        const ds_TransformWorld t_mesh = { .rotation = QIdentity(), .position = V3F64(0.0, 0.0, 0.0) };
+        none.tri_count = 0;
+        const ds_Array(c_Manifold) r = c_MeshContact(env->mem_2, &slab, &none, &mesh, &t_mesh, &h.shape, &h.t, 0);
+        const f64 distance = 0.000159798859;
+        const struct d3 n_expected = D3(-0.683223188, 0.391782612, -0.616208076);
+        const u32 ok = (r.length == 1 && r.buf->v_count == 1 && F64AbsTest((f64) r.buf->depth[0] + distance) <= 1e-3*distance && D3Length(D3Sub(D3V3(r.buf->n), n_expected)) <= 1e-3);
+        *env->mem_2 = record;
+        if (!ok)
+        {
+            fprintf(stderr, "Mesh hull GJK fallback: manifolds %u, expected 1 point, depth %g, n (%g, %g, %g)\n", r.length, -distance, n_expected.x, n_expected.y, n_expected.z);
+            if (r.length)
+            {
+                c_ManifoldDebugPrint(r.buf);
+            }
+            g_dynamics_worker = prev;
+            TEST_FAILURE;
+        }
     }
 
     ds_TSlabDealloc(slab);

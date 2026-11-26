@@ -1520,33 +1520,55 @@ static u32 sat_PairContact(struct c_Manifold *m, sat_FeatureId features[4], stru
 	}
 
 	/*
-	 * Hulls: the SAT skips nearly parallel edge pairs and can miss the only separating axis, so GJK decides. Apart
-	 * within max_separation: one point at GJK's closest points (depth -distance); beyond it: none; overlapping or
-	 * touching (distance 0): the fallback below. Nothing to cache.
+	 * Hulls and triangles: the SAT skips nearly parallel edge pairs (and a triangle's back face is no axis) and can
+	 * miss the only separating axis, so GJK decides. Apart within max_separation: one point at GJK's closest points
+	 * (depth -distance); beyond it: none; overlapping or touching (distance 0): the fallback below. Nothing to
+	 * cache. A triangle's point takes the triangle feature of GJK's last simplex (one vertex, an edge's two, or all
+	 * three: the face) for c_MeshHullTriDelayed.
 	 */
-	if (pair->type == SAT_PAIR_HULL)
+	const struct GJKVertexSet vset0 = { .v = v[0], .v_count = h[0]->v_count, .margin = 0.0f };
+	const struct GJKVertexSet vset1 = { .v = v[1], .v_count = h[1]->v_count, .margin = 0.0f };
+	const ds_Transform identity = ds_TransformIdentity();
+	struct GJKCache gjk;
+	v3 c[2], n;
+	const f32 distance = GJK(c+0, c+1, &n, &gjk, NULL, &vset0, &vset1, &identity, pair->max_separation);
+	if (0.0f < distance)
 	{
-		const struct GJKVertexSet vset0 = { .v = v[0], .v_count = h[0]->v_count, .margin = 0.0f };
-		const struct GJKVertexSet vset1 = { .v = v[1], .v_count = h[1]->v_count, .margin = 0.0f };
-		const ds_Transform identity = ds_TransformIdentity();
-		struct GJKCache gjk;
-		v3 c[2], n;
-		const f32 distance = GJK(c+0, c+1, &n, &gjk, NULL, &vset0, &vset1, &identity, pair->max_separation);
-		if (0.0f < distance)
+		cache->type = SAT_CACHE_NONE;
+		if (pair->max_separation < distance)
 		{
-			cache->type = SAT_CACHE_NONE;
-			if (pair->max_separation < distance)
+			return 0;
+		}
+
+		m->v_count = 1;
+		m->n = n;
+		m->v[0] = c[0];
+		m->depth[0] = -distance;
+		m->id[0] = c_PointIdConstant(0);
+		if (pair->type == SAT_PAIR_TRIANGLE)
+		{
+			u32 simplex = 0;
+			for (u32 i = 0; i < gjk.count; ++i)
 			{
-				return 0;
+				simplex |= 1u << gjk.index1[i];
 			}
 
-			m->v_count = 1;
-			m->n = n;
-			m->v[0] = c[0];
-			m->depth[0] = -distance;
-			m->id[0] = c_PointIdConstant(0);
-			return 1;
+			cache->feature[1] = sat_FeatureIdConstruct(0, SAT_FEATURE_TYPE_FACE);
+			for (u32 k = 0; k < 3; ++k)
+			{
+				if (simplex == (1u << k))
+				{
+					cache->feature[1] = sat_FeatureIdConstruct(k, SAT_FEATURE_TYPE_VERTEX);
+				}
+
+				if (simplex == ((1u << h[1]->e[k].origin) | (1u << h[1]->e[h[1]->e[k].twin].origin)))
+				{
+					cache->feature[1] = sat_FeatureIdConstruct(k, SAT_FEATURE_TYPE_EDGE);
+				}
+			}
+			features[0] = cache->feature[1];
 		}
+		return 1;
 	}
 
 	/*
@@ -2045,7 +2067,7 @@ static void c_MeshCapsuleTriangles(struct c_MeshContactHelper *helper, const str
  * vertices; a face contact on the hull's face (the triangle incident) waits only while its normal is more than 60
  * degrees from the triangle's and its deepest point at most 2 linear_slop deep, on the triangle features of the
  * manifold points within linear_slop of the deepest (a vertex, or an edge's two vertices; all three vertices: none);
- * a face contact on the triangle's face does not wait. The fallback contact (SAT_CACHE_NONE) as a face contact.
+ * a face contact on the triangle's face does not wait. The fallback and GJK contacts (SAT_CACHE_NONE) as face contacts.
  */
 static void c_MeshHullTriDelayed(struct c_MeshTri *r, const struct dcel *stub, const sat_FeatureId features[4])
 {
