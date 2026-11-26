@@ -566,15 +566,17 @@ void ds_ContactConstraintInitRange(struct ds_Dynamics *pipeline, const u32 color
         }
 
         /*
-         * Canonical slot: a static body sits in slot 1, so the static stages read one body in slot 0 with body 0's
-         * signs. The swap flips the axes and exchanges the levers; the point impulses are scalars along the axes,
-         * com_separation and velocity_bias are products of two flipped factors, so all keep their values, and a
-         * body never changes between static and dynamic, so the form is the same every tick (warm start cache).
+         * Canonical slot: a static or kinematic body sits in slot 1, so the static and kinematic stages find the
+         * dynamic body in slot 0 with body 0's signs. The swap flips the axes and exchanges the levers; the point
+         * impulses are scalars along the axes, com_separation and velocity_bias are products of two flipped
+         * factors, so all keep their values, and a body never changes its motion, so the form is the same every
+         * tick (warm start cache).
          */
-        if (ccomp->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX)
+        if (ds_ContactMotion(c) != DS_MOTION_DYNAMIC && ds_ContactNonDynamicIndex(c) == 0)
         {
+            const u32 body_sim0 = ccomp->body_sim[0];
             ccomp->body_sim[0] = ccomp->body_sim[1];
-            ccomp->body_sim[1] = ACTIVE_BODY_DUMMY_INDEX;
+            ccomp->body_sim[1] = body_sim0;
             for (u32 cci = 0; cci < ccomp->cc_count; ++cci)
             {
                 struct ds_ContactConstraint *cc = ccomp->cc + cci;
@@ -652,6 +654,54 @@ void ds_ContactConstraintWarmupRange(struct ds_Dynamics *pipeline, const u32 col
 
                 const v3 delta_w1 = M3V3Mul(sim[1]->world_inv_inertia, V3Cross(ccp->r[1], total_cached_impulse));
                 bcomp[1]->angular_velocity = V3Add(bcomp[1]->angular_velocity, delta_w1);
+            }
+        }
+    }
+
+    ProfZoneEnd;
+}
+
+void ds_ContactConstraintWarmupNonDynamicRange(struct ds_Dynamics *pipeline, const u32 color_index, const u32 low, const u32 high)
+{
+    ProfZone;
+
+    struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
+    struct ds_CGraph *cg = &pipeline->cgraph;
+    struct ds_CGraphColor *color = cg->color + color_index;
+    for (u32 ci = low; ci < high; ++ci)
+	{			
+        struct ds_ContactCompute *ccomp = color->contact_compute_pool.buf + ci;
+        /* the static or kinematic body is slot 1 (prepare's canonical slot); the cached impulses move the dynamic body only */
+        ds_Assert(ccomp->body_sim[0] != ACTIVE_BODY_DUMMY_INDEX);
+        const struct ds_BodySim *sim = active->body_sim_pool.buf + ccomp->body_sim[0];
+        struct ds_BodyCompute *bcomp = active->body_compute_pool.buf + ccomp->body_sim[0];
+        const f32 inv_mass = sim->inv_mass;
+        const m3 inv_inertia = sim->world_inv_inertia;
+
+        const ds_Array(ds_SolverManifold) manifold = ds_SolverManifoldArray(pipeline, color->contact_pool.buf[ci]);
+        for (u32 cci = 0; cci < ccomp->cc_count; ++cci)
+        {
+    	    struct ds_ContactConstraint *cc = ccomp->cc + cci;
+            const struct ds_SolverManifold *m = manifold.buf + cci;
+            for (u32 ccpi = 0; ccpi < cc->ccp_count; ++ccpi)
+            {
+                struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
+                const v3 old_tangent_impulse = m->tangent_impulse[ccpi];
+
+                ccp->normal_impulse = m->normal_impulse[ccpi];
+                const f32 impulse_bound = cc->friction * ccp->normal_impulse;
+                ccp->tangent_impulse[0] = V3Dot(cc->tangent[0], old_tangent_impulse);
+                ccp->tangent_impulse[1] = V3Dot(cc->tangent[1], old_tangent_impulse);
+                ccp->tangent_impulse[0] = F32Clamp(ccp->tangent_impulse[0], -impulse_bound, impulse_bound);
+                ccp->tangent_impulse[1] = F32Clamp(ccp->tangent_impulse[1], -impulse_bound, impulse_bound);
+
+                v3 total_cached_impulse = V3Scale(cc->normal, ccp->normal_impulse);
+                total_cached_impulse = V3AddScaled(total_cached_impulse, cc->tangent[0], ccp->tangent_impulse[0]);
+                total_cached_impulse = V3AddScaled(total_cached_impulse, cc->tangent[1], ccp->tangent_impulse[1]);
+
+                bcomp->linear_velocity = V3AddScaled(bcomp->linear_velocity, total_cached_impulse, -inv_mass);
+                const v3 delta_w0 = M3V3Mul(inv_inertia, V3Cross(ccp->r[0], total_cached_impulse));
+                bcomp->angular_velocity = V3Sub(bcomp->angular_velocity, delta_w0);
             }
         }
     }
@@ -808,6 +858,76 @@ void ds_ContactConstraintIterateStaticRange(struct ds_Dynamics *pipeline, const 
                 const v3 impulse = V3Scale(cc->normal, delta_impulse);
                 bcomp->linear_velocity = V3AddScaled(bcomp->linear_velocity, impulse, -inv_mass);
                 bcomp->angular_velocity = V3Sub(bcomp->angular_velocity, M3V3Mul(inv_inertia, V3Cross(r, impulse)));
+            }
+        }
+    }
+
+    ProfZoneEnd;
+}
+
+void ds_ContactConstraintIterateKinematicRange(struct ds_Dynamics *pipeline, const u32 color_index, const u32 cc_low, const u32 cc_high)
+{
+    ProfZone;
+
+    struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
+    struct ds_CGraphColor *color = pipeline->cgraph.color + color_index;
+
+    for (u32 ci = cc_low; ci < cc_high; ++ci)
+    {
+        struct ds_ContactCompute *ccomp = color->contact_compute_pool.buf + ci;
+        /* the kinematic body is slot 1 (prepare's canonical slot); its velocity is read, only the dynamic body is written */
+        ds_Assert(ccomp->body_sim[0] != ACTIVE_BODY_DUMMY_INDEX && ccomp->body_sim[1] != ACTIVE_BODY_DUMMY_INDEX);
+        const struct ds_BodySim *sim = active->body_sim_pool.buf + ccomp->body_sim[0];
+        struct ds_BodyCompute *bcomp = active->body_compute_pool.buf + ccomp->body_sim[0];
+        const struct ds_BodyCompute *kinematic = active->body_compute_pool.buf + ccomp->body_sim[1];
+        const f32 inv_mass = sim->inv_mass;
+        const m3 inv_inertia = sim->world_inv_inertia;
+
+        /* solve friction constraints first, since normal constraints are more important */
+        for (u32 cci = 0; cci < ccomp->cc_count; ++cci)
+        {
+            struct ds_ContactConstraint *cc = ccomp->cc + cci;
+            for (u32 ccpi = 0; ccpi < cc->ccp_count; ++ccpi)
+            {
+                struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
+                const f32 impulse_bound = cc->friction * ccp->normal_impulse;
+                for (u32 k = 0; k < 2; ++k)
+                {
+                    v3 relative_velocity = V3Sub(kinematic->linear_velocity, bcomp->linear_velocity);
+                    relative_velocity = V3Add(relative_velocity, V3Cross(kinematic->angular_velocity, ccp->r[1]));
+                    relative_velocity = V3Sub(relative_velocity, V3Cross(bcomp->angular_velocity, ccp->r[0]));
+                    const f32 separating_velocity = V3Dot(cc->tangent[k], relative_velocity);
+
+                    f32 delta_impulse = -ccp->tangent_mass[k] * separating_velocity;
+                    const f32 old_impulse = ccp->tangent_impulse[k];
+                    ccp->tangent_impulse[k] = F32Clamp(ccp->tangent_impulse[k] + delta_impulse, -impulse_bound, impulse_bound);
+                    delta_impulse = ccp->tangent_impulse[k] - old_impulse;
+
+                    const v3 impulse = V3Scale(cc->tangent[k], delta_impulse);
+                    const v3 delta_w0 = M3V3Mul(inv_inertia, V3Cross(ccp->r[0], impulse));
+                    bcomp->linear_velocity = V3AddScaled(bcomp->linear_velocity, impulse, -inv_mass);
+                    bcomp->angular_velocity = V3Sub(bcomp->angular_velocity, delta_w0);
+                }
+            }
+
+            for (u32 ccpi = 0; ccpi < cc->ccp_count; ++ccpi)
+            {
+                struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
+
+                v3 relative_velocity = V3Sub(kinematic->linear_velocity, bcomp->linear_velocity);
+                relative_velocity = V3Add(relative_velocity, V3Cross(kinematic->angular_velocity, ccp->r[1]));
+                relative_velocity = V3Sub(relative_velocity, V3Cross(bcomp->angular_velocity, ccp->r[0]));
+                const f32 separating_velocity = V3Dot(cc->normal, relative_velocity);
+
+                f32 delta_impulse = ccp->normal_mass * (ccp->velocity_bias - separating_velocity);
+                const f32 old_impulse = ccp->normal_impulse;
+                ccp->normal_impulse = F32Max(0.0f, ccp->normal_impulse + delta_impulse);
+                delta_impulse = ccp->normal_impulse - old_impulse;
+
+                const v3 impulse = V3Scale(cc->normal, delta_impulse);
+                const v3 delta_w0 = M3V3Mul(inv_inertia, V3Cross(ccp->r[0], impulse));
+                bcomp->linear_velocity = V3AddScaled(bcomp->linear_velocity, impulse, -inv_mass);
+                bcomp->angular_velocity = V3Sub(bcomp->angular_velocity, delta_w0);
             }
         }
     }
@@ -1187,6 +1307,63 @@ void ds_PositionConstraintIterateStaticRange(struct ds_Dynamics *pipeline, const
                 const f32 C = F32Clamp(biased_slop_distance, -g_solver_config->max_linear_correction, 0.0f);
 
                 /* one body is dynamic with mass, so K >= its inv_mass > 0 */
+                ds_Assert(K > 0.0f);
+                const f32 impulse = -C/K;
+
+                const v3 impulse_vector = V3Scale(cc->normal, impulse);
+                bcomp->delta_position = V3AddScaled(bcomp->delta_position, impulse_vector, -inv_mass);
+                /* flipped cross for body 0's sign; instantaneous torque, assume delta_t = 1; small angle quaternion */
+                const v3 w0 = M3V3Mul(inv_inertia, V3Cross(impulse_vector, r0));
+                const q quat_angle0 = Q(w0.x/2.0f, w0.y/2.0f, w0.z/2.0f, 1.0f);
+                bcomp->rotation = QNormalize(QMul(quat_angle0, bcomp->rotation));
+            }
+        }
+    }
+
+    ProfZoneEnd;
+}
+
+void ds_PositionConstraintIterateKinematicRange(struct ds_Dynamics *pipeline, const u32 color_index, const u32 low, const u32 high)
+{
+    ProfZone;
+
+    struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
+    struct ds_CGraphColor *color = pipeline->cgraph.color + color_index;
+
+    for (u32 ci = low; ci < high; ++ci)
+    {
+        struct ds_ContactCompute *ccomp = color->contact_compute_pool.buf + ci;
+        /* the kinematic body is slot 1 (prepare's canonical slot); its integrated pose is read, only the dynamic body is written */
+        ds_Assert(ccomp->body_sim[0] != ACTIVE_BODY_DUMMY_INDEX && ccomp->body_sim[1] != ACTIVE_BODY_DUMMY_INDEX);
+        struct ds_BodySim *sim = active->body_sim_pool.buf + ccomp->body_sim[0];
+        struct ds_BodyCompute *bcomp = active->body_compute_pool.buf + ccomp->body_sim[0];
+        const struct ds_BodyCompute *kinematic = active->body_compute_pool.buf + ccomp->body_sim[1];
+        const f32 inv_mass = sim->inv_mass;
+
+        for (u32 cci = 0; cci < ccomp->cc_count; ++cci)
+        {
+            struct ds_ContactConstraint *cc = ccomp->cc + cci;
+            for (u32 ccpi = 0; ccpi < cc->ccp_count; ++ccpi)
+            {
+                struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
+
+                const m3 rot = M3QUnit(bcomp->rotation);
+                const m3 inv_inertia = M3Mul(M3Mul(rot, sim->local_inv_inertia), M3Transpose(rot));
+                sim->world_inv_inertia = inv_inertia;
+
+                const v3 r0 = QUnitRotate(bcomp->rotation, ccp->r[0]);
+                const v3 r1 = QUnitRotate(kinematic->rotation, ccp->r[1]);
+                const v3 rn0 = V3Cross(r0, cc->normal);
+                const f32 K = inv_mass + V3Dot(M3V3Mul(inv_inertia, rn0), rn0);
+
+                /* distance = com_separation + dot((delta_position_1 - delta_position_0) + (r1 - r0), n) */
+                const v3 delta = V3Add(V3Sub(kinematic->delta_position, bcomp->delta_position), V3Sub(r1, r0));
+                const f32 distance = ccp->com_separation + V3Dot(delta, cc->normal);
+                const f32 biased_slop_distance = g_solver_config->baumgarte_constant * (distance + g_solver_config->linear_slop);
+
+                const f32 C = F32Clamp(biased_slop_distance, -g_solver_config->max_linear_correction, 0.0f);
+
+                /* the dynamic body has mass, so K >= its inv_mass > 0 */
                 ds_Assert(K > 0.0f);
                 const f32 impulse = -C/K;
 

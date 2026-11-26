@@ -49,6 +49,10 @@ Against dynamic bodies (a cube on a kinematic slab unless said otherwise):
     WakeOnTouch     a kinematic cube runs into a cube asleep on static ground: the pair is found from the kinematic side
     ContactRemoved  the contact of a kinematic and a dynamic cube goes when the kinematic one leaves
     NoPairs         kinematic-kinematic and kinematic-static overlaps get no contact
+    Colours         the contacts of nine cubes with one slab share the first kinematic colour; a cube on two slabs takes two;
+                    nine cubes on a static slab share the first static colour
+    Tumbler         27 cubes in a turning kinematic box (five seconds): none leaves, and a second run hashes the same every tick
+    Overflow        cubes with five contacts each on one kinematic body: the fifth goes to the serial colour; a second run hashes the same
 */
 
 struct kinematic_TestWorld
@@ -638,6 +642,212 @@ static struct test_Output KinematicNoPairsTest(struct test_Environment *env)
     return output;
 }
 
+static struct test_Output KinematicColoursTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct kinematic_TestWorld world;
+    KinematicTestWorldInit(&world);
+    world.pipeline.config_pending.solver.sleep_enabled = 0;
+    ds_DynamicsConfigUpdatePending(&world.pipeline);
+
+    /* nine cubes apart from each other on one slab: a kinematic body takes no colour bit, so one colour holds all nine contacts */
+    KinematicTestBodyAdd(&world, world.slab, DS_MOTION_KINEMATIC, V3F64(0.0, 0.0, 0.0), 1);
+    for (u32 i = 0; i < 9; ++i)
+    {
+        KinematicTestBodyAdd(&world, world.cube, DS_MOTION_DYNAMIC, V3F64(-1.3 + 1.3 * (f64) (i % 3), 0.76, -1.3 + 1.3 * (f64) (i / 3)), 2 + i);
+    }
+    KinematicTestTick(&world, 30);
+    TEST_EQUAL(world.pipeline.cgraph.color[CG_KINEMATIC_COLOR_FIRST].contact_pool.count, 9);
+    TEST_EQUAL(world.pipeline.cgraph.color[CG_KINEMATIC_COLOR_FIRST + 1].contact_pool.count, 0);
+    TEST_EQUAL(world.pipeline.cgraph.color[CG_SERIAL_COLOR].contact_pool.count, 0);
+
+    /* a cube across the seam of two more slabs: its two contacts need two kinematic colours */
+    KinematicTestBodyAdd(&world, world.slab, DS_MOTION_KINEMATIC, V3F64(0.0, 0.0, 100.0), 11);
+    KinematicTestBodyAdd(&world, world.slab, DS_MOTION_KINEMATIC, V3F64(4.0, 0.0, 100.0), 12);
+    KinematicTestBodyAdd(&world, world.cube, DS_MOTION_DYNAMIC, V3F64(2.0, 0.76, 100.0), 13);
+    KinematicTestTick(&world, 30);
+    TEST_EQUAL(world.pipeline.cgraph.color[CG_KINEMATIC_COLOR_FIRST].contact_pool.count, 10);
+    TEST_EQUAL(world.pipeline.cgraph.color[CG_KINEMATIC_COLOR_FIRST + 1].contact_pool.count, 1);
+    TEST_EQUAL(world.pipeline.cgraph.color[CG_SERIAL_COLOR].contact_pool.count, 0);
+    for (u32 c = CG_DYNAMIC_COLOR_FIRST; c <= CG_DYNAMIC_COLOR_LAST; ++c)
+    {
+        TEST_EQUAL(world.pipeline.cgraph.color[c].contact_pool.count, 0);
+    }
+
+    /* the static colours work the same way (and share the warm-up): nine cubes on a static slab, one static colour */
+    KinematicTestBodyAdd(&world, world.slab, DS_MOTION_STATIC, V3F64(0.0, 0.0, 200.0), 21);
+    for (u32 i = 0; i < 9; ++i)
+    {
+        KinematicTestBodyAdd(&world, world.cube, DS_MOTION_DYNAMIC, V3F64(-1.3 + 1.3 * (f64) (i % 3), 0.76, 200.0 - 1.3 + 1.3 * (f64) (i / 3)), 22 + i);
+    }
+    KinematicTestTick(&world, 30);
+    TEST_EQUAL(world.pipeline.cgraph.color[CG_STATIC_COLOR_FIRST].contact_pool.count, 9);
+    TEST_EQUAL(world.pipeline.cgraph.color[CG_KINEMATIC_COLOR_FIRST].contact_pool.count, 10);
+    TEST_EQUAL(world.pipeline.cgraph.color[CG_SERIAL_COLOR].contact_pool.count, 0);
+
+    KinematicTestWorldFree(&world);
+    return output;
+}
+
+#define KINEMATIC_TUMBLER_TICKS 300
+
+/*
+ * A closed box, one kinematic body of six 5 x 0.5 x 5 m walls around a 4 m cavity, turning at 1 rad/s about z with
+ * 27 cubes inside. Writes the pipeline's hash after every tick; returns the largest squared distance of a cube
+ * from the box's center at the end (a cube inside is within 2.6 m, one that left beyond 3 m).
+ */
+static f64 KinematicTestTumblerRun(u64 hash[KINEMATIC_TUMBLER_TICKS])
+{
+    struct kinematic_TestWorld world;
+    KinematicTestWorldInit(&world);
+
+    const struct c_Shape wall = { .type = C_SHAPE_CONVEX_HULL, .hull = DcelBox(&world.mem, V3(2.5f, 0.25f, 2.5f)) };
+    const u32 wall_handle = c_ShapeDBAdd(&world.cshape_db, Utf8Inline("kinematic_tumbler_wall"), &wall).index;
+    const struct ds_ShapePrefab wall_prefab = { .cshape = wall_handle, .density = 1.0f, .restitution = 0.0f, .friction = 0.5f };
+
+    /* floor and ceiling as they are; the x walls turned a quarter about z, the z walls a quarter about x */
+    const q quarter_z = QNormalize(Q(0.0f, 0.0f, 1.0f, 1.0f));
+    const q quarter_x = QNormalize(Q(1.0f, 0.0f, 0.0f, 1.0f));
+    const ds_Transform wall_local[6] =
+    {
+        { .rotation = QIdentity(), .position = V3(0.0f, -2.25f, 0.0f) },
+        { .rotation = QIdentity(), .position = V3(0.0f, 2.25f, 0.0f) },
+        { .rotation = quarter_z, .position = V3(-2.25f, 0.0f, 0.0f) },
+        { .rotation = quarter_z, .position = V3(2.25f, 0.0f, 0.0f) },
+        { .rotation = quarter_x, .position = V3(0.0f, 0.0f, -2.25f) },
+        { .rotation = quarter_x, .position = V3(0.0f, 0.0f, 2.25f) },
+    };
+
+    const struct ds_BodyPrefab box_prefab = { .motion = DS_MOTION_KINEMATIC };
+    const ds_TransformWorld box_world = ds_TransformWorldIdentity();
+    const ds_BodyId box = ds_BodyAdd(&world.pipeline, &box_prefab, &box_world, 1);
+    for (u32 i = 0; i < 6; ++i)
+    {
+        ds_ShapeAdd(&world.pipeline, &wall_prefab, wall_local + i, box);
+    }
+
+    ds_BodyId cube[27];
+    for (u32 i = 0; i < 27; ++i)
+    {
+        const v3f64 position = V3F64(-1.2 + 1.2 * (f64) (i % 3), -1.2 + 1.2 * (f64) ((i / 3) % 3), -1.2 + 1.2 * (f64) (i / 9));
+        cube[i] = KinematicTestBodyAdd(&world, world.cube, DS_MOTION_DYNAMIC, position, 2 + i);
+    }
+
+    ds_BodyVelocitySet(&world.pipeline, box, V3Zero(), V3(0.0f, 0.0f, 1.0f));
+    for (u32 i = 0; i < KINEMATIC_TUMBLER_TICKS; ++i)
+    {
+        KinematicTestTick(&world, 1);
+        hash[i] = ds_DynamicsHash(&world.pipeline);
+    }
+
+    f64 far_sq = 0.0;
+    for (u32 i = 0; i < 27; ++i)
+    {
+        const v3f64 p = KinematicTestPose(&world, cube[i]).position;
+        const f64 distance_sq = p.x*p.x + p.y*p.y + p.z*p.z;
+        if (distance_sq > far_sq)
+        {
+            far_sq = distance_sq;
+        }
+    }
+
+    KinematicTestWorldFree(&world);
+    return far_sq;
+}
+
+static struct test_Output KinematicTumblerTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+
+    static u64 hash[2][KINEMATIC_TUMBLER_TICKS];
+    const f64 far_sq[2] = { KinematicTestTumblerRun(hash[0]), KinematicTestTumblerRun(hash[1]) };
+
+    /* the same hash every tick of both runs (compare it across thread counts by hand: the line below) */
+    const u32 repeats = memcmp(hash[0], hash[1], sizeof(hash[0])) == 0;
+    fprintf(stderr, "kinematic tumbler: %u ticks, final hash %016llx, farthest cube %g m\n", KINEMATIC_TUMBLER_TICKS, (unsigned long long) hash[0][KINEMATIC_TUMBLER_TICKS - 1], (f64) F32Sqrt((f32) far_sq[0]));
+    if (!repeats || far_sq[0] >= 2.8*2.8 || far_sq[1] >= 2.8*2.8)
+    {
+        fprintf(stderr, "kinematic tumbler: second run repeats %u, farthest cube^2 %g and %g (inside: < %g)\n", repeats, far_sq[0], far_sq[1], 2.8*2.8);
+        TEST_FAILURE;
+    }
+
+    return output;
+}
+
+#define KINEMATIC_OVERFLOW_TICKS    120
+#define KINEMATIC_OVERFLOW_POCKETS  12
+
+/*
+ * One kinematic body of 12 pockets, each a floor cube and four wall cubes 1 cm from the dynamic cube inside (within
+ * the speculative distance): five kinematic contacts per dynamic cube, one more than there are kinematic colours.
+ * The body moves and turns. Writes the pipeline's hash after every tick; returns the most contacts the serial colour
+ * held.
+ */
+static u32 KinematicTestOverflowRun(u64 hash[KINEMATIC_OVERFLOW_TICKS])
+{
+    struct kinematic_TestWorld world;
+    KinematicTestWorldInit(&world);
+
+    const struct ds_ShapePrefab cube_prefab = { .cshape = world.cube, .density = 1.0f, .restitution = 0.0f, .friction = 0.5f };
+    const struct ds_BodyPrefab tray_prefab = { .motion = DS_MOTION_KINEMATIC };
+    const ds_TransformWorld tray_world = ds_TransformWorldIdentity();
+    const ds_BodyId tray = ds_BodyAdd(&world.pipeline, &tray_prefab, &tray_world, 1);
+    for (u32 p = 0; p < KINEMATIC_OVERFLOW_POCKETS; ++p)
+    {
+        const f32 x = 3.5f * (f32) p;
+        const ds_Transform local[5] =
+        {
+            { .rotation = QIdentity(), .position = V3(x, -1.0f, 0.0f) },
+            { .rotation = QIdentity(), .position = V3(x - 1.01f, 0.0f, 0.0f) },
+            { .rotation = QIdentity(), .position = V3(x + 1.01f, 0.0f, 0.0f) },
+            { .rotation = QIdentity(), .position = V3(x, 0.0f, -1.01f) },
+            { .rotation = QIdentity(), .position = V3(x, 0.0f, 1.01f) },
+        };
+        for (u32 i = 0; i < 5; ++i)
+        {
+            ds_ShapeAdd(&world.pipeline, &cube_prefab, local + i, tray);
+        }
+
+        KinematicTestBodyAdd(&world, world.cube, DS_MOTION_DYNAMIC, V3F64(3.5 * (f64) p, 0.005, 0.0), 2 + p);
+    }
+
+    ds_BodyVelocitySet(&world.pipeline, tray, V3(0.3f, 0.0f, 0.0f), V3(0.0f, 0.05f, 0.0f));
+    u32 serial_max = 0;
+    for (u32 i = 0; i < KINEMATIC_OVERFLOW_TICKS; ++i)
+    {
+        KinematicTestTick(&world, 1);
+        hash[i] = ds_DynamicsHash(&world.pipeline);
+        const u32 serial = world.pipeline.cgraph.color[CG_SERIAL_COLOR].contact_pool.count;
+        if (serial > serial_max)
+        {
+            serial_max = serial;
+        }
+    }
+
+    KinematicTestWorldFree(&world);
+    return serial_max;
+}
+
+static struct test_Output KinematicOverflowTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+
+    static u64 hash[2][KINEMATIC_OVERFLOW_TICKS];
+    const u32 serial_max[2] = { KinematicTestOverflowRun(hash[0]), KinematicTestOverflowRun(hash[1]) };
+
+    /* the serial colour did hold kinematic contacts, and both runs hash the same every tick (across thread counts: the line below) */
+    const u32 repeats = memcmp(hash[0], hash[1], sizeof(hash[0])) == 0;
+    fprintf(stderr, "kinematic overflow: %u ticks, final hash %016llx, most serial contacts %u\n", KINEMATIC_OVERFLOW_TICKS, (unsigned long long) hash[0][KINEMATIC_OVERFLOW_TICKS - 1], serial_max[0]);
+    if (!repeats || serial_max[0] == 0 || serial_max[1] != serial_max[0])
+    {
+        fprintf(stderr, "kinematic overflow: second run repeats %u, most serial contacts %u and %u\n", repeats, serial_max[0], serial_max[1]);
+        TEST_FAILURE;
+    }
+
+    return output;
+}
+
 static struct test_Output (*kinematic_tests[])(struct test_Environment *) =
 {
     KinematicMotionTest,
@@ -653,6 +863,9 @@ static struct test_Output (*kinematic_tests[])(struct test_Environment *) =
     KinematicWakeOnTouchTest,
     KinematicContactRemovedTest,
     KinematicNoPairsTest,
+    KinematicColoursTest,
+    KinematicTumblerTest,
+    KinematicOverflowTest,
 };
 
 struct suite_Correctness m_kinematic_suite =

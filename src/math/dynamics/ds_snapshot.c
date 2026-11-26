@@ -228,7 +228,7 @@ u32 ds_DynamicsConfigTryDeserializeBitPacked(struct SS *ss, struct ds_DynamicsCo
     return 1;
 }
 
-#define DS_DYNAMICS_DRAW_CONFIG_VERSION 2u
+#define DS_DYNAMICS_DRAW_CONFIG_VERSION 3u
 #define DS_DYNAMICS_DRAW_CONFIG_SIZE    (4 + 15*4 + 8*4 + (23 + DRAW_POINT_COLOR_COUNT)*16)
 
 u64 ds_DynamicsDrawConfigSerializeSize(const struct ds_DynamicsDrawConfig *config)

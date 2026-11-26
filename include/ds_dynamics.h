@@ -1272,6 +1272,8 @@ DEFINE_CPOOL_STRUCT(ds_ContactConstraint);
 void 	ds_ContactConstraintInitRange(struct ds_Dynamics *pipeline, const u32 color, const u32 low, const u32 high);
 /* Warmup Range [low, high) of applicable ds_ContactConstraints for the given color in the constraint graph */
 void 	ds_ContactConstraintWarmupRange(struct ds_Dynamics *pipeline, const u32 color, const u32 low, const u32 high);
+/* The same warmup for a static or kinematic colour (every contact has exactly one body that is not dynamic, in slot 1): only the dynamic body is read and written. Its results equal ds_ContactConstraintWarmupRange's. */
+void 	ds_ContactConstraintWarmupNonDynamicRange(struct ds_Dynamics *pipeline, const u32 color, const u32 low, const u32 high);
 /* Compute a solver iteration over the given color for contact constraints */
 void    ds_ContactConstraintIterateRange(struct ds_Dynamics *pipeline, const u32 color, const u32 cc_low, const u32 cc_high);
 /*
@@ -1280,12 +1282,20 @@ void    ds_ContactConstraintIterateRange(struct ds_Dynamics *pipeline, const u32
  * ds_ContactConstraintIterateRange's.
  */
 void    ds_ContactConstraintIterateStaticRange(struct ds_Dynamics *pipeline, const u32 color, const u32 cc_low, const u32 cc_high);
+/*
+ * The same iteration for a kinematic colour (every contact has exactly one kinematic body, in slot 1): the
+ * kinematic body's velocity is read and only the dynamic body is written, so the contacts of one kinematic body
+ * run in parallel. The dynamic body's results equal ds_ContactConstraintIterateRange's.
+ */
+void    ds_ContactConstraintIterateKinematicRange(struct ds_Dynamics *pipeline, const u32 color, const u32 cc_low, const u32 cc_high);
 /* Cache contact impulses and initialize position constraints in the range [low, high) for the given color */
 void ds_PositionConstraintInitAndCacheImpulsesRange(struct ds_Dynamics *pipeline, const u32 color, const u32 low, const u32 high);
 /* Compute a solver iteration over the given color for position constraints in range [low, high) */
 void ds_PositionConstraintIterateRange(struct ds_Dynamics *pipeline, const u32 color, const u32 low, const u32 high);
 /* The same iteration for a static colour (one static body per contact, in slot 1); results equal ds_PositionConstraintIterateRange's. */
 void ds_PositionConstraintIterateStaticRange(struct ds_Dynamics *pipeline, const u32 color, const u32 low, const u32 high);
+/* The same iteration for a kinematic colour (one kinematic body per contact, in slot 1, read at its integrated pose); the dynamic body's results equal ds_PositionConstraintIterateRange's. */
+void ds_PositionConstraintIterateKinematicRange(struct ds_Dynamics *pipeline, const u32 color, const u32 low, const u32 high);
 
 /*
  * The joint stages, each over the range [low, high) of the colour's joint_sim_pool. A colour's joints and
@@ -1383,15 +1393,18 @@ struct ds_CGraphColor
 
 
 
-#define CG_COLOR_COUNT          24
-#define CG_STATIC_COLOR_COUNT   4
-#define CG_DYNAMIC_COLOR_COUNT  (CG_COLOR_COUNT - CG_STATIC_COLOR_COUNT - 1) 
-#define CG_STATIC_COLOR_FIRST   0
-#define CG_STATIC_COLOR_LAST    (CG_STATIC_COLOR_FIRST + CG_STATIC_COLOR_COUNT - 1)
-#define CG_DYNAMIC_COLOR_FIRST  (CG_STATIC_COLOR_LAST + 1)
-#define CG_DYNAMIC_COLOR_LAST   (CG_DYNAMIC_COLOR_FIRST + CG_DYNAMIC_COLOR_COUNT - 1)
-#define CG_SERIAL_COLOR         (CG_COLOR_COUNT-1) 
-#define CG_INVALID_COLOR        CG_COLOR_COUNT
+#define CG_COLOR_COUNT              28
+#define CG_STATIC_COLOR_COUNT       4
+#define CG_KINEMATIC_COLOR_COUNT    4
+#define CG_DYNAMIC_COLOR_COUNT      (CG_COLOR_COUNT - CG_STATIC_COLOR_COUNT - CG_KINEMATIC_COLOR_COUNT - 1) 
+#define CG_STATIC_COLOR_FIRST       0
+#define CG_STATIC_COLOR_LAST        (CG_STATIC_COLOR_FIRST + CG_STATIC_COLOR_COUNT - 1)
+#define CG_KINEMATIC_COLOR_FIRST    (CG_STATIC_COLOR_LAST + 1)
+#define CG_KINEMATIC_COLOR_LAST     (CG_KINEMATIC_COLOR_FIRST + CG_KINEMATIC_COLOR_COUNT - 1)
+#define CG_DYNAMIC_COLOR_FIRST      (CG_KINEMATIC_COLOR_LAST + 1)
+#define CG_DYNAMIC_COLOR_LAST       (CG_DYNAMIC_COLOR_FIRST + CG_DYNAMIC_COLOR_COUNT - 1)
+#define CG_SERIAL_COLOR             (CG_COLOR_COUNT-1) 
+#define CG_INVALID_COLOR            CG_COLOR_COUNT
 
 
 /*
@@ -1614,14 +1627,18 @@ Now that we have every constraint colored, we may process all constraints with t
 parallel (except the serial color, solved in one range). For good information on this, see Erin Catto's
 post "SIMD Matters". A static body never moves, so it takes no colour bit: static-dynamic constraints only
 need colours distinct per dynamic body and get the static colours; dynamic-dynamic constraints get the
-dynamic colours.
+dynamic colours. A kinematic body moves, but the solver only reads it: kinematic-dynamic contacts get the
+kinematic colours the same way, any number of them on one kinematic body in one colour.
 
 Furthermore, in order to mitigate ghost collisions, static-dynamic constraints are processed first in each
 solver iteration, by the static variants of the contact stages (ds_ContactConstraintIterateStaticRange,
-ds_PositionConstraintIterateStaticRange: one static body per contact, its terms dropped). The solver runs the
-colours in index order:
+ds_PositionConstraintIterateStaticRange: one static body per contact, its terms dropped). The kinematic colours
+run the kinematic variants (ds_ContactConstraintIterateKinematicRange, ds_PositionConstraintIterateKinematicRange:
+the kinematic body is read, never stored). Both groups warm up with ds_ContactConstraintWarmupNonDynamicRange,
+which touches the dynamic body only. The solver runs the colours in index order:
 
-    CG_STATIC_COLOR_FIRST .. CG_STATIC_COLOR_LAST => CG_DYNAMIC_COLOR_FIRST .. CG_DYNAMIC_COLOR_LAST => CG_SERIAL_COLOR
+    CG_STATIC_COLOR_FIRST .. CG_STATIC_COLOR_LAST => CG_KINEMATIC_COLOR_FIRST .. CG_KINEMATIC_COLOR_LAST
+        => CG_DYNAMIC_COLOR_FIRST .. CG_DYNAMIC_COLOR_LAST => CG_SERIAL_COLOR
 */
 struct ds_CGraph
 {

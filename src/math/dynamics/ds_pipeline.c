@@ -834,7 +834,14 @@ u32 ds_SolverJobPhaseDispatch(const ds_JobId job)
                 ds_ParallelFor(pf, range_index)
                 {
                     ds_ParallelForRange(&low, &high, pf, range_index);
-                    ds_ContactConstraintWarmupRange(pipeline, ci, low, high);
+                    if (ci <= CG_KINEMATIC_COLOR_LAST)
+                    {
+                        ds_ContactConstraintWarmupNonDynamicRange(pipeline, ci, low, high);
+                    }
+                    else
+                    {
+                        ds_ContactConstraintWarmupRange(pipeline, ci, low, high);
+                    }
                 }
             }
             ProfZoneEnd;
@@ -888,6 +895,10 @@ u32 ds_SolverJobPhaseDispatch(const ds_JobId job)
                     if (ci <= CG_STATIC_COLOR_LAST)
                     {
                         ds_ContactConstraintIterateStaticRange(pipeline, ci, low, high);
+                    }
+                    else if (ci <= CG_KINEMATIC_COLOR_LAST)
+                    {
+                        ds_ContactConstraintIterateKinematicRange(pipeline, ci, low, high);
                     }
                     else
                     {
@@ -955,6 +966,10 @@ u32 ds_SolverJobPhaseDispatch(const ds_JobId job)
                     if (ci <= CG_STATIC_COLOR_LAST)
                     {
                         ds_PositionConstraintIterateStaticRange(pipeline, ci, low, high);
+                    }
+                    else if (ci <= CG_KINEMATIC_COLOR_LAST)
+                    {
+                        ds_PositionConstraintIterateKinematicRange(pipeline, ci, low, high);
                     }
                     else
                     {
