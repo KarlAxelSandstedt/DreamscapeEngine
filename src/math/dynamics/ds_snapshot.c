@@ -1541,9 +1541,9 @@ u64 ds_DynamicsSerializeSize(const struct ds_Dynamics *pipeline)
 		+ ds_JointPoolSerializeSize(&pipeline->joint_pool)
 		+ ds_ShapePoolSerializeSize(&pipeline->shape_pool)
 		+ ds_BitSetSerializeSize(&pipeline->shape_dynamic_usage_set)
-		+ BVHSerializeSize(&pipeline->dynamic_bvh)
-		+ BVHSerializeSize(&pipeline->static_bvh)
-		+ BVHSerializeSize(&pipeline->kinematic_bvh)
+		+ BVHSerializeSize(&pipeline->bvh[DS_MOTION_DYNAMIC])
+		+ BVHSerializeSize(&pipeline->bvh[DS_MOTION_STATIC])
+		+ BVHSerializeSize(&pipeline->bvh[DS_MOTION_KINEMATIC])
 		+ ds_BitSetSerializeSize(&pipeline->shape_dirty_set)
 		+ ds_ProxyQueryCPoolSerializeSize(&pipeline->dirty_shape_query)
 		+ ds_PhysicsEventPoolSerializeSize(&pipeline->event_pool)
@@ -1621,9 +1621,9 @@ void ds_DynamicsSerialize(struct SS *ss, const struct ds_Dynamics *pipeline)
 	ds_JointPoolSerialize(ss, &pipeline->joint_pool);
 	ds_ShapePoolSerialize(ss, &pipeline->shape_pool);
 	ds_BitSetSerialize(ss, &pipeline->shape_dynamic_usage_set);
-	BVHSerialize(ss, &pipeline->dynamic_bvh);
-	BVHSerialize(ss, &pipeline->static_bvh);
-	BVHSerialize(ss, &pipeline->kinematic_bvh);
+	BVHSerialize(ss, &pipeline->bvh[DS_MOTION_DYNAMIC]);
+	BVHSerialize(ss, &pipeline->bvh[DS_MOTION_STATIC]);
+	BVHSerialize(ss, &pipeline->bvh[DS_MOTION_KINEMATIC]);
 	ds_BitSetSerialize(ss, &pipeline->shape_dirty_set);
 	ds_ProxyQueryCPoolSerialize(ss, &pipeline->dirty_shape_query);
 	ds_PhysicsEventPoolSerialize(ss, &pipeline->event_pool);
@@ -1735,9 +1735,9 @@ u32 ds_DynamicsTryDeserialize(struct arena *mem, struct SS *ss, struct ds_Dynami
 		|| !ds_JointPoolTryDeserialize(NULL, ss, &pipeline->joint_pool, GROWABLE)
 		|| !ds_ShapePoolTryDeserialize(NULL, ss, &pipeline->shape_pool, GROWABLE)
 		|| !ds_BitSetTryDeserialize(NULL, ss, &pipeline->shape_dynamic_usage_set, GROWABLE)
-		|| !BVHTryDeserialize(NULL, ss, &pipeline->dynamic_bvh, GROWABLE)
-		|| !BVHTryDeserialize(NULL, ss, &pipeline->static_bvh, GROWABLE)
-		|| !BVHTryDeserialize(NULL, ss, &pipeline->kinematic_bvh, GROWABLE)
+		|| !BVHTryDeserialize(NULL, ss, &pipeline->bvh[DS_MOTION_DYNAMIC], GROWABLE)
+		|| !BVHTryDeserialize(NULL, ss, &pipeline->bvh[DS_MOTION_STATIC], GROWABLE)
+		|| !BVHTryDeserialize(NULL, ss, &pipeline->bvh[DS_MOTION_KINEMATIC], GROWABLE)
 		|| !ds_BitSetTryDeserialize(NULL, ss, &pipeline->shape_dirty_set, GROWABLE)
 		|| !ds_ProxyQueryCPoolTryDeserialize(NULL, ss, &pipeline->dirty_shape_query, GROWABLE)
 		|| !ds_PhysicsEventPoolTryDeserialize(NULL, ss, &pipeline->event_pool, GROWABLE)

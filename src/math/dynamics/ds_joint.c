@@ -36,7 +36,7 @@ ds_JointId ds_JointAdd(struct ds_Dynamics *pipeline, const enum ds_JointType typ
     }
 
     /* canonical slot: a static body is body 1 (as in the contact constraints), whatever the caller's order */
-    if (!ds_BodyDynamicBit(b[0]))
+    if (!ds_BodyDynamicCheck(b[0]))
     {
         const struct slot slot_tmp = slot_b0;
         slot_b0 = slot_b1;
@@ -48,7 +48,7 @@ ds_JointId ds_JointAdd(struct ds_Dynamics *pipeline, const enum ds_JointType typ
         local_frame1 = frame_tmp;
     }
 
-    const u32 dynamic[2] = { ds_BodyDynamicBit(b[0]), ds_BodyDynamicBit(b[1]) };
+    const u32 dynamic[2] = { ds_BodyDynamicCheck(b[0]), ds_BodyDynamicCheck(b[1]) };
     u32 expand_index = b[ dynamic[1] ]->island;
     if (!dynamic[0] && !dynamic[1])
     {

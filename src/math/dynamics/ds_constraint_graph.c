@@ -171,7 +171,7 @@ void ds_CGraphContactAdd(struct ds_Dynamics *pipeline, struct ds_Contact *contac
     ds_Assert(contact->set != SOLVER_SET_NULL)
     ds_Assert(contact->color == CG_INVALID_COLOR);
 
-    const u32 static_index = (ds_ContactStaticCheck(contact)) ? ds_ContactStaticIndex(contact) : U32_MAX;
+    const u32 static_index = (ds_ContactStaticCheck(contact)) ? ds_ContactNonDynamicIndex(contact) : U32_MAX;
     contact->color = ds_CGraphColorNext(pipeline, contact->body, static_index);
     struct ds_CGraphColor *color = pipeline->cgraph.color + contact->color;
 
@@ -241,8 +241,8 @@ void ds_CGraphValidate(const struct ds_Dynamics *pipeline)
             if (c <= CG_STATIC_COLOR_LAST)
             {
                 ds_Assert(ds_ContactStaticCheck(contact));
-                ds_Assert(body[ ds_ContactStaticIndex(contact) ]->set == SOLVER_SET_STATIC);
-                ds_Assert(body[ 1 - ds_ContactStaticIndex(contact) ]->set == SOLVER_SET_ACTIVE);
+                ds_Assert(body[ ds_ContactNonDynamicIndex(contact) ]->set == SOLVER_SET_STATIC);
+                ds_Assert(body[ 1 - ds_ContactNonDynamicIndex(contact) ]->set == SOLVER_SET_ACTIVE);
             }
             else if (CG_DYNAMIC_COLOR_FIRST <= c && c <= CG_DYNAMIC_COLOR_LAST)
             {

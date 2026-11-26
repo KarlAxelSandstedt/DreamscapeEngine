@@ -197,7 +197,6 @@ static ds_Array(ds_GeometricMoverPlane) ds_GeometricMoverPlanes(struct ds_Geomet
     const f32 r = capsule->radius;
     const f32 h = capsule->half_height + r;
     const ds_TransformWorld t_mover = { .rotation = QIdentity(), .position = position };
-    const struct BVH *bvh[3] = { &dynamics->static_bvh, &dynamics->kinematic_bvh, &dynamics->dynamic_bvh };
     const struct aabb local = { .min = V3(-r, -h, -r), .max = V3(r, h, r) };
 
     struct aabb bbox;
@@ -206,7 +205,7 @@ static ds_Array(ds_GeometricMoverPlane) ds_GeometricMoverPlanes(struct ds_Geomet
     ds_Array(ds_GeometricMoverPlane) planes = { .buf = buf, .length = 0, .base = U32_MAX };
     for (u32 b = 0; b < 3; ++b)
     {
-        const ds_Array(u32) query = BVHQuery(tmp, bvh[b], &bbox);
+        const ds_Array(u32) query = BVHQuery(tmp, dynamics->bvh + b, &bbox);
         for (u32 i = 0; i < query.length; ++i)
         {
             const struct ds_Shape *shape = dynamics->shape_pool.buf + query.buf[i];
@@ -458,13 +457,12 @@ static f32 ds_GeometricMoverCast(const struct ds_Dynamics *dynamics, const struc
     AabbTranslateOutward(&bbox_world, &bbox_local, mover->position);
 
     const ds_TransformWorld t_mover = { .rotation = QIdentity(), .position = mover->position };
-    const struct BVH *bvh[3] = { &dynamics->static_bvh, &dynamics->kinematic_bvh, &dynamics->dynamic_bvh };
     struct arena *tmp = ArenaPushScratch();
 
     u32f32 hit = u32f32_inline(U32_MAX, 1.0f);
     for (u32 b = 0; b < 3; ++b)
     {
-        struct BVHCastInfo info = BVHAabbCastInit(tmp, bvh[b], &bbox_world, delta);
+        struct BVHCastInfo info = BVHAabbCastInit(tmp, dynamics->bvh + b, &bbox_world, delta);
         info.hit = hit;
         while (info.hit_queue.count)
         {

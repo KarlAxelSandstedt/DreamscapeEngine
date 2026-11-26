@@ -63,7 +63,7 @@ ds_ShapeId ds_ShapeAdd(struct ds_Dynamics *pipeline, const struct ds_ShapePrefab
 
 	DLLAppend(body->shape_list, pipeline->shape_pool.buf, shape_slot.index, body_shape);
 
-    shape->flags = body->flags & SHAPE_FLAG_ALL;
+    shape->flags = ds_BodyMotion(body);
 	shape->body = ds_BodyIdIndex(body_id);
 	shape->density = prefab->density;
 	shape->restitution = prefab->restitution;
@@ -90,7 +90,7 @@ ds_ShapeId ds_ShapeAdd(struct ds_Dynamics *pipeline, const struct ds_ShapePrefab
 		bbox_proxy.max = V3AddConstant(bbox_proxy.max, shape->margin);
         ds_BitSetSet(&pipeline->shape_dynamic_usage_set, shape_slot.index, 1);
         ds_BitSetSet(&pipeline->shape_dirty_set, shape_slot.index, 1);
-        shape->proxy = DBVHInsert(&pipeline->dynamic_bvh, shape->body, shape_slot.index, &bbox_proxy);
+        shape->proxy = DBVHInsert(&pipeline->bvh[DS_MOTION_DYNAMIC], shape->body, shape_slot.index, &bbox_proxy);
     }
     else if (ds_BodyKinematicCheck(body))
     {
@@ -98,16 +98,16 @@ ds_ShapeId ds_ShapeAdd(struct ds_Dynamics *pipeline, const struct ds_ShapePrefab
 		bbox_proxy.min = V3AddConstant(bbox_proxy.min, -shape->margin);
 		bbox_proxy.max = V3AddConstant(bbox_proxy.max, shape->margin);
         ds_BitSetSet(&pipeline->shape_dirty_set, shape_slot.index, 1);
-        shape->proxy = DBVHInsert(&pipeline->kinematic_bvh, shape->body, shape_slot.index, &bbox_proxy);
+        shape->proxy = DBVHInsert(&pipeline->bvh[DS_MOTION_KINEMATIC], shape->body, shape_slot.index, &bbox_proxy);
     }
     else
     {
-        shape->proxy = DBVHInsert(&pipeline->static_bvh, shape->body, shape_slot.index, &bbox_proxy);
+        shape->proxy = DBVHInsert(&pipeline->bvh[DS_MOTION_STATIC], shape->body, shape_slot.index, &bbox_proxy);
 
         /* static shapes never query the broadphase: pair the overlapping dynamic shapes here */
         struct arena *tmp = ArenaPushScratch();
-        const struct BVHNode *node = pipeline->static_bvh.pool.buf + shape->proxy;
-        const ds_Array(u32) overlap = BVHQuery(tmp, &pipeline->dynamic_bvh, &node->bbox);
+        const struct BVHNode *node = pipeline->bvh[DS_MOTION_STATIC].pool.buf + shape->proxy;
+        const ds_Array(u32) overlap = BVHQuery(tmp, &pipeline->bvh[DS_MOTION_DYNAMIC], &node->bbox);
         for (u32 i = 0; i < overlap.length; ++i)
         {
             const struct ds_Shape *neighbour = pipeline->shape_pool.buf + overlap.buf[i];
@@ -141,14 +141,7 @@ void ds_ShapeDynamicRemove(struct ds_Dynamics *pipeline, struct ds_Body *body, c
     }
 
 	c_ShapeDBDereference(pipeline->external->cshape_db, shape->cshape_handle);
-    if (ds_ShapeDynamicCheck(shape))
-    {
-	    DBVHRemove(&pipeline->dynamic_bvh, shape->proxy);
-    }
-    else
-    {
-	    DBVHRemove(&pipeline->kinematic_bvh, shape->proxy);
-    }
+	DBVHRemove(pipeline->bvh + ds_ShapeMotion(shape), shape->proxy);
 	ds_PoolRemove(pipeline->shape_pool, shape_index);
 }
 
@@ -164,7 +157,7 @@ void ds_ShapeStaticRemove(struct ds_Dynamics *pipeline, struct ds_Body *body, co
     ds_BitSetSet(&pipeline->shape_dirty_set, index, 0);
     DLLRemove(body->shape_list, pipeline->shape_pool.buf, index, body_shape);
 	c_ShapeDBDereference(pipeline->external->cshape_db, shape->cshape_handle);
-	DBVHRemove(&pipeline->static_bvh, shape->proxy);
+	DBVHRemove(&pipeline->bvh[DS_MOTION_STATIC], shape->proxy);
 	ds_PoolRemove(pipeline->shape_pool, index);
 }
 
@@ -459,7 +452,7 @@ void ds_ShapeContact(struct arena *tmp, struct ds_Dynamics *pipeline, const u32 
     }
     else
     {
-        const u32 mesh = ds_ContactStaticIndex(c);
+        const u32 mesh = ds_ContactNonDynamicIndex(c);
         const u32 convex = 1 - mesh;
         const u32 flip_normal = convex;
 

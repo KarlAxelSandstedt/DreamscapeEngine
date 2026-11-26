@@ -920,7 +920,7 @@ static struct test_Output SimMoverTickTest(struct test_Environment *env)
     slab_prefab->cshape = slab_shape.index; slab_prefab->density = 1.0f; slab_prefab->friction = 0.5f; slab_prefab->restitution = 0.0f;
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
-    ((struct ds_BodyPrefab *) ds_SDBAdd(env->mem_1, prefab_db, Utf8Inline("static")).address)->flags = 0;
+    ((struct ds_BodyPrefab *) ds_SDBAdd(env->mem_1, prefab_db, Utf8Inline("static")).address)->motion = DS_MOTION_STATIC;
     const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db, .body_prefab_db = &prefab_db, .shape_prefab_db = &shape_prefab_db };
 
     struct ds_SimConfig config = ds_SimConfigDefault();
@@ -1430,8 +1430,8 @@ static struct test_Output ServerSceneTest(struct test_Environment *env)
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
     const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db, .body_prefab_db = &prefab_db, .shape_prefab_db = &shape_prefab_db };
-    ((struct ds_BodyPrefab *) ds_SDBAdd(env->mem_1, prefab_db, Utf8Inline("static")).address)->flags = 0;
-    ((struct ds_BodyPrefab *) ds_SDBAdd(env->mem_1, prefab_db, Utf8Inline("dynamic")).address)->flags = BODY_FLAG_DYNAMIC;
+    ((struct ds_BodyPrefab *) ds_SDBAdd(env->mem_1, prefab_db, Utf8Inline("static")).address)->motion = DS_MOTION_STATIC;
+    ((struct ds_BodyPrefab *) ds_SDBAdd(env->mem_1, prefab_db, Utf8Inline("dynamic")).address)->motion = DS_MOTION_DYNAMIC;
 
     struct ds_SimConfig config = ds_SimConfigDefault();
     config.dynamics.initial_size = 32;
@@ -1534,8 +1534,8 @@ static struct test_Output ServerGrabTest(struct test_Environment *env)
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
     const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db, .body_prefab_db = &prefab_db, .shape_prefab_db = &shape_prefab_db };
-    ((struct ds_BodyPrefab *) ds_SDBAdd(env->mem_1, prefab_db, Utf8Inline("static")).address)->flags = 0;
-    ((struct ds_BodyPrefab *) ds_SDBAdd(env->mem_1, prefab_db, Utf8Inline("dynamic")).address)->flags = BODY_FLAG_DYNAMIC;
+    ((struct ds_BodyPrefab *) ds_SDBAdd(env->mem_1, prefab_db, Utf8Inline("static")).address)->motion = DS_MOTION_STATIC;
+    ((struct ds_BodyPrefab *) ds_SDBAdd(env->mem_1, prefab_db, Utf8Inline("dynamic")).address)->motion = DS_MOTION_DYNAMIC;
 
     struct ds_SimConfig config = ds_SimConfigDefault();
     config.dynamics.initial_size = 32;
@@ -1911,8 +1911,8 @@ static struct test_Output ServerBodyVelocityTest(struct test_Environment *env)
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
     const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db, .body_prefab_db = &prefab_db, .shape_prefab_db = &shape_prefab_db };
-    ((struct ds_BodyPrefab *) ds_SDBAdd(env->mem_1, prefab_db, Utf8Inline("static")).address)->flags = 0;
-    ((struct ds_BodyPrefab *) ds_SDBAdd(env->mem_1, prefab_db, Utf8Inline("dynamic")).address)->flags = BODY_FLAG_DYNAMIC;
+    ((struct ds_BodyPrefab *) ds_SDBAdd(env->mem_1, prefab_db, Utf8Inline("static")).address)->motion = DS_MOTION_STATIC;
+    ((struct ds_BodyPrefab *) ds_SDBAdd(env->mem_1, prefab_db, Utf8Inline("dynamic")).address)->motion = DS_MOTION_DYNAMIC;
 
     struct ds_SimConfig config = ds_SimConfigDefault();
     config.dynamics.initial_size = 32;

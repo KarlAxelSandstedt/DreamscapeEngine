@@ -213,6 +213,18 @@ DS_DEFINE_ID(ds_JointId,    DS_ID_GENERATION_SHIFT,  DS_ID_GENERATION_MAX)
 DS_DEFINE_ID(ds_ContactId,  DS_IDF_GENERATION_SHIFT, DS_IDF_GENERATION_MAX)
 
 /*
+Motion
+======
+Whether a body is static, dynamic or kinematic: bits 0-1 of the flags of a body (and of its sim and compute), of a
+shape (its body's motion) and of a contact. A contact has the motion of its least mobile body: static if one body
+is static, kinematic if one is kinematic, dynamic if both are. ds_Dynamics.bvh is indexed by it.
+*/
+#define DS_MOTION_STATIC        ((u32) 0)
+#define DS_MOTION_DYNAMIC       ((u32) 1)
+#define DS_MOTION_KINEMATIC     ((u32) 2)
+#define DS_MOTION_MASK          ((u32) 3)
+
+/*
 ds_Shape
 ========
 ds_Shapes are convex building blocks for constructing a ds_Body. The structure
@@ -249,12 +261,9 @@ transform, ds_Body must also store its center of mass:
 	}
 */
 
-#define SHAPE_FLAG_ALL          (BODY_FLAG_DYNAMIC | BODY_FLAG_KINEMATIC)
-
-#define ds_ShapeStaticCheck(b)	(!((b)->flags & (BODY_FLAG_DYNAMIC | BODY_FLAG_KINEMATIC)))
-#define ds_ShapeDynamicCheck(b)	((b)->flags & BODY_FLAG_DYNAMIC)
-
-#define ds_ShapeDynamicBit(b)    (((b)->flags & BODY_FLAG_DYNAMIC) >> BODY_FLAG_DYNAMIC_BIT)
+#define ds_ShapeMotion(b)	    ((b)->flags & DS_MOTION_MASK)
+#define ds_ShapeStaticCheck(b)	(ds_ShapeMotion(b) == DS_MOTION_STATIC)
+#define ds_ShapeDynamicCheck(b)	((b)->flags & DS_MOTION_DYNAMIC)
 
 struct ds_Shape
 {
@@ -262,7 +271,7 @@ struct ds_Shape
     struct DLLNode body_shape;
 
     ds_ShapeId      id;                 /* Generational identifier                          */
-    u32             flags;              /* Shape flags (BODY_FLAG_DYNAMIC, BODY_FLAG_KINEMATIC)  */
+    u32             flags;              /* its body's motion (DS_MOTION_MASK)               */
 	u32 			body;		        /* ds_Body owner of node 			                */
 	u32			    proxy;		        /* BVH index 					                    */
     struct DLL   contact_list;       /* list of the shape's contacts                     */
@@ -411,7 +420,7 @@ struct ds_BodyPrefab
     SDB_NODE;
 
     struct DLL   shape_list;         /* shape prefab instance list */
-	u32	            flags;	            /* BODY_FLAG_DYNAMIC, BODY_FLAG_KINEMATIC or 0 (static) */
+	u32	            motion;	            /* DS_MOTION_STATIC, DS_MOTION_DYNAMIC or DS_MOTION_KINEMATIC */
 
     //TODO pre-compute...?
 	//f32 	        mass;			    /* total body mass */
@@ -433,20 +442,14 @@ ds_BodyCompute.
        stores velocities.
 */
 
-#define BODY_FLAG_DYNAMIC_BIT    0
-#define BODY_FLAG_KINEMATIC_BIT  1
+/* bits 0-1: the motion (DS_MOTION_MASK) */
 #define BODY_FLAG_FAST_BIT       2
-
-#define BODY_FLAG_DYNAMIC		((u32) 1 << BODY_FLAG_DYNAMIC_BIT)
-#define BODY_FLAG_KINEMATIC		((u32) 1 << BODY_FLAG_KINEMATIC_BIT)
 #define BODY_FLAG_FAST			((u32) 1 << BODY_FLAG_FAST_BIT)        /* sim only, set per step: the body needs CCD */
-#define BODY_FLAG_ALL           (BODY_FLAG_DYNAMIC | BODY_FLAG_KINEMATIC)
 
-#define ds_BodyStaticCheck(b)	(!((b)->flags & (BODY_FLAG_DYNAMIC | BODY_FLAG_KINEMATIC)))
-#define ds_BodyDynamicCheck(b)	((b)->flags & BODY_FLAG_DYNAMIC)
-#define ds_BodyKinematicCheck(b)	((b)->flags & BODY_FLAG_KINEMATIC)
-
-#define ds_BodyDynamicBit(b)    (((b)->flags & BODY_FLAG_DYNAMIC) >> BODY_FLAG_DYNAMIC_BIT)
+#define ds_BodyMotion(b)	    ((b)->flags & DS_MOTION_MASK)
+#define ds_BodyStaticCheck(b)	(ds_BodyMotion(b) == DS_MOTION_STATIC)
+#define ds_BodyDynamicCheck(b)	((b)->flags & DS_MOTION_DYNAMIC)
+#define ds_BodyKinematicCheck(b)	((b)->flags & DS_MOTION_KINEMATIC)
 
 struct ds_Body
 {
@@ -656,16 +659,19 @@ manifolds (contact_narrow_pool, same index) stay with it in every state.
     :: All contacts in a sleeping island name the island's sleeping set (contact->set), without a
        link (<->) or compute data.
 */
-#define DS_CONTACT_STATIC_INDEX     ((u32) 1 << 0)      /* Static body's key index Applicable
-                                                           only if DS_CONTACT_STATIC.        */
-#define DS_CONTACT_STATIC           ((u32) 1 << 1)      /* One body is static                */
-#define DS_CONTACT_CONVEX           ((u32) 1 << 2)      /* Non-mesh contact.                 */
-#define DS_CONTACT_PARTIAL_SLEEPING ((u32) 1 << 3)      /* (body 0 static or sleeping) XOR
-                                                           (body 1 static or sleeping)       */
+/* bits 0-1: the motion (DS_MOTION_MASK) */
+#define DS_CONTACT_NON_DYNAMIC_INDEX_BIT    2
+#define DS_CONTACT_NON_DYNAMIC_INDEX        ((u32) 1 << DS_CONTACT_NON_DYNAMIC_INDEX_BIT)   /* Key index of the body that is not
+                                                                                               dynamic. Applicable only if the
+                                                                                               motion is not DS_MOTION_DYNAMIC. */
+#define DS_CONTACT_CONVEX                   ((u32) 1 << 3)      /* Non-mesh contact.                 */
+#define DS_CONTACT_PARTIAL_SLEEPING         ((u32) 1 << 4)      /* (body 0 static or sleeping) XOR
+                                                                   (body 1 static or sleeping)       */
 
-#define ds_ContactStaticCheck(c)    ((c)->flags & DS_CONTACT_STATIC)
-#define ds_ContactStaticIndex(c)    ((c)->flags & DS_CONTACT_STATIC_INDEX)
-#define ds_ContactConvexCheck(c)    ((c)->flags & DS_CONTACT_CONVEX)
+#define ds_ContactMotion(c)             ((c)->flags & DS_MOTION_MASK)
+#define ds_ContactStaticCheck(c)        (ds_ContactMotion(c) == DS_MOTION_STATIC)
+#define ds_ContactNonDynamicIndex(c)    (((c)->flags & DS_CONTACT_NON_DYNAMIC_INDEX) >> DS_CONTACT_NON_DYNAMIC_INDEX_BIT)
+#define ds_ContactConvexCheck(c)        ((c)->flags & DS_CONTACT_CONVEX)
 #define ds_ContactPartialSleepingCheck(c) ((c)->flags & DS_CONTACT_PARTIAL_SLEEPING)
 
 struct ds_Contact
@@ -2063,9 +2069,7 @@ struct ds_Dynamics
 
 	ds_Pool(ds_Shape)	            shape_pool;
     struct ds_BitSet                shape_dynamic_usage_set;/* Shapes in use */
-	struct BVH 		                dynamic_bvh;            /* bvh of dynamic shapes */
-	struct BVH 		                static_bvh;             /* bvh of static shapes */
-	struct BVH 		                kinematic_bvh;          /* bvh of kinematic shapes */
+	struct BVH 		                bvh[3];                 /* [motion]: the bvh of the static, dynamic and kinematic shapes */
 
     struct ds_BitSet                shape_dirty_set;        /* the shapes whose proxy box changed since the last broadphase: they query for pairs, then the set is cleared */
     ds_CPool(ds_ProxyQuery)         dirty_shape_query;      /* per shape index: the broadphase's new pairs of the frame */

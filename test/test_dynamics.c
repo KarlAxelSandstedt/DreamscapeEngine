@@ -280,7 +280,7 @@ static ds_BodyId DynamicsTestBoxAdd(struct arena *mem, struct ds_Dynamics *pipel
     const struct c_Shape src = { .type = C_SHAPE_CONVEX_HULL, .hull = DcelBox(mem, box->hw) };
     const struct slot slot = c_ShapeDBAdd(cshape_db, id, &src);
 
-    const struct ds_BodyPrefab body_prefab = { .flags = (box->dynamic) ? BODY_FLAG_DYNAMIC : 0 };
+    const struct ds_BodyPrefab body_prefab = { .motion = (box->dynamic) ? DS_MOTION_DYNAMIC : DS_MOTION_STATIC };
     const ds_TransformWorld t_world = { .rotation = box->rotation, .position = V3F64Add(origin, V3Promote(box->position)) };
     const ds_BodyId body = ds_BodyAdd(pipeline, &body_prefab, &t_world, index);
 
@@ -869,7 +869,7 @@ static u32 SnapshotMeshTestRun(void)
     const f32 cell = 1.0f;
     const struct c_Shape terrain = McTerrain(&mem, cell, 0.05f, NULL);
     const struct slot slot = c_ShapeDBAdd(&cshape_db, Utf8Inline("terrain"), &terrain);
-    const struct ds_BodyPrefab body_prefab = { .flags = 0 };
+    const struct ds_BodyPrefab body_prefab = { .motion = DS_MOTION_STATIC };
     const ds_TransformWorld t_world = { .rotation = QIdentity(), .position = V3F64(0.0, 0.0, 0.0) };
     const ds_BodyId terrain_body = ds_BodyAdd(&pipeline, &body_prefab, &t_world, 0);
     const struct ds_ShapePrefab shape_prefab = { .cshape = slot.index, .density = 1.0f, .restitution = 0.0f, .friction = 0.8f };
@@ -974,7 +974,7 @@ static u32 SnapshotCacheMaxTestRun(void)
     const f32 cell = 1.0f;
     const struct c_Shape terrain = McTerrain(&mem, cell, 0.0f, NULL);
     const struct slot slot = c_ShapeDBAdd(&cshape_db, Utf8Inline("terrain"), &terrain);
-    const struct ds_BodyPrefab body_prefab = { .flags = 0 };
+    const struct ds_BodyPrefab body_prefab = { .motion = DS_MOTION_STATIC };
     const ds_TransformWorld t_world = { .rotation = QIdentity(), .position = V3F64(0.0, 0.0, 0.0) };
     const ds_BodyId terrain_body = ds_BodyAdd(&pipeline, &body_prefab, &t_world, 0);
     const struct ds_ShapePrefab shape_prefab = { .cshape = slot.index, .density = 1.0f, .restitution = 0.0f, .friction = 0.8f };
@@ -1211,7 +1211,7 @@ static struct test_Output DynamicsMeshArrayStatsTest(struct test_Environment *en
     const f32 cell = 2.0f;
     const struct c_Shape terrain = McTerrain(&mem, cell, 0.5f, NULL);
     const struct slot slot = c_ShapeDBAdd(&cshape_db, Utf8Inline("terrain"), &terrain);
-    const struct ds_BodyPrefab body_prefab = { .flags = 0 };
+    const struct ds_BodyPrefab body_prefab = { .motion = DS_MOTION_STATIC };
     const ds_TransformWorld t_world = { .rotation = QIdentity(), .position = V3F64(0.0, 0.0, 0.0) };
     const ds_BodyId terrain_body = ds_BodyAdd(&pipeline, &body_prefab, &t_world, 0);
     const struct ds_ShapePrefab shape_prefab = { .cshape = slot.index, .density = 1.0f, .restitution = 0.0f, .friction = 0.8f };
@@ -1342,7 +1342,7 @@ static struct test_Output DynamicsShapeTest(struct test_Environment *env)
         cshape_index[i] = slot.index;
     }
 
-    const struct ds_BodyPrefab body_prefab = { .flags = BODY_FLAG_DYNAMIC };
+    const struct ds_BodyPrefab body_prefab = { .motion = DS_MOTION_DYNAMIC };
     const ds_TransformWorld t_body = { .rotation = QNormalize(Q(0.3f, -0.5f, 0.1f, 0.8f)), .position = V3F64(1e6, -1e6, 1e6) };
     const ds_BodyId body_id = ds_BodyAdd(&pipeline, &body_prefab, &t_body, 0);
     struct ds_Body *body = ds_BodyLookup(&pipeline, body_id).address;
@@ -1498,8 +1498,8 @@ static struct test_Output DynamicsBodyTest(struct test_Environment *env)
     const struct c_Shape *cshape = slot.address;
     const f32 volume = cshape->volume;
 
-    const struct ds_BodyPrefab dynamic_prefab = { .flags = BODY_FLAG_DYNAMIC };
-    const struct ds_BodyPrefab static_prefab = { .flags = 0 };
+    const struct ds_BodyPrefab dynamic_prefab = { .motion = DS_MOTION_DYNAMIC };
+    const struct ds_BodyPrefab static_prefab = { .motion = DS_MOTION_STATIC };
     const ds_TransformWorld t_a = { .rotation = QIdentity(), .position = V3F64(10.0, 20.0, 30.0) };
     const ds_TransformWorld t_b = { .rotation = QNormalize(Q(0.1f, 0.2f, 0.3f, 0.9f)), .position = V3F64(-5.0, 0.0, 5.0) };
     const ds_BodyId a = ds_BodyAdd(&pipeline, &dynamic_prefab, &t_a, 0);
@@ -1622,8 +1622,8 @@ static struct test_Output DynamicsBodyExtentTest(struct test_Environment *env)
         { .rotation = QUnitAxisAngle(V3(0.0f, 1.0f, 0.0f), 0.5f*F32_PI), .position = V3(-1.0f, 0.5f, 0.5f) },
     };
 
-    const struct ds_BodyPrefab dynamic_prefab = { .flags = BODY_FLAG_DYNAMIC };
-    const struct ds_BodyPrefab static_prefab = { .flags = 0 };
+    const struct ds_BodyPrefab dynamic_prefab = { .motion = DS_MOTION_DYNAMIC };
+    const struct ds_BodyPrefab static_prefab = { .motion = DS_MOTION_STATIC };
     const ds_TransformWorld t_world = { .rotation = QIdentity(), .position = V3F64(0.0, 0.0, 0.0) };
     const ds_BodyId a = ds_BodyAdd(&pipeline, &dynamic_prefab, &t_world, 0);
     const ds_BodyId b = ds_BodyAdd(&pipeline, &static_prefab, &t_world, 1);
@@ -4278,7 +4278,7 @@ static struct test_Output DynamicsVelocityCapTest(struct test_Environment *env)
 
     const struct c_Shape cube = { .type = C_SHAPE_CONVEX_HULL, .hull = DcelBox(&mem, V3(0.5f, 0.5f, 0.5f)) };
     const struct slot cube_slot = c_ShapeDBAdd(&cshape_db, Utf8Inline("cap_cube"), &cube);
-    const struct ds_BodyPrefab dynamic_prefab = { .flags = BODY_FLAG_DYNAMIC };
+    const struct ds_BodyPrefab dynamic_prefab = { .motion = DS_MOTION_DYNAMIC };
     const ds_Transform t_local = ds_TransformIdentity();
     const ds_TransformWorld t_body = { .rotation = QIdentity(), .position = V3F64(0.0, 10.0, 0.0) };
     const ds_BodyId id = ds_BodyAdd(&pipeline, &dynamic_prefab, &t_body, 1);
@@ -4338,8 +4338,8 @@ static struct test_Output DynamicsSpeculativeSphereTest(struct test_Environment 
     const struct c_Shape small = { .type = C_SHAPE_SPHERE, .sphere.radius = 0.5f };
     const struct slot big_slot = c_ShapeDBAdd(&cshape_db, Utf8Inline("spec_big"), &big);
     const struct slot small_slot = c_ShapeDBAdd(&cshape_db, Utf8Inline("spec_small"), &small);
-    const struct ds_BodyPrefab static_prefab = { .flags = 0 };
-    const struct ds_BodyPrefab dynamic_prefab = { .flags = BODY_FLAG_DYNAMIC };
+    const struct ds_BodyPrefab static_prefab = { .motion = DS_MOTION_STATIC };
+    const struct ds_BodyPrefab dynamic_prefab = { .motion = DS_MOTION_DYNAMIC };
     const ds_Transform t_local = ds_TransformIdentity();
     const f64 rest = 10.5;
     const f64 gap = 0.01;
@@ -4417,7 +4417,7 @@ static struct test_Output DynamicsSpeculativeHullTest(struct test_Environment *e
     const struct slot sphere_slot = c_ShapeDBAdd(&cshape_db, Utf8Inline("spec_sphere"), &sphere);
     const struct slot capsule_slot = c_ShapeDBAdd(&cshape_db, Utf8Inline("spec_capsule"), &capsule);
     const struct slot cube_slot = c_ShapeDBAdd(&cshape_db, Utf8Inline("spec_cube"), &cube);
-    const struct ds_BodyPrefab dynamic_prefab = { .flags = BODY_FLAG_DYNAMIC };
+    const struct ds_BodyPrefab dynamic_prefab = { .motion = DS_MOTION_DYNAMIC };
     const ds_Transform t_local = ds_TransformIdentity();
     const q along_x = QUnitAxisAngle(V3(0.0f, 0.0f, 1.0f), -F32_PI/2.0f);
     const u32 cshape[3] = { sphere_slot.index, capsule_slot.index, cube_slot.index };
@@ -4695,7 +4695,7 @@ static ds_BodyId DynamicsWarmShapeAdd(struct arena *mem, struct ds_Dynamics *pip
     }
     const struct slot slot = c_ShapeDBAdd(cshape_db, id, &src);
 
-    const struct ds_BodyPrefab body_prefab = { .flags = (ws->dynamic) ? BODY_FLAG_DYNAMIC : 0 };
+    const struct ds_BodyPrefab body_prefab = { .motion = (ws->dynamic) ? DS_MOTION_DYNAMIC : DS_MOTION_STATIC };
     const ds_TransformWorld t_world = { .rotation = ws->rotation, .position = V3Promote(ws->position) };
     const ds_BodyId body = ds_BodyAdd(pipeline, &body_prefab, &t_world, index);
     const struct ds_ShapePrefab shape_prefab = { .cshape = slot.index, .density = 1.0f, .restitution = 0.0f, .friction = ws->friction };
@@ -4901,7 +4901,7 @@ static ds_BodyId SlideWarmAdd(struct arena *mem, struct ds_Dynamics *pipeline, s
     }
     const struct slot slot = c_ShapeDBAdd(cshape_db, id, &src);
 
-    const struct ds_BodyPrefab body_prefab = { .flags = (dynamic) ? BODY_FLAG_DYNAMIC : 0 };
+    const struct ds_BodyPrefab body_prefab = { .motion = (dynamic) ? DS_MOTION_DYNAMIC : DS_MOTION_STATIC };
     const ds_TransformWorld t_world = { .rotation = rotation, .position = V3Promote(position) };
     const ds_BodyId body = ds_BodyAdd(pipeline, &body_prefab, &t_world, index);
     const struct ds_ShapePrefab shape_prefab = { .cshape = slot.index, .density = 1.0f, .restitution = 0.0f, .friction = friction };
@@ -5021,8 +5021,8 @@ static struct test_Output DynamicsMassRejectTest(struct test_Environment *env)
     const struct slot slot = c_ShapeDBAdd(&cshape_db, id, &src);
     const struct c_Shape *cshape = slot.address;
 
-    const struct ds_BodyPrefab dynamic_prefab = { .flags = BODY_FLAG_DYNAMIC };
-    const struct ds_BodyPrefab static_prefab = { .flags = 0 };
+    const struct ds_BodyPrefab dynamic_prefab = { .motion = DS_MOTION_DYNAMIC };
+    const struct ds_BodyPrefab static_prefab = { .motion = DS_MOTION_STATIC };
     const ds_TransformWorld t_dynamic = { .rotation = QIdentity(), .position = V3F64(0.0, 0.0, 0.0) };
     const ds_TransformWorld t_static = { .rotation = QIdentity(), .position = V3F64(0.0, 3.0, 0.0) };
     const ds_BodyId dynamic = ds_BodyAdd(&pipeline, &dynamic_prefab, &t_dynamic, 0);
@@ -5306,7 +5306,7 @@ static void DynamicsTestFloorAdd(struct arena *mem, struct ds_Dynamics *pipeline
 {
     const struct c_Shape terrain = McTerrain(mem, cell, 0.0f, NULL);
     const struct slot slot = c_ShapeDBAdd(cshape_db, Utf8Inline("floor"), &terrain);
-    const struct ds_BodyPrefab body_prefab = { .flags = 0 };
+    const struct ds_BodyPrefab body_prefab = { .motion = DS_MOTION_STATIC };
     const ds_TransformWorld t_world = { .rotation = QIdentity(), .position = V3F64(0.0, 0.0, 0.0) };
     const ds_BodyId floor = ds_BodyAdd(pipeline, &body_prefab, &t_world, 0);
     const struct ds_ShapePrefab shape_prefab = { .cshape = slot.index, .density = 1.0f, .restitution = 0.0f, .friction = 0.8f };
@@ -5490,7 +5490,7 @@ static struct test_Output DynamicsSpeculativeMeshTest(struct test_Environment *e
     const struct slot sphere_slot = c_ShapeDBAdd(&cshape_db, Utf8Inline("spec_sphere"), &sphere);
     const struct slot capsule_slot = c_ShapeDBAdd(&cshape_db, Utf8Inline("spec_capsule"), &capsule);
     const struct slot cube_slot = c_ShapeDBAdd(&cshape_db, Utf8Inline("spec_cube"), &cube);
-    const struct ds_BodyPrefab dynamic_prefab = { .flags = BODY_FLAG_DYNAMIC };
+    const struct ds_BodyPrefab dynamic_prefab = { .motion = DS_MOTION_DYNAMIC };
     const ds_Transform t_local = ds_TransformIdentity();
     const q along_x = QUnitAxisAngle(V3(0.0f, 0.0f, 1.0f), -F32_PI/2.0f);
     const u32 cshape[3] = { sphere_slot.index, capsule_slot.index, cube_slot.index };
@@ -6730,7 +6730,7 @@ static void DynamicsPerfSnapshotBuild(const enum dynamics_PerfScene scene)
         const utf8 id = Utf8Inline("terrain");
         const struct c_Shape terrain = McTerrain(&snap->mem, DYNAMICS_PERF_TERRAIN_CELL, DYNAMICS_PERF_TERRAIN_RELIEF, NULL);
         const struct slot slot = c_ShapeDBAdd(&snap->cshape_db, id, &terrain);
-        const struct ds_BodyPrefab body_prefab = { .flags = 0 };
+        const struct ds_BodyPrefab body_prefab = { .motion = DS_MOTION_STATIC };
         const ds_TransformWorld t_world = { .rotation = QIdentity(), .position = V3F64(0.0, 0.0, 0.0) };
         const ds_BodyId body = ds_BodyAdd(&pipeline, &body_prefab, &t_world, index++);
         const struct ds_ShapePrefab shape_prefab = { .cshape = slot.index, .density = 1.0f, .restitution = 0.0f, .friction = 0.8f };

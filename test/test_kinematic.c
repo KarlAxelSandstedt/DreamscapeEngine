@@ -84,10 +84,10 @@ static void KinematicTestTick(struct kinematic_TestWorld *world, const u32 count
     }
 }
 
-/* a unit cube body of the given type (BODY_FLAG_DYNAMIC, BODY_FLAG_KINEMATIC or 0) */
-static ds_BodyId KinematicTestCubeAdd(struct kinematic_TestWorld *world, const u32 flags, const v3f64 position, const u32 entity)
+/* a unit cube body of the given motion (DS_MOTION_STATIC, DS_MOTION_DYNAMIC or DS_MOTION_KINEMATIC) */
+static ds_BodyId KinematicTestCubeAdd(struct kinematic_TestWorld *world, const u32 motion, const v3f64 position, const u32 entity)
 {
-    const struct ds_BodyPrefab body_prefab = { .flags = flags };
+    const struct ds_BodyPrefab body_prefab = { .motion = motion };
     const ds_TransformWorld t_world = { .rotation = QIdentity(), .position = position };
     const ds_BodyId id = ds_BodyAdd(&world->pipeline, &body_prefab, &t_world, entity);
     const struct ds_ShapePrefab shape_prefab = { .cshape = world->cube, .density = 1.0f, .restitution = 0.0f, .friction = 0.5f };
@@ -136,8 +136,8 @@ static struct test_Output KinematicMotionTest(struct test_Environment *env)
     const v3f64 start = V3F64(0.0, 10.0, 0.0);
     const v3 v = V3(1.0f, 2.0f, -3.0f);
     const v3 w = V3(0.0f, 0.5f, 0.0f);
-    const ds_BodyId kinematic = KinematicTestCubeAdd(&world, BODY_FLAG_KINEMATIC, start, 1);
-    const ds_BodyId dynamic = KinematicTestCubeAdd(&world, BODY_FLAG_DYNAMIC, V3F64(50.0, 10.0, 0.0), 2);
+    const ds_BodyId kinematic = KinematicTestCubeAdd(&world, DS_MOTION_KINEMATIC, start, 1);
+    const ds_BodyId dynamic = KinematicTestCubeAdd(&world, DS_MOTION_DYNAMIC, V3F64(50.0, 10.0, 0.0), 2);
     ds_BodyVelocitySet(&world.pipeline, kinematic, v, w);
 
     const u32 tick_count = 60;
@@ -185,7 +185,7 @@ static struct test_Output KinematicNoCapTest(struct test_Environment *env)
     const v3f64 start = V3F64(0.0, 10.0, 0.0);
     const v3 v = V3Scale(V3Normalize(V3(1.0f, 2.0f, -3.0f)), 2.0f*v_max);
     const v3 w = V3Scale(V3Normalize(V3(-2.0f, 1.0f, 1.0f)), 3.0f*w_max);
-    const ds_BodyId id = KinematicTestCubeAdd(&world, BODY_FLAG_KINEMATIC, start, 1);
+    const ds_BodyId id = KinematicTestCubeAdd(&world, DS_MOTION_KINEMATIC, start, 1);
     ds_BodyVelocitySet(&world.pipeline, id, v, w);
     KinematicTestTick(&world, 1);
 
@@ -219,10 +219,10 @@ static struct test_Output KinematicProxyTest(struct test_Environment *env)
     KinematicTestWorldInit(&world);
 
     /* two leaves: the root box spans both, so a small move of one is absorbed by enlarging its proxy in place */
-    const ds_BodyId near = KinematicTestCubeAdd(&world, BODY_FLAG_KINEMATIC, V3F64(0.0, 0.0, 0.0), 1);
-    const ds_BodyId far = KinematicTestCubeAdd(&world, BODY_FLAG_KINEMATIC, V3F64(100.0, 0.0, 0.0), 2);
-    TEST_EQUAL(BTLeafCount(world.pipeline.kinematic_bvh.bt), 2);
-    TEST_EQUAL(BTLeafCount(world.pipeline.dynamic_bvh.bt), 0);
+    const ds_BodyId near = KinematicTestCubeAdd(&world, DS_MOTION_KINEMATIC, V3F64(0.0, 0.0, 0.0), 1);
+    const ds_BodyId far = KinematicTestCubeAdd(&world, DS_MOTION_KINEMATIC, V3F64(100.0, 0.0, 0.0), 2);
+    TEST_EQUAL(BTLeafCount(world.pipeline.bvh[DS_MOTION_KINEMATIC].bt), 2);
+    TEST_EQUAL(BTLeafCount(world.pipeline.bvh[DS_MOTION_DYNAMIC].bt), 0);
     TEST_TRUE(KinematicTestRayFindsCheck(&world, near));
     TEST_TRUE(KinematicTestRayFindsCheck(&world, far));
 
@@ -238,7 +238,7 @@ static struct test_Output KinematicProxyTest(struct test_Environment *env)
     TEST_TRUE(KinematicTestRayFindsCheck(&world, near));
     TEST_EQUAL(KinematicTestRayDown(&world, 0.1, 0.0).u, U32_MAX);
     TEST_TRUE(KinematicTestRayFindsCheck(&world, far));
-    TEST_EQUAL(BTLeafCount(world.pipeline.kinematic_bvh.bt), 2);
+    TEST_EQUAL(BTLeafCount(world.pipeline.bvh[DS_MOTION_KINEMATIC].bt), 2);
 
     KinematicTestWorldFree(&world);
     return output;
@@ -255,7 +255,7 @@ static struct test_Output KinematicSleepTest(struct test_Environment *env)
 
     /* 40 ticks = 0.67 s at rest: asleep */
     const v3f64 start = V3F64(0.0, 10.0, 0.0);
-    const ds_BodyId id = KinematicTestCubeAdd(&world, BODY_FLAG_KINEMATIC, start, 1);
+    const ds_BodyId id = KinematicTestCubeAdd(&world, DS_MOTION_KINEMATIC, start, 1);
     KinematicTestTick(&world, 40);
     TEST_TRUE(KinematicTestAsleepCheck(&world, id));
 
@@ -303,14 +303,14 @@ static struct test_Output KinematicSetterTest(struct test_Environment *env)
 
     /* a static body has no velocity to set */
     const v3 v = V3(1.0f, 0.0f, 0.0f);
-    const ds_BodyId fixed = KinematicTestCubeAdd(&world, 0, V3F64(0.0, 0.0, 0.0), 1);
+    const ds_BodyId fixed = KinematicTestCubeAdd(&world, DS_MOTION_STATIC, V3F64(0.0, 0.0, 0.0), 1);
     ds_BodyVelocitySet(&world.pipeline, fixed, v, V3Zero());
     KinematicTestTick(&world, 1);
     const ds_TransformWorld fixed_pose = KinematicTestPose(&world, fixed);
     TEST_TRUE(fixed_pose.position.x == 0.0 && fixed_pose.position.y == 0.0 && fixed_pose.position.z == 0.0);
 
     /* a dynamic body at rest without gravity sleeps; the setter wakes it and writes the velocity */
-    const ds_BodyId dynamic = KinematicTestCubeAdd(&world, BODY_FLAG_DYNAMIC, V3F64(50.0, 0.0, 0.0), 2);
+    const ds_BodyId dynamic = KinematicTestCubeAdd(&world, DS_MOTION_DYNAMIC, V3F64(50.0, 0.0, 0.0), 2);
     KinematicTestTick(&world, 40);
     TEST_TRUE(KinematicTestAsleepCheck(&world, dynamic));
     ds_BodyVelocitySet(&world.pipeline, dynamic, v, V3Zero());
@@ -344,11 +344,11 @@ static struct test_Output KinematicRebuildTest(struct test_Environment *env)
     ds_BodyId kinematic[4];
     for (u32 i = 0; i < 4; ++i)
     {
-        kinematic[i] = KinematicTestCubeAdd(&world, BODY_FLAG_KINEMATIC, V3F64(0.0, 0.0, 20.0 * (f64) i), i);
+        kinematic[i] = KinematicTestCubeAdd(&world, DS_MOTION_KINEMATIC, V3F64(0.0, 0.0, 20.0 * (f64) i), i);
         ds_BodyVelocitySet(&world.pipeline, kinematic[i], V3(30.0f, 0.0f, 0.0f), V3Zero());
     }
     KinematicTestTick(&world, 30);
-    TEST_EQUAL(BTLeafCount(world.pipeline.dynamic_bvh.bt), 0);
+    TEST_EQUAL(BTLeafCount(world.pipeline.bvh[DS_MOTION_DYNAMIC].bt), 0);
     for (u32 i = 0; i < 4; ++i)
     {
         TEST_TRUE(KinematicTestRayFindsCheck(&world, kinematic[i]));
@@ -358,7 +358,7 @@ static struct test_Output KinematicRebuildTest(struct test_Environment *env)
     ds_BodyId dynamic[8];
     for (u32 i = 0; i < 8; ++i)
     {
-        dynamic[i] = KinematicTestCubeAdd(&world, BODY_FLAG_DYNAMIC, V3F64(0.0, 0.0, -20.0 * (f64) (i + 1)), 4 + i);
+        dynamic[i] = KinematicTestCubeAdd(&world, DS_MOTION_DYNAMIC, V3F64(0.0, 0.0, -20.0 * (f64) (i + 1)), 4 + i);
         ds_BodyVelocitySet(&world.pipeline, dynamic[i], V3(30.0f, 0.0f, 0.0f), V3Zero());
     }
     KinematicTestTick(&world, 30);
@@ -371,8 +371,8 @@ static struct test_Output KinematicRebuildTest(struct test_Environment *env)
     {
         TEST_TRUE(KinematicTestRayFindsCheck(&world, dynamic[i]));
     }
-    TEST_EQUAL(BTLeafCount(world.pipeline.kinematic_bvh.bt), 4);
-    TEST_EQUAL(BTLeafCount(world.pipeline.dynamic_bvh.bt), 8);
+    TEST_EQUAL(BTLeafCount(world.pipeline.bvh[DS_MOTION_KINEMATIC].bt), 4);
+    TEST_EQUAL(BTLeafCount(world.pipeline.bvh[DS_MOTION_DYNAMIC].bt), 8);
 
     KinematicTestWorldFree(&world);
     return output;
@@ -386,24 +386,24 @@ static struct test_Output KinematicRemoveTest(struct test_Environment *env)
     KinematicTestWorldInit(&world);
 
     /* awake */
-    const ds_BodyId awake = KinematicTestCubeAdd(&world, BODY_FLAG_KINEMATIC, V3F64(0.0, 0.0, 0.0), 1);
+    const ds_BodyId awake = KinematicTestCubeAdd(&world, DS_MOTION_KINEMATIC, V3F64(0.0, 0.0, 0.0), 1);
     ds_BodyVelocitySet(&world.pipeline, awake, V3(1.0f, 0.0f, 0.0f), V3Zero());
     KinematicTestTick(&world, 2);
     TEST_FALSE(KinematicTestAsleepCheck(&world, awake));
-    TEST_EQUAL(BTLeafCount(world.pipeline.kinematic_bvh.bt), 1);
+    TEST_EQUAL(BTLeafCount(world.pipeline.bvh[DS_MOTION_KINEMATIC].bt), 1);
     const f64 x = KinematicTestPose(&world, awake).position.x;
     ds_BodyRemove(&world.mem, &world.pipeline, awake);
-    TEST_EQUAL(BTLeafCount(world.pipeline.kinematic_bvh.bt), 0);
+    TEST_EQUAL(BTLeafCount(world.pipeline.bvh[DS_MOTION_KINEMATIC].bt), 0);
     TEST_EQUAL(KinematicTestRayDown(&world, x, 0.0).u, U32_MAX);
     KinematicTestTick(&world, 2);
 
     /* asleep */
-    const ds_BodyId asleep = KinematicTestCubeAdd(&world, BODY_FLAG_KINEMATIC, V3F64(0.0, 0.0, 0.0), 2);
+    const ds_BodyId asleep = KinematicTestCubeAdd(&world, DS_MOTION_KINEMATIC, V3F64(0.0, 0.0, 0.0), 2);
     KinematicTestTick(&world, 40);
     TEST_TRUE(KinematicTestAsleepCheck(&world, asleep));
-    TEST_EQUAL(BTLeafCount(world.pipeline.kinematic_bvh.bt), 1);
+    TEST_EQUAL(BTLeafCount(world.pipeline.bvh[DS_MOTION_KINEMATIC].bt), 1);
     ds_BodyRemove(&world.mem, &world.pipeline, asleep);
-    TEST_EQUAL(BTLeafCount(world.pipeline.kinematic_bvh.bt), 0);
+    TEST_EQUAL(BTLeafCount(world.pipeline.bvh[DS_MOTION_KINEMATIC].bt), 0);
     TEST_EQUAL(KinematicTestRayDown(&world, 0.0, 0.0).u, U32_MAX);
     KinematicTestTick(&world, 2);
 

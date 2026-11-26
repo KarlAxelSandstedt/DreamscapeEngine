@@ -597,7 +597,7 @@ static void r_EditorDraw(const struct led *led)
 
 	/* the proxy trees, in world space: rebuilt every frame */
 	const struct ds_DynamicsDrawConfig *draw_config = &led->physics->runtime.draw_config;
-	const struct BVH *tree[2] = { &led->physics->dynamic_bvh, &led->physics->static_bvh };
+	const struct BVH *tree[2] = { &led->physics->bvh[DS_MOTION_DYNAMIC], &led->physics->bvh[DS_MOTION_STATIC] };
 	const u32 draw_tree[2] = { draw_config->draw_dbvh, draw_config->draw_sbvh };
 	const v4 tree_color[2] = { draw_config->color_dbvh, draw_config->color_sbvh };
 	for (u32 t = 0; t < 2; ++t)

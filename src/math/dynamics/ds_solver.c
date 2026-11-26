@@ -176,7 +176,7 @@ void ds_BodyIntegrateExternalForcesRange(struct ds_Dynamics *pipeline, const u32
     for (u32 i = low; i < high; ++i)
     {
         struct ds_BodyCompute *bcomp = active->body_compute_pool.buf + i;
-        if (bcomp->flags & BODY_FLAG_KINEMATIC)
+        if (bcomp->flags & DS_MOTION_KINEMATIC)
         {
             continue;
         }
@@ -203,7 +203,7 @@ void ds_BodyIntegrateVelocitiesRange(struct ds_Dynamics *pipeline, const u32 low
         /* velocities clamped to the configured maxima, stored, then integrated */
         v3 linear_velocity = bcomp->linear_velocity;
         v3 angular_velocity = bcomp->angular_velocity;
-        if (!(bcomp->flags & BODY_FLAG_KINEMATIC))
+        if (!(bcomp->flags & DS_MOTION_KINEMATIC))
         {
             const f32 div_linear = V3Length(bcomp->linear_velocity) * g_solver_config->max_linear_velocity_magnitude_inv;
             const f32 div_angular = V3Length(bcomp->angular_velocity) * g_solver_config->max_angular_velocity_magnitude_inv;
@@ -320,7 +320,7 @@ void ds_BodyCCDStatic(struct ds_BodyCompute *bcomp, const struct ds_Dynamics *pi
         AabbTranslateOutward(&box1, &local1, t_shape1.position);
 
         const struct aabb swept = BboxUnion(box0, box1);
-        const ds_Array(u32) query = BVHQuery(tmp, &pipeline->static_bvh, &swept);
+        const ds_Array(u32) query = BVHQuery(tmp, &pipeline->bvh[DS_MOTION_STATIC], &swept);
         for (u32 j = 0; j < query.length; ++j)
         {
             const struct ds_Shape *s_static = pipeline->shape_pool.buf + query.buf[j];
@@ -388,7 +388,7 @@ void ds_BodyUpdateOrientationRange(struct ds_Dynamics *pipeline, struct ds_Proxy
         sim->world.rotation = rotation;
 
         const u32 kinematic = (ds_BodyKinematicCheck(body)) ? 1 : 0;
-        struct BVH *bvh = (kinematic) ? &pipeline->kinematic_bvh : &pipeline->dynamic_bvh;
+        struct BVH *bvh = pipeline->bvh + ds_BodyMotion(body);
         for (u32 j = body->shape_list.first; (i32) j != DLL_SENTINEL; j = shape->body_shape.next)
         {
             shape = pipeline->shape_pool.buf + j;

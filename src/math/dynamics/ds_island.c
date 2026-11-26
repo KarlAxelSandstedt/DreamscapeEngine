@@ -551,7 +551,7 @@ void ds_IslandSplit(struct ds_Dynamics *pipeline, const u32 island_to_split)
         {
             c = pipeline->contact_pool.buf + ci;
 
-            const u32 static_index = (ds_ContactStaticCheck(c)) ? ds_ContactStaticIndex(c) : U32_MAX;
+            const u32 static_index = (ds_ContactStaticCheck(c)) ? ds_ContactNonDynamicIndex(c) : U32_MAX;
             const u32 partial_island = ds_IslandSplitConstraint(&s, pipeline, c->body, static_index);
             s.contact_to_partial[ s.contact_to_partial_count++ ] = (struct ds_PartialIslandMember) { .index = (u32) ci, .partial_island = partial_island };
         }

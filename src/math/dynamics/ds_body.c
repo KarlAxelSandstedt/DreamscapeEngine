@@ -53,8 +53,8 @@ ds_BodyId ds_BodyAdd(struct ds_Dynamics *pipeline, const struct ds_BodyPrefab *p
 
 	body->entity = entity;
 
-	ds_Assert(prefab->flags == 0 || prefab->flags == BODY_FLAG_DYNAMIC || prefab->flags == BODY_FLAG_KINEMATIC);
-	body->flags = prefab->flags;
+	ds_Assert(prefab->motion == DS_MOTION_STATIC || prefab->motion == DS_MOTION_DYNAMIC || prefab->motion == DS_MOTION_KINEMATIC);
+	body->flags = prefab->motion;
 
 	body->low_velocity_time = 0.0f;
 

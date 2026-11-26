@@ -77,19 +77,19 @@ struct slot ds_ContactTryAdd(struct ds_Dynamics *pipeline, const struct ds_Conta
     c->generation += 1;
     const struct ds_Body *body[2] = { pipeline->body_pool.buf + shape[0]->body, pipeline->body_pool.buf + shape[1]->body };
     ds_Assert(ds_BodyDynamicCheck(body[0]) || ds_BodyDynamicCheck(body[1]));
-    c->flags = 0;
+    c->flags = DS_MOTION_DYNAMIC;
+    if (!ds_BodyDynamicCheck(body[0]))
+    {
+        c->flags = ds_BodyMotion(body[0]);
+    }
+    else if (!ds_BodyDynamicCheck(body[1]))
+    {
+        c->flags = ds_BodyMotion(body[1]) | DS_CONTACT_NON_DYNAMIC_INDEX;
+    }
+
     if (shape[0]->cshape_type != C_SHAPE_TRI_MESH && shape[1]->cshape_type != C_SHAPE_TRI_MESH)
     {
         c->flags |= DS_CONTACT_CONVEX;
-    }
-
-    if (ds_BodyStaticCheck(body[0]))
-    {
-        c->flags |= DS_CONTACT_STATIC;
-    }
-    else if (ds_BodyStaticCheck(body[1]))
-    {
-        c->flags |= DS_CONTACT_STATIC | DS_CONTACT_STATIC_INDEX;
     }
 
     const u32 inactive[2] = { body[0]->set != SOLVER_SET_ACTIVE, body[1]->set != SOLVER_SET_ACTIVE };
@@ -242,16 +242,11 @@ u32 ds_ContactCheckBVHOverlap(const struct ds_Dynamics *pipeline, const u32 cont
         pipeline->shape_pool.buf + contact->key.shape[1],
     };
     
-    const struct BVHNode *s_node = pipeline->static_bvh.pool.buf;
-    const struct BVHNode *d_node = pipeline->dynamic_bvh.pool.buf;
-
-    const struct aabb *bbox[2];
-    bbox[0] = ds_ShapeDynamicCheck(shape[0]) 
-            ? &d_node[ shape[0]->proxy ].bbox 
-            : &s_node[ shape[0]->proxy ].bbox;
-    bbox[1] = ds_ShapeDynamicCheck(shape[1]) 
-            ? &d_node[ shape[1]->proxy ].bbox 
-            : &s_node[ shape[1]->proxy ].bbox;
+    const struct aabb *bbox[2] =
+    {
+        &pipeline->bvh[ ds_ShapeMotion(shape[0]) ].pool.buf[ shape[0]->proxy ].bbox,
+        &pipeline->bvh[ ds_ShapeMotion(shape[1]) ].pool.buf[ shape[1]->proxy ].bbox,
+    };
     
     return AabbTest(bbox[0], bbox[1]);
 }
@@ -288,7 +283,7 @@ void ds_ContactPromote(struct ds_Dynamics *pipeline, const u32 contact)
     u32 expand_index = body[1]->island;
     if (ds_ContactStaticCheck(c))
     {
-        expand_index = body[ 1 - ds_ContactStaticIndex(c) ]->island;
+        expand_index = body[ 1 - ds_ContactNonDynamicIndex(c) ]->island;
     }
     else if (body[0]->island != body[1]->island)
     {

@@ -196,7 +196,7 @@ void ds_DynamicsRuntimeDealloc(struct ds_DynamicsRuntime *runtime)
 static void ds_DynamicsMouseAnchorAdd(struct ds_Dynamics *pipeline)
 {
     ds_Assert(pipeline->body_pool.count == 0);
-    const struct ds_BodyPrefab prefab = { .flags = 0 };
+    const struct ds_BodyPrefab prefab = { .motion = DS_MOTION_STATIC };
     const ds_TransformWorld t_world = ds_TransformWorldIdentity();
     const ds_BodyId id = ds_BodyAdd(pipeline, &prefab, &t_world, U32_MAX);
     ds_Assert(ds_BodyIdEqual(id, DS_BODY_MOUSE_ANCHOR_ID));
@@ -236,9 +236,9 @@ struct ds_Dynamics ds_DynamicsAlloc(const struct ds_DynamicsConfig *config, cons
 
 	ds_PoolAlloc(NULL, pipeline.shape_pool, initial_size, GROWABLE);
     pipeline.shape_dynamic_usage_set = ds_BitSetAlloc(NULL, initial_size, 0, GROWABLE);
-	pipeline.dynamic_bvh = DBVHAlloc(NULL, 2*initial_size, GROWABLE);
-	pipeline.static_bvh = DBVHAlloc(NULL, 2*initial_size, GROWABLE);
-	pipeline.kinematic_bvh = DBVHAlloc(NULL, 2*initial_size, GROWABLE);
+	pipeline.bvh[DS_MOTION_DYNAMIC] = DBVHAlloc(NULL, 2*initial_size, GROWABLE);
+	pipeline.bvh[DS_MOTION_STATIC] = DBVHAlloc(NULL, 2*initial_size, GROWABLE);
+	pipeline.bvh[DS_MOTION_KINEMATIC] = DBVHAlloc(NULL, 2*initial_size, GROWABLE);
     pipeline.shape_dirty_set = ds_BitSetAlloc(NULL, initial_size, 0, GROWABLE);
     ds_CPoolAlloc(NULL, pipeline.dirty_shape_query, initial_size, GROWABLE);
 
@@ -289,9 +289,9 @@ void ds_DynamicsDealloc(struct ds_Dynamics *pipeline)
     ds_BitSetDealloc(&pipeline->shape_dynamic_usage_set);
     ds_BitSetDealloc(&pipeline->shape_dirty_set);
     ds_CPoolDealloc(pipeline->dirty_shape_query);
-	BVHFree(&pipeline->dynamic_bvh);
-	BVHFree(&pipeline->static_bvh);
-	BVHFree(&pipeline->kinematic_bvh);
+	BVHFree(&pipeline->bvh[DS_MOTION_DYNAMIC]);
+	BVHFree(&pipeline->bvh[DS_MOTION_STATIC]);
+	BVHFree(&pipeline->bvh[DS_MOTION_KINEMATIC]);
     ds_PoolDealloc(pipeline->contact_pool);
     ds_CPoolDealloc(pipeline->contact_narrow_pool);
     ds_HashMapDealloc(&pipeline->contact_map);
@@ -376,9 +376,9 @@ void ds_DynamicsFlush(struct ds_Dynamics *pipeline)
     ds_BitSetClear(&pipeline->shape_dynamic_usage_set, 0);
     ds_BitSetClear(&pipeline->shape_dirty_set, 0);
     ds_CPoolFlush(pipeline->dirty_shape_query);
-	DBVHFlush(&pipeline->dynamic_bvh);
-	DBVHFlush(&pipeline->static_bvh);
-	DBVHFlush(&pipeline->kinematic_bvh);
+	DBVHFlush(&pipeline->bvh[DS_MOTION_DYNAMIC]);
+	DBVHFlush(&pipeline->bvh[DS_MOTION_STATIC]);
+	DBVHFlush(&pipeline->bvh[DS_MOTION_KINEMATIC]);
 	ds_PoolFlush(pipeline->shape_pool);
 
 	ds_PoolFlush(pipeline->event_pool);
@@ -450,9 +450,9 @@ u32 ds_BroadJobPhaseDispatch(const ds_JobId job)
                     continue;
                 }
 
-                const struct BVHNode *node = pipeline->dynamic_bvh.pool.buf + shape->proxy;
-                const ds_Array(u32) dynamic_query = BVHQueryAndFilterOnBody(tmp, &pipeline->dynamic_bvh, node, dirty);
-                const ds_Array(u32) static_query = BVHQuery(tmp, &pipeline->static_bvh, &node->bbox);
+                const struct BVHNode *node = pipeline->bvh[DS_MOTION_DYNAMIC].pool.buf + shape->proxy;
+                const ds_Array(u32) dynamic_query = BVHQueryAndFilterOnBody(tmp, &pipeline->bvh[DS_MOTION_DYNAMIC], node, dirty);
+                const ds_Array(u32) static_query = BVHQuery(tmp, &pipeline->bvh[DS_MOTION_STATIC], &node->bbox);
                 
                 query[si].dynamic_count = 0;
                 query[si].dynamic_query = ArenaPushPacked(frame, dynamic_query.length*sizeof(u32));
@@ -1107,11 +1107,12 @@ static u32 ds_RebuildJobSetup(const u32 job_index)
     struct ds_RebuildJobPhase *phase = (struct ds_RebuildJobPhase *) g_scheduler->phase;
     struct ds_RebuildJob *job = phase->setup_job + job_index;
     struct ds_Dynamics *pipeline = phase->pipeline;
+    struct BVH *bvh = pipeline->bvh + DS_MOTION_DYNAMIC;
     struct ds_ParallelForChain *chain;
     struct ds_ParallelFor *pf;
     u32 low, high;
 
-    ds_Assert(pipeline->dynamic_bvh.pool.count >= 2);
+    ds_Assert(bvh->pool.count >= 2);
     
     /* Update DBVH leaf bounding boxes */
     chain = &phase->pf_proxy_update;
@@ -1127,7 +1128,7 @@ static u32 ds_RebuildJobSetup(const u32 job_index)
             for (u32 li = low; li < high; ++li)
             {
                 struct ds_RebuildLeaf *leaf = phase->leaf_buf + li;
-                struct BVHNode *node = pipeline->dynamic_bvh.pool.buf + leaf->index;
+                struct BVHNode *node = bvh->pool.buf + leaf->index;
                 const struct ds_Shape *shape = pipeline->shape_pool.buf + node->bt_child[0];
                 node->bbox = ds_ShapeWorldBbox(pipeline, shape);
                 node->bbox.min = V3AddConstant(node->bbox.min, -(pipeline->config.solver.speculative_distance + shape->margin));
@@ -1170,8 +1171,8 @@ static u32 ds_RebuildJobSetup(const u32 job_index)
         const u32 next = AtomicFetchAddRlx32(&phase->a_internal_next, 1);
         const u32 index = phase->internal_buf[next];
         ds_Assert(next < phase->internal_count);
-        pipeline->dynamic_bvh.bt.root = index;
-        pipeline->dynamic_bvh.pool.buf[index].bt_parent = BT_INDEX_NULL;
+        bvh->bt.root = index;
+        bvh->pool.buf[index].bt_parent = BT_INDEX_NULL;
 
         job->range = ds_RebuildRangeInit(index, 0, phase->leaf_count, axis[0], pivot[0]);
         AtomicFetchAddRlx32(&phase->a_range_seed_count, 1);
@@ -1199,6 +1200,7 @@ static u32 ds_RebuildJobRange(const u32 job_index)
     ProfZone;
 
     struct ds_RebuildJobPhase *phase = (struct ds_RebuildJobPhase *) g_scheduler->phase;
+    struct BVH *bvh = phase->pipeline->bvh + DS_MOTION_DYNAMIC;
     struct ds_RebuildJob *job = phase->range_job + job_index;
     struct ds_RebuildLeaf *leaf = phase->leaf_buf;
     struct ds_Dynamics *pipeline = phase->pipeline;
@@ -1283,16 +1285,16 @@ static u32 ds_RebuildJobRange(const u32 job_index)
             {
                 leaves_completed += 1;
                 const u32 index = leaf[base[s]].index;
-                phase->pipeline->dynamic_bvh.pool.buf[parent].bt_child[s] = index;
-                phase->pipeline->dynamic_bvh.pool.buf[index].bt_parent = BT_LEAF_MASK | parent;
+                bvh->pool.buf[parent].bt_child[s] = index;
+                bvh->pool.buf[index].bt_parent = BT_LEAF_MASK | parent;
             }
             else
             {
                 const u32 next = AtomicFetchAddRlx32(&phase->a_internal_next, 1);
                 const u32 index = phase->internal_buf[next];
                 ds_Assert(next < phase->internal_count);
-                phase->pipeline->dynamic_bvh.pool.buf[parent].bt_child[s] = index;
-                phase->pipeline->dynamic_bvh.pool.buf[index].bt_parent = parent;
+                bvh->pool.buf[parent].bt_child[s] = index;
+                bvh->pool.buf[index].bt_parent = parent;
                 if (t.count[s] <= phase->small_leaf_limit || work_count == 0)
                 {
                     range_buf[ work_count++ ] = ds_RebuildRangeInit(index, base[s], t.count[s], axis[s], pivot[s]);
@@ -1548,7 +1550,7 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
                         {
                             ProfZoneNamed("Reinsert");
                             struct ds_Shape *shape = pipeline->shape_pool.buf + dirty->shape;
-                            struct BVH *bvh = (ds_ShapeDynamicCheck(shape)) ? &pipeline->dynamic_bvh : &pipeline->kinematic_bvh;
+                            struct BVH *bvh = pipeline->bvh + ds_ShapeMotion(shape);
                     	    DBVHRemove(bvh, shape->proxy);
                     	    shape->proxy = DBVHInsert(bvh, shape->body, dirty->shape, &dirty->bbox);
                             ProfZoneEnd;
@@ -1583,8 +1585,8 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
                         ds_BitSetSet(&pipeline->shape_dirty_set, dirty->shape, 1);
                         if (dirty->reinsert)
                         {
-                    	    DBVHRemove(&pipeline->kinematic_bvh, shape->proxy);
-                    	    shape->proxy = DBVHInsert(&pipeline->kinematic_bvh, shape->body, dirty->shape, &dirty->bbox);
+                    	    DBVHRemove(&pipeline->bvh[DS_MOTION_KINEMATIC], shape->proxy);
+                    	    shape->proxy = DBVHInsert(&pipeline->bvh[DS_MOTION_KINEMATIC], shape->body, dirty->shape, &dirty->bbox);
                         }
                     }
                 }
@@ -1601,8 +1603,8 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
                     {
                         ProfZoneNamed("LeafArray Ordering");
 
-                        const struct ds_BitSet *leaf_usage = &pipeline->dynamic_bvh.leaf_set;
-                        rebuild_phase->leaf_count = BTLeafCount(pipeline->dynamic_bvh.bt);
+                        const struct ds_BitSet *leaf_usage = &pipeline->bvh[DS_MOTION_DYNAMIC].leaf_set;
+                        rebuild_phase->leaf_count = BTLeafCount(pipeline->bvh[DS_MOTION_DYNAMIC].bt);
                         rebuild_phase->leaf_buf = ArenaPushAligned(pipeline->runtime.mem_tick, rebuild_phase->leaf_count*sizeof(struct ds_RebuildLeaf), DS_CACHE_LINE);
 
                         u32 li = 0;
@@ -1621,8 +1623,8 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
                     {
                         ProfZoneNamed("InternalArray Setup");
 
-                        const struct ds_BitSet *internal_usage = &pipeline->dynamic_bvh.internal_set;
-                        rebuild_phase->internal_count = pipeline->dynamic_bvh.bt.count - rebuild_phase->leaf_count;
+                        const struct ds_BitSet *internal_usage = &pipeline->bvh[DS_MOTION_DYNAMIC].internal_set;
+                        rebuild_phase->internal_count = pipeline->bvh[DS_MOTION_DYNAMIC].bt.count - rebuild_phase->leaf_count;
                         rebuild_phase->internal_buf = ArenaPushAligned(pipeline->runtime.mem_tick, rebuild_phase->internal_count*sizeof(u32), DS_CACHE_LINE);
 
                         u32 ii = 0;
@@ -1688,7 +1690,7 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
                      * there propagate bounding boxes up to the root. However, the serial propagation 
                      * is quite cheap so we skip the parallelization work for now.
                      */
-                    BVHPropagateBoundingBoxesFromLeaves(&pipeline->dynamic_bvh);
+                    BVHPropagateBoundingBoxesFromLeaves(&pipeline->bvh[DS_MOTION_DYNAMIC]);
 
                     ArenaPopRecord(pipeline->runtime.mem_tick);
 
@@ -2068,13 +2070,12 @@ u32f32 ds_DynamicsRayCastParameter(const struct ds_Dynamics *pipeline, const str
 
     /* the BVHs hold f32 world boxes, searched with the demoted ray; shapes test the f64 ray */
     const struct ray ray_bvh = { .origin = V3F64Demote(ray->origin), .dir = ray->dir };
-    const struct BVH *bvh[3] = { &pipeline->static_bvh, &pipeline->kinematic_bvh, &pipeline->dynamic_bvh };
     struct arena *tmp = ArenaPushScratch();
 
     u32f32 hit = u32f32_inline(U32_MAX, F32_INFINITY);
     for (u32 b = 0; b < 3; ++b)
     {
-        struct BVHCastInfo info = BVHRayCastInit(tmp, bvh[b], &ray_bvh);
+        struct BVHCastInfo info = BVHRayCastInit(tmp, pipeline->bvh + b, &ray_bvh);
         info.hit = hit;
         while (info.hit_queue.count)
         {
@@ -2123,7 +2124,7 @@ void ds_DynamicsPrintUsage(const struct ds_Dynamics *pipeline)
     fprintf(stderr, "Physics:\n");
     fprintf(stderr, "\tbodies:                      %u\n", pipeline->body_pool.count);
     fprintf(stderr, "\tshapes:                      %u\n", pipeline->shape_pool.count);
-    fprintf(stderr, "\tdynamic_bvh nodes:           %u\n", pipeline->dynamic_bvh.pool.count);
+    fprintf(stderr, "\tdynamic_bvh nodes:           %u\n", pipeline->bvh[DS_MOTION_DYNAMIC].pool.count);
     fprintf(stderr, "\tevents:                      %u\n", pipeline->event_pool.count);
     fprintf(stderr, "\tislands:                     %u\n", pipeline->island_pool.count);
     fprintf(stderr, "\tcontacts:                    %u\n", pipeline->contact_pool.count);

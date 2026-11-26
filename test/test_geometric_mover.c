@@ -98,7 +98,7 @@ static ds_BodyId MoverTestAdd(struct mover_TestWorld *world, const struct c_Shap
 {
     const utf8 id = Utf8Format(&world->mem, "shape%u", world->count);
     const struct slot slot = c_ShapeDBAdd(&world->cshape_db, id, src);
-    const struct ds_BodyPrefab body_prefab = { .flags = (dynamic) ? BODY_FLAG_DYNAMIC : 0 };
+    const struct ds_BodyPrefab body_prefab = { .motion = (dynamic) ? DS_MOTION_DYNAMIC : DS_MOTION_STATIC };
     const ds_TransformWorld t_world = { .rotation = rotation, .position = V3F64Add(world->origin, V3Promote(position)) };
     const ds_BodyId body = ds_BodyAdd(&world->pipeline, &body_prefab, &t_world, world->count);
     const struct ds_ShapePrefab shape_prefab = { .cshape = slot.index, .density = 1.0f, .restitution = 0.0f, .friction = 0.5f };
