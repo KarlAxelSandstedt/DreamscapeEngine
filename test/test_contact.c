@@ -1623,11 +1623,12 @@ struct test_Output HullCapsuleContactCasesTest(struct test_Environment *env)
     TEST_TRUE(ChContact(env->mem_2, &m, &contact, &h, &c) && ChVerify(&stats, contact, &m, &h, &c));
     TEST_EQUAL(contact, 0);
 
-    /* tilted 0.02 rad, low end 1 cm beyond r, high end ~3 cm beyond: one point at the low end, depth -0.01 */
+    /* tilted 0.02 rad, low end 1 cm beyond r, high end ~3 cm beyond (outside the band): two points, depths -0.01 and -0.03 */
     CtCapsuleInit(&c, 0.5f, 0.2f, QUnitAxisAngle(V3(0.0f, 0.0f, 1.0f), -F32_PI/2.0f + 0.02f), D3(0.0, 1.21 + 0.5*0.019998667, 0.0));
     TEST_TRUE(ChContact(env->mem_2, &m, &contact, &h, &c) && ChVerify(&stats, contact, &m, &h, &c));
-    TEST_TRUE(contact && m.v_count == 1);
-    TEST_TRUE(CtNearD3(D3V3(m.n), D3(0.0, 1.0, 0.0)) && CtNear(m.depth[0], -0.01) && CtNear(m.v[0].y, 1.0));
+    TEST_TRUE(contact && m.v_count == 2);
+    TEST_TRUE(CtNearD3(D3V3(m.n), D3(0.0, 1.0, 0.0)) && CtNear(m.v[0].y, 1.0) && CtNear(m.v[1].y, 1.0));
+    TEST_TRUE(CtNear(F64MaxTest(m.depth[0], m.depth[1]), -0.01) && CtNear(F64MinTest(m.depth[0], m.depth[1]), -0.01 - 0.019998667));
 
     /* resting flat (shallow, gap 0.1): two points (+-0.5, 1, 0), n = +y, depth 0.1 */
     CtCapsuleInit(&c, 0.5f, 0.2f, along_x, D3(0.0, 1.1, 0.0));
@@ -1663,25 +1664,31 @@ struct test_Output HullCapsuleContactCasesTest(struct test_Environment *env)
     TEST_TRUE(CtNear(m.depth[0], 0.2 + 0.05/1.41421356));
     TEST_TRUE(CtNearD3(D3V3(m.v[0]), D3(0.0, 1.0, 1.0)));
 
-    /* e = 0.01: the face bias keeps the top face: n = +y, one point (0, 1, 1) (the clipped end), depth r + 0.01 */
+    /*
+     * e = 0.01: the face bias keeps the top face: n = +y, two points: (0, 1, 1) (the clipped end), depth r + 0.01, and
+     * the upper end (0, 1.70210678, 0.28789322) projected onto the face, depth r - 0.70210678
+     */
     CtCapsuleInit(&c, 1.0f, 0.2f, QUnitAxisAngle(V3(1.0f, 0.0f, 0.0f), -F32_PI/4.0f), D3(0.0, 0.995, 0.995));
     TEST_TRUE(ChContact(env->mem_2, &m, &contact, &h, &c) && ChVerify(&stats, contact, &m, &h, &c));
-    TEST_EQUAL(m.v_count, 1);
+    TEST_EQUAL(m.v_count, 2);
     TEST_TRUE(CtNearD3(D3V3(m.n), D3(0.0, 1.0, 0.0)));
-    TEST_TRUE(CtNear(m.depth[0], 0.21));
-    TEST_TRUE(CtNearD3(D3V3(m.v[0]), D3(0.0, 1.0, 1.0)));
+    const u32 deeper = (m.depth[0] < m.depth[1]);
+    TEST_TRUE(CtNear(m.depth[deeper], 0.21) && CtNearD3(D3V3(m.v[deeper]), D3(0.0, 1.0, 1.0)));
+    TEST_TRUE(CtNear(m.depth[1 - deeper], 0.2 - 0.70210678) && CtNearD3(D3V3(m.v[1 - deeper]), D3(0.0, 1.0, 0.28789322)));
 
-    /* upright on the top face, low end at y = 1.1: one point (0, 1, 0), depth 0.1 */
+    /* upright on the top face, low end at y = 1.1: two points at (0, 1, 0), one per end, depths 0.1 and -0.9 (the top end) */
     CtCapsuleInit(&c, 0.5f, 0.2f, QIdentity(), D3(0.0, 1.6, 0.0));
     TEST_TRUE(ChContact(env->mem_2, &m, &contact, &h, &c) && ChVerify(&stats, contact, &m, &h, &c));
-    TEST_EQUAL(m.v_count, 1);
-    TEST_TRUE(CtNearD3(D3V3(m.n), D3(0.0, 1.0, 0.0)) && CtNear(m.depth[0], 0.1) && CtNearD3(D3V3(m.v[0]), D3(0.0, 1.0, 0.0)));
+    TEST_EQUAL(m.v_count, 2);
+    TEST_TRUE(CtNearD3(D3V3(m.n), D3(0.0, 1.0, 0.0)) && CtNearD3(D3V3(m.v[0]), D3(0.0, 1.0, 0.0)) && CtNearD3(D3V3(m.v[1]), D3(0.0, 1.0, 0.0)));
+    TEST_TRUE(CtNear(F64MaxTest(m.depth[0], m.depth[1]), 0.1) && CtNear(F64MinTest(m.depth[0], m.depth[1]), -0.9));
 
-    /* upright, low end at y = 0.8 (deep): one point (0, 1, 0), depth 0.4 */
+    /* upright, low end at y = 0.8 (deep): two points at (0, 1, 0), depths 0.4 and -0.6 (the top end) */
     CtCapsuleInit(&c, 0.5f, 0.2f, QIdentity(), D3(0.0, 1.3, 0.0));
     TEST_TRUE(ChContact(env->mem_2, &m, &contact, &h, &c) && ChVerify(&stats, contact, &m, &h, &c));
-    TEST_EQUAL(m.v_count, 1);
-    TEST_TRUE(CtNearD3(D3V3(m.n), D3(0.0, 1.0, 0.0)) && CtNear(m.depth[0], 0.4) && CtNearD3(D3V3(m.v[0]), D3(0.0, 1.0, 0.0)));
+    TEST_EQUAL(m.v_count, 2);
+    TEST_TRUE(CtNearD3(D3V3(m.n), D3(0.0, 1.0, 0.0)) && CtNearD3(D3V3(m.v[0]), D3(0.0, 1.0, 0.0)) && CtNearD3(D3V3(m.v[1]), D3(0.0, 1.0, 0.0)));
+    TEST_TRUE(CtNear(F64MaxTest(m.depth[0], m.depth[1]), 0.4) && CtNear(F64MinTest(m.depth[0], m.depth[1]), -0.6));
 
     /* half height 0 (a sphere) at y = 0.95: n = +y, depth r + 0.05 (the clip of a point: two equal points) */
     CtCapsuleInit(&c, 0.0f, 0.2f, QIdentity(), D3(0.3, 0.95, 0.0));
@@ -1723,11 +1730,11 @@ struct test_Output HullCapsuleContactCasesTest(struct test_Environment *env)
         TEST_EQUAL(contact, 1);
     }
 
-    /* lying on the top face tilted 0.2 rad: the high end is lifted beyond r: one point at the low end */
+    /* lying on the top face tilted 0.2 rad, the high end lifted beyond r: two points, depths 0.1 and 0.2 - 0.2987 */
     CtCapsuleInit(&c, 0.5f, 0.2f, QUnitAxisAngle(V3(0.0f, 0.0f, 1.0f), -F32_PI/2.0f + 0.2f), D3(0.0, 1.1 + 0.5*0.19866933, 0.0));
     TEST_TRUE(ChContact(env->mem_2, &m, &contact, &h, &c) && ChVerify(&stats, contact, &m, &h, &c));
-    TEST_EQUAL(m.v_count, 1);
-    TEST_TRUE(CtNearD3(D3V3(m.n), D3(0.0, 1.0, 0.0)) && CtNear(m.depth[0], 0.1));
+    TEST_EQUAL(m.v_count, 2);
+    TEST_TRUE(CtNearD3(D3V3(m.n), D3(0.0, 1.0, 0.0)) && CtNear(F64MaxTest(m.depth[0], m.depth[1]), 0.1) && CtNear(F64MinTest(m.depth[0], m.depth[1]), 0.2 - 0.29866933));
 
 	return output;
 }
@@ -1806,7 +1813,7 @@ static void ChSweepStep(struct ch_Sweep *s, const u32 contact, const struct c_Ma
 
 /*
  * Continuity sweeps (h = 1, r = 0.2), every manifold verified:
- *  tilt:  lying on the top face, low end 0.1 above it, tilted 0 .. 0.2 rad (two points -> one point)
+ *  tilt:  lying on the top face, low end 0.1 above it, tilted 0 .. 0.2 rad (two points throughout)
  *  sink:  tilted 0.02 rad, low end from 0.1 above to 0.1 below the face (shallow -> deep)
  *  edge:  centered 0.05 inside the edge y = z = 1 (along the bisector), turned about x from along z (top face)
  *         through across the edge (edge axis) to along y (front face)
@@ -3657,9 +3664,9 @@ static u32 McCapsuleSoundCheck(const struct c_Manifold *m, const struct d3 tri[3
  * Capsule vs one triangle ((0,0,0), (0,0,S), (S,0,0), ccw normal +y), r = 0.05 S, h = 0.1 S, random poses.
  * Hand cases (mesh frame; n from the capsule to the mesh):
  *      parallel above / below the face at 0.5 r     2 points, n = -y, depths 0.5 r / none (one-sided)
- *      perpendicular, its end 0.5 r above           1 point, n = -y, depth 0.5 r
- *      piercing the face (ends at 1.25 h, -0.75 h)  1 point (the deeper end), n = -y, depth r + 0.75 h
- *      (both upright: S = 0.01 puts the top end within r + spec, a second point there, its depth 2 h less)
+ *      perpendicular, its end 0.5 r above           2 points (one per end), n = -y, depths 0.5 r and 0.5 r - 2 h
+ *      piercing the face (ends at 1.25 h, -0.75 h)  2 points, n = -y, depths r + 0.75 h (the deeper end) and
+ *                                                  r - 1.25 h
  *      lying in the plane                           2 points, n = -y, depths r, or none (the center on the
  *                                                  plane: the frame change's rounding decides its side)
  *      across edge z = 0 (parallel, 0.5 r above)    2 points (clipped to the triangle), depths 0.5 r
@@ -3668,7 +3675,7 @@ static u32 McCapsuleSoundCheck(const struct c_Manifold *m, const struct d3 tri[3
  *      parallel 1/2 spec / 3/2 spec beyond r        2 points, n = -y, depths -spec/2 / none
  *      (spec = speculative_distance)
  * Speculative, tilted 30 degrees, its low end spec/2 beyond r over the centroid (S = 1, 1e2: the high end lies beyond
- * the band): 1 point, n = -y, depth -spec/2.
+ * the band): 2 points, n = -y, depths -spec/2 and -spec/2 - h (the high end).
  * Deep near an edge (see below): the edge contact, or the face contact when the clipped face separation is within
  * sat_face_bias of the edge's.
  * Random capsules near the triangle, the capsule 1e-3 .. 1e2 times the triangle, a quarter of them with the low end
@@ -3705,8 +3712,8 @@ struct test_Output MeshCapsuleCasesTest(struct test_Environment *env)
         {
             { D3Add(C, D3(0.0, 0.5*r, 0.0)), diag, 2, D3(0.0, -1.0, 0.0), 0, 0.5*r },
             { D3Sub(C, D3(0.0, 0.5*r, 0.0)), diag, 0, D3(0.0, 1.0, 0.0), 0, 0.5*r },
-            { D3Add(C, D3(0.0, h + 0.5*r, 0.0)), V3(0.0f, 1.0f, 0.0f), 1, D3(0.0, -1.0, 0.0), 0, 0.5*r },
-            { D3Add(C, D3(0.0, 0.25*h, 0.0)), V3(0.0f, 1.0f, 0.0f), 1, D3(0.0, -1.0, 0.0), 0, r + 0.75*h },
+            { D3Add(C, D3(0.0, h + 0.5*r, 0.0)), V3(0.0f, 1.0f, 0.0f), 2, D3(0.0, -1.0, 0.0), 0, 0.5*r },
+            { D3Add(C, D3(0.0, 0.25*h, 0.0)), V3(0.0f, 1.0f, 0.0f), 2, D3(0.0, -1.0, 0.0), 0, r + 0.75*h },
             { C, diag, 2, D3(0.0, -1.0, 0.0), 1, r },
             { D3(S / 3.0, 0.5*r, 0.0), V3(0.0f, 0.0f, 1.0f), 2, D3(0.0, -1.0, 0.0), 0, 0.5*r },
             { D3Add(D3(0.0, 0.5*r, 0.0), D3Scale(D3(-0.57735027, 0.57735027, -0.57735027), h)), V3(-0.57735027f, 0.57735027f, -0.57735027f), 1, D3(0.0, -1.0, 0.0), 0, 0.5*r },
@@ -3719,7 +3726,7 @@ struct test_Output MeshCapsuleCasesTest(struct test_Environment *env)
             const struct c_Shape mesh = McSingleTriangle(env->mem_2, S);
             const struct mc_CapsuleCase cc = McCapsuleCase(env->mem_2, &mesh, r, h, c[k].center, c[k].axis);
             const struct d3 n_expected = McCapsuleDirection(&cc, c[k].n);
-            const u32 top = ((k == 2 || k == 3) && c[k].center.y + (f64) h <= (f64) r + spec);
+            const u32 upright = (k == 2 || k == 3);
             u32 ok = (cc.result.length == (u32) (c[k].v_count != 0)) || (c[k].on_plane && cc.result.length == 0);
             const struct c_Manifold *m = cc.result.buf;
             f64 deepest = 0.0;
@@ -3728,10 +3735,10 @@ struct test_Output MeshCapsuleCasesTest(struct test_Environment *env)
                 const f64 dn = D3Length(D3Sub(D3V3(m->n), n_expected));
                 const u32 coincident = (k == 6 && m->v_count == 2 && D3Length(D3Sub(D3V3(m->v[0]), D3V3(m->v[1]))) <= tol);
                 ok = McCapsuleManifoldCheck(&deepest, m, r, h, tol, 0) && McCapsuleSoundCheck(m, cc.tri, r, h, tol)
-                  && (m->v_count == c[k].v_count + top || coincident) && dn <= 1e-4;
+                  && (m->v_count == c[k].v_count || coincident) && dn <= 1e-4;
                 for (u32 i = 0; ok && i < m->v_count; ++i)
                 {
-                    const f64 depth = (top && m->v[i].y > 0.0f) ? c[k].depth - 2.0*(f64) h : c[k].depth;
+                    const f64 depth = (upright && m->v[i].y > 0.0f) ? c[k].depth - 2.0*(f64) h : c[k].depth;
                     ok = F64AbsTest((f64) m->depth[i] - depth) <= tol;
                 }
             }
@@ -3771,12 +3778,12 @@ struct test_Output MeshCapsuleCasesTest(struct test_Environment *env)
             if (ok)
             {
                 f64 deepest = 0.0;
-                ok = McCapsuleManifoldCheck(&deepest, m, r, h, tol, 1) && McCapsuleSoundCheck(m, cc.tri, r, h, tol) && m->v_count == 1 && D3Length(D3Sub(D3V3(m->n), n_expected)) <= 1e-4 && F64AbsTest(deepest + 0.5*spec) <= tol;
+                ok = McCapsuleManifoldCheck(&deepest, m, r, h, tol, 0) && McCapsuleSoundCheck(m, cc.tri, r, h, tol) && m->v_count == 2 && D3Length(D3Sub(D3V3(m->n), n_expected)) <= 1e-4 && F64AbsTest(deepest + 0.5*spec) <= tol && F64AbsTest(F64MinTest((f64) m->depth[0], (f64) m->depth[1]) + 0.5*spec + (f64) h) <= tol;
             }
             *env->mem_2 = record;
             if (!ok)
             {
-                fprintf(stderr, "Mesh capsule tilted speculative case (size %g): manifolds %u, expected 1 point, depth %g, n (%g, %g, %g)\n", S, cc.result.length, -0.5*spec, n_expected.x, n_expected.y, n_expected.z);
+                fprintf(stderr, "Mesh capsule tilted speculative case (size %g): manifolds %u, expected 2 points, depths %g and %g, n (%g, %g, %g)\n", S, cc.result.length, -0.5*spec, -0.5*spec - (f64) h, n_expected.x, n_expected.y, n_expected.z);
                 if (cc.result.length)
                 {
                     c_ManifoldDebugPrint(m);

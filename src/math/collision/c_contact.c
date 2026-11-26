@@ -533,7 +533,7 @@ u32 c_HullCapsuleContact(struct c_Manifold *out, struct ds_ConvexCache *cache, c
     {
         /*
          * Two points if the GJK normal is within face_parallel_max_degrees of the reference face's normal and
-         * both ends of the clipped core lie within max_dist (d_i <= max_dist); otherwise one point. Each end has
+         * either end of the clipped core lies within max_dist (d_i <= max_dist); otherwise one point. Each end has
          * its own depth.
          */
         const u32 ref = DcelSupportFace(h, n);
@@ -544,7 +544,7 @@ u32 c_HullCapsuleContact(struct c_Manifold *out, struct ds_ConvexCache *cache, c
         {
             const f32 d0 = PlanePointSignedDistance(ref_pl, ref_clip.p[0]);
             const f32 d1 = PlanePointSignedDistance(ref_pl, ref_clip.p[1]);
-            if (d0 <= max_dist && d1 <= max_dist)
+            if (d0 <= max_dist || d1 <= max_dist)
             {
                 m->v_count = 2;
                 m->n = ref_pl->normal;
@@ -621,25 +621,16 @@ u32 c_HullCapsuleContact(struct c_Manifold *out, struct ds_ConvexCache *cache, c
 
     m->n = pl->normal;
 
-    /* as in the shallow path: two points if both clipped ends lie within max_dist (d_i <= max_dist), else the deeper end */
+    /* as in the shallow path: two points, the deeper end lies within max_dist (face_contact) */
     if (face_contact)
     {
-        if (depth[1 - deeper] <= max_dist)
-        {
-            m->v_count = 2;
-            m->v[0] = V3Sub(clip.p[0], V3Scale(pl->normal, depth[0]));
-            m->v[1] = V3Sub(clip.p[1], V3Scale(pl->normal, depth[1]));
-            m->id[0] = c_PointIdConstant(0);
-            m->id[1] = c_PointIdConstant(1);
-            m->depth[0] = radius - depth[0];
-            m->depth[1] = radius - depth[1];
-            return manifold_count;
-        }
-
-        m->v_count = 1;
-        m->v[0] = V3Sub(clip.p[deeper], V3Scale(pl->normal, depth[deeper]));
-        m->id[0] = c_PointIdConstant(deeper);
-        m->depth[0] = radius - depth[deeper];
+        m->v_count = 2;
+        m->v[0] = V3Sub(clip.p[0], V3Scale(pl->normal, depth[0]));
+        m->v[1] = V3Sub(clip.p[1], V3Scale(pl->normal, depth[1]));
+        m->id[0] = c_PointIdConstant(0);
+        m->id[1] = c_PointIdConstant(1);
+        m->depth[0] = radius - depth[0];
+        m->depth[1] = radius - depth[1];
         return manifold_count;
     }
 
@@ -1918,7 +1909,7 @@ static void c_MeshCapsuleTriangles(struct c_MeshContactHelper *helper, const str
 
             /*
              * Two points if n is within face_parallel_max_degrees of the front face normal (f, from the triangle to
-             * the capsule: -n ~ f) and both ends of the clipped core lie within max_dist (d_i <= max_dist); otherwise
+             * the capsule: -n ~ f) and either end of the clipped core lies within max_dist (d_i <= max_dist); otherwise
              * one point. Each end has its own depth. As for hulls, the closest feature may be an edge (a core parallel
              * to the face is as close to it as to the edge it crosses).
              */
@@ -1929,7 +1920,7 @@ static void c_MeshCapsuleTriangles(struct c_MeshContactHelper *helper, const str
             {
                 const f32 d0 = V3Dot(f, V3Sub(clip.p[0], tri[0]));
                 const f32 d1 = V3Dot(f, V3Sub(clip.p[1], tri[0]));
-                if (d0 <= max_dist && d1 <= max_dist)
+                if (d0 <= max_dist || d1 <= max_dist)
                 {
                     m->v_count = 2;
                     m->n = V3Scale(f, -1.0f);
@@ -2021,27 +2012,17 @@ static void c_MeshCapsuleTriangles(struct c_MeshContactHelper *helper, const str
 
         m->n = V3Scale(f, -1.0f);
 
-        /* as in the shallow path: two points if both clipped ends lie within max_dist (d_i <= max_dist), else the deeper end */
+        /* as in the shallow path: two points, the deeper end lies within max_dist (face_contact) */
         if (face_contact)
         {
-            if (depth[1 - deeper] <= max_dist)
-            {
-                m->v_count = 2;
-                m->v[0] = V3Add(clip.p[0], V3Scale(m->n, radius));
-                m->v[1] = V3Add(clip.p[1], V3Scale(m->n, radius));
-                m->id[0] = c_PointIdConstant(0);
-                m->id[1] = c_PointIdConstant(1);
-                m->depth[0] = radius - depth[0];
-                m->depth[1] = radius - depth[1];
-                r->depth = c_ManifoldDeepest(m);
-                continue;
-            }
-
-            m->v_count = 1;
-            m->v[0] = V3Add(clip.p[deeper], V3Scale(m->n, radius));
-            m->id[0] = c_PointIdConstant(deeper);
-            m->depth[0] = radius - depth[deeper];
-            r->depth = m->depth[0];
+            m->v_count = 2;
+            m->v[0] = V3Add(clip.p[0], V3Scale(m->n, radius));
+            m->v[1] = V3Add(clip.p[1], V3Scale(m->n, radius));
+            m->id[0] = c_PointIdConstant(0);
+            m->id[1] = c_PointIdConstant(1);
+            m->depth[0] = radius - depth[0];
+            m->depth[1] = radius - depth[1];
+            r->depth = c_ManifoldDeepest(m);
             continue;
         }
 
