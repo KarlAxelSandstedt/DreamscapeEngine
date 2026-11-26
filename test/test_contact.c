@@ -2727,6 +2727,28 @@ struct test_Output HullContactCasesTest(struct test_Environment *env)
         }
     }
 
+    /*
+     * A slab and a box 3.8 mm apart (within the band), found by HullContactRandomTest (2026-11-24, toi_ccd_plan.txt
+     * C1b step 12): a speculative contact, every depth < 0, checked as any contact, fresh and cached at the same pose.
+     */
+    {
+        const v3 hw_a = V3(1.16981721f, 1.9140923f, 1.05459428f);
+        const v3 hw_b = V3(4.74637556f, 1.53886569f, 4.32363987f);
+        const struct c_Shape slab_a = { .type = C_SHAPE_CONVEX_HULL, .hull = DcelBox(env->mem_1, hw_a) };
+        const struct c_Shape box_b = { .type = C_SHAPE_CONVEX_HULL, .hull = DcelBox(env->mem_1, hw_b) };
+        ChHullInit(&a, &slab_a, 1, hw_a, Q(-0.262707829f, -0.0966142267f, 0.027532002f, 0.959631324f), D3(-0.18229986783028451, -0.11586486400606155, 0.14704942706030266));
+        ChHullInit(&b, &box_b, 1, hw_b, Q(-0.698982358f, 0.658737421f, -0.25397709f, -0.113949098f), D3(-2.7603393686815343, 5.1057203432341192, -4.101610739787521));
+        struct ds_ConvexCache cache = { .sat.type = SAT_CACHE_NONE, .gjk.count = 0 };
+        for (u32 pass = 0; pass < 2; ++pass)
+        {
+            TEST_TRUE(HhContact(env->mem_2, &r, &cache, &a, &b) && r.length == 1 && HhVerify(&stats, &r, &a, &b) == HH_FAIL_NONE);
+            for (u32 i = 0; i < r.buf->v_count; ++i)
+            {
+                TEST_TRUE(r.buf->depth[i] < 0.0f);
+            }
+        }
+    }
+
     g_dynamics_worker = prev;
 	return output;
 }
