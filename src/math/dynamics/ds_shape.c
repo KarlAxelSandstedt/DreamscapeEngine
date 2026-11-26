@@ -406,11 +406,13 @@ void ds_ShapeContact(struct arena *tmp, struct ds_Dynamics *pipeline, const u32 
     ds_ShapeWorldTransform(t_world + 1, pipeline, s[1]);
 
     v3f64 com[2];
+    u32 fast = 0;
     for (u32 i = 0; i < 2; ++i)
     {
         const struct ds_Body *body = pipeline->body_pool.buf + c->body[i];
         const struct ds_SolverSet *set = pipeline->solver_set_pool.buf + body->set;
         com[i] = ds_BodySimWorldCenterOfMass(set->body_sim_pool.buf + body->sim);
+        fast |= (set->body_sim_pool.buf[body->sim].flags & BODY_FLAG_FAST) >> BODY_FLAG_FAST_BIT;
     }
     buffer->com_offset = V3F64Demote(V3F64Sub(com[1], com[0]));
 
@@ -446,7 +448,7 @@ void ds_ShapeContact(struct arena *tmp, struct ds_Dynamics *pipeline, const u32 
         const u32 convex = 1 - mesh;
         const u32 flip_normal = convex;
 
-        const ds_Array(c_Manifold) result = c_MeshContact(tmp, &pipeline->tri_cache_slab, &buffer->cache.concave, c_s[mesh], &t_world[mesh], c_s[convex], &t_world[convex]);
+        const ds_Array(c_Manifold) result = c_MeshContact(tmp, &pipeline->tri_cache_slab, &buffer->cache.concave, c_s[mesh], &t_world[mesh], c_s[convex], &t_world[convex], fast);
         const m3 rot = M3QUnit(t_world[convex].rotation);
         const v3 offset = V3F64Demote(V3F64Sub(t_world[convex].position, com[0]));
         ds_SolverManifoldConcave(tmp, &pipeline->manifold_slab, pipeline->contact_narrow_pool.buf + contact_index, &result, rot, offset, flip_normal);

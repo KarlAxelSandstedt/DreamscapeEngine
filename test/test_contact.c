@@ -3423,7 +3423,7 @@ struct test_Output MeshSphereCasesTest(struct test_Environment *env)
         struct c_Shape sphere = { .type = C_SHAPE_SPHERE };
         sphere.sphere.radius = radius;
 
-        const ds_Array(c_Manifold) r = c_MeshContact(env->mem_2, &slab, &none, &mesh, &t_mesh, &sphere, &t_sphere);
+        const ds_Array(c_Manifold) r = c_MeshContact(env->mem_2, &slab, &none, &mesh, &t_mesh, &sphere, &t_sphere, 0);
         /* n_t in the sphere's frame */
         const v3 n_t = QUnitRotate(QConj(q_sphere), QUnitRotate(t_mesh.rotation, V3(0.0f, 1.0f, 0.0f)));
         const v3 n_expected = V3Scale(n_t, -1.0f);
@@ -3481,7 +3481,7 @@ struct test_Output MeshSphereCasesTest(struct test_Environment *env)
         struct c_Shape sphere = { .type = C_SHAPE_SPHERE };
         sphere.sphere.radius = radius;
 
-        const ds_Array(c_Manifold) r = c_MeshContact(env->mem_2, &slab, &none, &mesh, &t_mesh, &sphere, &t_sphere);
+        const ds_Array(c_Manifold) r = c_MeshContact(env->mem_2, &slab, &none, &mesh, &t_mesh, &sphere, &t_sphere, 0);
         const v3 n_t = QUnitRotate(QConj(q_sphere), QUnitRotate(t_mesh.rotation, V3(0.0f, 1.0f, 0.0f)));
         u32 ok = (r.length <= 1);
         const struct c_Manifold *m = r.buf;
@@ -3626,7 +3626,7 @@ static struct mc_CapsuleCase McCapsuleCase(struct arena *mem, const struct c_Sha
     struct c_Shape capsule = { .type = C_SHAPE_CAPSULE };
     capsule.capsule.radius = radius;
     capsule.capsule.half_height = half_height;
-    cc.result = c_MeshContact(mem, &slab, &none, mesh, &t_mesh, &capsule, &t_capsule);
+    cc.result = c_MeshContact(mem, &slab, &none, mesh, &t_mesh, &capsule, &t_capsule, 0);
     for (u32 k = 0; k < 3; ++k)
     {
         const struct d3 world = D3Add(pos_m, D3RotationMul(cc.rm, D3V3(mesh->mesh.v[k])));
@@ -4140,7 +4140,7 @@ struct test_Output MeshFlatGridTest(struct test_Environment *env)
             const struct d3 pos_c = D3Add(mesh_pos, D3RotationMul(rm, D3RotationMul(rg, center)));
             const ds_TransformWorld t_convex = { .rotation = q_convex, .position = V3F64(pos_c.x, pos_c.y, pos_c.z) };
             none.tri_count = 0;
-            const ds_Array(c_Manifold) res = c_MeshContact(env->mem_2, &slab, &none, &mesh, &t_mesh, &convex, &t_convex);
+            const ds_Array(c_Manifold) res = c_MeshContact(env->mem_2, &slab, &none, &mesh, &t_mesh, &convex, &t_convex, 0);
 
             const struct d3 down = D3RotationTMul(rc, D3RotationMul(rm, D3RotationMul(rg, D3(0.0, -1.0, 0.0))));
             u32 ok = (res.length >= 1);
@@ -4192,7 +4192,7 @@ static const char *McTerrainCheck(struct arena *tmp, u64 *manifolds, const struc
     ds_TSlabAlloc(NULL, slab, ((u64) 16 << 20) / sizeof(struct ds_TriCache), 1);
     struct ds_ConcaveCache none = { .tri = { .buf = NULL, .length = 0, .base = U32_MAX } }, none_t = { .tri = { .buf = NULL, .length = 0, .base = U32_MAX } };
     const char *fail = NULL;
-    const ds_Array(c_Manifold) r = c_MeshContact(tmp, &slab, &none, mesh, t_mesh, convex, t_convex);
+    const ds_Array(c_Manifold) r = c_MeshContact(tmp, &slab, &none, mesh, t_mesh, convex, t_convex, 0);
     *manifolds += r.length;
     for (u32 i = 0; i < r.length; ++i)
     {
@@ -4215,7 +4215,7 @@ static const char *McTerrainCheck(struct arena *tmp, u64 *manifolds, const struc
      && V3F64Sub(t_convex_t.position, t_mesh_t.position).y == V3F64Sub(t_convex->position, t_mesh->position).y
      && V3F64Sub(t_convex_t.position, t_mesh_t.position).z == V3F64Sub(t_convex->position, t_mesh->position).z)
     {
-        const ds_Array(c_Manifold) r_t = c_MeshContact(tmp, &slab, &none_t, mesh, &t_mesh_t, convex, &t_convex_t);
+        const ds_Array(c_Manifold) r_t = c_MeshContact(tmp, &slab, &none_t, mesh, &t_mesh_t, convex, &t_convex_t, 0);
         u32 same = (r_t.length == r.length);
         for (u32 i = 0; same && i < r.length; ++i)
         {
@@ -4502,7 +4502,8 @@ static void McHullPrint(const ds_Array(c_Manifold) *r, const struct ch_Hull *h, 
  * to the front: n = -y, deepest = the apex's depth. Last the cull's hysteresis (S = 1, a box of half width 0.05 over
  * the face, the cache carried): culled with its center of mass at -1.02 slop, the cache holding that offset
  * (SAT_CACHE_BACKSIDE); with that cache still culled at -0.98 slop, keeping the offset, and a contact again at 0;
- * without a cache, a contact at -0.98 slop.
+ * without a cache, a contact at -0.98 slop. Then a box resting 1 mm deep with an edge-pair entry
+ * (SAT_CACHE_CONTACT_EE) put in its cache: probed once when not fast, not at all when fast.
  */
 struct test_Output MeshHullCasesTest(struct test_Environment *env)
 {
@@ -4591,7 +4592,7 @@ struct test_Output MeshHullCasesTest(struct test_Environment *env)
         ChHullInit(&h, &box, 1, hw, QNormalize(QMul(q_mesh, q_local)), D3Add(pos_m, D3RotationMul(rm, center)));
         const ds_TransformWorld t_mesh = { .rotation = q_mesh, .position = V3F64(pos_m.x, pos_m.y, pos_m.z) };
         none.tri_count = 0;
-        const ds_Array(c_Manifold) r = c_MeshContact(env->mem_2, &slab, &none, &mesh, &t_mesh, &h.shape, &h.t);
+        const ds_Array(c_Manifold) r = c_MeshContact(env->mem_2, &slab, &none, &mesh, &t_mesh, &h.shape, &h.t, 0);
         struct d3 t[3];
         McTriangleInHull(t, &h, rm, pos_m, mesh.mesh.v);
         const f64 tol = 1e-4*S;
@@ -4661,7 +4662,7 @@ struct test_Output MeshHullCasesTest(struct test_Environment *env)
         ChHullInit(&h, &pyramid, 0, V3Zero(), QNormalize(QMul(q_mesh, tilt)), D3Add(pos_m, D3RotationMul(rm, base_center)));
         const ds_TransformWorld t_mesh = { .rotation = q_mesh, .position = V3F64(pos_m.x, pos_m.y, pos_m.z) };
         none.tri_count = 0;
-        const ds_Array(c_Manifold) r = c_MeshContact(env->mem_2, &slab, &none, &mesh, &t_mesh, &h.shape, &h.t);
+        const ds_Array(c_Manifold) r = c_MeshContact(env->mem_2, &slab, &none, &mesh, &t_mesh, &h.shape, &h.t, 0);
         struct d3 t[3];
         McTriangleInHull(t, &h, rm, pos_m, mesh.mesh.v);
 
@@ -4719,7 +4720,7 @@ struct test_Output MeshHullCasesTest(struct test_Environment *env)
             ChHullInit(&h, &box, 1, hw, QIdentity(), D3(1.0 / 3.0, height[k], 1.0 / 3.0));
             none.tri_count = 0;
             struct ds_ConcaveCache *cache = (use_carried[k]) ? &carried : &none;
-            const ds_Array(c_Manifold) r = c_MeshContact(env->mem_2, &slab, cache, &mesh, &t_mesh, &h.shape, &h.t);
+            const ds_Array(c_Manifold) r = c_MeshContact(env->mem_2, &slab, cache, &mesh, &t_mesh, &h.shape, &h.t, 0);
             u32 ok = (r.length == contact_expected[k]);
             if (k < 2)
             {
@@ -4729,6 +4730,42 @@ struct test_Output MeshHullCasesTest(struct test_Environment *env)
             if (!ok)
             {
                 fprintf(stderr, "Mesh hull hysteresis step %u (center of mass at %g): manifolds %u, carried entries %u\n", k, height[k], r.length, carried.tri_count);
+                *env->mem_2 = record;
+                g_dynamics_worker = prev;
+                TEST_FAILURE;
+            }
+        }
+        *env->mem_2 = record;
+    }
+
+    {
+        struct arena record = *env->mem_2;
+        const struct c_Shape mesh = McSingleTriangle(env->mem_2, 1.0f);
+        const v3 hw = V3(0.05f, 0.05f, 0.05f);
+        struct c_Shape box = { .type = C_SHAPE_CONVEX_HULL };
+        box.hull = DcelBox(env->mem_2, hw);
+        const ds_TransformWorld t_mesh = { .rotation = QIdentity(), .position = V3F64(0.0, 0.0, 0.0) };
+        struct ch_Hull h;
+        ChHullInit(&h, &box, 1, hw, QIdentity(), D3(1.0 / 3.0, 0.05 - 0.001, 1.0 / 3.0));
+        struct ds_ConcaveCache carried = { .tri = { .buf = NULL, .length = 0, .base = U32_MAX } };
+        const ds_Array(c_Manifold) first = c_MeshContact(env->mem_2, &slab, &carried, &mesh, &t_mesh, &h.shape, &h.t, 0);
+        if (first.length != 1 || carried.tri_count != 1)
+        {
+            fprintf(stderr, "Mesh hull fast: the resting box gave %u manifolds, %u cache entries\n", first.length, carried.tri_count);
+            *env->mem_2 = record;
+            g_dynamics_worker = prev;
+            TEST_FAILURE;
+        }
+
+        for (u32 fast = 0; fast < 2; ++fast)
+        {
+            carried.tri.buf[0].sat = (struct SATCache) { .type = SAT_CACHE_CONTACT_EE, .feature = { sat_FeatureIdConstruct(0, SAT_FEATURE_TYPE_EDGE), sat_FeatureIdConstruct(0, SAT_FEATURE_TYPE_EDGE) } };
+            const u32 probe = mc_worker[ds_ThreadSelfIndex()].metrics.mesh_cache_probe_count;
+            const ds_Array(c_Manifold) r = c_MeshContact(env->mem_2, &slab, &carried, &mesh, &t_mesh, &h.shape, &h.t, fast);
+            const u32 probed = mc_worker[ds_ThreadSelfIndex()].metrics.mesh_cache_probe_count - probe;
+            if (r.length != 1 || probed != 1 - fast)
+            {
+                fprintf(stderr, "Mesh hull fast %u: edge-pair cache probed %u times, manifolds %u\n", fast, probed, r.length);
                 *env->mem_2 = record;
                 g_dynamics_worker = prev;
                 TEST_FAILURE;
@@ -4839,7 +4876,7 @@ struct test_Output MeshHullRandomTest(struct test_Environment *env)
         const u32 thin = ((f64) h.shape.com_inscribed_sphere_radius < slop);
 
         none.tri_count = 0;
-        const ds_Array(c_Manifold) r = c_MeshContact(env->mem_2, &slab, &none, &mesh, &t_mesh, &h.shape, &h.t);
+        const ds_Array(c_Manifold) r = c_MeshContact(env->mem_2, &slab, &none, &mesh, &t_mesh, &h.shape, &h.t, 0);
         const char *fail = NULL;
         u32 thin_contact = 0;
         if (behind)
@@ -4865,7 +4902,7 @@ struct test_Output MeshHullRandomTest(struct test_Environment *env)
         {
             /* the same pose with the result as the cache: every cache reused */
             const u32 p0 = metrics->mesh_cache_probe_count, e0 = metrics->mesh_cache_eviction_count;
-            const ds_Array(c_Manifold) again = c_MeshContact(env->mem_2, &slab, &none, &mesh, &t_mesh, &h.shape, &h.t);
+            const ds_Array(c_Manifold) again = c_MeshContact(env->mem_2, &slab, &none, &mesh, &t_mesh, &h.shape, &h.t, 0);
             probes += metrics->mesh_cache_probe_count - p0;
             evictions += metrics->mesh_cache_eviction_count - e0;
             stage = "cached, same pose";
@@ -4880,7 +4917,7 @@ struct test_Output MeshHullRandomTest(struct test_Environment *env)
             const struct d3 shift = D3Scale(D3V3(CtUnit()), shift_length);
             const struct d3 pos_moved = D3Add(pos_m, shift);
             const ds_TransformWorld t_moved = { .rotation = q_mesh, .position = V3F64(pos_moved.x, pos_moved.y, pos_moved.z) };
-            const ds_Array(c_Manifold) moved = c_MeshContact(env->mem_2, &slab, &none, &mesh, &t_moved, &h.shape, &h.t);
+            const ds_Array(c_Manifold) moved = c_MeshContact(env->mem_2, &slab, &none, &mesh, &t_moved, &h.shape, &h.t, 0);
             McTriangleInHull(t, &h, rm, pos_moved, tm);
             stage = "cached, moved";
             const f64 slack = (f64) g_numerics_config->sat_cache_tolerance;

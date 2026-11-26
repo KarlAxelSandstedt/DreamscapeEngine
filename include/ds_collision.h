@@ -524,8 +524,9 @@ u32                     c_HullContact(struct c_Manifold *out, struct ds_ConvexCa
  * more than it holds (about 8,700 at the default 1 MiB) is fatal. cache is in-out and always valid (empty: tri_count 0, with or without an
  * array); on return its first tri_count entries hold the hull's SAT entries by triangle (at most cache_count_max,
  * never SAT_CACHE_NONE; SAT_CACHE_BACKSIDE for a culled triangle), else tri_count is 0. The array comes from slab and grows when the entries do not fit.
+ * fast (a body of the pair needed CCD in the last step): a hull's cached edge-pair contacts are not reused.
  */
-ds_Array(c_Manifold)    c_MeshContact(struct arena *tmp, ds_TSlab(ds_TriCache) *slab, struct ds_ConcaveCache *cache, const struct c_Shape *mesh, const ds_TransformWorld *t_mesh, const struct c_Shape *convex, const ds_TransformWorld *t_convex);
+ds_Array(c_Manifold)    c_MeshContact(struct arena *tmp, ds_TSlab(ds_TriCache) *slab, struct ds_ConcaveCache *cache, const struct c_Shape *mesh, const ds_TransformWorld *t_mesh, const struct c_Shape *convex, const ds_TransformWorld *t_convex, const u32 fast);
 
 /********************************** RAYCASTS **********************************/
 

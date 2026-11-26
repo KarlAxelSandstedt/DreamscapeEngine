@@ -2091,9 +2091,9 @@ static void c_MeshHullTriDelayed(struct c_MeshTri *r, const struct dcel *stub, c
  * triangle's plane, or, once culled, while its offset stays within linear_slop of the cached one; otherwise sat_PairContact with the hull as s0 (as stored) and the triangle as s1 (SAT_PAIR_TRIANGLE:
  * a DcelTriStub with planes +-n_t, in the hull's frame, the front one its only face axis): n from the hull to the mesh,
  * v on the hull (the mesh convention). Every tested triangle keeps a record: its contact, its separating axis, or
- * (culled) its offset, for the cache.
+ * (culled) its offset, for the cache. fast: a cached edge-pair contact is not reused.
  */
-static void c_MeshHullTriangles(struct c_MeshContactHelper *helper, const struct ds_ConcaveCache *cache, const struct dcel *hull, const v3 center)
+static void c_MeshHullTriangles(struct c_MeshContactHelper *helper, const struct ds_ConcaveCache *cache, const struct dcel *hull, const v3 center, const u32 fast)
 {
     struct ds_DynamicsMetrics *metrics = &g_dynamics_worker[ds_ThreadSelfIndex()].metrics;
     for (u32 candidate = 0; candidate < helper->tri.length; ++candidate)
@@ -2134,6 +2134,11 @@ static void c_MeshHullTriangles(struct c_MeshContactHelper *helper, const struct
         }
 
         if (backside)
+        {
+            old_cache = NULL;
+        }
+
+        if (fast && old_cache && old_cache->type == SAT_CACHE_CONTACT_EE)
         {
             old_cache = NULL;
         }
@@ -2263,7 +2268,7 @@ static void c_MeshContactFinish(struct arena *tmp, ds_TSlab(ds_TriCache) *slab, 
  * Mesh vs convex shape (sphere, capsule, hull): one manifold per contacting triangle, local to the convex shape (n from
  * it to the mesh, v on its surface).
  */
-ds_Array(c_Manifold) c_MeshContact(struct arena *tmp, ds_TSlab(ds_TriCache) *slab, struct ds_ConcaveCache *cache, const struct c_Shape *mesh, const ds_TransformWorld *t_mesh, const struct c_Shape *convex, const ds_TransformWorld *t_convex)
+ds_Array(c_Manifold) c_MeshContact(struct arena *tmp, ds_TSlab(ds_TriCache) *slab, struct ds_ConcaveCache *cache, const struct c_Shape *mesh, const ds_TransformWorld *t_mesh, const struct c_Shape *convex, const ds_TransformWorld *t_convex, const u32 fast)
 {
     ds_Assert(convex->type < C_SHAPE_TRI_MESH);
     ds_Assert(cache->tri_count <= cache->tri.length);
@@ -2274,7 +2279,7 @@ ds_Array(c_Manifold) c_MeshContact(struct arena *tmp, ds_TSlab(ds_TriCache) *sla
     {
         case C_SHAPE_SPHERE:    { c_MeshSphereTriangles(&helper, &convex->sphere); } break;
         case C_SHAPE_CAPSULE:   { c_MeshCapsuleTriangles(&helper, &convex->capsule); } break;
-        default:                { c_MeshHullTriangles(&helper, cache, &convex->hull, convex->center_of_mass); } break;
+        default:                { c_MeshHullTriangles(&helper, cache, &convex->hull, convex->center_of_mass, fast); } break;
     }
     c_MeshContactFinish(tmp, slab, &result, cache, &helper, convex->type == C_SHAPE_CONVEX_HULL);
     return result;
