@@ -2621,15 +2621,24 @@ struct test_Output HullContactCasesTest(struct test_Environment *env)
     TEST_EQUAL(r.length, 0);
 
     /*
-     * B tilted 0.02 rad about x, its lower edge (along x, z ~ 0.98) 1 cm above, its upper bottom edge ~5 cm above
-     * (clipped at z = -1): two points (+-1, 1, ~0.98), n = +y, depth -0.01
+     * B tilted 0.02 rad about x, its lower edge (along x, z = cos 0.02 - sin 0.02 ~ 0.98) 1 cm above, its upper bottom
+     * edge ~5 cm above (clipped at z = -1): four points, n = +y, (+-1, 1, ~0.98) depth -0.01 and (+-1, 1, -1) depth
+     * -0.01 - (z + 1) tan 0.02
      */
     ChHullInit(&b, &box, 1, hw, QUnitAxisAngle(V3(1.0f, 0.0f, 0.0f), 0.02f), D3(0.0, 1.01 + 0.99980001 + 0.019998667, 0.0));
     TEST_TRUE(HhContact(env->mem_2, &r, NULL, &a, &b) && HhVerify(&stats, &r, &a, &b) == HH_FAIL_NONE);
-    TEST_TRUE(r.length == 1 && r.buf->v_count == 2);
+    TEST_TRUE(r.length == 1 && r.buf->v_count == 4);
     TEST_TRUE(CtNearD3(D3V3(r.buf->n), D3(0.0, 1.0, 0.0)));
-    TEST_TRUE(CtNear(r.buf->depth[0], -0.01) && CtNear(r.buf->depth[1], -0.01));
-    TEST_TRUE(CtNear(F64AbsTest(r.buf->v[0].x), 1.0) && CtNear(r.buf->v[0].x, -r.buf->v[1].x) && CtNear(r.buf->v[0].y, 1.0));
+    u32 tilt_low_count = 0;
+    for (u32 i = 0; i < 4; ++i)
+    {
+        const u32 low = (r.buf->v[i].z > 0.0f);
+        const f64 z = (low) ? 0.9798013399732447 : -1.0;
+        const f64 depth = (low) ? -0.01 : -0.04960130711455685;
+        tilt_low_count += low;
+        TEST_TRUE(CtNear(F64AbsTest(r.buf->v[i].x), 1.0) && CtNear(r.buf->v[i].y, 1.0) && CtNear(r.buf->v[i].z, z) && CtNear(r.buf->depth[i], depth));
+    }
+    TEST_EQUAL(tilt_low_count, 2);
 
     /* face on face, 0.1 deep: four points at the corners (+-1, 1, +-1) (on A's side planes), n = +y, depth 0.1 */
     ChHullInit(&b, &box, 1, hw, QIdentity(), D3(0.0, 1.9, 0.0));
@@ -2650,13 +2659,31 @@ struct test_Output HullContactCasesTest(struct test_Environment *env)
         TEST_TRUE(CtNear(r.buf->depth[i], 0.1));
     }
 
-    /* B turned 45 deg about x, its lower edge (along x, ends on A's side planes) 0.05 into the top face: two points (+-1, 1, 0), depth 0.05 */
+    /*
+     * B turned 45 deg about x, its lower edge (along x, ends on A's side planes) 0.05 into the top face, one of the
+     * edge's faces incident (rising 45 deg, clipped at z = 1 or -1): four points, n = +y, (+-1, 1, 0) depth 0.05 and
+     * (+-1, 1, +-1) depth -0.95
+     */
     ChHullInit(&b, &box, 1, hw, QUnitAxisAngle(V3(1.0f, 0.0f, 0.0f), F32_PI/4.0f), D3(0.0, 0.95 + 1.41421356, 0.0));
     TEST_TRUE(HhContact(env->mem_2, &r, NULL, &a, &b) && HhVerify(&stats, &r, &a, &b) == HH_FAIL_NONE);
-    TEST_EQUAL(r.buf->v_count, 2);
+    TEST_EQUAL(r.buf->v_count, 4);
     TEST_TRUE(CtNearD3(D3V3(r.buf->n), D3(0.0, 1.0, 0.0)));
-    TEST_TRUE(CtNear(r.buf->depth[0], 0.05) && CtNear(r.buf->depth[1], 0.05));
-    TEST_TRUE(CtNear(F64AbsTest(r.buf->v[0].x), 1.0) && CtNear(r.buf->v[0].x, -r.buf->v[1].x));
+    u32 edge_count = 0;
+    f64 far_z = 0.0;
+    for (u32 i = 0; i < 4; ++i)
+    {
+        const u32 on_edge = (F64AbsTest(r.buf->v[i].z) < 0.5);
+        const f64 z = (on_edge) ? 0.0 : 1.0;
+        const f64 depth = (on_edge) ? 0.05 : -0.95;
+        edge_count += on_edge;
+        if (!on_edge)
+        {
+            far_z += (f64) r.buf->v[i].z;
+        }
+
+        TEST_TRUE(CtNear(F64AbsTest(r.buf->v[i].x), 1.0) && CtNear(r.buf->v[i].y, 1.0) && CtNear(F64AbsTest(r.buf->v[i].z), z) && CtNear(r.buf->depth[i], depth));
+    }
+    TEST_TRUE(edge_count == 2 && CtNear(F64AbsTest(far_z), 2.0));
 
     /*
      * K7 (contact_audit.txt): separated boxes whose only separating axis is a nearly parallel edge pair (0.23 deg
@@ -4455,8 +4482,8 @@ static void McHullPrint(const ds_Array(c_Manifold) *r, const struct ch_Hull *h, 
  *      the same under the triangle                     none: its center of mass is more than linear_slop behind
  *                                                      (S = 1, 100); S = 0.01: 4 points, n = -y (its top face would
  *                                                      push it behind: the triangle's face), depths 0.1 S - p
- *      a corner down on the face, p deep               1 point, n = -y, depth p; its incident face's other corners
- *                                                      count while within the band (S = 0.01: 4 points)
+ *      a corner down on the face, p deep               4 points (the incident face's corners, the others 2 hw /
+ *                                                      sqrt 3 and 4 hw / sqrt 3 higher), n = -y, deepest p
  *      resting across edge z = 0                       4 points (2 corners, 2 on the edge), n = -y, depths p
  *      a stick (0.005 S thick) across edge z = 0 as in the capsule's deep edge case: n = (0, 1, 1) / sqrt 2,
  *      deepest delta + thickness (the stick's face or the edge pair: the same axis); or n = -y: the stick's face
@@ -4522,9 +4549,6 @@ struct test_Output MeshHullCasesTest(struct test_Environment *env)
             const q corner_to_y = QConj(McAxisRotation(V3(0.57735027f, 0.57735027f, 0.57735027f)));
             q_local = QNormalize(QMul(QUnitAxisAngle(V3(1.0f, 0.0f, 0.0f), F32_PI), corner_to_y));
             center = D3Add(C, D3(0.0, (f64) hw.x*sqrt3 - p, 0.0));
-            /* the incident face's other corners rise 2 hw / sqrt 3 (two) and 4 hw / sqrt 3 above the lowest */
-            const f64 rise = 2.0*(f64) hw.x / sqrt3;
-            v_count = 1 + 2*(rise <= p + spec) + (2.0*rise <= p + spec);
         }
         else if (k == 3)
         {

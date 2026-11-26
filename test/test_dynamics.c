@@ -6371,6 +6371,76 @@ static struct test_Output DynamicsLeaningBoxTest(struct test_Environment *env)
     return output;
 }
 
+/*
+Tilted landing: a plate (1 x 0.04 x 1 m) falls one corner first at 11.2 m/s, spinning at 8.8 rad/s, onto a static
+hull slab (120 x 0.1 x 120 m, top at y = 0) and onto the mesh floor (DynamicsTestFloorAdd, 10 m cells): the start
+state of body 119 in DynamicsCCDMetricsTest. 2 s: its center stays above the floor (y > 0) on both. Printed: the
+deepest its lowest point went below the floor, and its end height.
+*/
+static struct test_Output DynamicsTiltedLandingTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+    (void) env;
+
+    static const char *target_id[2] = { "mesh", "hull slab" };
+    const v3 hw = V3(0.5f, 0.02f, 0.5f);
+    const q rotation = Q(-0.502739906f, 0.59602195f, -0.55788976f, -0.284199774f);
+    const u32 tick_count = 120;
+
+    struct arena mem = ArenaAlloc(NULL, 64*1024*1024);
+    struct c_ShapeDB cshape_db = { 0 };
+    c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
+    const struct ds_DynamicsExternal external = { .cshape_db = &cshape_db };
+    struct ds_Dynamics pipeline = ds_DynamicsAllocDefault(&external, NSEC_PER_SEC / 60);
+    ds_DynamicsConfigPush(&pipeline);
+    DynamicsTestFloorAdd(&mem, &pipeline, &cshape_db, 10.0f);
+    SlideWarmAdd(&mem, &pipeline, &cshape_db, C_SHAPE_CONVEX_HULL, V3(60.0f, 0.05f, 60.0f), 0.0f, 0.0f, V3(200.0f, -0.05f, 60.0f), QIdentity(), 0, 0.8f, 1000);
+
+    ds_BodyId body[2];
+    f32 sink[2];
+    f32 lowest_center[2];
+    for (u32 target = 0; target < 2; ++target)
+    {
+        body[target] = SlideWarmAdd(&mem, &pipeline, &cshape_db, C_SHAPE_CONVEX_HULL, hw, 0.0f, 0.0f, V3(105.0f + 140.0f*(f32) target, 2.26297951f, 25.0f), rotation, 1, 0.8f, 1 + target);
+        const struct ds_Body *b = ds_BodyLookup(&pipeline, body[target]).address;
+        struct ds_BodyCompute *compute = pipeline.solver_set_pool.buf[b->set].body_compute_pool.buf + b->sim;
+        compute->linear_velocity = V3(0.0f, -11.2433653f, 0.0f);
+        compute->angular_velocity = V3(6.17720318f, -3.19895983f, -5.48745346f);
+        sink[target] = 0.0f;
+        lowest_center[target] = F32_INFINITY;
+    }
+
+    for (u32 t = 0; t < tick_count; ++t)
+    {
+        ds_DynamicsTick(DynamicsTestTickArena(), &pipeline, NSEC_PER_SEC / 60);
+        for (u32 target = 0; target < 2; ++target)
+        {
+            const ds_TransformWorld pose = DynamicsTestPose(&pipeline, body[target]);
+            const q r = pose.rotation;
+            const f32 support = hw.x*F32Abs(QUnitRotate(r, V3(1.0f, 0.0f, 0.0f)).y) + hw.y*F32Abs(QUnitRotate(r, V3(0.0f, 1.0f, 0.0f)).y) + hw.z*F32Abs(QUnitRotate(r, V3(0.0f, 0.0f, 1.0f)).y);
+            sink[target] = F32Max(sink[target], support - (f32) pose.position.y);
+            lowest_center[target] = F32Min(lowest_center[target], (f32) pose.position.y);
+        }
+    }
+
+    for (u32 target = 0; target < 2; ++target)
+    {
+        const ds_TransformWorld end = DynamicsTestPose(&pipeline, body[target]);
+        fprintf(stdout, "\ttilted landing, %-9s: sink max %.4f, lowest center %.4f, end center y %.4f\n", target_id[target], (f64) sink[target], (f64) lowest_center[target], end.position.y);
+        if (!(lowest_center[target] > 0.0f))
+        {
+            fprintf(stderr, "tilted landing, %s: the plate's center went to y %g, below the floor\n", target_id[target], (f64) lowest_center[target]);
+            TEST_FAILURE;
+        }
+    }
+
+    ds_DynamicsConfigPop(&pipeline);
+    ds_DynamicsDealloc(&pipeline);
+    c_ShapeDBDealloc(&cshape_db);
+    ArenaFree(&mem);
+    return output;
+}
+
 static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
 {
     DynamicsAllocConfigTest,
@@ -6427,6 +6497,7 @@ static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
     DynamicsCCDMetricsTest,
     DynamicsEdgeHangTest,
     DynamicsLeaningBoxTest,
+    DynamicsTiltedLandingTest,
 };
 
 struct suite_Correctness m_dynamics_suite =

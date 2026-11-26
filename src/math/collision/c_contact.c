@@ -920,9 +920,9 @@ static c_PointId c_PointIdPair(const u32 b, const u32 type_b, const u32 index_b,
 /*
  * Sutherland-Hodgman 3D polygon clipping + negative face voronoi region projection: 
  *
- *  Clip polygon against orthogonal side-planes of the input face. Any clip points 
- *  infront of the face by more than max_separation is discarded, after which the remaining points are projected
- *  onto the face and stored in cp, with their corresponding depth (>= -max_separation) in cp_depth.
+ *  Clip polygon against orthogonal side-planes of the input face. The clip points are projected onto the face and
+ *  stored in cp, with their depths in cp_depth; none (cp_count 0) if the deepest lies in front of the face by more
+ *  than max_separation.
  *  
  *            fv: Expected to be filled with face vertices in counter-clockwise order.
  */
@@ -1065,21 +1065,22 @@ static void PolygonCcwClipNegativeFaceAndProject(struct arena *mem, sat_FeatureI
         const struct PolygonClipPoint *pcp = poly[cur] + i;
 		(*cp)[*cp_count] = pcp->v;
         (*cp_depth)[ *cp_count ] = -PlanePointSignedDistance(&ref_plane, (*cp)[ *cp_count ]);
-
-		if ((*cp_depth)[*cp_count] >= -max_separation)
+        (*features)[*cp_count] = pcp->feature[ pcp->index ];
+        (*ids)[*cp_count] = c_PointIdInit(C_POINT_EDGE_OF_0 + pcp->id_owner[0], pcp->id_edge[0], C_POINT_EDGE_OF_0 + pcp->id_owner[1], pcp->id_edge[1]);
+		(*cp)[*cp_count] = V3AddScaled((*cp)[*cp_count], ref_plane.normal, (*cp_depth)[*cp_count]);
+		if (*max_depth < (*cp_depth)[ *cp_count ])
 		{
-            (*features)[*cp_count] = pcp->feature[ pcp->index ];
-            (*ids)[*cp_count] = c_PointIdInit(C_POINT_EDGE_OF_0 + pcp->id_owner[0], pcp->id_edge[0], C_POINT_EDGE_OF_0 + pcp->id_owner[1], pcp->id_edge[1]);
-			(*cp)[*cp_count] = V3AddScaled((*cp)[*cp_count], ref_plane.normal, (*cp_depth)[*cp_count]);
-			if (*max_depth < (*cp_depth)[ *cp_count ])
-			{
-                *max_depth = (*cp_depth)[ *cp_count ];
-				*cp_deepest = *cp_count;
-                *deepest_feature = pcp->feature[ pcp->index ];
-			}
-			*cp_count += 1;
+            *max_depth = (*cp_depth)[ *cp_count ];
+			*cp_deepest = *cp_count;
+            *deepest_feature = pcp->feature[ pcp->index ];
 		}
+		*cp_count += 1;
 	}
+
+    if (*max_depth < -max_separation)
+    {
+        *cp_count = 0;
+    }
 
     ds_Assert(*cp_count <= count);
 }
@@ -2041,9 +2042,10 @@ static void c_MeshCapsuleTriangles(struct c_MeshContactHelper *helper, const str
 
 /*
  * The delayed vertices of a hull-triangle contact (the cache tells which): an edge contact waits on the triangle edge's
- * vertices; a face contact on the hull's face (the triangle incident) on the triangle features in the manifold (a
- * vertex, or an edge's two vertices; three or more points, or all three vertices: none); a face contact on the
- * triangle's face does not wait. The fallback contact (SAT_CACHE_NONE) as a face contact.
+ * vertices; a face contact on the hull's face (the triangle incident) waits only while its normal is more than 60
+ * degrees from the triangle's and its deepest point at most 2 linear_slop deep, on the triangle features of the
+ * manifold points within linear_slop of the deepest (a vertex, or an edge's two vertices; all three vertices: none);
+ * a face contact on the triangle's face does not wait. The fallback contact (SAT_CACHE_NONE) as a face contact.
  */
 static void c_MeshHullTriDelayed(struct c_MeshTri *r, const struct dcel *stub, const sat_FeatureId features[4])
 {
@@ -2053,17 +2055,34 @@ static void c_MeshHullTriDelayed(struct c_MeshTri *r, const struct dcel *stub, c
         c_MeshTriRegionMaskDelayed(r, (1u << a) | (1u << ((a + 1) % 3)));
     }
     else if ((r->cache.type == SAT_CACHE_CONTACT_FV || r->cache.type == SAT_CACHE_NONE)
-            && !sat_FeatureIdFaceCheck(r->cache.feature[1]) && r->manifold.v_count < 3)
+            && !sat_FeatureIdFaceCheck(r->cache.feature[1]))
     {
-        u32 mask = 0;
+        f32 deepest = -F32_INFINITY;
         for (u32 i = 0; i < r->manifold.v_count; ++i)
         {
-            const u32 index = sat_FeatureIdIndex(features[i]);
-            mask |= (sat_FeatureIdVertexCheck(features[i]))
-                ? 1u << index
-                : (1u << stub->e[index].origin) | (1u << stub->e[stub->e[index].twin].origin);
+            deepest = F32Max(deepest, r->manifold.depth[i]);
         }
-        c_MeshTriRegionMaskDelayed(r, mask);
+
+        /* n runs from the hull to the mesh */
+        const f32 cos_normal = V3Dot(V3Negate(r->manifold.n), stub->plane[0].normal);
+        if (cos_normal <= 0.5f && deepest <= 2.0f*g_solver_config->linear_slop)
+        {
+            u32 mask = 0;
+            for (u32 i = 0; i < r->manifold.v_count; ++i)
+            {
+                if (r->manifold.depth[i] < deepest - g_solver_config->linear_slop)
+                {
+                    continue;
+                }
+
+                const u32 index = sat_FeatureIdIndex(features[i]);
+                mask |= (sat_FeatureIdVertexCheck(features[i]))
+                    ? 1u << index
+                    : (1u << stub->e[index].origin) | (1u << stub->e[stub->e[index].twin].origin);
+            }
+
+            c_MeshTriRegionMaskDelayed(r, mask);
+        }
     }
 }
 
