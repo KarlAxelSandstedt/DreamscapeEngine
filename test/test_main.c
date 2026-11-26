@@ -352,6 +352,7 @@ void ds_TestMainCorrectness(void)
     run_suite(rng_correctness_suite, &env, 1);
     run_suite(asset_correctness_suite, &env, 1);
     run_suite(toi_correctness_suite, &env, 1);
+    run_suite(kinematic_correctness_suite, &env, 1);
 
 	ArenaFree(&mem_1);
 	ArenaFree(&mem_2);

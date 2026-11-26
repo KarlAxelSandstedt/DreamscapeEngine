@@ -53,7 +53,7 @@ ds_BodyId ds_BodyAdd(struct ds_Dynamics *pipeline, const struct ds_BodyPrefab *p
 
 	body->entity = entity;
 
-	ds_Assert(prefab->flags == 0 || prefab->flags == BODY_FLAG_DYNAMIC);
+	ds_Assert(prefab->flags == 0 || prefab->flags == BODY_FLAG_DYNAMIC || prefab->flags == BODY_FLAG_KINEMATIC);
 	body->flags = prefab->flags;
 
 	body->low_velocity_time = 0.0f;
@@ -332,6 +332,28 @@ void ds_BodyUpdateMassProperties(struct ds_Dynamics *pipeline, const ds_BodyId i
     }
 
     ArenaPopScratch();
+}
+
+void ds_BodyVelocitySet(struct ds_Dynamics *pipeline, const ds_BodyId id, const v3 linear_velocity, const v3 angular_velocity)
+{
+    struct ds_Body *body = ds_BodyLookup(pipeline, id).address;
+    if (!body || ds_BodyStaticCheck(body))
+    {
+        return;
+    }
+
+    /* waking zeroes the velocities of what it wakes: wake first */
+    if (V3Dot(linear_velocity, linear_velocity) != 0.0f || V3Dot(angular_velocity, angular_velocity) != 0.0f)
+    {
+        ds_SolverSetWakeUp(pipeline, body->set);
+    }
+
+    if (body->set == SOLVER_SET_ACTIVE)
+    {
+        struct ds_BodyCompute *compute = pipeline->solver_set_pool.buf[SOLVER_SET_ACTIVE].body_compute_pool.buf + body->sim;
+        compute->linear_velocity = linear_velocity;
+        compute->angular_velocity = angular_velocity;
+    }
 }
 
 u32 ds_BodyPairMayCollide(const struct ds_Dynamics *pipeline, const u32 body_index0, const u32 body_index1)

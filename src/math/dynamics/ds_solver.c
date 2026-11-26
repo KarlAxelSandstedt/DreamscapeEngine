@@ -176,6 +176,10 @@ void ds_BodyIntegrateExternalForcesRange(struct ds_Dynamics *pipeline, const u32
     for (u32 i = low; i < high; ++i)
     {
         struct ds_BodyCompute *bcomp = active->body_compute_pool.buf + i;
+        if (bcomp->flags & BODY_FLAG_KINEMATIC)
+        {
+            continue;
+        }
 
         /* integrate new velocities using external forces */
         const v3 linear_velocity = V3AddScaled(bcomp->linear_velocity, g_solver_config->gravity, pipeline->timestep);
@@ -197,12 +201,17 @@ void ds_BodyIntegrateVelocitiesRange(struct ds_Dynamics *pipeline, const u32 low
         struct ds_BodyCompute *bcomp = active->body_compute_pool.buf + i;
 
         /* velocities clamped to the configured maxima, stored, then integrated */
-        const f32 div_linear = V3Length(bcomp->linear_velocity) * g_solver_config->max_linear_velocity_magnitude_inv;
-        const f32 div_angular = V3Length(bcomp->angular_velocity) * g_solver_config->max_angular_velocity_magnitude_inv;
-        const v3 linear_velocity = V3Scale(bcomp->linear_velocity, 1.0f / F32Clamp(div_linear, 1.0f, F32_INFINITY));
-        const v3 angular_velocity = V3Scale(bcomp->angular_velocity, 1.0f / F32Clamp(div_angular, 1.0f, F32_INFINITY));
-        bcomp->linear_velocity = linear_velocity;
-        bcomp->angular_velocity = angular_velocity;
+        v3 linear_velocity = bcomp->linear_velocity;
+        v3 angular_velocity = bcomp->angular_velocity;
+        if (!(bcomp->flags & BODY_FLAG_KINEMATIC))
+        {
+            const f32 div_linear = V3Length(bcomp->linear_velocity) * g_solver_config->max_linear_velocity_magnitude_inv;
+            const f32 div_angular = V3Length(bcomp->angular_velocity) * g_solver_config->max_angular_velocity_magnitude_inv;
+            linear_velocity = V3Scale(bcomp->linear_velocity, 1.0f / F32Clamp(div_linear, 1.0f, F32_INFINITY));
+            angular_velocity = V3Scale(bcomp->angular_velocity, 1.0f / F32Clamp(div_angular, 1.0f, F32_INFINITY));
+            bcomp->linear_velocity = linear_velocity;
+            bcomp->angular_velocity = angular_velocity;
+        }
 
 	    bcomp->delta_position = V3AddScaled(bcomp->delta_position, linear_velocity, pipeline->timestep);
 
@@ -353,6 +362,7 @@ void ds_BodyUpdateOrientationRange(struct ds_Dynamics *pipeline, struct ds_Proxy
 
     struct memArray arr = ArenaPushAlignedAll(frame, sizeof(struct ds_ProxyDirty), 8);
     proxy_range->reinsert_count = 0;
+    proxy_range->kinematic_count = 0;
     proxy_range->count = 0;
     proxy_range->proxy = arr.addr;
     struct ds_ProxyDirty *dirty = proxy_range->proxy + 0;
@@ -364,7 +374,7 @@ void ds_BodyUpdateOrientationRange(struct ds_Dynamics *pipeline, struct ds_Proxy
         const struct ds_Body *body = pipeline->body_pool.buf + sim->body;
 
         sim->flags &= ~BODY_FLAG_FAST;
-        if (g_solver_config->enable_continuous && ds_BodyFastCheck(pipeline, sim, bcomp))
+        if (g_solver_config->enable_continuous && ds_BodyDynamicCheck(body) && ds_BodyFastCheck(pipeline, sim, bcomp))
         {
             sim->flags |= BODY_FLAG_FAST;
             ds_BodyCCDStatic(bcomp, pipeline, sim);
@@ -377,13 +387,15 @@ void ds_BodyUpdateOrientationRange(struct ds_Dynamics *pipeline, struct ds_Proxy
         sim->world.position = V3F64Sub(center_of_mass, V3Promote(rotated_local_center_of_mass));
         sim->world.rotation = rotation;
 
+        const u32 kinematic = (ds_BodyKinematicCheck(body)) ? 1 : 0;
+        struct BVH *bvh = (kinematic) ? &pipeline->kinematic_bvh : &pipeline->dynamic_bvh;
         for (u32 j = body->shape_list.first; (i32) j != DLL_SENTINEL; j = shape->body_shape.next)
         {
             shape = pipeline->shape_pool.buf + j;
             dirty->bbox = ds_ShapeWorldBbox(pipeline, shape);
             dirty->bbox.min = V3AddConstant(dirty->bbox.min, -g_solver_config->speculative_distance);
             dirty->bbox.max = V3AddConstant(dirty->bbox.max, g_solver_config->speculative_distance);
-            struct BVHNode *node = pipeline->dynamic_bvh.pool.buf + shape->proxy;
+            struct BVHNode *node = bvh->pool.buf + shape->proxy;
             struct aabb *proxy = &node->bbox;
             
             if (!AabbContains(proxy, &dirty->bbox))
@@ -394,7 +406,7 @@ void ds_BodyUpdateOrientationRange(struct ds_Dynamics *pipeline, struct ds_Proxy
                 if (!BTRootCheck(node))
                 {
                     const u32 parent_index = node->bt_parent & BT_INDEX_MASK;
-                    const struct BVHNode *parent = pipeline->dynamic_bvh.pool.buf + parent_index;
+                    const struct BVHNode *parent = bvh->pool.buf + parent_index;
                     const struct aabb enlarged_proxy = BboxUnion(*proxy, dirty->bbox);
                     if (AabbContains(&parent->bbox, &enlarged_proxy))
                     {
@@ -405,11 +417,12 @@ void ds_BodyUpdateOrientationRange(struct ds_Dynamics *pipeline, struct ds_Proxy
 
                 if (dirty->reinsert)
                 {
-                    proxy_range->reinsert_count += 1;
+                    proxy_range->reinsert_count += 1 - kinematic;
                     dirty->bbox.min = V3AddConstant(dirty->bbox.min, -shape->margin);
                     dirty->bbox.max = V3AddConstant(dirty->bbox.max, shape->margin);
                 }
 
+                proxy_range->kinematic_count += kinematic;
                 proxy_range->count += 1;
                 dirty += 1;
 

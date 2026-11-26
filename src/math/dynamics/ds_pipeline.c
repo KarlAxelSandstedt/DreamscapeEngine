@@ -440,6 +440,16 @@ u32 ds_BroadJobPhaseDispatch(const ds_JobId job)
 
                 const u32 si = (u32) ds_BitBlockNext(&it);
                 const struct ds_Shape *shape = pipeline->shape_pool.buf + si;
+
+                /* TODO: kinematic shapes find no pairs yet */
+                if (!ds_ShapeDynamicCheck(shape))
+                {
+                    query[si].dynamic_count = 0;
+                    query[si].static_count = 0;
+                    ArenaPopRecord(tmp);
+                    continue;
+                }
+
                 const struct BVHNode *node = pipeline->dynamic_bvh.pool.buf + shape->proxy;
                 const ds_Array(u32) dynamic_query = BVHQueryAndFilterOnBody(tmp, &pipeline->dynamic_bvh, node, dirty);
                 const ds_Array(u32) static_query = BVHQuery(tmp, &pipeline->static_bvh, &node->bbox);
@@ -1506,22 +1516,24 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
 
     {
         struct ds_ParallelFor *pf = solver_phase->pf_orientation.parallel_for + 0;
+        /* the rebuild decision counts the dynamic proxies only: the kinematic tree is never rebuilt */
         f32 dirty_count = 0; 
         f32 reinsert_count = 0;
+        u32 kinematic_count = 0;
         for (u32 ri = 0; ri < pf->range_count; ++ri)
         {
             const struct ds_ProxyRange *range = solver_phase->proxy_range + ri;
-            dirty_count += range->count;
+            dirty_count += range->count - range->kinematic_count;
             reinsert_count += range->reinsert_count;
+            kinematic_count += range->kinematic_count;
         }
 
         ds_Assert(dirty_count >= reinsert_count);
-        if (dirty_count)
+        if (dirty_count || kinematic_count)
         {
             pipeline->runtime.profile->ns_rebuildphase_start = ds_TimeNs();
 
-            const f32 reinsert_fraction = reinsert_count / dirty_count;
-            const u32 rebuild = !(dirty_count <= 1 || reinsert_fraction < g_numerics_config->dbvh_reinsert_threshold);
+            const u32 rebuild = !(dirty_count <= 1 || reinsert_count / dirty_count < g_numerics_config->dbvh_reinsert_threshold);
             if (!rebuild)
             {
                 ProfZoneNamed("DBVH Update");
@@ -1536,8 +1548,9 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
                         {
                             ProfZoneNamed("Reinsert");
                             struct ds_Shape *shape = pipeline->shape_pool.buf + dirty->shape;
-                    	    DBVHRemove(&pipeline->dynamic_bvh, shape->proxy);
-                    	    shape->proxy = DBVHInsert(&pipeline->dynamic_bvh, shape->body, dirty->shape, &dirty->bbox);
+                            struct BVH *bvh = (ds_ShapeDynamicCheck(shape)) ? &pipeline->dynamic_bvh : &pipeline->kinematic_bvh;
+                    	    DBVHRemove(bvh, shape->proxy);
+                    	    shape->proxy = DBVHInsert(bvh, shape->body, dirty->shape, &dirty->bbox);
                             ProfZoneEnd;
                         }
                     }
@@ -1546,6 +1559,36 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
             }
             else
             {       
+                /* 
+                 * the rebuild sets every dynamic leaf. Kinematic proxies must still be
+                 * dirtied and possibly reset. 
+                 */
+                for (u32 ri = 0; ri < pf->range_count; ++ri)
+                {
+                    const struct ds_ProxyRange *range = solver_phase->proxy_range + ri;
+                    if (range->kinematic_count == 0)
+                    {
+                        continue;
+                    }
+
+                    for (u32 pi = 0; pi < range->count; ++pi)
+                    {
+                        const struct ds_ProxyDirty *dirty = range->proxy + pi;
+                        struct ds_Shape *shape = pipeline->shape_pool.buf + dirty->shape;
+                        if (ds_ShapeDynamicCheck(shape))
+                        {
+                            continue;
+                        }
+
+                        ds_BitSetSet(&pipeline->shape_dirty_set, dirty->shape, 1);
+                        if (dirty->reinsert)
+                        {
+                    	    DBVHRemove(&pipeline->kinematic_bvh, shape->proxy);
+                    	    shape->proxy = DBVHInsert(&pipeline->kinematic_bvh, shape->body, dirty->shape, &dirty->bbox);
+                        }
+                    }
+                }
+
                 struct ds_RebuildJobPhase *rebuild_phase = pipeline->runtime.rebuild_phase;
                 {
                 	ProfZoneNamed("JobPhase(Rebuild)");
@@ -1761,7 +1804,14 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
             const struct ds_BodyCompute *compute = active->body_compute_pool.buf + body->sim;
 			const f32 lv_sq = V3Dot(compute->linear_velocity, compute->linear_velocity);
 			const f32 av_sq = V3Dot(compute->angular_velocity, compute->angular_velocity);
-			if (lv_sq <= g_solver_config->sleep_linear_velocity_sq_limit && av_sq <= g_solver_config->sleep_angular_velocity_sq_limit)
+            /* a kinematic body rests only at exactly zero velocity: below the limits it would sleep and stop */
+			u32 resting = (lv_sq <= g_solver_config->sleep_linear_velocity_sq_limit && av_sq <= g_solver_config->sleep_angular_velocity_sq_limit);
+            if (ds_BodyKinematicCheck(body))
+            {
+                resting = (lv_sq == 0.0f && av_sq == 0.0f);
+            }
+
+			if (resting)
 			{
 				body->low_velocity_time += pipeline->timestep;
 			}

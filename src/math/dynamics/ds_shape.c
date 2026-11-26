@@ -92,6 +92,14 @@ ds_ShapeId ds_ShapeAdd(struct ds_Dynamics *pipeline, const struct ds_ShapePrefab
         ds_BitSetSet(&pipeline->shape_dirty_set, shape_slot.index, 1);
         shape->proxy = DBVHInsert(&pipeline->dynamic_bvh, shape->body, shape_slot.index, &bbox_proxy);
     }
+    else if (ds_BodyKinematicCheck(body))
+    {
+        ds_SolverSetWakeUp(pipeline, body->set);
+		bbox_proxy.min = V3AddConstant(bbox_proxy.min, -shape->margin);
+		bbox_proxy.max = V3AddConstant(bbox_proxy.max, shape->margin);
+        ds_BitSetSet(&pipeline->shape_dirty_set, shape_slot.index, 1);
+        shape->proxy = DBVHInsert(&pipeline->kinematic_bvh, shape->body, shape_slot.index, &bbox_proxy);
+    }
     else
     {
         shape->proxy = DBVHInsert(&pipeline->static_bvh, shape->body, shape_slot.index, &bbox_proxy);
@@ -133,7 +141,14 @@ void ds_ShapeDynamicRemove(struct ds_Dynamics *pipeline, struct ds_Body *body, c
     }
 
 	c_ShapeDBDereference(pipeline->external->cshape_db, shape->cshape_handle);
-	DBVHRemove(&pipeline->dynamic_bvh, shape->proxy);
+    if (ds_ShapeDynamicCheck(shape))
+    {
+	    DBVHRemove(&pipeline->dynamic_bvh, shape->proxy);
+    }
+    else
+    {
+	    DBVHRemove(&pipeline->kinematic_bvh, shape->proxy);
+    }
 	ds_PoolRemove(pipeline->shape_pool, shape_index);
 }
 

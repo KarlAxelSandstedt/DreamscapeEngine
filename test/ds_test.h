@@ -161,6 +161,7 @@ extern struct suite_Correctness *base_correctness_suite;
 extern struct suite_Correctness *dynamics_correctness_suite;
 extern struct suite_Correctness *geometric_mover_correctness_suite;
 extern struct suite_Correctness *toi_correctness_suite;
+extern struct suite_Correctness *kinematic_correctness_suite;
 extern struct suite_Correctness *asset_correctness_suite;
 extern struct suite_Correctness *shape_correctness_suite;
 extern struct suite_Correctness *raycast_correctness_suite;

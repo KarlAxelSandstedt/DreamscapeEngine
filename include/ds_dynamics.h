@@ -438,7 +438,7 @@ ds_BodyCompute.
 #define BODY_FLAG_FAST_BIT       2
 
 #define BODY_FLAG_DYNAMIC		((u32) 1 << BODY_FLAG_DYNAMIC_BIT)
-#define BODY_FLAG_KINEMATIC		((u32) 1 << BODY_FLAG_KINEMATIC_BIT)   /* not simulated yet: drawn only */
+#define BODY_FLAG_KINEMATIC		((u32) 1 << BODY_FLAG_KINEMATIC_BIT)
 #define BODY_FLAG_FAST			((u32) 1 << BODY_FLAG_FAST_BIT)        /* sim only, set per step: the body needs CCD */
 #define BODY_FLAG_ALL           (BODY_FLAG_DYNAMIC | BODY_FLAG_KINEMATIC)
 
@@ -541,6 +541,8 @@ void            ds_BodyRemove(struct arena *mem_tmp, struct ds_Dynamics *pipelin
 struct slot	    ds_BodyLookup(const struct ds_Dynamics *pipeline, const ds_BodyId id);
 /* Process the body's shape list and set its internal mass properties accordingly. */
 void		    ds_BodyUpdateMassProperties(struct ds_Dynamics *pipeline, const ds_BodyId id);
+/* Set the body's velocities; a non-zero velocity wakes the body's island first. A static body is left as it is. */
+void            ds_BodyVelocitySet(struct ds_Dynamics *pipeline, const ds_BodyId id, const v3 linear_velocity, const v3 angular_velocity);
 
 /* Internal: Return 1 if the bodies may collide, 0 otherwise. */
 u32             ds_BodyPairMayCollide(const struct ds_Dynamics *pipeline, const u32 body_index0, const u32 body_index1);
@@ -1739,6 +1741,7 @@ struct ds_ProxyRange
 {
     u32                     count;
     u32                     reinsert_count;
+    u32                     kinematic_count;    /* kinematic entries in the list; reinsert_count leaves them out */
     struct ds_ProxyDirty *  proxy;
 };
 
@@ -2062,7 +2065,7 @@ struct ds_Dynamics
     struct ds_BitSet                shape_dynamic_usage_set;/* Shapes in use */
 	struct BVH 		                dynamic_bvh;            /* bvh of dynamic shapes */
 	struct BVH 		                static_bvh;             /* bvh of static shapes */
-	struct BVH 		                kinematic_bvh;          /* bvh of kinematic shapes (empty: kinematic shapes are in static_bvh for now) */
+	struct BVH 		                kinematic_bvh;          /* bvh of kinematic shapes */
 
     struct ds_BitSet                shape_dirty_set;        /* the shapes whose proxy box changed since the last broadphase: they query for pairs, then the set is cleared */
     ds_CPool(ds_ProxyQuery)         dirty_shape_query;      /* per shape index: the broadphase's new pairs of the frame */
