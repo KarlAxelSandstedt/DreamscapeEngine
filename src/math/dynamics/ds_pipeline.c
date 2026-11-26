@@ -440,47 +440,47 @@ u32 ds_BroadJobPhaseDispatch(const ds_JobId job)
 
                 const u32 si = (u32) ds_BitBlockNext(&it);
                 const struct ds_Shape *shape = pipeline->shape_pool.buf + si;
+                const struct BVHNode *node = pipeline->bvh[ ds_ShapeMotion(shape) ].pool.buf + shape->proxy;
 
-                /* TODO: kinematic shapes find no pairs yet */
-                if (!ds_ShapeDynamicCheck(shape))
-                {
-                    query[si].dynamic_count = 0;
-                    query[si].static_count = 0;
-                    ArenaPopRecord(tmp);
-                    continue;
-                }
+                memset(query + si, 0, sizeof(struct ds_ProxyQuery));
 
-                const struct BVHNode *node = pipeline->bvh[DS_MOTION_DYNAMIC].pool.buf + shape->proxy;
-                const ds_Array(u32) dynamic_query = BVHQueryAndFilterOnBody(tmp, &pipeline->bvh[DS_MOTION_DYNAMIC], node, dirty);
-                const ds_Array(u32) static_query = BVHQuery(tmp, &pipeline->bvh[DS_MOTION_STATIC], &node->bbox);
-                
-                query[si].dynamic_count = 0;
-                query[si].dynamic_query = ArenaPushPacked(frame, dynamic_query.length*sizeof(u32));
-                for (u32 qi = 0; qi < dynamic_query.length; ++qi)
+                /* a kinematic shape pairs with dynamic shapes only; a dirty one reports the pair itself */
+                if (ds_ShapeMotion(shape) == DS_MOTION_KINEMATIC)
                 {
-                    const u32 neighbour_si = dynamic_query.buf[qi];
-                    const struct ds_ContactKey key = ds_ContactKeyCanonical(si, neighbour_si);
-                    if (!ds_ContactKeyLookup(pipeline, key).address)
+                    const ds_Array(u32) hits = BVHQuery(tmp, pipeline->bvh + DS_MOTION_DYNAMIC, &node->bbox);
+                    query[si].query[DS_MOTION_DYNAMIC] = ArenaPushPacked(frame, hits.length*sizeof(u32));
+                    for (u32 qi = 0; qi < hits.length; ++qi)
                     {
-                        query[si].dynamic_query[ query[si].dynamic_count ] = neighbour_si;
-                        query[si].dynamic_count += 1;
+                        const struct ds_ContactKey key = ds_ContactKeyCanonical(si, hits.buf[qi]);
+                        if (!ds_BitSetGet(dirty, hits.buf[qi]) && !ds_ContactKeyLookup(pipeline, key).address)
+                        {
+                            query[si].query[DS_MOTION_DYNAMIC][ query[si].count[DS_MOTION_DYNAMIC] ] =  hits.buf[qi];
+                            query[si].count[DS_MOTION_DYNAMIC] += 1;
+                        }
+                    }
+                    ArenaPopPacked(frame, (hits.length - query[si].count[DS_MOTION_DYNAMIC])*sizeof(u32));
+                }
+                /* a dynamic shape: every bvh in turn */
+                else
+                {
+                    for (u32 m = 0; m < 3; ++m)
+                    {
+                        const ds_Array(u32) hits = (m == DS_MOTION_DYNAMIC) 
+                                                 ? BVHQueryAndFilterOnBody(tmp, pipeline->bvh + m, node, dirty) 
+                                                 : BVHQuery(tmp, pipeline->bvh + m, &node->bbox);
+                        query[si].query[m] = ArenaPushPacked(frame, hits.length*sizeof(u32));
+                        for (u32 qi = 0; qi < hits.length; ++qi)
+                        {
+                            const struct ds_ContactKey key = ds_ContactKeyCanonical(si, hits.buf[qi]);
+                            if (!ds_ContactKeyLookup(pipeline, key).address)
+                            {
+                                query[si].query[m][ query[si].count[m] ] =  hits.buf[qi];
+                                query[si].count[m] += 1;
+                            }
+                        }
+                        ArenaPopPacked(frame, (hits.length - query[si].count[m])*sizeof(u32));
                     }
                 }
-                ArenaPopPacked(frame, (dynamic_query.length - query[si].dynamic_count)*sizeof(u32));
-
-                query[si].static_count = 0;
-                query[si].static_query = ArenaPushPacked(frame, static_query.length*sizeof(u32));
-                for (u32 qi = 0; qi < static_query.length; ++qi)
-                {
-                    const u32 neighbour_si = static_query.buf[qi];
-                    const struct ds_ContactKey key = ds_ContactKeyCanonical(si, neighbour_si);
-                    if (!ds_ContactKeyLookup(pipeline, key).address)
-                    {
-                        query[si].static_query[ query[si].static_count ] = neighbour_si;
-                        query[si].static_count += 1;
-                    }
-                }
-                ArenaPopPacked(frame, (static_query.length - query[si].static_count)*sizeof(u32));
 
                 ArenaPopRecord(tmp);
 		    }
@@ -577,6 +577,10 @@ static void CollisionDetection(struct ds_Dynamics *pipeline)
      * shape by that shape, since the other does not query. Two proxy boxes that did not change
      * cannot start overlapping, so the shapes that are not dirty find no new pairs.
      *
+     * A dirty dynamic shape also takes every overlap in the static and the kinematic bvh. A dirty
+     * kinematic shape queries the dynamic bvh only and skips the dirty shapes it finds, which report
+     * the pair themselves: a kinematic-dynamic pair is reported once as well.
+     *
      * To achieve determinism, after a thread has queried a shape si, it stores the resulting query
      * data in
      *
@@ -636,16 +640,13 @@ static void CollisionDetection(struct ds_Dynamics *pipeline)
                 const u32 si = (u32) ds_BitBlockNext(&it);
                 const struct ds_ProxyQuery *query = pipeline->dirty_shape_query.buf + si;
 
-                for (u32 q = 0; q < query->dynamic_count; ++q)
+                for (u32 m = 0; m < 3; ++m)
                 {
-                    const struct ds_ContactKey key = ds_ContactKeyCanonical(si, query->dynamic_query[q]);
-                    ds_ContactTryAdd(pipeline, key);
-                }
-
-                for (u32 q = 0; q < query->static_count; ++q)
-                {
-                    const struct ds_ContactKey key = ds_ContactKeyCanonical(si, query->static_query[q]);
-                    ds_ContactTryAdd(pipeline, key);
+                    for (u32 q = 0; q < query->count[m]; ++q)
+                    {
+                        const struct ds_ContactKey key = ds_ContactKeyCanonical(si, query->query[m][q]);
+                        ds_ContactTryAdd(pipeline, key);
+                    }
                 }
 		    }
         }

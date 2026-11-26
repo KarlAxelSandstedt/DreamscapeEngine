@@ -1736,10 +1736,8 @@ struct ds_ProxyDirty
 
 struct ds_ProxyQuery
 {
-    u32     dynamic_count;
-    u32     static_count;
-    u32 *   dynamic_query;
-    u32 *   static_query;
+    u32     count[3];       /* [motion of the bvh queried]: the shape's new pairs there */
+    u32 *   query[3];
 };
 DEFINE_CPOOL_STRUCT(ds_ProxyQuery);
 

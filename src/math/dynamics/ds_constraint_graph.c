@@ -171,8 +171,17 @@ void ds_CGraphContactAdd(struct ds_Dynamics *pipeline, struct ds_Contact *contac
     ds_Assert(contact->set != SOLVER_SET_NULL)
     ds_Assert(contact->color == CG_INVALID_COLOR);
 
-    const u32 static_index = (ds_ContactStaticCheck(contact)) ? ds_ContactNonDynamicIndex(contact) : U32_MAX;
-    contact->color = ds_CGraphColorNext(pipeline, contact->body, static_index);
+    /* TODO: kinematic colours; until then a kinematic contact is solved in the serial colour */
+    if (ds_ContactMotion(contact) == DS_MOTION_KINEMATIC)
+    {
+        contact->color = CG_SERIAL_COLOR;
+    }
+    else
+    {
+        const u32 static_index = (ds_ContactStaticCheck(contact)) ? ds_ContactNonDynamicIndex(contact) : U32_MAX;
+        contact->color = ds_CGraphColorNext(pipeline, contact->body, static_index);
+    }
+
     struct ds_CGraphColor *color = pipeline->cgraph.color + contact->color;
 
     contact->compute = ds_CPoolPush(color->contact_pool).index;
