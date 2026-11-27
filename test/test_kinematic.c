@@ -53,6 +53,14 @@ Against dynamic bodies (a cube on a kinematic slab unless said otherwise):
                     nine cubes on a static slab share the first static colour
     Tumbler         27 cubes in a turning kinematic box (five seconds): none leaves, and a second run hashes the same every tick
     Overflow        cubes with five contacts each on one kinematic body: the fifth goes to the serial colour; a second run hashes the same
+
+Joints with a kinematic body:
+
+    Jingle          a kinematic slab moving back and forth with twelve cubes hanging from it by distance joints (rigid,
+                    range, spring) and four cubes riding on top: the lengths hold, the joints take kinematic colours, all
+                    are one island, a second run hashes the same
+    JointSleep      a kinematic cube and a cube hanging from it sleep in one set; the setter wakes both
+    JointReject     kinematic-kinematic and kinematic-static joints and a mouse joint on a kinematic body are refused
 */
 
 struct kinematic_TestWorld
@@ -848,6 +856,228 @@ static struct test_Output KinematicOverflowTest(struct test_Environment *env)
     return output;
 }
 
+#define KINEMATIC_JINGLE_TICKS      240
+#define KINEMATIC_JINGLE_HANGING    12
+
+struct kinematic_JingleResult
+{
+    f64 rigid_error_max;    /* largest |length - 2 m| of the rigid joints over the run */
+    f64 range_low;          /* shortest and longest length of the range joints ([1.5, 2.5] m) */
+    f64 range_high;
+    f64 spring_low;         /* the same for the spring joints (target 2 m) */
+    f64 spring_high;
+    u32 one_island;         /* at the end: slab, hanging cubes and riders share an island and none sleeps */
+    u32 kinematic_colours;  /* at the end: every joint is in a kinematic colour */
+};
+
+/*
+ * A kinematic slab at 10 m moving at 1 m/s along x, reversing every half second. Twelve cubes hang 2 m under it by
+ * distance joints (i % 3 == 0: rigid; 1: range [1.5, 2.5]; 2: spring at 2 Hz), four more ride on top: the slab's
+ * joints and contacts all run in the kinematic colours, twelve joints in one colour. Writes the pipeline's hash
+ * after every tick.
+ */
+static struct kinematic_JingleResult KinematicTestJingleRun(u64 hash[KINEMATIC_JINGLE_TICKS])
+{
+    struct kinematic_TestWorld world;
+    KinematicTestWorldInit(&world);
+
+    const ds_BodyId slab = KinematicTestBodyAdd(&world, world.slab, DS_MOTION_KINEMATIC, V3F64(0.0, 10.0, 0.0), 1);
+
+    struct ds_DistanceJointPrefab prefab[3];
+    ds_DistanceJointPrefab(prefab + 0, 2.0f, ds_BreakageOptionNone());
+    ds_DistanceJointPrefabRange(prefab + 1, (intv) { .low = 1.5f, .high = 2.5f }, ds_BreakageOptionNone());
+    ds_DistanceJointPrefabSpring(prefab + 2, 2.0f, 2.0f, 0.5f, ds_BreakageOptionNone());
+
+    /* anchors: the slab's bottom face above each cube, and the cube's top face */
+    ds_BodyId hanging[KINEMATIC_JINGLE_HANGING];
+    ds_JointId joint[KINEMATIC_JINGLE_HANGING];
+    ds_Transform slab_anchor[KINEMATIC_JINGLE_HANGING];
+    const ds_Transform cube_anchor = { .rotation = QIdentity(), .position = V3(0.0f, 0.5f, 0.0f) };
+    u32 joints_added = 1;
+    for (u32 i = 0; i < KINEMATIC_JINGLE_HANGING; ++i)
+    {
+        const f32 x = -1.875f + 1.25f * (f32) (i % 4);
+        const f32 z = -1.5f + 1.5f * (f32) (i / 4);
+        slab_anchor[i] = (ds_Transform) { .rotation = QIdentity(), .position = V3(x, -0.25f, z) };
+        hanging[i] = KinematicTestBodyAdd(&world, world.cube, DS_MOTION_DYNAMIC, V3F64((f64) x, 10.0 - 0.25 - 2.0 - 0.5, (f64) z), 2 + i);
+        joint[i] = ds_DistanceJointAdd(&world.pipeline, prefab + (i % 3), hanging[i], &cube_anchor, slab, slab_anchor + i);
+        if (ds_JointIdNullCheck(joint[i]))
+        {
+            joints_added = 0;
+        }
+    }
+
+    ds_BodyId rider[4];
+    for (u32 i = 0; i < 4; ++i)
+    {
+        rider[i] = KinematicTestBodyAdd(&world, world.cube, DS_MOTION_DYNAMIC, V3F64(-1.0 + 2.0 * (f64) (i % 2), 10.0 + 0.25 + 0.5 + 0.01, -1.0 + 2.0 * (f64) (i / 2)), 10 + i);
+    }
+
+    struct kinematic_JingleResult result = { .rigid_error_max = 0.0, .range_low = 2.0, .range_high = 2.0, .spring_low = 2.0, .spring_high = 2.0, .one_island = 0, .kinematic_colours = 0 };
+    for (u32 t = 0; t < KINEMATIC_JINGLE_TICKS; ++t)
+    {
+        if (t % 30 == 0)
+        {
+            const f32 direction = ((t / 30) % 2 == 0) ? 1.0f : -1.0f;
+            ds_BodyVelocitySet(&world.pipeline, slab, V3(direction, 0.0f, 0.0f), V3Zero());
+        }
+
+        KinematicTestTick(&world, 1);
+        hash[t] = ds_DynamicsHash(&world.pipeline);
+
+        const ds_TransformWorld slab_pose = KinematicTestPose(&world, slab);
+        for (u32 i = 0; i < KINEMATIC_JINGLE_HANGING; ++i)
+        {
+            const ds_TransformWorld cube_pose = KinematicTestPose(&world, hanging[i]);
+            const v3f64 a = V3F64Transform(slab_anchor[i].position, &slab_pose);
+            const v3f64 b = V3F64Transform(cube_anchor.position, &cube_pose);
+            const f64 dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
+            const f64 length = (f64) F32Sqrt((f32) (dx*dx + dy*dy + dz*dz));
+            if (i % 3 == 0)
+            {
+                const f64 error = (length > 2.0) ? length - 2.0 : 2.0 - length;
+                if (error > result.rigid_error_max)
+                {
+                    result.rigid_error_max = error;
+                }
+            }
+            else if (i % 3 == 1)
+            {
+                if (length < result.range_low)
+                {
+                    result.range_low = length;
+                }
+
+                if (length > result.range_high)
+                {
+                    result.range_high = length;
+                }
+            }
+            else
+            {
+                if (length < result.spring_low)
+                {
+                    result.spring_low = length;
+                }
+
+                if (length > result.spring_high)
+                {
+                    result.spring_high = length;
+                }
+            }
+        }
+    }
+
+    const struct ds_Body *slab_body = ds_BodyLookup(&world.pipeline, slab).address;
+    result.one_island = joints_added && slab_body->set == SOLVER_SET_ACTIVE;
+    result.kinematic_colours = joints_added;
+    for (u32 i = 0; i < KINEMATIC_JINGLE_HANGING; ++i)
+    {
+        const struct ds_Body *body = ds_BodyLookup(&world.pipeline, hanging[i]).address;
+        result.one_island = result.one_island && body->island == slab_body->island && body->set == SOLVER_SET_ACTIVE;
+        const struct ds_Joint *j = ds_JointLookup(&world.pipeline, joint[i]).address;
+        result.kinematic_colours = result.kinematic_colours && j && ds_JointMotion(j) == DS_MOTION_KINEMATIC && CG_KINEMATIC_COLOR_FIRST <= j->color && j->color <= CG_KINEMATIC_COLOR_LAST;
+    }
+
+    for (u32 i = 0; i < 4; ++i)
+    {
+        const struct ds_Body *body = ds_BodyLookup(&world.pipeline, rider[i]).address;
+        result.one_island = result.one_island && body->island == slab_body->island && body->set == SOLVER_SET_ACTIVE;
+    }
+
+    KinematicTestWorldFree(&world);
+    return result;
+}
+
+static struct test_Output KinematicJingleTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+
+    static u64 hash[2][KINEMATIC_JINGLE_TICKS];
+    const struct kinematic_JingleResult result = KinematicTestJingleRun(hash[0]);
+    KinematicTestJingleRun(hash[1]);
+
+    const u32 repeats = memcmp(hash[0], hash[1], sizeof(hash[0])) == 0;
+    fprintf(stderr, "kinematic jingle: %u ticks, final hash %016llx, rigid error %g m, range [%g, %g] m, spring [%g, %g] m\n", KINEMATIC_JINGLE_TICKS, (unsigned long long) hash[0][KINEMATIC_JINGLE_TICKS - 1], result.rigid_error_max, result.range_low, result.range_high, result.spring_low, result.spring_high);
+    const u32 ok = repeats && result.one_island && result.kinematic_colours && result.rigid_error_max < 0.001 && result.range_low > 1.499 && result.range_high < 2.501 && result.spring_low > 1.5 && result.spring_high < 2.5;
+    if (!ok)
+    {
+        fprintf(stderr, "kinematic jingle: second run repeats %u, one island and awake %u, joints in kinematic colours %u\n", repeats, result.one_island, result.kinematic_colours);
+        TEST_FAILURE;
+    }
+
+    return output;
+}
+
+static struct test_Output KinematicJointSleepTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct kinematic_TestWorld world;
+    KinematicTestWorldInit(&world);
+
+    /* a cube hanging at rest, straight under a kinematic cube, on a 2 m rigid joint between their faces */
+    const ds_BodyId top = KinematicTestBodyAdd(&world, world.cube, DS_MOTION_KINEMATIC, V3F64(0.0, 5.0, 0.0), 1);
+    const ds_BodyId hanging = KinematicTestBodyAdd(&world, world.cube, DS_MOTION_DYNAMIC, V3F64(0.0, 2.0, 0.0), 2);
+    struct ds_DistanceJointPrefab prefab;
+    ds_DistanceJointPrefab(&prefab, 2.0f, ds_BreakageOptionNone());
+    const ds_Transform top_anchor = { .rotation = QIdentity(), .position = V3(0.0f, -0.5f, 0.0f) };
+    const ds_Transform hanging_anchor = { .rotation = QIdentity(), .position = V3(0.0f, 0.5f, 0.0f) };
+    const ds_JointId joint = ds_DistanceJointAdd(&world.pipeline, &prefab, top, &top_anchor, hanging, &hanging_anchor);
+    TEST_FALSE(ds_JointIdNullCheck(joint));
+
+    /* the joint merged the islands at once; at rest both sleep in one set, the hanging cube still 2 m under its anchor */
+    const struct ds_Body *body[2] = { ds_BodyLookup(&world.pipeline, top).address, ds_BodyLookup(&world.pipeline, hanging).address };
+    TEST_TRUE(body[0]->island == body[1]->island);
+    KinematicTestTick(&world, 60);
+    TEST_TRUE(body[0]->set >= SOLVER_SET_SLEEPING_FIRST && body[0]->set == body[1]->set);
+    const f64 hanging_y = KinematicTestPose(&world, hanging).position.y;
+    TEST_TRUE(hanging_y > 1.98 && hanging_y < 2.02);
+
+    /* the setter wakes the set, the hanging cube with it; while the top moves neither sleeps and the cube is pulled along */
+    ds_BodyVelocitySet(&world.pipeline, top, V3(1.0f, 0.0f, 0.0f), V3Zero());
+    TEST_TRUE(body[0]->set == SOLVER_SET_ACTIVE && body[1]->set == SOLVER_SET_ACTIVE);
+    KinematicTestTick(&world, 120);
+    TEST_TRUE(body[0]->set == SOLVER_SET_ACTIVE && body[1]->set == SOLVER_SET_ACTIVE);
+    TEST_TRUE(KinematicTestPose(&world, hanging).position.x > 1.0);
+
+    KinematicTestWorldFree(&world);
+    return output;
+}
+
+static struct test_Output KinematicJointRejectTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct kinematic_TestWorld world;
+    KinematicTestWorldInit(&world);
+
+    const ds_BodyId kinematic[2] =
+    {
+        KinematicTestBodyAdd(&world, world.cube, DS_MOTION_KINEMATIC, V3F64(0.0, 5.0, 0.0), 1),
+        KinematicTestBodyAdd(&world, world.cube, DS_MOTION_KINEMATIC, V3F64(3.0, 5.0, 0.0), 2),
+    };
+    const ds_BodyId fixed = KinematicTestBodyAdd(&world, world.cube, DS_MOTION_STATIC, V3F64(-3.0, 5.0, 0.0), 3);
+
+    /* a joint needs a dynamic body: the solvers divide by its mass */
+    struct ds_DistanceJointPrefab prefab;
+    ds_DistanceJointPrefab(&prefab, 2.0f, ds_BreakageOptionNone());
+    const ds_Transform local = ds_TransformIdentity();
+    TEST_TRUE(ds_JointIdNullCheck(ds_DistanceJointAdd(&world.pipeline, &prefab, kinematic[0], &local, kinematic[1], &local)));
+    TEST_TRUE(ds_JointIdNullCheck(ds_DistanceJointAdd(&world.pipeline, &prefab, kinematic[0], &local, fixed, &local)));
+    TEST_TRUE(ds_JointIdNullCheck(ds_DistanceJointAdd(&world.pipeline, &prefab, fixed, &local, kinematic[0], &local)));
+
+    /* the mouse joint's other body is the static anchor */
+    struct ds_MouseJointPrefab mouse;
+    ds_MouseJointPrefab(&mouse, V3F64(0.0, 5.0, 0.0), 5.0f, 0.7f, 1000.0f, 100.0f, ds_BreakageOptionNone());
+    TEST_TRUE(ds_JointIdNullCheck(ds_MouseJointAdd(&world.pipeline, &mouse, kinematic[0], &local)));
+    TEST_EQUAL(world.pipeline.joint_pool.count, 0);
+    KinematicTestTick(&world, 2);
+
+    KinematicTestWorldFree(&world);
+    return output;
+}
+
 static struct test_Output (*kinematic_tests[])(struct test_Environment *) =
 {
     KinematicMotionTest,
@@ -866,6 +1096,9 @@ static struct test_Output (*kinematic_tests[])(struct test_Environment *) =
     KinematicColoursTest,
     KinematicTumblerTest,
     KinematicOverflowTest,
+    KinematicJingleTest,
+    KinematicJointSleepTest,
+    KinematicJointRejectTest,
 };
 
 struct suite_Correctness m_kinematic_suite =

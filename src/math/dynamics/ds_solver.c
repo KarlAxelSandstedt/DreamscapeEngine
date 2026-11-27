@@ -1002,7 +1002,8 @@ void ds_PositionConstraintInitAndCacheImpulsesRange(struct ds_Dynamics *pipeline
 
 /*
  * Joint stages. Each resolves the two bodies the way the contact stages do: a static body maps to
- * ACTIVE_BODY_DUMMY_INDEX and the thread-local zero-mass sims. The per-type work is the switch; a type with no
+ * ACTIVE_BODY_DUMMY_INDEX and the thread-local zero-mass sims; a kinematic body 1 is its real, shared slot. Every
+ * joint type stores into body 1 only when it is dynamic. The per-type work is the switch; a type with no
  * case yet is skipped.
  */
 void ds_JointConstraintInitRange(struct ds_Dynamics *pipeline, const u32 color_index, const u32 low, const u32 high)

@@ -216,8 +216,8 @@ DS_DEFINE_ID(ds_ContactId,  DS_IDF_GENERATION_SHIFT, DS_IDF_GENERATION_MAX)
 Motion
 ======
 Whether a body is static, dynamic or kinematic: bits 0-1 of the flags of a body (and of its sim and compute), of a
-shape (its body's motion) and of a contact. A contact has the motion of its least mobile body: static if one body
-is static, kinematic if one is kinematic, dynamic if both are. ds_Dynamics.bvh is indexed by it.
+shape (its body's motion), of a contact and of a joint. A contact or joint has the motion of its least mobile body:
+static if one body is static, kinematic if one is kinematic, dynamic if both are. ds_Dynamics.bvh is indexed by it.
 */
 #define DS_MOTION_STATIC        ((u32) 0)
 #define DS_MOTION_DYNAMIC       ((u32) 1)
@@ -994,15 +994,14 @@ enum ds_JointType
     DS_JOINT_TYPE_COUNT
 };
 
-#define DS_JOINT_STATIC             ((u32) 1 << 0)      /* body[1] is static (ds_JointAdd puts
-                                                           a static body in slot 1)          */
-
-#define ds_JointStaticCheck(j)      ((j)->flags & DS_JOINT_STATIC)
+/* bits 0-1: the motion (DS_MOTION_MASK), that of body[1]: ds_JointAdd puts a body that is not dynamic in slot 1 */
+#define ds_JointMotion(j)           ((j)->flags & DS_MOTION_MASK)
+#define ds_JointStaticCheck(j)      (ds_JointMotion(j) == DS_MOTION_STATIC)
 
 struct ds_Joint
 {
     POOL_NODE;
-    u32                 flags;                 /* DS_JOINT_ bits */
+    u32                 flags;                 /* the joint's motion (DS_MOTION_MASK) */
     ds_JointId          id;                    /* generational identifier */
     enum ds_JointType   type;
 
@@ -1299,7 +1298,9 @@ void ds_PositionConstraintIterateKinematicRange(struct ds_Dynamics *pipeline, co
 
 /*
  * The joint stages, each over the range [low, high) of the colour's joint_sim_pool. A colour's joints and
- * contacts share no body, so within a colour they run in any order; across colours the chain orders them.
+ * contacts share no dynamic body, so within a colour they run in any order; across colours the chain orders them.
+ * They may share a static or kinematic body (body 1), which no stage stores into: every joint type writes body 1
+ * only when it is dynamic.
  */
 /* Resolve the body sims and compute the per-tick solver data of the joints */
 void    ds_JointConstraintInitRange(struct ds_Dynamics *pipeline, const u32 color, const u32 low, const u32 high);

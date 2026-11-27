@@ -130,8 +130,7 @@ static u32 ds_CGraphColorNext(struct ds_Dynamics *pipeline, const u32 body[2], c
 
 struct ds_JointSim *ds_CGraphJointAdd(struct ds_Dynamics *pipeline, struct ds_Joint *joint)
 {    
-    const u32 motion = (ds_JointStaticCheck(joint)) ? DS_MOTION_STATIC : DS_MOTION_DYNAMIC;
-    joint->color = ds_CGraphColorNext(pipeline, joint->body, motion, 1);
+    joint->color = ds_CGraphColorNext(pipeline, joint->body, ds_JointMotion(joint), 1);
     struct ds_CGraph *cg = &pipeline->cgraph;
     struct ds_CGraphColor *color = pipeline->cgraph.color + joint->color;
     struct slot slot = ds_CPoolPush(color->joint_sim_pool);
@@ -281,9 +280,15 @@ void ds_CGraphValidate(const struct ds_Dynamics *pipeline)
                 ds_Assert(body0->set == SOLVER_SET_ACTIVE);
                 ds_Assert(body1->set == SOLVER_SET_STATIC);
             }
+            else if (CG_KINEMATIC_COLOR_FIRST <= c && c <= CG_KINEMATIC_COLOR_LAST)
+            {
+                ds_Assert(ds_JointMotion(joint) == DS_MOTION_KINEMATIC);
+                ds_Assert(body0->set == SOLVER_SET_ACTIVE);
+                ds_Assert(body1->set == SOLVER_SET_ACTIVE);
+            }
             else if (CG_DYNAMIC_COLOR_FIRST <= c && c <= CG_DYNAMIC_COLOR_LAST)
             {
-                ds_Assert(!ds_JointStaticCheck(joint));
+                ds_Assert(ds_JointMotion(joint) == DS_MOTION_DYNAMIC);
                 ds_Assert(body0->set == SOLVER_SET_ACTIVE);
                 ds_Assert(body1->set == SOLVER_SET_ACTIVE);
             }

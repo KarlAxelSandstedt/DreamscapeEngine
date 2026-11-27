@@ -35,7 +35,7 @@ ds_JointId ds_JointAdd(struct ds_Dynamics *pipeline, const enum ds_JointType typ
         return ds_JointIdNull();
     }
 
-    /* canonical slot: a static body is body 1 (as in the contact constraints), whatever the caller's order */
+    /* canonical slot: a static or kinematic body is body 1 (as in the contact constraints), whatever the caller's order */
     if (!ds_BodyDynamicCheck(b[0]))
     {
         const struct slot slot_tmp = slot_b0;
@@ -52,7 +52,7 @@ ds_JointId ds_JointAdd(struct ds_Dynamics *pipeline, const enum ds_JointType typ
     u32 expand_index = b[ dynamic[1] ]->island;
     if (!dynamic[0] && !dynamic[1])
     {
-        Log(T_PHYSICS, S_WARNING, "joint add rejected: bodies %u and %u are both static", slot_b0.index, slot_b1.index);
+        Log(T_PHYSICS, S_WARNING, "joint add rejected: bodies %u and %u are both not dynamic", slot_b0.index, slot_b1.index);
         return ds_JointIdNull();
     }
 
@@ -69,7 +69,7 @@ ds_JointId ds_JointAdd(struct ds_Dynamics *pipeline, const enum ds_JointType typ
         }
     }
 
-    if (dynamic[0] && dynamic[1] && b[0]->island != b[1]->island)
+    if (!ds_BodyStaticCheck(b[1]) && b[0]->island != b[1]->island)
     {
 		expand_index = ds_IslandMerge(pipeline, b[0]->island, b[1]->island);
     }
@@ -98,7 +98,7 @@ ds_JointId ds_JointAdd(struct ds_Dynamics *pipeline, const enum ds_JointType typ
 
     joint->body[0] = slot_b0.index;
     joint->body[1] = slot_b1.index;
-    joint->flags = (dynamic[1]) ? 0 : DS_JOINT_STATIC;
+    joint->flags = ds_BodyMotion(b[1]);
     joint->island = expand_index;
     const u32 i0 = (joint->body[0] == pipeline->joint_pool.buf[b[0]->joint_list.last].body[1]);
     const u32 i1 = (joint->body[1] == pipeline->joint_pool.buf[b[1]->joint_list.last].body[1]);
@@ -308,7 +308,7 @@ void ds_JointValidateAll(const struct ds_Dynamics *pipeline)
         ds_Assert(ds_PoolSlotAllocated(pipeline->body_pool.buf + joint->body[0]));
         ds_Assert(ds_PoolSlotAllocated(pipeline->body_pool.buf + joint->body[1]));
         ds_Assert(ds_BodyDynamicCheck(pipeline->body_pool.buf + joint->body[0]));
-        ds_Assert(!ds_JointStaticCheck(joint) == !ds_BodyStaticCheck(pipeline->body_pool.buf + joint->body[1]));
+        ds_Assert(ds_JointMotion(joint) == ds_BodyMotion(pipeline->body_pool.buf + joint->body[1]));
 
         const struct ds_Island *island = pipeline->island_pool.buf + joint->island;
         ds_Assert(joint->island < pipeline->island_pool.count_max && ds_PoolSlotAllocated(island));
@@ -647,13 +647,16 @@ void ds_DistanceJointConstraintWarmup(struct ds_JointSim *jsim, struct ds_BodyCo
 
     const v3 cached_impulse = V3Scale(dj->n, dj->impulse + dj->impulse_low - dj->impulse_high);
     bcomp[0]->linear_velocity = V3AddScaled(bcomp[0]->linear_velocity, cached_impulse, -bsim[0]->inv_mass);
-    bcomp[1]->linear_velocity = V3AddScaled(bcomp[1]->linear_velocity, cached_impulse, bsim[1]->inv_mass);
-
     const v3 delta_w0 = M3V3Mul(bsim[0]->world_inv_inertia, V3Cross(jsim->r[0], cached_impulse));
     bcomp[0]->angular_velocity = V3Sub(bcomp[0]->angular_velocity, delta_w0);
 
-    const v3 delta_w1 = M3V3Mul(bsim[1]->world_inv_inertia, V3Cross(jsim->r[1], cached_impulse));
-    bcomp[1]->angular_velocity = V3Add(bcomp[1]->angular_velocity, delta_w1);
+    /* body 1 is written only when dynamic: the joints of a colour share a static or kinematic body */
+    if (ds_BodyDynamicCheck(bsim[1]))
+    {
+        bcomp[1]->linear_velocity = V3AddScaled(bcomp[1]->linear_velocity, cached_impulse, bsim[1]->inv_mass);
+        const v3 delta_w1 = M3V3Mul(bsim[1]->world_inv_inertia, V3Cross(jsim->r[1], cached_impulse));
+        bcomp[1]->angular_velocity = V3Add(bcomp[1]->angular_velocity, delta_w1);
+    }
 }
 
 void ds_DistanceJointConstraintIterate(struct ds_JointSim *jsim, struct ds_BodyCompute *bcomp[2], struct ds_BodySim *bsim[2])
@@ -716,9 +719,13 @@ void ds_DistanceJointConstraintIterate(struct ds_JointSim *jsim, struct ds_BodyC
     bcomp[0]->linear_velocity = V3AddScaled(bcomp[0]->linear_velocity, impulse, -bsim[0]->inv_mass);
     bcomp[0]->angular_velocity = V3Sub(bcomp[0]->angular_velocity, delta_w0);
 
-    const v3 delta_w1 = M3V3Mul(bsim[1]->world_inv_inertia, V3Cross(jsim->r[1], impulse));
-    bcomp[1]->linear_velocity = V3AddScaled(bcomp[1]->linear_velocity, impulse, bsim[1]->inv_mass);
-    bcomp[1]->angular_velocity = V3Add(bcomp[1]->angular_velocity, delta_w1);
+    /* body 1 is written only when dynamic: the joints of a colour share a static or kinematic body */
+    if (ds_BodyDynamicCheck(bsim[1]))
+    {
+        const v3 delta_w1 = M3V3Mul(bsim[1]->world_inv_inertia, V3Cross(jsim->r[1], impulse));
+        bcomp[1]->linear_velocity = V3AddScaled(bcomp[1]->linear_velocity, impulse, bsim[1]->inv_mass);
+        bcomp[1]->angular_velocity = V3Add(bcomp[1]->angular_velocity, delta_w1);
+    }
 }
 
 void ds_DistanceJointPositionConstraintIterate(struct ds_JointSim *jsim, struct ds_BodyCompute *bcomp[2], struct ds_BodySim *bsim[2])
@@ -729,9 +736,14 @@ void ds_DistanceJointPositionConstraintIterate(struct ds_JointSim *jsim, struct 
     const m3 inv_inertia0 = M3Mul(M3Mul(rot0, bsim[0]->local_inv_inertia), M3Transpose(rot0));
     bsim[0]->world_inv_inertia = inv_inertia0;
 
+    /* body 1 is written only when dynamic: the joints of a colour share a static or kinematic body */
+    const u32 dynamic1 = ds_BodyDynamicCheck(bsim[1]);
     const m3 rot1 = M3QUnit(bcomp[1]->rotation);
     const m3 inv_inertia1 = M3Mul(M3Mul(rot1, bsim[1]->local_inv_inertia), M3Transpose(rot1));
-    bsim[1]->world_inv_inertia = inv_inertia1;
+    if (dynamic1)
+    {
+        bsim[1]->world_inv_inertia = inv_inertia1;
+    }
 
     const v3 r0 = QUnitRotate(bcomp[0]->rotation, V3Sub(jsim->local_frame[0].position, bsim[0]->local_center_of_mass));
     const v3 r1 = (jsim->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX)
@@ -763,7 +775,6 @@ void ds_DistanceJointPositionConstraintIterate(struct ds_JointSim *jsim, struct 
 
     const v3 impulse_vector = V3Scale(n, impulse);
     bcomp[0]->delta_position = V3AddScaled(bcomp[0]->delta_position, impulse_vector, -bsim[0]->inv_mass);
-    bcomp[1]->delta_position = V3AddScaled(bcomp[1]->delta_position, impulse_vector,  bsim[1]->inv_mass);
     /* flipped cross for correct sign! */
     /* instantaneous torque, assume delta_t = 1 */
     const v3 w0 = M3V3Mul(inv_inertia0, V3Cross(impulse_vector, r0));
@@ -771,9 +782,13 @@ void ds_DistanceJointPositionConstraintIterate(struct ds_JointSim *jsim, struct 
     const q quat_angle0 = Q(w0.x/2.0f, w0.y/2.0f, w0.z/2.0f, 1.0f);
     bcomp[0]->rotation = QNormalize(QMul(quat_angle0, bcomp[0]->rotation));
 
-    const v3 w1 = M3V3Mul(inv_inertia1, V3Cross(r1, impulse_vector));
-    const q quat_angle1 = Q(w1.x/2.0f, w1.y/2.0f, w1.z/2.0f, 1.0f);
-    bcomp[1]->rotation = QNormalize(QMul(quat_angle1, bcomp[1]->rotation));
+    if (dynamic1)
+    {
+        bcomp[1]->delta_position = V3AddScaled(bcomp[1]->delta_position, impulse_vector,  bsim[1]->inv_mass);
+        const v3 w1 = M3V3Mul(inv_inertia1, V3Cross(r1, impulse_vector));
+        const q quat_angle1 = Q(w1.x/2.0f, w1.y/2.0f, w1.z/2.0f, 1.0f);
+        bcomp[1]->rotation = QNormalize(QMul(quat_angle1, bcomp[1]->rotation));
+    }
 }
 
 /*
